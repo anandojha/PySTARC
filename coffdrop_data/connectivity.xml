@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<top>
+<bond><residues> XXX XXX </residues><atoms> CA CA </atoms><orders> 1 2 </orders><length> 3.8 </length><index> 0 </index></bond>
+<bond><residues> ALA ALA </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.52 </length><index> 1 </index></bond>
+<bond><residues> ARG ARG </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 2.55 </length><index> 2 </index></bond>
+<bond><residues> ARG ARG </residues><atoms> CB NG </atoms><orders> 1 1 </orders><length> 3.49 </length><index> 3 </index></bond>
+<bond><residues> ASN ASN </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.53 </length><index> 4 </index></bond>
+<bond><residues> ASN ASN </residues><atoms> CB CG </atoms><orders> 1 1 </orders><length> 1.95 </length><index> 5 </index></bond>
+<bond><residues> ASP ASP </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.53 </length><index> 6 </index></bond>
+<bond><residues> ASP ASP </residues><atoms> CB OG </atoms><orders> 1 1 </orders><length> 1.93 </length><index> 7 </index></bond>
+<bond><residues> CYS CYS </residues><atoms> CA SB </atoms><orders> 1 1 </orders><length> 2.03 </length><index> 8 </index></bond>
+<bond><residues> GLN GLN </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.97 </length><index> 9 </index></bond>
+<bond><residues> GLN GLN </residues><atoms> CB CG </atoms><orders> 1 1 </orders><length> 2.37 </length><index> 10 </index></bond>
+<bond><residues> GLU GLU </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.97 </length><index> 11 </index></bond>
+<bond><residues> GLU GLU </residues><atoms> CB OG </atoms><orders> 1 1 </orders><length> 2.32 </length><index> 12 </index></bond>
+<bond><residues> HIP HIP </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.53 </length><index> 13 </index></bond>
+<bond><residues> HIP HIP </residues><atoms> CB NG </atoms><orders> 1 1 </orders><length> 2.67 </length><index> 14 </index></bond>
+<bond><residues> HIS HIS </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.53 </length><index> 15 </index></bond>
+<bond><residues> HIS HIS </residues><atoms> CB NG </atoms><orders> 1 1 </orders><length> 2.66 </length><index> 16 </index></bond>
+<bond><residues> ILE ILE </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.96 </length><index> 17 </index></bond>
+<bond><residues> ILE ILE </residues><atoms> CB CG </atoms><orders> 1 1 </orders><length> 2.28 </length><index> 18 </index></bond>
+<bond><residues> LEU LEU </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.53 </length><index> 19 </index></bond>
+<bond><residues> LEU LEU </residues><atoms> CB CG </atoms><orders> 1 1 </orders><length> 1.95 </length><index> 20 </index></bond>
+<bond><residues> LYS LYS </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 2.55 </length><index> 21 </index></bond>
+<bond><residues> LYS LYS </residues><atoms> CB NG </atoms><orders> 1 1 </orders><length> 2.98 </length><index> 22 </index></bond>
+<bond><residues> MET MET </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.97 </length><index> 23 </index></bond>
+<bond><residues> MET MET </residues><atoms> CB CG </atoms><orders> 1 1 </orders><length> 2.66 </length><index> 24 </index></bond>
+<bond><residues> PRO PRO </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.85 </length><index> 25 </index></bond>
+<bond><residues> SER SER </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.90 </length><index> 26 </index></bond>
+<bond><residues> THR THR </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.95 </length><index> 27 </index></bond>
+<bond><residues> TRP TRP </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.53 </length><index> 28 </index></bond>
+<bond><residues> TRP TRP </residues><atoms> CB CG </atoms><orders> 1 1 </orders><length> 2.70 </length><index> 29 </index></bond>
+<bond><residues> TRP TRP </residues><atoms> CG CD </atoms><orders> 1 1 </orders><length> 2.79 </length><index> 30 </index></bond>
+<bond><residues> TYR TYR </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.53 </length><index> 31 </index></bond>
+<bond><residues> TYR TYR </residues><atoms> CB CG </atoms><orders> 1 1 </orders><length> 3.30 </length><index> 32 </index></bond>
+<bond><residues> VAL VAL </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.97 </length><index> 33 </index></bond>
+<bond><residues> PHE PHE </residues><atoms> CA CB </atoms><orders> 1 1 </orders><length> 1.53 </length><index> 34 </index></bond>
+<bond><residues> PHE PHE </residues><atoms> CB CG </atoms><orders> 1 1 </orders><length> 2.91 </length><index> 35 </index></bond>
+<bond><residues> XXX XXX </residues><atoms> CA CN </atoms><orders> 1 1 </orders><length> 3.81 </length><index> 36 </index></bond>
+<bond><residues> XXX XXX </residues><atoms> CA CC </atoms><orders> 1 1 </orders><length> 3.82 </length><index> 37 </index></bond>
+<bond><residues> XXX XXX </residues><atoms> CA OC </atoms><orders> 1 1 </orders><length> 2.08 </length><index> 38 </index></bond>
+<bond><residues> XXX XXX </residues><atoms> CA NN </atoms><orders> 1 1 </orders><length> 1.47 </length><index> 39 </index></bond>
+</top>

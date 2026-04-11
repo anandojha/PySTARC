@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<pystarc>
+  <!--System-->
+  <receptor_resname>FOO</receptor_resname>
+  <ligand_resname>FOO</ligand_resname>
+  <receptor_pqr>receptor.pqr</receptor_pqr>
+  <ligand_pqr>ligand.pqr</ligand_pqr>
+  <rxns_xml>rxns.xml</rxns_xml>
+  <!--Geometry-->
+  <bd_milestone_radius>10.0</bd_milestone_radius>
+  <r_hydro_rec>0.0</r_hydro_rec>         
+  <r_hydro_lig>0.0</r_hydro_lig>           
+  <!-- Electrostatics -->
+  <debye_length>7.828</debye_length>
+  <ion_concentration>0.0</ion_concentration>
+  <ion_radius_pos>0.95</ion_radius_pos>
+  <ion_radius_neg>1.81</ion_radius_neg>
+  <pdie>78.0</pdie>
+  <sdie>78.0</sdie>
+  <srad>0.0</srad>
+  <apbs_cglen>0.0</apbs_cglen>     
+  <apbs_fglen>0.0</apbs_fglen>       
+  <apbs_dime>129</apbs_dime>
+  <apbs_coarse_dime>0</apbs_coarse_dime>
+  <apbs_fine_dime>0</apbs_fine_dime>
+  <gpu_force_batch>0</gpu_force_batch>
+  <!-- Physics -->
+  <desolvation_alpha>0.0</desolvation_alpha> 
+  <hydrodynamic_interactions>false</hydrodynamic_interactions>
+  <overlap_check>false</overlap_check>
+  <multipole_fallback>true</multipole_fallback>
+  <lj_forces>false</lj_forces>
+  <!-- BD simulation -->
+  <n_trajectories>100000</n_trajectories>
+  <max_steps>1000000</max_steps>
+  <dt>0.2</dt>
+  <minimum_core_dt>0.0</minimum_core_dt>   
+  <temperature>298.15</temperature>
+  <seed>11111113</seed>
+  <!-- Checkpointing &amp; convergence  -->
+  <checkpoint_interval>0</checkpoint_interval>    
+  <convergence_interval>10</convergence_interval>  
+  <convergence_check>true</convergence_check>
+  <convergence_tol>0.05</convergence_tol>
+  <!-- Compute -->
+  <gpu>true</gpu>
+  <n_threads>32</n_threads>
+  <work_dir>bd_sims</work_dir>
+  <!--Outputs -->
+  <outputs>
+    <save_interval>10</save_interval>
+  </outputs>
+</pystarc>

@@ -1,0 +1,19 @@
+<?xml version="1.0" ?>
+<top>
+  <first_state> start </first_state>
+  <reactions>
+    <reaction>
+      <n> association </n>
+      <state_before> start </state_before>
+      <state_after> end </state_after>
+      <criterion>
+        <molecules>
+          <molecule0> rec rec </molecule0>
+          <molecule1> lig lig </molecule1>
+        </molecules>
+        <n_needed>  </n_needed>
+        <pair><atoms> </atoms><distance> </distance></pair>  
+      </criterion>
+    </reaction>
+  </reactions>
+</top>

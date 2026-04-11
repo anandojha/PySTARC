@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+bd_sims/
+build/
+*.egg-info/
+.DS_Store
+*.swp
+_full.rst7
+_grid_gen.xml
+slurm-*.out
+*.log
+*.cache
+summary.txt

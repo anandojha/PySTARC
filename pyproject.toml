@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pystarc"
+version = "1.1.0"
+description = "PySTARC - Python Simulation Toolkit for Association Rate Constants"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "PySTARC Contributors" }]
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "click>=8.0",
+    "pdb2pqr>=3.5",
+    "numba>=0.57",
+    "matplotlib>=3.7",
+    "pytest>=7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+docs = [
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocstrings[python]",
+]
+notebook = [
+    "jupyter",
+    "matplotlib",
+]
+
+[project.scripts]
+pystarc       = "pystarc.cli.main:main"
+nam_simulation = "pystarc.cli.main:nam_simulation"
+bounding_box   = "pystarc.cli.main:bounding_box_cmd"
+pqr_to_xml     = "pystarc.cli.main:pqr_to_xml"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pystarc*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
