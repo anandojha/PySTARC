@@ -5,7 +5,7 @@ Four validation examples of increasing complexity:
 | Example                    | System                         | Type                  |
 |----------------------------|--------------------------------|-----------------------|
 | `two_charged_spheres/`     | Two oppositely charged spheres | Analytical validation |
-| `thrombin_thrombomodulin/` | Thrombin-thrombomoduli         | Protein-protein       |
+| `thrombin_thrombomodulin/` | Thrombin-thrombomodulin        | Protein-protein       |
 | `trypsin_benzamidine/`     | Trypsin-benzamidine            | Protein-ligand        |
 | `beta_cyclodextrin_guests/`| 7 BCD host-guest complexes     | Protein-ligand        |
 
