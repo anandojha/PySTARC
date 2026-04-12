@@ -255,6 +255,7 @@ def run(cfg: PySTARCConfig):
                                     pathway_set, params, batch_engine)
         # Attach config so simulator knows what to collect
         params._output_cfg = cfg.outputs
+        params.max_dt = getattr(cfg, "max_dt", 0.0)
         params.checkpoint_interval = cfg.checkpoint_interval
         params.convergence_interval = cfg.convergence_interval
         params._work_dir = str(cfg.work_dir)

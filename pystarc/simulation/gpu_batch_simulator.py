@@ -744,6 +744,10 @@ class GPUBatchSimulator:
             dt_outer = cp.minimum(cp.minimum(_dt_force, dt_edge), dt_pair)
             dt_inner = cp.minimum(_dt_force, dt_pair)
             dt_arr   = cp.where(in_outer, dt_outer, dt_inner)
+            # Cap adaptive dt to prevent drift >> noise at large separations
+            _max_dt = float(getattr(self.params, "max_dt", 0))
+            if _max_dt > 0:
+                dt_arr = cp.minimum(dt_arr, cp.full_like(dt_arr, _max_dt))
             # the reference time_step_tolerances: minimum_core_dt floors the timestep
             if _min_core_dt > 0:
                 dt_arr = cp.maximum(dt_arr, cp.full_like(dt_arr, _min_core_dt))

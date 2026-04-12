@@ -49,6 +49,7 @@ N_TRAJECTORIES          = "100000"                # Number of BD trajectories
 MAX_STEPS               = "1000000"               # Max steps per trajectory
 DT                      = "0.2"                   # Base timestep (ps)
 MINIMUM_CORE_DT         = "0.2"                   # Minimum timestep near core (ps)
+MAX_DT                  = "0"                     # Max timestep ceiling (0=no cap, use for protein-protein)
 TEMPERATURE             = "298.15"                # Temperature (K)
 SEED                    = "1"                     # Random seed (any integer)
 CHECKPOINT_INTERVAL     = "0"                     # Checkpoint frequency (0=off)
@@ -92,6 +93,7 @@ PARAMS = {
     'max_steps':                 MAX_STEPS,
     'dt':                        DT,
     'minimum_core_dt':           MINIMUM_CORE_DT,
+    'max_dt':                    MAX_DT,
     'temperature':               TEMPERATURE,
     'seed':                      SEED,
     'checkpoint_interval':       CHECKPOINT_INTERVAL,

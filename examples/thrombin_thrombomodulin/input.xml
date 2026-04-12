@@ -7,7 +7,7 @@
   <ligand_pqr>ligand.pqr</ligand_pqr>
   <rxns_xml>rxns.xml</rxns_xml>
   <!-- Geometry -->
-  <bd_milestone_radius>175.000</bd_milestone_radius>
+  <bd_milestone_radius>85.000</bd_milestone_radius>
   <r_hydro_rec>25.5848</r_hydro_rec>
   <r_hydro_lig>21.8832</r_hydro_lig>
   <!-- Electrostatics -->
@@ -18,9 +18,9 @@
   <pdie>4.0</pdie>
   <sdie>78.0</sdie>
   <srad>1.4</srad>
-  <apbs_cglen>1000</apbs_cglen>
-  <apbs_fglen>128</apbs_fglen>
-  <apbs_dime>129</apbs_dime>
+  <apbs_cglen>0</apbs_cglen>
+  <apbs_fglen>192</apbs_fglen>
+  <apbs_dime>257</apbs_dime>
   <apbs_coarse_dime>0</apbs_coarse_dime>
   <apbs_fine_dime>0</apbs_fine_dime>
   <gpu_force_batch>0</gpu_force_batch>
@@ -35,6 +35,7 @@
   <max_steps>1000000</max_steps>
   <dt>1.0</dt>
   <minimum_core_dt>1.0</minimum_core_dt>
+  <max_dt>100</max_dt>
   <temperature>298.15</temperature>
   <seed>11111111</seed>
   <!-- Checkpointing &amp; convergence -->

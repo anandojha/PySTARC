@@ -35,6 +35,7 @@
   <max_steps> </max_steps>
   <dt> </dt>
   <minimum_core_dt> </minimum_core_dt>
+  <max_dt> </max_dt>
   <temperature> </temperature>
   <seed> </seed>
   <!-- Checkpointing & convergence -->

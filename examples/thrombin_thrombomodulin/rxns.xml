@@ -13,87 +13,87 @@
         <n_needed>3</n_needed>
         <pair>
           <atoms>1764 1197</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>1809 1207</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>1753 1196</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>1738 1124</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>2355 1636</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>1739 1112</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>1704 1152</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>1823 1214</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>1826 1215</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>1693 1033</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>1541 1011</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>1625 1046</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>1669 1045</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>1658 1039</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>939 1008</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>940 971</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>881 922</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>928 897</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>925 900</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>905 914</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
         <pair>
           <atoms>911 915</atoms>
-          <distance>15.0</distance>
+          <distance>5.0</distance>
         </pair>
       </criterion>
     </reaction>

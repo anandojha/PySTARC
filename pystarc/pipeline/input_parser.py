@@ -83,6 +83,7 @@ class PySTARCConfig:
     r_hydro_rec:         float = 0.0          # receptor hydro radius (0=compute from PQR)
     r_hydro_lig:         float = 0.0          # ligand hydro radius   (0=compute from PQR)
     minimum_core_dt:     float = 0.0          # minimum_core_dt (0=no floor)
+    max_dt:              float = 0.0          # max_dt ceiling (0=no cap)
     # Physics extensions 
     overlap_check:       bool  = True         # prevent ligand entering receptor volume
     multipole_fallback:  bool  = True         # dipole+quadrupole far-field (beyond APBS grid)
@@ -197,6 +198,7 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
         r_hydro_rec      = get('r_hydro_rec',       default=0.0,    cast=float),
         r_hydro_lig      = get('r_hydro_lig',       default=0.0,    cast=float),
         minimum_core_dt  = get('minimum_core_dt',   default=0.0,    cast=float),
+        max_dt           = get('max_dt',             default=0.0,    cast=float),
         overlap_check    = get('overlap_check',     default=True,   cast=bool),
         multipole_fallback = get('multipole_fallback', default=True, cast=bool),
         lj_forces        = get('lj_forces',          default=False,  cast=bool),
