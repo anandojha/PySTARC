@@ -1,186 +1,182 @@
-# PySTARC Benchmark Systems: Parameter Selection Guide
+# PySTARC benchmark complexes: Parameter selection guide
 
 ## Overview
 
-This document describes the simulation parameters for each PySTARC benchmark system and the physical reasoning behind their selection. All systems use the AMBER ff14SB force field for charge assignment (via `ambpdb -pqr`), APBS for electrostatic potential grids, and the Northrup-Allison-McCammon (NAM) framework for computing bimolecular association rate constants.
+All complexes use the AMBER ff14SB force field for charge assignment via ambpdb, APBS for electrostatic potential grids, and the Northrup Allison McCammon framework for computing bimolecular association rate constants.
 
 ---
 
-## 1. Two Charged Spheres (Analytical Validation)
+## 1. Two charged spheres
 
-**Purpose**: Validate the BD engine against the exact analytical Smoluchowski solution for two uniformly charged spheres with screened Coulombic interaction.
+**Purpose.** This complex validates the BD engine against the exact analytical Smoluchowski solution for two uniformly charged spheres interacting via a screened Coulombic potential.
 
-**System**: Two spherical ions, Q_rec = +1e, Q_lig = -1e, radii = 1.0 A each. No molecular structure — purely analytical test of the BD propagator, outer-propagator return probability, and k_b integral.
+**System.** Two spherical ions with charges Q<sub>rec</sub> = +1e and Q<sub>lig</sub> = −1e, each with radius 1.0 Å. There is no molecular structure, as this is a purely analytical test of the BD propagator, the outer-propagator return probability, and the k<sub>b</sub> integral.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| `bd_milestone_radius` | 10.0 A | 5x contact distance (2.0 A). Small system, no molecular extent. |
-| `r_hydro_rec` / `r_hydro_lig` | 1.0 / 1.0 A | Exact sphere radii. |
-| `debye_length` | 7.86 A | 150 mM ionic strength. |
-| `apbs_fglen` | 96 A | Covers +/-48 A, far exceeds b-surface. |
-| `apbs_dime` | 257 | High resolution (0.37 A spacing). |
-| `max_dt` | 0 | No cap needed. dt_pair at r=10 is small (~10 ps). |
-| `n_trajectories` | 1,000,000 | Sufficient for <1% relative SE. |
-| Reaction criterion | 1 pair, contact distance 2.0 A | Sum of radii = exact contact. |
-| `n_needed` | 1 | Single contact. |
+| b surface radius | 10.0 Å | Five times the contact distance of 2.0 Å. The system is small and has no molecular extent. |
+| Hydrodynamic radii | 1.0 / 1.0 Å | Exact sphere radii for both receptor and ligand. |
+| Debye length | 7.86 Å | Corresponds to 150 mM ionic strength. |
+| APBS fine grid length | 96 Å | Covers ±48 Å, far exceeding the b surface. |
+| APBS grid dimension | 257 | Yields a grid spacing of 0.37 Å. |
+| Max timestep cap | 0 (no cap) | Not needed as the adaptive timestep at r = 10 Å is approximately 10 ps, giving drift/noise ≈ 0.5. |
+| Trajectories | 1,000,000 | Sufficient for less than 1% relative standard error. |
+| Reaction criterion | 1 pair at 2.0 Å contact distance | The sum of radii defines exact contact. |
+| Contacts needed | 1 | Single contact. |
 
-**Result**: P_rxn = 0.4479 vs exact 0.4501 (0.5% error).
+**Result.** The computed reaction probability P<sub>rxn</sub> = 0.4479 agrees with the exact Smoluchowski solution of P<sub>rxn</sub> = 0.4501 to within 0.5%.
 
 ---
 
-## 2. Trypsin-Benzamidine (Protein-Small Molecule)
+## 2. Trypsin-benzamidine complex
 
-**Purpose**: Validate PySTARC against Browndye2 for a protein-small molecule system with well-characterized experimental kinetics.
+**Purpose.** This complex validates PySTARC for a protein and a small-molecule complex with well-characterized experimental kinetics.
 
-**System**: Trypsin (3220 atoms, Q = +6e, R_max = 28.4 A) + benzamidine (18 atoms, Q = +1e, R_max = 3.7 A). Both positively charged — repulsive electrostatics. PDB structure from SEEKR2 benchmark (Votapka et al. 2022, JCTC).
+**System.** Trypsin contains 3220 atoms with a net charge of +6e and a maximum radius of 28.4 Å. Benzamidine contains 18 atoms with a net charge of +1e and a maximum radius of 3.7 Å. Both molecules are positively charged, resulting in repulsive electrostatics. The PDB structure comes from the seekrflow manuscript (doi.org/10.1101/2025.08.13.669965).
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| `bd_milestone_radius` | 45.0 A | rec_maxR (28.4) + lig_maxR (3.7) + 13 A clearance. Matches BD2 setup. |
-| `r_hydro_rec` | 22.5 A | Matched to BD2 reference value (Lane Votapka's BD2 inputs). |
-| `r_hydro_lig` | 5.0 A | Matched to BD2 reference value. |
-| `debye_length` | 7.86 A | 150 mM ionic strength. |
-| `apbs_fglen` | 128 A | Covers +/-64 A. At b=45 with lig_maxR=3.7, b+lig = 49 A < 64 A. Updated from 96 to provide margin. |
-| `apbs_dime` | 257 | 0.50 A spacing on fine grid. |
-| `max_dt` | 0 | No cap needed. dt_pair at r=45 = 191 ps, drift/noise ~ 3.4. Acceptable for small ligand. |
-| `n_trajectories` | 10,000,000 | Low P_rxn (~0.001) requires many trajectories. |
-| `CONTACT_CUTOFF` | 6.0 A | Maximum distance in crystal structure to identify binding contacts. |
-| `BUFFER` | 3.0 A | Added to crystal distance for reaction cutoff (accounts for rigid-body approach). |
-| `N_PAIRS` | 10 | Top 10 closest polar contacts from crystal structure. |
-| `N_NEEDED` | 4 | 4 of 10 pairs must be satisfied simultaneously. Moderately strict. |
-| `CONTACT_MODE` | polar | Only N/O/S donor-acceptor pairs (hydrogen-bonding contacts). |
+| b surface radius | 45.0 Å | The sum of the maximum molecular radii (28.4 + 3.7 = 32.1 Å) plus 13 Å of clearance. |
+| Receptor hydrodynamic radius | 22.5 Å | Stokes radius from molecular dimensions, approximately 0.79 × R<sub>max</sub> for a globular protein of this size. |
+| Ligand hydrodynamic radius | 5.0 Å | Stokes radius for a small planar organic molecule with 18 atoms. |
+| Debye length | 7.86 Å | Corresponds to 150 mM ionic strength. |
+| APBS fine grid length | 128 Å | Covers ±64 Å. At the b surface, the ligand atoms extend to b + R<sub>max, lig</sub> = 48.7 Å, which is within the grid. |
+| APBS grid dimension | 257 | Yields a grid spacing of 0.50 Å on the fine grid. |
+| Max timestep cap | 0 (no cap) | Not needed as the adaptive timestep at r = 45 Å is 191 ps, giving drift/noise ≈ 3.4. This is acceptable for a small and rapidly diffusing ligand. |
+| Trajectories | 10,000,000 | The low reaction probability (approximately 0.001) requires many trajectories for statistical convergence. |
+| Contact cutoff | 6.0 Å | Maximum distance in the crystal structure used to identify binding contacts. |
+| Buffer | 3.0 Å | Added to the crystal distance to set the reaction cutoff, accounting for the rigid-body approach. |
+| Number of pairs | 10 | The top 10 closest polar contacts from the crystal structure. |
+| Contacts needed | 4 | Four of the 10 pairs must be satisfied simultaneously. |
+| Contact mode | Polar | Only nitrogen, oxygen, and sulfur donor-acceptor pairs are considered, corresponding to hydrogen-bonding contacts. |
 
-**Reaction criterion construction**: The `setup.py` script identifies the closest heavy-atom contacts between receptor and ligand in the crystal structure, filters for polar (N/O/S) atoms, keeps the top 10 contacts (one per receptor residue), and sets cutoff = crystal_distance + 3.0 A (rounded to nearest 0.5 A). Resulting cutoffs range from 6.0 to 8.5 A.
+**Reaction criterion construction.** The setup script identifies the closest heavy-atom contacts between receptor and ligand in the crystal structure, filters for polar atoms (nitrogen, oxygen, and sulfur on both sides), retains the top 10 contacts with one per receptor residue, and sets each cutoff to the crystal distance plus 3.0 Å, rounded to the nearest 0.5 Å. The resulting 10 pairs have cutoffs ranging from 6.0 to 8.5 Å.
 
-**Result**: k_b = 25.632 vs BD2's 25.620 (0.05% match). k_on = 1.64 x 10^7 vs experimental 2.9 x 10^7 (within 2x).
+**Result.** The association rate k<sub>on</sub> = 1.64 × 10⁷ M⁻¹s⁻¹ is within 2× of the experimental value of 2.9 × 10⁷ M⁻¹s⁻¹.
 
 ---
 
-## 3. Beta-Cyclodextrin Host-Guest (7 Systems)
+## 3. β-cyclodextrin host-guest complexes
 
-**Purpose**: Test PySTARC on a host-guest benchmark with multiple ligands binding the same receptor, where experimental k_on values span an order of magnitude.
+**Purpose.** Seven small-molecule guests binding β-cyclodextrin were simulated to test PySTARC on a neutral host-guest benchmark where experimental association rates span an order of magnitude.
 
-**System**: Beta-cyclodextrin (147 atoms, Q = 0, R_max = 8.6 A) + 7 small-molecule guests (12-30 atoms, Q = 0, R_max = 3-5 A). All molecules are electrically neutral — no electrostatic steering. Structures from SEEKR2 benchmark (Lane Votapka).
-
-**Guests**: 1-butanol, 1-propanol, 1-naphthylethanol, 2-naphthylethanol, aspirin, methyl butyrate, tert-butanol.
+**System.** β-cyclodextrin contains 147 atoms with zero net charge and a maximum radius of 8.6 Å. All seven guests also carry a net charge of zero and have radii ranging from 3 to 5 Å. Because all molecules are electrically neutral, no electrostatic steering occurs. Structures were taken from the qmrebind manuscript (doi.org/10.1039/D3SC04195F). The seven guests are 1-butanol, 1-propanol, 1-naphthylethanol, 2-naphthylethanol, aspirin, methyl butyrate, and tert-butanol.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| `bd_milestone_radius` | 30.0 A | rec_maxR (8.6) + lig_maxR (~3) + 18 A clearance. |
-| `r_hydro_rec` / `r_hydro_lig` | 0 / 0 (auto) | Auto-computed from PQR via MC surface integration. |
-| `debye_length` | 7.86 A | 150 mM ionic strength. |
-| `apbs_fglen` | 96 A | Covers +/-48 A. b+lig = 33 A, well within grid. |
-| `apbs_dime` | 257 | 0.37 A spacing. |
-| `max_dt` | 0 | No cap needed. dt_pair at r=30 = 90 ps, drift/noise = 1.5. |
-| `n_trajectories` | 2,000,000 | Per guest system. |
-| `CONTACT_CUTOFF` | 5.0 A | Tight cutoff for small host-guest complex. |
-| `BUFFER` | 2.0 A | Smaller buffer than protein systems (smaller molecules, tighter contacts). |
-| `N_PAIRS` | 8 | Up to 8 contacts. |
-| `N_NEEDED` | 4 | 4 of 8 pairs must be satisfied. |
-| `CONTACT_MODE` | all | All heavy-atom contacts (host-guest has few polar atoms). |
+| b surface radius | 30.0 Å | The sum of molecular radii (8.6 + 3 = 11.6 Å) plus 18 Å of clearance. |
+| Hydrodynamic radii | Auto-computed | Determined from the PQR files via Monte Carlo surface integration. |
+| Debye length | 7.86 Å | Corresponds to 150 mM ionic strength. |
+| APBS fine grid length | 96 Å | Covers ±48 Å. The sum b + R<sub>max, lig</sub> = 33 Å is well within the grid. |
+| APBS grid dimension | 257 | Yields a grid spacing of 0.37 Å. |
+| Max timestep cap | 0 (no cap) | Not needed as the adaptive timestep at r = 30 Å is 90 ps, giving drift/noise = 1.5. |
+| Trajectories | 2,000,000 | Per guest complex. |
+| Contact cutoff | 5.0 Å | A tight cutoff appropriate for the small host-guest complex. |
+| Buffer | 2.0 Å | Smaller than the protein complexes because the molecules are smaller and the contacts are tighter. |
+| Number of pairs | 8 | Up to 8 contacts. |
+| Contacts needed | 4 | Four of 8 pairs must be satisfied. |
+| Contact mode | All heavy atoms | All heavy-atom contacts are considered because the host-guest interface has few polar atoms. |
 
-**Reaction criterion construction**: Same automated procedure as trypsin. The O5 glycosidic oxygens of BCD (atoms 15, 57, 99) appear as receptor contact atoms across all 7 systems, providing a consistent anchor. Cutoffs are 5.0-6.5 A.
+**Reaction criterion construction.** The same automated procedure as trypsin-benzamidine is employed. The O5 glycosidic oxygens of β-cyclodextrin (atoms 15, 57, and 99) appear as receptor contact atoms across all seven complexes, providing a consistent anchor. Cutoffs range from 5.0 to 6.5 Å.
 
-**Key physics**: All guests are neutral, so BD computes only the diffusion-limited encounter rate with no electrostatic enhancement. Experimental k_on variation (2.8-7.2 x 10^8) arises from conformational gating and desolvation barriers that BD cannot capture. PySTARC correctly predicts encounter rates of ~10^8 for all guests.
-
-**Result**: Spearman rho = -0.54 (no rank-order correlation), confirming that k_on discrimination requires MD-level detail for neutral ligands in a small cavity.
+**Key physics.** All guests are neutral, so BD computes only the diffusion-limited encounter rate with no electrostatic enhancement. The experimental variation in k<sub>on</sub> from 2.8 to 7.2 × 10⁸ M⁻¹s⁻¹ arises from conformational gating and desolvation barriers that rigid-body BD cannot capture. PySTARC correctly predicts encounter rates of approximately 10⁸ for all guests. The absence of rank-order correlation (Spearman ρ = −0.54, p = 0.22) confirms that discrimination among neutral guests requires MD-level detail.
 
 ---
 
-## 4. Thrombin-Thrombomodulin (Protein-Protein, from BD2 Tutorial)
+## 4. Thrombin-thrombomodulin complex
 
-**Purpose**: Reproduce the Browndye2 tutorial benchmark for a strongly electrostatically steered protein-protein association.
+**Purpose.** This complex represents a strongly electrostatically steered protein-protein association.
 
-**System**: Thrombin (4727 atoms, Q = +3e, R_max = 34.7 A) + thrombomodulin EGF domains 4-5-6 (1650 atoms, Q = -15e, R_max = 40.6 A). Strong electrostatic complementarity drives fast association. PQR files from Gary Huber's BD2 tutorial.
+**System.** Thrombin contains 4727 atoms with a net charge of +3e and a maximum radius of 34.7 Å. Thrombomodulin EGF domains 4 through 6 contain 1650 atoms with a net charge of −15e and a maximum radius of 40.6 Å. The strong electrostatic complementarity between the two proteins drives fast association. Pre-computed PQR files with AMBER partial charges were used directly for this complex.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| `bd_milestone_radius` | 85.0 A | rec_maxR (34.7) + lig_maxR (40.6) + 10 A clearance. Original BD2 tutorial used 175 A (unnecessarily large). |
-| `r_hydro_rec` | 25.58 A | From BD2 tutorial (pre-computed). |
-| `r_hydro_lig` | 21.88 A | From BD2 tutorial (pre-computed). |
-| `debye_length` | 7.86 A | 150 mM ionic strength. |
-| `apbs_fglen` | 192 A | Covers +/-96 A. At b=85, lig atoms span 44-126 A from origin. |
-| `apbs_dime` | 257 | 0.75 A spacing. |
-| `apbs_cglen` | 0 (auto) | BD2 tutorial used 1000 A (unnecessary). Auto-compute is sufficient. |
-| `max_dt` | 100 ps | Critical for protein-protein. Without cap, dt_pair at r=85 = 1806 ps, drift/noise = 5.4. Cap brings drift/noise to ~2. |
-| `n_trajectories` | 2,000,000 | Tight cutoff (5 A) with n_needed=3 gives low P_rxn. |
-| Reaction criterion | 21 H-bond pairs, 5.0 A cutoff | From BD2's `make_rxn_file` with correct 5 A distance (not tutorial's loose 15 A). |
-| `n_needed` | 3 | 3 of 21 hydrogen-bonding contacts must be satisfied. From BD2 paper (Huber & Kim, 2010). |
+| b surface radius | 85.0 Å | The sum of maximum molecular radii (34.7 + 40.6 = 75.3 Å) plus 10 Å of clearance. |
+| Receptor hydrodynamic radius | 25.58 Å | Stokes radius from molecular dimensions, approximately 0.74 × R<sub>max</sub>. |
+| Ligand hydrodynamic radius | 21.88 Å | Stokes radius from molecular dimensions, approximately 0.54 × R<sub>max</sub>. The lower ratio reflects the elongated shape of the EGF domain fragment. |
+| Debye length | 7.86 Å | Corresponds to 150 mM ionic strength. |
+| APBS fine grid length | 192 Å | Covers ±96 Å. At b = 85, ligand atoms span 44 to 126 Å from the origin, and the grid encompasses the vast majority of encounter geometries. |
+| APBS grid dimension | 257 | Yields a grid spacing of 0.75 Å. |
+| APBS coarse grid length | 0 (auto) | Auto-computed from molecular extent. |
+| Max timestep cap | 100 ps | Critical for this protein-protein complex. Without the cap, the adaptive timestep at r = 85 Å reaches 1806 ps with drift/noise = 5.4, producing ballistic trajectories that skip the electrostatic steering region. The cap brings drift/noise to approximately 2. |
+| Trajectories | 2,000,000 | The tight 5 Å cutoff with 3 contacts needed gives a low reaction probability. |
+| Reaction criterion | 21 hydrogen-bonding pairs at 5.0 Å | Identified from the crystal structure using donor-acceptor atom pairs at the binding interface. |
+| Contacts needed | 3 | Three of the 21 hydrogen-bonding contacts must be satisfied simultaneously. |
 
-**Parameter corrections from BD2 tutorial**: Gary Huber explicitly states in the tutorial: "the actual reaction rate is much smaller than what is calculated in this tutorial. I have increased the reaction distance from 5 Angstroms to 15 Angstroms so you can actually obtain a 'rate' from only 1000 trajectories." We restored the correct 5 A cutoff and increased trajectory count accordingly.
-
-**Experimental target**: k_on = 6.7 x 10^6 M^-1 s^-1 at physiological ionic strength (Baerga-Ortiz et al. 2000). Debye-Huckel analysis shows slope = -6 and intercept at zero ionic strength of 10^9 M^-1 s^-1, confirming the interaction is nearly completely electrostatically steered.
+**Experimental target.** The association rate k<sub>on</sub> = 6.7 × 10⁶ M⁻¹s⁻¹ at physiological ionic strength was measured by surface plasmon resonance (Baerga-Ortiz et al. 2000). Debye-Hückel analysis of the ionic-strength dependence yields a slope of −6 and an intercept at zero ionic strength of 10⁹ M⁻¹s⁻¹, confirming that the interaction is nearly completely electrostatically steered.
 
 ---
 
-## 5. Barnase-Barstar (Protein-Protein Benchmark)
+## 5. Barnase-barstar complex
 
-**Purpose**: Validate PySTARC on the classic electrostatically steered protein-protein association system with extensive BD literature.
+**Purpose.** This complex validates PySTARC on the classic electrostatically steered protein-protein association benchmark with extensive BD literature.
 
-**System**: Barnase (1700 atoms, Q = +2e, R_max = 24.6 A, R_hydro = 18.3 A) + barstar (1403 atoms, Q = -5e, R_max = 21.1 A, R_hydro = 17.0 A). PDB 1BRS, chains A (barnase) + D (barstar), parameterized with ff14SB.
-
-| Parameter | Value | Rationale |
-|-----------|-------|-----------|
-| `bd_milestone_radius` | 80.0 A | rec_maxR (24.6) + lig_maxR (21.1) + 34 A clearance. Large enough for full electrostatic grid coverage. |
-| `r_hydro_rec` / `r_hydro_lig` | 0 / 0 (auto) | Auto-computed: rec = 18.3 A, lig = 17.0 A. |
-| `debye_length` | 13.6 A | 50 mM ionic strength (experimental condition of Schreiber & Fersht). |
-| `ion_concentration` | 0.05 M | 50 mM NaCl. |
-| `apbs_fglen` | 192 A | Covers +/-96 A. At b=80, b+lig_maxR = 101 A, slightly beyond grid edge. Yukawa fallback handles the 5 A overshoot for outermost atoms. |
-| `apbs_dime` | 257 | 0.75 A spacing on fine grid. |
-| `max_dt` | 100 ps | Critical. Without cap: dt_pair at r=80 = 1295 ps, drift = 58 A, noise = 6.6 A, drift/noise = 8.8. Trajectories fly ballistically past the electrostatic funnel. With max_dt=100: drift = 4.5 A, noise = 1.8 A, drift/noise = 2.4. Electrostatic steering functions properly. This single parameter change improved k_on from 9.9 x 10^7 to 4.85 x 10^8. |
-| `n_trajectories` | 1,000,000 | P_rxn ~ 0.04 gives 40,000 reactions, relative SE = 0.5%. |
-
-**Reaction criterion**: Based on Gabdoulline & Wade (1997), who showed that reproducing experimental rates requires satisfaction of intermolecular residue contacts, not simple RMS distance.
+**System.** Barnase from chain A of PDB 1BRS contains 1700 atoms with a net charge of +2e, a maximum radius of 24.6 Å, and an auto-computed hydrodynamic radius of 18.3 Å. Barstar from chain D contains 1403 atoms with a net charge of -5e, a maximum radius of 21.1 Å, and an auto-computed hydrodynamic radius of 17.0 Å. The complex was parameterized with the AMBER ff14SB force field. Unlike the other complexes, barnase-barstar is a two-chain protein-protein complex in which both molecules are standard amino acids. Splitting into receptor and ligand is performed by residue number after tleap renumbering (barnase = residues 1–108, barstar = residues 109–195).
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| Pair 1 | ARG81 NH2 (rec atom 1228) <-> ASP147 OD1 (lig atom 633) | R83-D35 in paper numbering. Key salt bridge at binding interface. |
-| Pair 2 | ARG57 NH1 (rec atom 848) <-> GLU182 OE1 (lig atom 1212) | R59-E76 in paper numbering. Second interfacial salt bridge. |
-| Cutoff | 10.0 A | Loose enough for rigid-body BD (no side-chain flexibility). |
-| `n_needed` | 1 | Either contact is sufficient for encounter. Using n_needed=2 with 10 A cutoff gave k_on = 8.5 x 10^6 (too strict — both contacts rarely satisfied simultaneously for rigid tumbling proteins). |
+| b surface radius | 80.0 Å | The sum of maximum radii is 45.7 Å. The additional 34 Å of clearance ensures full electrostatic grid coverage at the encounter distance. |
+| Hydrodynamic radii | Auto-computed | R<sub>h, rec</sub> = 18.3 Å and R<sub>h, lig</sub> = 17.0 Å, determined by Monte Carlo surface integration of the PQR molecular surface. |
+| Debye length | 13.6 Å | Corresponds to 50 mM ionic strength, matching the experimental conditions of Schreiber and Fersht (1993). |
+| Ion concentration | 0.05 M | Fifty millimolar sodium chloride. |
+| APBS fine grid length | 192 Å | Covers ±96 Å. At the b surface, b + R<sub>max, lig</sub> = 101 Å, which is slightly beyond the grid edge. The Yukawa multipole fallback handles the 5 Å overshoot for the outermost atoms. |
+| APBS grid dimension | 257 | Yields a grid spacing of 0.75 Å on the fine grid. |
+| Max timestep cap | 100 ps | Critical. Without the cap, the adaptive timestep at r = 80 Å is 1295 ps, producing a drift of 58 Å and noise of 6.6 Å per step. The resulting drift/noise ratio of 8.8 indicates that trajectories move ballistically past the electrostatic funnel at 30-50 Å without sampling it. With the cap set to 100 ps, drift decreases to 4.5 Å, and noise is 1.8 Å, giving drift/noise = 2.4. This single parameter change improved k<sub>on</sub> from 9.9 × 10⁷ to 4.95 × 10⁸. |
+| Trajectories | 5,000,000 | With P<sub>rxn</sub> ≈ 0.04, this yields approximately 200,000 reactions and a relative standard error of 0.22%. |
 
-**Progression of parameter optimization**:
+**Reaction criterion.** The criterion follows Gabdoulline and Wade (1997), who demonstrated that reproducing experimental association rates requires satisfaction of specific intermolecular residue contacts rather than a simple center-of-mass distance criterion.
 
-| Run | b (A) | Cutoff (A) | n_needed | max_dt (ps) | k_on (M^-1 s^-1) | vs Experiment |
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| Pair 1 | ARG81 NH2 on barnase and ASP147 OD1 on barstar | Corresponds to R83 and D35 in the original paper numbering. This is a key salt bridge at the binding interface. |
+| Pair 2 | ARG57 NH1 on barnase and GLU182 OE1 on barstar | Corresponds to R59 and E76 in the original paper numbering. This is the second interfacial salt bridge. |
+| Cutoff | 10.0 Å | Loose enough for rigid-body BD where side chains are not flexible. Tighter cutoffs (6.0 Å) produced too few reactions because the rigid crystal-structure contacts are rarely achieved by tumbling proteins. |
+| Contacts needed | 1 | Either contact is sufficient for the encounter. Using 2 contacts needed with a 10 Å cutoff gave k<sub>on</sub> = 8.5 × 10⁶, which is too strict because both contacts are rarely satisfied simultaneously for two rigid tumbling proteins. |
+
+**Progression of parameter optimization.** The following table shows how successive parameter changes improved agreement with the experiment.
+
+| Run | b (Å) | Cutoff (Å) | Contacts needed | Max timestep (ps) | k<sub>on</sub> (M⁻¹s⁻¹) | vs Experiment |
 |-----|-------|------------|----------|-------------|-------------------|---------------|
-| 1 | 80 | 6.0 | 2 | none | 3.2 x 10^6 | 100x low |
-| 2 | 80 | 10.0 | 2 | none | 8.5 x 10^6 | 35x low |
-| 3 | 55 | 10.0 | 2 | none | 3.5 x 10^6 | 85x low |
-| 4 | 80 | 10.0 | 1 | none | 9.9 x 10^7 | 3x low |
-| 5 | 80 | 10.0 | 1 | 100 | **4.85 x 10^8** | **within 1.2x** |
+| 1 | 80 | 6.0 | 2 | — | 3.2 × 10⁶ | 100× |
+| 2 | 80 | 10.0 | 2 | — | 8.5 × 10⁶ | 35× |
+| 3 | 55 | 10.0 | 2 | — | 3.5 × 10⁶ | 85× |
+| 4 | 80 | 10.0 | 1 | — | 9.9 × 10⁷ | 3× |
+| 5 | 80 | 10.0 | 1 | 100 | 4.95 × 10⁸ | 1.2× |
 
-**Key lessons**: (1) The `max_dt` cap was essential — without it, the adaptive timestep at large separations produced ballistic trajectories that skipped the electrostatic funnel. (2) `n_needed=1` is appropriate for rigid-body BD where both proteins tumble freely and simultaneous satisfaction of two specific contacts is geometrically rare. (3) The 10 A cutoff accounts for the lack of side-chain flexibility in rigid-body BD.
+**Key lessons.** First, the max timestep cap was essential, as the adaptive timestep at large separations produced ballistic trajectories that skipped the electrostatic funnel. Second, setting contacts needed to 1 is appropriate for rigid-body BD where both proteins tumble freely and simultaneous satisfaction of two specific contacts is geometrically rare. Third, the 10 Å cutoff accounts for the absence of side-chain flexibility in rigid-body BD.
 
-**Experimental references**: k_on = 6.0 x 10^8 (Schreiber & Fersht, 1993), 2.86 x 10^8 (Frembgen-Kesner & Elcock, 2010), both at 50 mM ionic strength. Basal rate without electrostatics: 5.8 x 10^6 (Northrup & Erickson, 1992). PySTARC captures the ~80x electrostatic enhancement.
+**Experimental references.** The experimental k<sub>on</sub> has been reported as 6.0 × 10⁸ M⁻¹s⁻¹ by Schreiber and Fersht (1993) and 2.86 × 10⁸ M⁻¹s⁻¹ by Frembgen-Kesner and Elcock (2010), both at 50 mM ionic strength. The basal rate without electrostatics is 5.8 × 10⁶ M⁻¹s⁻¹ (Northrup and Erickson, 1992). PySTARC captures the approximately 80× electrostatic enhancement.
 
 ---
 
-## Common Parameters Across All Systems
+## Common parameters
+
+All complexes share the following parameters.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| `pdie` | 4.0 | Protein interior dielectric constant (standard for BD). |
-| `sdie` | 78.0 | Solvent (water) dielectric constant at 298.15 K. |
-| `srad` | 1.4 A | Solvent probe radius (water). |
-| `desolvation_alpha` | 0.0795775 | Born desolvation coupling constant (= 1/(4*pi)). |
-| `hydrodynamic_interactions` | true | Include Oseen tensor HI corrections in k_b integral. |
-| `overlap_check` | true | Reject configurations where ligand overlaps receptor volume. |
-| `multipole_fallback` | true | Use monopole+dipole+quadrupole Yukawa expansion beyond APBS grid. |
-| `lj_forces` | false | No Lennard-Jones forces (standard for rigid-body BD). |
-| `temperature` | 298.15 K | Room temperature (kT = 1.0 in reduced units). |
-| `dt` | 0.2 ps | Base timestep (sets minimum_core_dt near receptor surface). |
-| `minimum_core_dt` | 0.2 ps | Floor on adaptive timestep near reaction zone. |
+| Protein dielectric | 4.0 | Standard for BD simulations. |
+| Solvent dielectric | 78.0 | Water at 298.15 K. |
+| Solvent probe radius | 1.4 Å | Water molecule radius. |
+| Desolvation coupling | 0.0795775 | Equal to 1/(4π), the Born desolvation coupling constant. |
+| Hydrodynamic interactions | Enabled | Oseen tensor corrections are included in the k<sub>b</sub> integral. |
+| Overlap check | Enabled | Configurations where the ligand overlaps the receptor volume are rejected. |
+| Multipole fallback | Enabled | The monopole, dipole, and quadrupole Yukawa expansions are used beyond the APBS grid boundary. |
+| Lennard-Jones forces | Disabled | Standard for rigid-body BD. |
+| Temperature | 298.15 K | Room temperature, corresponding to k<sub>B</sub>T = 1.0 in reduced units. |
+| Base timestep | 0.2 ps | Sets the minimum core timestep near the receptor surface. |
+| Minimum core timestep | 0.2 ps | Floor on the adaptive timestep in the reaction zone. |
 
-## The `max_dt` Parameter
+## Adaptive timestep cap
 
-The adaptive timestep formula `dt_pair = 0.005 * r^2 / D` ensures the mean displacement per step is <10% of the inter-molecular separation. However, for protein-protein systems with large b-surfaces (b > 60 A), this produces timesteps of thousands of picoseconds at the starting radius, causing deterministic (drift >> noise) trajectories that skip the electrostatic steering region.
+The variable-timestep scheme uses the formula Δt<sub>pair</sub> = f²r²/(2D), with f = 0.1, ensuring that the root-mean-square displacement per step is less than 10% of the intermolecular separation. For protein and small-molecule complexes where the b surface is less than 50 Å, this yields moderate timesteps below 200 ps with drift/noise less than 4, and no cap is required.
 
-The `max_dt` parameter caps the adaptive timestep. Setting `max_dt = 100 ps` ensures drift/noise remains ~2, allowing proper Brownian sampling of the electrostatic funnel. For protein-small molecule systems (b < 50 A), the adaptive dt is already moderate and no cap is needed (`max_dt = 0`).
+For protein-protein complexes where the b surface is 80 Å or larger, the adaptive timestep exceeds 1000 ps at the starting radius, producing deterministic trajectories with drift/noise greater than 5 that skip the electrostatic steering region entirely. The max timestep parameter caps the adaptive timestep at a user-specified ceiling, typically 100 ps for protein-protein complexes, restoring proper Brownian sampling of the electrostatic funnel. When max timestep is set to 0 (default), no cap is applied, preserving backward compatibility with all existing simulations.
 
-| System type | b (A) | dt_pair at b (ps) | drift/noise | max_dt needed? |
-|-------------|-------|-------------------|-------------|----------------|
-| Charged spheres | 10 | ~10 | 0.5 | No |
-| BCD host-guest | 30 | 90 | 1.5 | No |
-| Trypsin-benzamidine | 45 | 191 | 3.4 | No (small ligand) |
-| Thrombin-TM | 85 | 1806 | 5.4 | Yes (100 ps) |
-| Barnase-barstar | 80 | 1295 | 8.8 | Yes (100 ps) |
+| Complex | b (Å) | Δt at b (ps) | Drift/noise | Cap needed |
+|---------|-------|--------------|-------------|------------|
+| Charged spheres | 10 | 10 | 0.5 | No |
+| β-cyclodextrin host-guest | 30 | 90 | 1.5 | No |
+| Trypsin-benzamidine | 45 | 191 | 3.4 | No |
+| Thrombin-thrombomodulin | 85 | 1806 | 5.4 | Yes, 100 ps |
+| Barnase-barstar | 80 | 1295 | 8.8 | Yes, 100 ps |
