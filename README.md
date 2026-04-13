@@ -15,12 +15,23 @@
 - **Live progress** - k<sub>on</sub> and P<sub>rxn</sub> printed at configurable intervals.
 - **Temperature scaling** - Correct thermodynamics at any temperature.
 
+
 ## Installation
+
 ```bash
+git clone https://github.com/anandojha/PySTARC.git
 cd PySTARC
 bash install_PySTARC.sh
 ```
-This creates a fresh conda environment, installs all dependencies (AmberTools, APBS, CuPy, NumPy, SciPy), and runs the test suite.
+
+This creates a fresh conda environment, installs all dependencies (AmberTools, APBS, CuPy, NumPy, SciPy), and runs the test suite. On machines without NVIDIA GPUs (e.g., Mac), skip the CuPy step and install manually:
+
+```bash
+pip install matplotlib pdb2pqr
+pip install dist/pystarc-1.1.0-py3-none-any.whl --force-reinstall
+```
+
+PySTARC will run in CPU mode (NumPy backend) without CuPy.
 
 ## Quick start
 ```bash
