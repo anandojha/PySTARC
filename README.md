@@ -33,6 +33,13 @@ pip install dist/pystarc-1.1.0-py3-none-any.whl --force-reinstall
 
 PySTARC will run in CPU mode (NumPy backend) without CuPy.
 
+## Testing
+
+```bash
+python -m pytest tests/ -v          
+python -m pytest tests/ -q          # quiet mode
+```
+
 ## Quick start
 ```bash
 conda activate PySTARC
@@ -45,11 +52,19 @@ bash run.sh
 ## Examples
 See `examples/README.md` for complete instructions.
 
-## Testing
-
-```bash
-python -m pytest tests/ -v          
-python -m pytest tests/ -q          # quiet mode
-```
 ## License
 MIT
+
+## Citation
+
+When using PySTARC, please cite:
+
+Ojha, A. A. et al. PySTARC: GPU-accelerated Brownian dynamics for bimolecular association rate constants (2026).
+
+## Requirements
+
+- Python 3.11+
+- AmberTools (tleap, cpptraj, ambpdb)
+- APBS
+- CuPy (GPU) or NumPy (CPU fallback)
+- NVIDIA GPU with CUDA 12+ (recommended)
