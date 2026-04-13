@@ -1,8 +1,0 @@
-<?xml version="1.0"?>
-<top>
-<charge><residue> ARG </residue><atom> NG </atom><value> 1.0 </value></charge>
-<charge><residue> ASP </residue><atom> OG </atom><value> -1.0 </value></charge>
-<charge><residue> GLU </residue><atom> OG </atom><value> -1.0 </value></charge>
-<charge><residue> LYS </residue><atom> NG </atom><value> 1.0 </value></charge>
-<charge><residue> HIP </residue><atom> NG </atom><value> 1.0 </value></charge>
-</top>

@@ -1,0 +1,837 @@
+<!-- 2 May 2019 -->
+<top>
+  <residue>
+    <name> VAL </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB CG1 CG2 </atoms>
+    </bead>
+
+    <!-- capping groups -->
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+
+    <!-- at the termini -->
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> CYS </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> SB </name>
+      <atoms> CB SG </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> ASP </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB </atoms>
+    </bead>
+    <bead>
+      <name> OG </name>
+      <atoms> CG OD1 OD2 </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> ACE </name>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+    </bead>
+    <location> begin </location>
+  </residue>
+
+  <residue>
+    <name> PHE </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB </atoms>
+    </bead>
+    <bead>
+      <name> CG </name>
+      <atoms> CG CD1 CD2 CE1 CE2 CZ </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> MET </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB CG </atoms>
+    </bead>
+    <bead>
+      <name> CG </name>
+      <atoms> SD CE </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> NME </name>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <type> cap </type>
+    </bead>
+    <location> end </location>
+  </residue>
+
+  <residue>
+    <name> LEU </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB </atoms>
+    </bead>
+    <bead>
+      <name> CG </name>
+      <atoms> CG CD1 CD2 </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> ASN </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB </atoms>
+    </bead>
+    <bead>
+      <name> CG </name>
+      <atoms> CG OD1 ND2 </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> TYR </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB </atoms>
+    </bead>
+    <bead>
+      <name> CG </name>
+      <atoms> CG CD1 CD2 CE1 CE2 CZ OH </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> HIP </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB </atoms>
+    </bead>
+    <bead>
+      <name> NG </name>
+      <atoms> CG CE1 CD2 ND1 NE2 </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> HIS </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB </atoms>
+    </bead>
+    <bead>
+      <name> NG </name>
+      <atoms> CG CE1 CD2 ND1 NE2 </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> ILE </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB CG1 CG2 </atoms>
+    </bead>
+    <bead>
+      <name> CG </name>
+      <atoms> CD1 </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> GLN </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB CG </atoms>
+    </bead>
+    <bead>
+      <name> CG </name>
+      <atoms> CD OE1 NE2 </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> THR </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB OG1 CG2 </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> GLY </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> TRP </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB </atoms>
+    </bead>
+    <bead>
+      <name> CG </name>
+      <atoms> CG CD1 CD2 NE1 CE2 </atoms>
+    </bead>
+    <bead>
+      <name> CD </name>
+      <atoms> CD2 CE2 CE3 CZ2 CZ3 CH2 </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> GLU </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB CG </atoms>
+    </bead>
+    <bead>
+      <name> OG </name>
+      <atoms> CD OE1 OE2 </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> SER </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB OG </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> LYS </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB CG CD </atoms>
+    </bead>
+    <bead>
+      <name> NG </name>
+      <atoms> CE NZ </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> PRO </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB CG CD </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> ALA </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+
+  <residue>
+    <name> ARG </name>
+    <bead>
+      <name> CA </name>
+      <atoms> CA </atoms>
+    </bead>
+    <bead>
+      <name> CB </name>
+      <atoms> CB CG CD </atoms>
+    </bead>
+    <bead>
+      <name> NG </name>
+      <atoms> NE CZ NH1 NH2 </atoms>
+    </bead>
+    <bead>
+      <name> CN </name>
+      <atoms> CH3 </atoms>
+      <location> begin </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> CC </name>
+      <atoms> CH3 </atoms>
+      <location> end </location>
+      <type> cap </type>
+    </bead>
+    <bead>
+      <name> NN </name>
+      <atoms> N </atoms>
+      <location> begin </location>
+      <type> terminus </type>
+    </bead>
+    <bead>
+      <name> OC </name>
+      <atoms> O OXT </atoms>
+      <location> end </location>
+      <type> terminus </type>
+    </bead>
+  </residue>
+</top>
