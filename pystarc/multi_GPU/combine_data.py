@@ -4,6 +4,7 @@ Combine all output files from split PySTARC runs into bd_sims/.
 Auto-detects bd_sims/bd_1, bd_sims/bd_2, ... directories.
 Produces identical file formats as a single-GPU run.
 """
+
 import numpy as np
 import argparse
 import json
@@ -13,9 +14,16 @@ import glob
 import os
 import re
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Combine split PySTARC k_on calculations")
-    parser.add_argument("--bd-sims", default="bd_sims", help="Path to bd_sims directory (default: bd_sims)")
+    parser = argparse.ArgumentParser(
+        description="Combine split PySTARC k_on calculations"
+    )
+    parser.add_argument(
+        "--bd-sims",
+        default="bd_sims",
+        help="Path to bd_sims directory (default: bd_sims)",
+    )
     args = parser.parse_args()
     bd_sims = os.path.abspath(args.bd_sims)
     if not os.path.isdir(bd_sims):
@@ -24,9 +32,12 @@ def main():
     # Auto-detect bd_N directories
     pattern = re.compile(r"^bd_\d+$")
     subdirs = sorted(
-        [os.path.join(bd_sims, d) for d in os.listdir(bd_sims)
-         if os.path.isdir(os.path.join(bd_sims, d)) and pattern.match(d)],
-        key=lambda x: int(os.path.basename(x).split("_")[1])
+        [
+            os.path.join(bd_sims, d)
+            for d in os.listdir(bd_sims)
+            if os.path.isdir(os.path.join(bd_sims, d)) and pattern.match(d)
+        ],
+        key=lambda x: int(os.path.basename(x).split("_")[1]),
     )
     if not subdirs:
         print(f"  Error: no bd_N directories found in {bd_sims}")
@@ -43,7 +54,9 @@ def main():
         with open(rj) as f:
             runs.append(json.load(f))
         dirs_valid.append(d)
-        print(f"  {os.path.basename(d)}: {runs[-1]['n_reacted']:,} reacted, {runs[-1]['n_escaped']:,} escaped")
+        print(
+            f"  {os.path.basename(d)}: {runs[-1]['n_reacted']:,} reacted, {runs[-1]['n_escaped']:,} escaped"
+        )
     if dirs_missing:
         print(f"  Skipped (not finished): {', '.join(dirs_missing)}")
     if not runs:
@@ -73,7 +86,9 @@ def main():
     k_lo = CONV * k_b * P_lo
     k_hi = CONV * k_b * P_hi
     wall_time = sum(r.get("wall_time_sec", 0) for r in runs)
-    total_steps = sum(r.get("steps_per_sec", 0) * r.get("wall_time_sec", 0) for r in runs)
+    total_steps = sum(
+        r.get("steps_per_sec", 0) * r.get("wall_time_sec", 0) for r in runs
+    )
     steps_sec = total_steps / wall_time if wall_time > 0 else 0
     if k_on > 0:
         exp = int(math.floor(math.log10(k_on)))
@@ -136,15 +151,50 @@ def main():
     _concat_csv(dirs_valid, "near_misses.csv", bd_sims, reindex="traj_id")
     _concat_csv(dirs_valid, "fpt_distribution.csv", bd_sims, reindex="traj_id")
     _concat_csv(dirs_valid, "pose_clusters.csv", bd_sims)
-    _sum_csv(dirs_valid, "radial_density.csv", bd_sims, sum_col="count", recompute_col="density", total_N=N)
-    _sum_csv(dirs_valid, "contact_frequency.csv", bd_sims, sum_col="n_contacts", recompute_col="frequency", total_N=N)
-    _sum_csv(dirs_valid, "milestone_flux.csv", bd_sims, sum_cols=["flux_outward", "flux_inward", "net_flux"])
+    _sum_csv(
+        dirs_valid,
+        "radial_density.csv",
+        bd_sims,
+        sum_col="count",
+        recompute_col="density",
+        total_N=N,
+    )
+    _sum_csv(
+        dirs_valid,
+        "contact_frequency.csv",
+        bd_sims,
+        sum_col="n_contacts",
+        recompute_col="frequency",
+        total_N=N,
+    )
+    _sum_csv(
+        dirs_valid,
+        "milestone_flux.csv",
+        bd_sims,
+        sum_cols=["flux_outward", "flux_inward", "net_flux"],
+    )
     # Combine NPZ files
     _concat_npz(dirs_valid, "paths.npz", bd_sims, data_key="data", meta_key="columns")
-    _concat_npz(dirs_valid, "energetics.npz", bd_sims, data_key="data", meta_key="columns")
-    _sum_npz(dirs_valid, "angular_map.npz", bd_sims, sum_key="counts", copy_keys=["theta_centers", "phi_centers"])
-    _sum_npz(dirs_valid, "transition_matrix.npz", bd_sims, sum_key="matrix", copy_keys=["milestones"])
-    _sum_npz(dirs_valid, "p_commit.npz", bd_sims, sum_key="counts", copy_keys=["milestones"])
+    _concat_npz(
+        dirs_valid, "energetics.npz", bd_sims, data_key="data", meta_key="columns"
+    )
+    _sum_npz(
+        dirs_valid,
+        "angular_map.npz",
+        bd_sims,
+        sum_key="counts",
+        copy_keys=["theta_centers", "phi_centers"],
+    )
+    _sum_npz(
+        dirs_valid,
+        "transition_matrix.npz",
+        bd_sims,
+        sum_key="matrix",
+        copy_keys=["milestones"],
+    )
+    _sum_npz(
+        dirs_valid, "p_commit.npz", bd_sims, sum_key="counts", copy_keys=["milestones"]
+    )
     # Convergence
     conv = {
         "N": N,
@@ -166,11 +216,13 @@ def main():
     _save_json(conv, os.path.join(bd_sims, "convergence.json"))
     print(f"\n  All files saved -> {bd_sims}/")
 
+
 # Helpers
 def _save_json(data, path):
     with open(path, "w") as f:
         json.dump(data, f, indent=2, default=str)
     print(f"    {os.path.basename(path)}")
+
 
 def _concat_csv(dirs, filename, out_dir, reindex=None):
     rows = []
@@ -202,7 +254,16 @@ def _concat_csv(dirs, filename, out_dir, reindex=None):
     label = f"{size/1e6:.1f} MB" if size > 1e6 else f"{size/1e3:.1f} KB"
     print(f"    {filename} ({len(rows):,} rows, {label})")
 
-def _sum_csv(dirs, filename, out_dir, sum_col=None, sum_cols=None, recompute_col=None, total_N=None):
+
+def _sum_csv(
+    dirs,
+    filename,
+    out_dir,
+    sum_col=None,
+    sum_cols=None,
+    recompute_col=None,
+    total_N=None,
+):
     all_data = {}
     header = None
     key_cols = None
@@ -217,7 +278,9 @@ def _sum_csv(dirs, filename, out_dir, sum_col=None, sum_cols=None, recompute_col
                 continue
             header = reader.fieldnames
             if key_cols is None:
-                key_cols = [c for c in header if c not in cols_to_sum and c != recompute_col]
+                key_cols = [
+                    c for c in header if c not in cols_to_sum and c != recompute_col
+                ]
             for row in reader:
                 key = tuple(row[c] for c in key_cols)
                 if key not in all_data:
@@ -251,6 +314,7 @@ def _sum_csv(dirs, filename, out_dir, sum_col=None, sum_cols=None, recompute_col
         writer.writerows(rows)
     print(f"    {filename} ({len(rows):,} rows)")
 
+
 def _concat_npz(dirs, filename, out_dir, data_key="data", meta_key="columns"):
     arrays = []
     meta = None
@@ -275,6 +339,7 @@ def _concat_npz(dirs, filename, out_dir, data_key="data", meta_key="columns"):
     label = f"{size/1e6:.1f} MB" if size > 1e6 else f"{size/1e3:.1f} KB"
     print(f"    {filename} ({combined.shape[0]:,} rows, {label})")
 
+
 def _sum_npz(dirs, filename, out_dir, sum_key, copy_keys=None):
     total = None
     copies = {}
@@ -297,6 +362,7 @@ def _sum_npz(dirs, filename, out_dir, sum_key, copy_keys=None):
     save_dict.update(copies)
     np.savez(out_path, **save_dict)
     print(f"    {filename} ({sum_key}: {total.shape})")
+
 
 if __name__ == "__main__":
     main()

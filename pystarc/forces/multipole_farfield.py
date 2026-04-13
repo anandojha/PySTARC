@@ -51,17 +51,26 @@ When is the multipole accurate?
     uses the APBS grid when available and falls back to multipole
     with a 3-spacing safety margin.
 """
+
 import numpy as np
+
 try:
     import cupy as cp
 except ImportError:
     cp = None
 import math
 
+
 class MultipoleExpansion:
     """Precomputed multipole moments for a molecule."""
-    def __init__(self, positions: np.ndarray, charges: np.ndarray,
-                 debye_length: float, sdie: float = 78.0):
+
+    def __init__(
+        self,
+        positions: np.ndarray,
+        charges: np.ndarray,
+        debye_length: float,
+        sdie: float = 78.0,
+    ):
         """
         Parameters
         ----------
@@ -80,7 +89,7 @@ class MultipoleExpansion:
         self.four_pi_eps = 4.0 * math.pi * self.eps
         # Monopole: Q_total
         self.Q = float(np.sum(charges))
-        # Dipole: p = Σ q_i × r_i 
+        # Dipole: p = Σ q_i × r_i
         self.dipole = np.sum(charges[:, None] * positions, axis=0)  # (3,)
         # Quadrupole: Q_ij = Σ q_i × (3 r_i r_j - r² δ_ij)
         # Traceless symmetric tensor
@@ -89,8 +98,12 @@ class MultipoleExpansion:
         for a in range(3):
             for b in range(3):
                 self.quadrupole[a, b] = np.sum(
-                    charges * (3.0 * positions[:, a] * positions[:, b]
-                               - (r2 if a == b else 0.0)))
+                    charges
+                    * (
+                        3.0 * positions[:, a] * positions[:, b]
+                        - (r2 if a == b else 0.0)
+                    )
+                )
         self.quadrupole *= 0.5  # convention: ½ Σ q(3rr - r²I)
         # Magnitudes for diagnostics
         self.dipole_mag = float(np.linalg.norm(self.dipole))
@@ -112,12 +125,16 @@ class MultipoleExpansion:
         # Dipole
         if self.dipole_mag > 1e-9:
             p_dot_r = float(np.dot(self.dipole, r_hat))
-            V += p_dot_r / (self.four_pi_eps * r**2) * (1.0 + r/lam) * exp_r
+            V += p_dot_r / (self.four_pi_eps * r**2) * (1.0 + r / lam) * exp_r
         # Quadrupole
         if self.quad_mag > 1e-9:
             rQr = float(r_hat @ self.quadrupole @ r_hat)
-            V += rQr / (self.four_pi_eps * r**3) * (
-                1.0 + r/lam + r**2 / (3.0 * lam**2)) * exp_r
+            V += (
+                rQr
+                / (self.four_pi_eps * r**3)
+                * (1.0 + r / lam + r**2 / (3.0 * lam**2))
+                * exp_r
+            )
         return V
 
     def force(self, r_vec: np.ndarray) -> np.ndarray:
@@ -129,8 +146,10 @@ class MultipoleExpansion:
         h = 0.001  # Å
         F = np.zeros(3)
         for i in range(3):
-            r_plus = r_vec.copy(); r_plus[i] += h
-            r_minus = r_vec.copy(); r_minus[i] -= h
+            r_plus = r_vec.copy()
+            r_plus[i] += h
+            r_minus = r_vec.copy()
+            r_minus[i] -= h
             F[i] = -(self.potential(r_plus) - self.potential(r_minus)) / (2.0 * h)
         return F
 
@@ -152,9 +171,10 @@ class MultipoleExpansion:
             lines.append(f"    -> Quadrupole dominant or uncharged")
         return "\n".join(lines)
 
-def compute_multipole_gpu(positions_gpu, charges_gpu, r_vecs_gpu,
-                          Q, dipole, quadrupole,
-                          debye, four_pi_eps):
+
+def compute_multipole_gpu(
+    positions_gpu, charges_gpu, r_vecs_gpu, Q, dipole, quadrupole, debye, four_pi_eps
+):
     """
     GPU batch multipole force computation.
     Parameters
@@ -171,7 +191,7 @@ def compute_multipole_gpu(positions_gpu, charges_gpu, r_vecs_gpu,
     # Monopole force: F = -dV/dr × r̂
     # V_0 = Q/(4πε r) exp(-r/λ)
     # F_0 = Q/(4πε) × (1/r² + 1/(rλ)) × exp(-r/λ) × r̂
-    F_mono = (Q / four_pi_eps) * (1.0/r_s**2 + 1.0/(r_s * lam)) * exp_r
+    F_mono = (Q / four_pi_eps) * (1.0 / r_s**2 + 1.0 / (r_s * lam)) * exp_r
     # Dipole force (scalar projection onto r̂, then gradient)
     dipole_gpu = cp.asarray(dipole, dtype=cp.float64)
     p_dot_r = cp.sum(r_hat * dipole_gpu[None, :], axis=1)  # (N,)
@@ -179,8 +199,12 @@ def compute_multipole_gpu(positions_gpu, charges_gpu, r_vecs_gpu,
     # Leading term: ~2p·r̂/(4πε r³) × (1+r/λ) × exp(-r/λ) × r̂
     dip_mag = float(cp.linalg.norm(dipole_gpu))
     if dip_mag > 1e-9:
-        factor_dip = p_dot_r / (four_pi_eps * r_s**3) * (
-            2.0 + 2.0*r_s/lam + r_s**2/lam**2) * exp_r
+        factor_dip = (
+            p_dot_r
+            / (four_pi_eps * r_s**3)
+            * (2.0 + 2.0 * r_s / lam + r_s**2 / lam**2)
+            * exp_r
+        )
     else:
         factor_dip = cp.zeros_like(r_s)
     # Quadrupole force (leading radial term)
@@ -188,8 +212,12 @@ def compute_multipole_gpu(positions_gpu, charges_gpu, r_vecs_gpu,
     quad_mag = float(cp.linalg.norm(Q_gpu))
     if quad_mag > 1e-9:
         rQr = cp.sum(r_hat * (r_hat @ Q_gpu), axis=1)  # (N,) = r̂ᵀ Q r̂
-        factor_quad = rQr / (four_pi_eps * r_s**4) * (
-            3.0 + 3.0*r_s/lam + r_s**2/lam**2 + r_s**3/(3.0*lam**3)) * exp_r
+        factor_quad = (
+            rQr
+            / (four_pi_eps * r_s**4)
+            * (3.0 + 3.0 * r_s / lam + r_s**2 / lam**2 + r_s**3 / (3.0 * lam**3))
+            * exp_r
+        )
     else:
         factor_quad = cp.zeros_like(r_s)
     # Total radial force × r̂

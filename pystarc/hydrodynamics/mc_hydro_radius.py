@@ -36,23 +36,43 @@ import math
 
 # Each entry is (vertex_a, vertex_b) as (ix,iy,iz) offsets in the 2x2x2 cube.
 _EDGES = [
-    ((0,0,0),(1,0,0)), ((1,0,0),(1,1,0)), ((1,1,0),(0,1,0)), ((0,1,0),(0,0,0)),
-    ((0,0,1),(1,0,1)), ((1,0,1),(1,1,1)), ((1,1,1),(0,1,1)), ((0,1,1),(0,0,1)),
-    ((0,0,0),(0,0,1)), ((1,0,0),(1,0,1)), ((1,1,0),(1,1,1)), ((0,1,0),(0,1,1)),
+    ((0, 0, 0), (1, 0, 0)),
+    ((1, 0, 0), (1, 1, 0)),
+    ((1, 1, 0), (0, 1, 0)),
+    ((0, 1, 0), (0, 0, 0)),
+    ((0, 0, 1), (1, 0, 1)),
+    ((1, 0, 1), (1, 1, 1)),
+    ((1, 1, 1), (0, 1, 1)),
+    ((0, 1, 1), (0, 0, 1)),
+    ((0, 0, 0), (0, 0, 1)),
+    ((1, 0, 0), (1, 0, 1)),
+    ((1, 1, 0), (1, 1, 1)),
+    ((0, 1, 0), (0, 1, 1)),
 ]
 _FDIAGS = [
-    ((0,0,0),(1,1,0)), ((1,0,0),(0,1,0)), ((0,0,1),(1,1,1)), ((1,0,1),(0,1,1)),
-    ((0,0,0),(0,1,1)), ((0,1,0),(0,0,1)), ((1,0,0),(1,1,1)), ((1,1,0),(1,0,1)),
-    ((0,0,0),(1,0,1)), ((1,0,0),(0,0,1)), ((0,1,0),(1,1,1)), ((1,1,0),(0,1,1)),
+    ((0, 0, 0), (1, 1, 0)),
+    ((1, 0, 0), (0, 1, 0)),
+    ((0, 0, 1), (1, 1, 1)),
+    ((1, 0, 1), (0, 1, 1)),
+    ((0, 0, 0), (0, 1, 1)),
+    ((0, 1, 0), (0, 0, 1)),
+    ((1, 0, 0), (1, 1, 1)),
+    ((1, 1, 0), (1, 0, 1)),
+    ((0, 0, 0), (1, 0, 1)),
+    ((1, 0, 0), (0, 0, 1)),
+    ((0, 1, 0), (1, 1, 1)),
+    ((1, 1, 0), (0, 1, 1)),
 ]
 _LDIAGS = [
-    ((0,0,0),(1,1,1)), ((1,0,0),(0,1,1)),
-    ((1,1,0),(0,0,1)), ((0,1,0),(1,0,1)),
+    ((0, 0, 0), (1, 1, 1)),
+    ((1, 0, 0), (0, 1, 1)),
+    ((1, 1, 0), (0, 0, 1)),
+    ((0, 1, 0), (1, 0, 1)),
 ]
 
 # area table: 13 distinct fingerprint classes -> area weight
 # tri  = sqrt(3)/8,  rect = sqrt(2)/2
-_TRI  = math.sqrt(3.0) / 8.0
+_TRI = math.sqrt(3.0) / 8.0
 _RECT = math.sqrt(2.0) / 2.0
 _SIG_AREAS = {
     (1, 3, 3, 1): _TRI,
@@ -67,8 +87,9 @@ _SIG_AREAS = {
     (4, 6, 8, 2): math.sqrt(2.0),
     (4, 6, 6, 4): 6.0 * _TRI,
     (4, 8, 8, 0): 2.0 * _RECT,
-    (4,12, 0, 4): 4.0 * _TRI,
+    (4, 12, 0, 4): 4.0 * _TRI,
 }
+
 
 def _fingerprint(verts: np.ndarray) -> tuple:
     """
@@ -78,41 +99,46 @@ def _fingerprint(verts: np.ndarray) -> tuple:
     s = int(verts.sum())
     if s > 4:
         s = 8 - s
+
     def count(pairs):
         n = 0
-        for (ax,ay,az),(bx,by,bz) in pairs:
-            va, vb = verts[ax,ay,az], verts[bx,by,bz]
-            if va != vb:   # one inside, one outside = surface crossing
+        for (ax, ay, az), (bx, by, bz) in pairs:
+            va, vb = verts[ax, ay, az], verts[bx, by, bz]
+            if va != vb:  # one inside, one outside = surface crossing
                 n += 1
         return n
+
     return (s, count(_EDGES), count(_FDIAGS), count(_LDIAGS))
 
-def _surface_position(verts: np.ndarray,
-                      ix: int, iy: int, iz: int,
-                      hx: float, hy: float, hz: float) -> np.ndarray:
+
+def _surface_position(
+    verts: np.ndarray, ix: int, iy: int, iz: int, hx: float, hy: float, hz: float
+) -> np.ndarray:
     """
     Average position of surface-crossing edge midpoints in a 2×2×2 cube.
     """
     total = np.zeros(3)
     n = 0
-    for (ax,ay,az),(bx,by,bz) in _EDGES:
+    for (ax, ay, az), (bx, by, bz) in _EDGES:
         va = verts[ax, ay, az]
         vb = verts[bx, by, bz]
         if va != vb:
             # midpoint of this edge in world coordinates
-            mid = np.array([
-                hx * ((ix + ax + ix + bx) * 0.5),
-                hy * ((iy + ay + iy + by) * 0.5),
-                hz * ((iz + az + iz + bz) * 0.5),
-            ])
+            mid = np.array(
+                [
+                    hx * ((ix + ax + ix + bx) * 0.5),
+                    hy * ((iy + ay + iy + by) * 0.5),
+                    hz * ((iz + az + iz + bz) * 0.5),
+                ]
+            )
             total += mid
             n += 1
     return total / n if n > 0 else total
 
-def _voxelise(coords: np.ndarray,
-              radii:  np.ndarray,
-              spacing: float = 0.5,
-              padding: float = 3.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+
+def _voxelise(
+    coords: np.ndarray, radii: np.ndarray, spacing: float = 0.5, padding: float = 3.0
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Build inside/outside voxel grid from atom positions and radii.
     Returns (grid[nx,ny,nz], origin[3], (hx,hy,hz)).
@@ -143,21 +169,20 @@ def _voxelise(coords: np.ndarray,
         sx = xs[ix0:ix1] - cx
         sy = ys[iy0:iy1] - cy
         sz = zs[iz0:iz1] - cz
-        d2 = (sx[:, None, None]**2 +
-              sy[None, :, None]**2 +
-              sz[None, None, :]**2)
+        d2 = sx[:, None, None] ** 2 + sy[None, :, None] ** 2 + sz[None, None, :] ** 2
         mask = d2 <= r * r
         grid[ix0:ix1, iy0:iy1, iz0:iz1] |= mask.astype(np.int8)
     return grid, lo, (hx, hy, hz)
 
+
 class SurfacePoint(NamedTuple):
     area: float
-    pos:  np.ndarray
+    pos: np.ndarray
 
-def _extract_surface(grid: np.ndarray,
-                     origin: np.ndarray,
-                     spacing: Tuple[float, float, float]
-                     ) -> List[SurfacePoint]:
+
+def _extract_surface(
+    grid: np.ndarray, origin: np.ndarray, spacing: Tuple[float, float, float]
+) -> List[SurfacePoint]:
     """
     Find all surface cubes (mixed 0/1 in 2×2×2 block) and compute
     their area weight + representative position.
@@ -168,24 +193,25 @@ def _extract_surface(grid: np.ndarray,
     for ix in range(nx - 1):
         for iy in range(ny - 1):
             for iz in range(nz - 1):
-                verts = grid[ix:ix+2, iy:iy+2, iz:iz+2]
+                verts = grid[ix : ix + 2, iy : iy + 2, iz : iz + 2]
                 s = int(verts.sum())
                 if s == 0 or s == 8:
-                    continue   # fully outside or fully inside
+                    continue  # fully outside or fully inside
                 fp = _fingerprint(verts)
                 if fp not in _SIG_AREAS:
-                    continue   # degenerate cube - skip
+                    continue  # degenerate cube - skip
                 area = _SIG_AREAS[fp]
-                pos  = _surface_position(verts, ix, iy, iz, hx, hy, hz)
+                pos = _surface_position(verts, ix, iy, iz, hx, hy, hz)
                 surface.append(SurfacePoint(area=area, pos=origin + pos))
     return surface
 
+
 def mc_hydrodynamic_radius(
-        coords:  np.ndarray,
-        radii:   np.ndarray,
-        spacing: float = 0.5,
-        n_mc:    int   = 1_000_000,
-        seed:    int   = 1111111,
+    coords: np.ndarray,
+    radii: np.ndarray,
+    spacing: float = 0.5,
+    n_mc: int = 1_000_000,
+    seed: int = 1111111,
 ) -> Tuple[float, np.ndarray, float]:
     """
     Compute hydrodynamic radius by the Hansen (2004) Monte Carlo algorithm.
@@ -210,10 +236,10 @@ def mc_hydrodynamic_radius(
     if len(surface) < 2:
         raise ValueError("No surface found - check atom radii and grid spacing")
     areas = np.array([s.area for s in surface])
-    poses = np.array([s.pos  for s in surface])   # (M, 3)
-    nsu   = len(surface)
+    poses = np.array([s.pos for s in surface])  # (M, 3)
+    nsu = len(surface)
     # 3. Area-weighted centroid (the reference implementation: psum/a0sum)
-    a0sum  = float(areas.sum())
+    a0sum = float(areas.sum())
     center = (areas[:, None] * poses).sum(axis=0) / a0sum
     # 4. max_dist from center to any surface point
     max_dist = float(np.max(np.linalg.norm(poses - center, axis=1)))
@@ -223,17 +249,17 @@ def mc_hydrodynamic_radius(
     # For large nsu this is effectively always distinct on first draw
     i0 = rng.integers(0, nsu, size=n_mc)
     i1 = rng.integers(0, nsu, size=n_mc)
-    same = (i0 == i1)
+    same = i0 == i1
     while same.any():
         i1[same] = rng.integers(0, nsu, size=same.sum())
-        same = (i0 == i1)
-    a0  = areas[i0]                        # (n_mc,)
-    a1  = areas[i1]                        # (n_mc,)
-    dv  = poses[i0] - poses[i1]            # (n_mc, 3)
-    r   = np.linalg.norm(dv, axis=1)       # (n_mc,)
-    r   = np.maximum(r, 1e-12)             # avoid divide-by-zero
-    aa      = a0 * a1
-    asum    = float(aa.sum())
+        same = i0 == i1
+    a0 = areas[i0]  # (n_mc,)
+    a1 = areas[i1]  # (n_mc,)
+    dv = poses[i0] - poses[i1]  # (n_mc, 3)
+    r = np.linalg.norm(dv, axis=1)  # (n_mc,)
+    r = np.maximum(r, 1e-12)  # avoid divide-by-zero
+    aa = a0 * a1
+    asum = float(aa.sum())
     inv_sum = float((aa / r).sum())
     # r_h = asum / inv_chord_sum
     r_h = asum / inv_sum if inv_sum > 0 else 0.0

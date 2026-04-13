@@ -21,7 +21,7 @@ receptor's electrostatic field.  Three contributions are summed.
    displaces the high-dielectric solvent, paying an energetic
    penalty.  The Born potential φ_born is the vacuum electrostatic
    potential (ε=1 everywhere, no ions).  α = 1/(4π) ≈ 0.0796.
-   
+
    Computed in BOTH directions:
    1. Direction 1: receptor Born grid at ligand atom positions
    2. Direction 2: ligand Born grid at receptor atom positions
@@ -41,7 +41,7 @@ forces for all 10⁶ trajectories simultaneously would exceed GPU
 memory.  The engine automatically batches:
 
     N_batch = 4 GB / (N_lig_atoms × 150 bytes)
-    
+
 The 150 bytes/atom accounts for ~6 internal arrays per batch
 (positions, forces, energies, masks, etc.).
 """
@@ -54,12 +54,13 @@ import math
 
 try:
     import cupy as cp
+
     _CUPY = True
 except ImportError:
     _CUPY = False
 
 
-# CUDA kernel: one thread per (trajectory, atom) pair 
+# CUDA kernel: one thread per (trajectory, atom) pair
 
 _BATCH_KERNEL_CODE = r"""
 extern "C" __global__
@@ -134,24 +135,29 @@ class GPUBatchForceEngine:
     debye_length    : Debye screening length (in A)
     sdie            : solvent dielectric constant
     """
-    
-    def __init__(self, elec_grids, born_grids, alpha: float = 0.07957747,
-                 receptor_charge: float = 0.0,
-                 debye_length: float = 7.858,
-                 sdie: float = 78.0,
-                 lig_born_grids=None,
-                 rec_positions=None,
-                 rec_charges=None,
-                 multipole_expansion=None,
-                 rec_radii=None,
-                 lig_radii=None,
-                 use_lj=False):
+
+    def __init__(
+        self,
+        elec_grids,
+        born_grids,
+        alpha: float = 0.07957747,
+        receptor_charge: float = 0.0,
+        debye_length: float = 7.858,
+        sdie: float = 78.0,
+        lig_born_grids=None,
+        rec_positions=None,
+        rec_charges=None,
+        multipole_expansion=None,
+        rec_radii=None,
+        lig_radii=None,
+        use_lj=False,
+    ):
         if not _CUPY:
             raise RuntimeError(
                 "CuPy not installed. Install with: pip install cupy-cuda12x"
             )
         self.alpha = alpha
-        self._kernel = cp.RawKernel(_BATCH_KERNEL_CODE, 'batch_force_kernel')
+        self._kernel = cp.RawKernel(_BATCH_KERNEL_CODE, "batch_force_kernel")
         # System parameters for Yukawa far-field fallback
         self._rec_charge = receptor_charge
         self._debye = debye_length
@@ -179,14 +185,18 @@ class GPUBatchForceEngine:
         # At runtime: fine grid for atoms inside, Chebyshev/Yukawa for outside.
         if self._has_yukawa and len(self._elec_grids_gpu) > 1:
             finest = self._elec_grids_gpu[0]  # sorted finest-first
-            fine_extent = float(max(abs(finest['lo'][0]), abs(finest['hi'][0])))
-            print(f"  Elec: using fine grid only (±{fine_extent:.0f}Å) + Yukawa far-field "
-                  f"(dropping {len(self._elec_grids_gpu)-1} coarse grid(s) - BC only)")
+            fine_extent = float(max(abs(finest["lo"][0]), abs(finest["hi"][0])))
+            print(
+                f"  Elec: using fine grid only (±{fine_extent:.0f}Å) + Yukawa far-field "
+                f"(dropping {len(self._elec_grids_gpu)-1} coarse grid(s) - BC only)"
+            )
             self._elec_grids_gpu = [finest]
         if len(self._born_grids_gpu) > 1:
             finest_born = self._born_grids_gpu[0]
-            print(f"  Born: using finest grid only "
-                  f"(dropping {len(self._born_grids_gpu)-1} coarse grid(s))")
+            print(
+                f"  Born: using finest grid only "
+                f"(dropping {len(self._born_grids_gpu)-1} coarse grid(s))"
+            )
             self._born_grids_gpu = [finest_born]
         # core_desolvation_force_on_1(state0, state1)  -> rec Born on lig
         # core_desolvation_force_on_1(state1, state0)  -> lig Born on rec
@@ -199,15 +209,25 @@ class GPUBatchForceEngine:
             # Keep only finest lig Born grid (auto-sized to ligand extent)
             if len(self._lig_born_grids_gpu) > 1:
                 self._lig_born_grids_gpu = [self._lig_born_grids_gpu[0]]
-            self._rec_pos_gpu = cp.asarray(rec_positions, dtype=cp.float64)  # (N_rec, 3)
-            self._rec_charges_gpu = cp.asarray(rec_charges, dtype=cp.float64)  # (N_rec,)
-            print(f"  Born both-directions: {len(self._lig_born_grids_gpu)} lig born grid(s), "
-                  f"{len(rec_charges)} rec atoms")
-        print(f"  GPUBatchForceEngine: {len(self._elec_grids_gpu)} elec + "
-              f"{len(self._born_grids_gpu)} born grids on GPU")
+            self._rec_pos_gpu = cp.asarray(
+                rec_positions, dtype=cp.float64
+            )  # (N_rec, 3)
+            self._rec_charges_gpu = cp.asarray(
+                rec_charges, dtype=cp.float64
+            )  # (N_rec,)
+            print(
+                f"  Born both-directions: {len(self._lig_born_grids_gpu)} lig born grid(s), "
+                f"{len(rec_charges)} rec atoms"
+            )
+        print(
+            f"  GPUBatchForceEngine: {len(self._elec_grids_gpu)} elec + "
+            f"{len(self._born_grids_gpu)} born grids on GPU"
+        )
         if self._has_yukawa:
-            print(f"  Yukawa far-field: Q_rec={receptor_charge:+.2f} e, "
-                  f"debye={debye_length:.3f} A, sdie={sdie:.1f}")
+            print(
+                f"  Yukawa far-field: Q_rec={receptor_charge:+.2f} e, "
+                f"debye={debye_length:.3f} A, sdie={sdie:.1f}"
+            )
         # LJ (WCA repulsive) forces using PQR radii
         self._use_lj = use_lj
         self._rec_radii_gpu = None
@@ -220,8 +240,10 @@ class GPUBatchForceEngine:
             # Activation radius: only compute LJ when centroid is close
             _max_sig = float(self._rec_radii_gpu.max() + self._lig_radii_gpu.max())
             self._lj_activation = _max_sig * 2.5
-            print(f"  LJ (WCA repulsive): {len(rec_radii)} rec + {len(lig_radii)} lig atoms, "
-                  f"activation={self._lj_activation:.1f} A")
+            print(
+                f"  LJ (WCA repulsive): {len(rec_radii)} rec + {len(lig_radii)} lig atoms, "
+                f"activation={self._lj_activation:.1f} A"
+            )
 
     def _upload_grids(self, grids):
         """Upload DXGrid list to GPU, sorted finest first.
@@ -237,37 +259,48 @@ class GPUBatchForceEngine:
         sorted_grids = sorted(grids, key=lambda g: float(g.delta[0, 0]))
         uploaded = []
         for g in sorted_grids:
-            data   = cp.asarray(g.data.ravel(),  dtype=cp.float64)
-            origin = cp.asarray(g.origin,         dtype=cp.float64)
-            sp     = cp.array([g.delta[i,i] for i in range(3)], dtype=cp.float64)
+            data = cp.asarray(g.data.ravel(), dtype=cp.float64)
+            origin = cp.asarray(g.origin, dtype=cp.float64)
+            sp = cp.array([g.delta[i, i] for i in range(3)], dtype=cp.float64)
             inv_sp = 1.0 / sp
             nx, ny, nz = g.data.shape
             # BC-safe bounds: 3 spacings from each edge
             # (gradient probe needs 0.5*sp + APBS focused BC contaminates ~2-3 shells)
-            sp_np  = np.array([g.delta[i,i] for i in range(3)])
-            dims   = np.array([nx, ny, nz])
+            sp_np = np.array([g.delta[i, i] for i in range(3)])
+            dims = np.array([nx, ny, nz])
             margin = 3.0  # grid spacings from edge
             lo = g.origin + margin * sp_np
             hi = g.origin + (dims - 1 - margin) * sp_np
-            uploaded.append({
-                'data': data, 'origin': origin, 'sp': sp, 'inv_sp': inv_sp,
-                'nx': nx, 'ny': ny, 'nz': nz, 'lo': lo, 'hi': hi,
-            })
+            uploaded.append(
+                {
+                    "data": data,
+                    "origin": origin,
+                    "sp": sp,
+                    "inv_sp": inv_sp,
+                    "nx": nx,
+                    "ny": ny,
+                    "nz": nz,
+                    "lo": lo,
+                    "hi": hi,
+                }
+            )
         return uploaded
 
-    def _eval_batch(self,
-                    positions_gpu,   # (N_traj, N_atoms, 3)
-                    charges_gpu,     # (N_atoms,)
-                    grids_gpu,
-                    alpha: float,
-                    is_born: bool):
+    def _eval_batch(
+        self,
+        positions_gpu,  # (N_traj, N_atoms, 3)
+        charges_gpu,  # (N_atoms,)
+        grids_gpu,
+        alpha: float,
+        is_born: bool,
+    ):
         """
         Evaluate forces for all trajectories against grids.
         Finest-grid-first assignment. Yukawa fallback for unassigned atoms.
         """
         N_traj, N_atoms, _ = positions_gpu.shape
-        total_forces   = cp.zeros((N_traj, 3), dtype=cp.float64)
-        total_energies = cp.zeros((N_traj,),   dtype=cp.float64)
+        total_forces = cp.zeros((N_traj, 3), dtype=cp.float64)
+        total_energies = cp.zeros((N_traj,), dtype=cp.float64)
         if not grids_gpu:
             if not is_born and self._has_yukawa:
                 yf, ye = self._yukawa_forces_gpu(positions_gpu, charges_gpu)
@@ -276,15 +309,16 @@ class GPUBatchForceEngine:
             return total_forces, total_energies
         assigned = cp.zeros((N_traj, N_atoms), dtype=cp.bool_)
         for g in grids_gpu:
-            nx, ny, nz = g['nx'], g['ny'], g['nz']
-            atom_forces   = cp.zeros((N_traj, N_atoms, 3), dtype=cp.float64)
-            atom_energies = cp.zeros((N_traj, N_atoms),    dtype=cp.float64)
-            lo = cp.asarray(g['lo'], dtype=cp.float64)
-            hi = cp.asarray(g['hi'], dtype=cp.float64)
-            in_grid = (cp.all(positions_gpu > lo, axis=2) &
-                       cp.all(positions_gpu < hi, axis=2))
+            nx, ny, nz = g["nx"], g["ny"], g["nz"]
+            atom_forces = cp.zeros((N_traj, N_atoms, 3), dtype=cp.float64)
+            atom_energies = cp.zeros((N_traj, N_atoms), dtype=cp.float64)
+            lo = cp.asarray(g["lo"], dtype=cp.float64)
+            hi = cp.asarray(g["hi"], dtype=cp.float64)
+            in_grid = cp.all(positions_gpu > lo, axis=2) & cp.all(
+                positions_gpu < hi, axis=2
+            )
             to_process = in_grid & ~assigned
-            assigned  |= to_process
+            assigned |= to_process
             if not cp.any(to_process):
                 continue
             pos_masked = positions_gpu.copy()
@@ -292,20 +326,32 @@ class GPUBatchForceEngine:
             chg_masked = cp.zeros((N_traj, N_atoms), dtype=cp.float64)
             chg_masked[to_process] = charges_gpu[cp.where(to_process)[1]]
             threads = (16, 16)
-            blocks  = (
-                (N_traj  + threads[0] - 1) // threads[0],
+            blocks = (
+                (N_traj + threads[0] - 1) // threads[0],
                 (N_atoms + threads[1] - 1) // threads[1],
             )
             self._kernel(
-                blocks, threads,
-                (pos_masked.ravel(), chg_masked.ravel(),
-                 g['data'], g['origin'], g['inv_sp'], g['sp'],
-                 np.float64(alpha), np.int32(1 if is_born else 0),
-                 np.int32(nx), np.int32(ny), np.int32(nz),
-                 np.int32(N_traj), np.int32(N_atoms),
-                 atom_forces.ravel(), atom_energies.ravel())
+                blocks,
+                threads,
+                (
+                    pos_masked.ravel(),
+                    chg_masked.ravel(),
+                    g["data"],
+                    g["origin"],
+                    g["inv_sp"],
+                    g["sp"],
+                    np.float64(alpha),
+                    np.int32(1 if is_born else 0),
+                    np.int32(nx),
+                    np.int32(ny),
+                    np.int32(nz),
+                    np.int32(N_traj),
+                    np.int32(N_atoms),
+                    atom_forces.ravel(),
+                    atom_energies.ravel(),
+                ),
             )
-            total_forces   += atom_forces.sum(axis=1)
+            total_forces += atom_forces.sum(axis=1)
             total_energies += atom_energies.sum(axis=1)
         # Yukawa far-field fallback for atoms outside all grids
         # (electrostatic only - Born decays too fast to matter)
@@ -313,28 +359,35 @@ class GPUBatchForceEngine:
             not_assigned = ~assigned
             n_not = int(cp.sum(not_assigned))
             if n_not > 0:
-                yf, ye = self._yukawa_forces_gpu(positions_gpu, charges_gpu,
-                                                  mask=not_assigned)
-                total_forces   += yf
+                yf, ye = self._yukawa_forces_gpu(
+                    positions_gpu, charges_gpu, mask=not_assigned
+                )
+                total_forces += yf
                 total_energies += ye
                 if self._call_count < 3:
-                    print(f"    [FORCE VERBOSE] Yukawa fallback: "
-                          f"{n_not}/{N_traj*N_atoms} atom-traj pairs "
-                          f"({100*n_not/(N_traj*N_atoms):.1f}%)")
+                    print(
+                        f"    [FORCE VERBOSE] Yukawa fallback: "
+                        f"{n_not}/{N_traj*N_atoms} atom-traj pairs "
+                        f"({100*n_not/(N_traj*N_atoms):.1f}%)"
+                    )
         # Log first few calls
         if self._call_count < 3 and not is_born:
             n_assigned = int(cp.sum(assigned))
             n_total = N_traj * N_atoms
-            print(f"    [FORCE VERBOSE call#{self._call_count}] "
-                  f"{'ELEC' if not is_born else 'BORN'}: "
-                  f"{n_assigned}/{n_total} atom-traj pairs assigned to grids "
-                  f"({100*n_assigned/n_total:.1f}%)")
+            print(
+                f"    [FORCE VERBOSE call#{self._call_count}] "
+                f"{'ELEC' if not is_born else 'BORN'}: "
+                f"{n_assigned}/{n_total} atom-traj pairs assigned to grids "
+                f"({100*n_assigned/n_total:.1f}%)"
+            )
             # Force magnitude stats
             f_mag = cp.linalg.norm(total_forces, axis=1)
-            print(f"    [FORCE VERBOSE] |F| stats: "
-                  f"mean={float(f_mag.mean()):.8f} "
-                  f"max={float(f_mag.max()):.8f} "
-                  f"min={float(f_mag.min()):.8f} kBT/Å")
+            print(
+                f"    [FORCE VERBOSE] |F| stats: "
+                f"mean={float(f_mag.mean()):.8f} "
+                f"max={float(f_mag.max()):.8f} "
+                f"min={float(f_mag.min()):.8f} kBT/Å"
+            )
         return total_forces, total_energies
 
     def _yukawa_forces_gpu(self, positions_gpu, charges_gpu, mask=None):
@@ -347,42 +400,62 @@ class GPUBatchForceEngine:
         """
         N_traj, N_atoms, _ = positions_gpu.shape
         debye = self._debye
-        r_mag = cp.linalg.norm(positions_gpu, axis=2)   # (N_traj, N_atoms)
+        r_mag = cp.linalg.norm(positions_gpu, axis=2)  # (N_traj, N_atoms)
         safe_r = cp.maximum(r_mag, 1.0)
         exp_term = cp.exp(-safe_r / debye)
         r_hat = positions_gpu / safe_r[:, :, None]
-        # Monopole: phi = V_factor * exp(-r/λ) / r 
+        # Monopole: phi = V_factor * exp(-r/λ) / r
         V_fac = self._V_factor
         phi = V_fac * exp_term / safe_r
         dphi_dr = V_fac * exp_term * (-1.0 / safe_r**2 - 1.0 / (safe_r * debye))
         # Dipole + Quadrupole (if multipole expansion available)
         if self._multipole is not None:
-            p_gpu = self._mp_dipole_gpu   # (3,)
-            Q_gpu = self._mp_quad_gpu     # (3, 3)
+            p_gpu = self._mp_dipole_gpu  # (3,)
+            Q_gpu = self._mp_quad_gpu  # (3, 3)
             fpe = self._mp_four_pi_eps
             lam = debye
             # Dipole: phi_1 = (p · r̂) / (4πε r²) × (1 + r/λ) × exp(-r/λ)
             p_dot_r = cp.sum(r_hat * p_gpu[None, None, :], axis=2)  # (N_traj, N_atoms)
             p_mag = float(cp.linalg.norm(p_gpu))
             if p_mag > 1e-9:
-                phi_dip = p_dot_r / (fpe * safe_r**2) * (1.0 + safe_r/lam) * exp_term
+                phi_dip = p_dot_r / (fpe * safe_r**2) * (1.0 + safe_r / lam) * exp_term
                 phi += phi_dip
                 # d(phi_dip)/dr - leading radial term
-                dphi_dip_dr = p_dot_r / fpe * exp_term * (
-                    -2.0/safe_r**3 - 2.0/(safe_r**2 * lam) - 1.0/(safe_r * lam**2))
+                dphi_dip_dr = (
+                    p_dot_r
+                    / fpe
+                    * exp_term
+                    * (
+                        -2.0 / safe_r**3
+                        - 2.0 / (safe_r**2 * lam)
+                        - 1.0 / (safe_r * lam**2)
+                    )
+                )
                 dphi_dr += dphi_dip_dr
             # Quadrupole: phi_2 = (r̂ᵀ Q r̂) / (4πε r³) × (1 + r/λ + r²/(3λ²)) × exp(-r/λ)
             q_mag = float(cp.linalg.norm(Q_gpu))
             if q_mag > 1e-9:
                 # r̂ᵀ Q r̂ for each atom: (N_traj, N_atoms)
                 # r_hat: (N_traj, N_atoms, 3)
-                rQr = cp.sum(r_hat * cp.einsum('ij,...j->...i', Q_gpu, r_hat), axis=2)
-                phi_quad = rQr / (fpe * safe_r**3) * (
-                    1.0 + safe_r/lam + safe_r**2/(3.0*lam**2)) * exp_term
+                rQr = cp.sum(r_hat * cp.einsum("ij,...j->...i", Q_gpu, r_hat), axis=2)
+                phi_quad = (
+                    rQr
+                    / (fpe * safe_r**3)
+                    * (1.0 + safe_r / lam + safe_r**2 / (3.0 * lam**2))
+                    * exp_term
+                )
                 phi += phi_quad
-                dphi_quad_dr = rQr / fpe * exp_term * (
-                    -3.0/safe_r**4 - 3.0/(safe_r**3 * lam)
-                    - 1.0/(safe_r**2 * lam**2) - 1.0/(3.0*safe_r * lam**3))
+                dphi_quad_dr = (
+                    rQr
+                    / fpe
+                    * exp_term
+                    * (
+                        -3.0 / safe_r**4
+                        - 3.0 / (safe_r**3 * lam)
+                        - 1.0 / (safe_r**2 * lam**2)
+                        - 1.0 / (3.0 * safe_r * lam**3)
+                    )
+                )
                 dphi_dr += dphi_quad_dr
         # grad(phi) = d(phi)/dr * r_hat
         grad_phi = dphi_dr[:, :, None] * r_hat
@@ -392,9 +465,9 @@ class GPUBatchForceEngine:
         atom_energies = charges_gpu[None, :] * phi
         if mask is not None:
             mask_3d = mask[:, :, None].astype(cp.float64)
-            atom_forces   = atom_forces * mask_3d
+            atom_forces = atom_forces * mask_3d
             atom_energies = atom_energies * mask.astype(cp.float64)
-        forces   = atom_forces.sum(axis=1)
+        forces = atom_forces.sum(axis=1)
         energies = atom_energies.sum(axis=1)
         return forces, energies
 
@@ -427,13 +500,15 @@ class GPUBatchForceEngine:
             nc = len(idx)
             # lig_pos: (nc, N_lig, 3), rec_pos: (N_rec, 3)
             lp = lig_positions[idx]  # (nc, N_lig, 3)
-            rp = self._rec_pos_gpu   # (N_rec, 3)
+            rp = self._rec_pos_gpu  # (N_rec, 3)
             # Pairwise distances: (nc, N_lig, N_rec, 3)
             diff = lp[:, :, None, :] - rp[None, None, :, :]  # broadcast
             r2 = (diff * diff).sum(axis=3)  # (nc, N_lig, N_rec)
             r = cp.sqrt(cp.maximum(r2, 1e-6))
             # sigma_ij = rec_radius + lig_radius
-            sig = self._lig_radii_gpu[None, :, None] + self._rec_radii_gpu[None, None, :]
+            sig = (
+                self._lig_radii_gpu[None, :, None] + self._rec_radii_gpu[None, None, :]
+            )
             # WCA cutoff: r < 2^(1/6) * sigma
             r_cut = 1.122462 * sig  # 2^(1/6) ≈ 1.122462
             in_range = r < r_cut
@@ -445,7 +520,9 @@ class GPUBatchForceEngine:
             f_mag = eps * (12.0 * sr12 - 6.0 * sr6) / r2  # (nc, N_lig, N_rec)
             f_mag = cp.where(in_range, f_mag, 0.0)
             # Force on ligand atom from each rec atom: f_mag * (lig - rec) / r
-            f_vec = f_mag[:, :, :, None] * diff / r[:, :, :, None]  # (nc, N_lig, N_rec, 3)
+            f_vec = (
+                f_mag[:, :, :, None] * diff / r[:, :, :, None]
+            )  # (nc, N_lig, N_rec, 3)
             # Sum over rec atoms and lig atoms -> net force per trajectory
             net_f = f_vec.sum(axis=(1, 2))  # (nc, 3)
             lj_forces[idx] = net_f
@@ -467,31 +544,35 @@ class GPUBatchForceEngine:
         centroids     : (N_traj, 3) ligand centroid positions
         """
         N_traj, N_atoms, _ = lig_positions.shape
-        forces   = cp.zeros((N_traj, 3), dtype=cp.float64)
-        energies = cp.zeros((N_traj,),   dtype=cp.float64)
+        forces = cp.zeros((N_traj, 3), dtype=cp.float64)
+        energies = cp.zeros((N_traj,), dtype=cp.float64)
         if self._call_count < 3:
             r_mag = cp.linalg.norm(lig_positions[:, 0, :], axis=1)  # centroid r
-            print(f"    [ENGINE call#{self._call_count}] N_traj={N_traj} N_atoms={N_atoms}  "
-                  f"r_centroid: mean={float(r_mag.mean()):.3f} "
-                  f"min={float(r_mag.min()):.3f} max={float(r_mag.max()):.3f}")
+            print(
+                f"    [ENGINE call#{self._call_count}] N_traj={N_traj} N_atoms={N_atoms}  "
+                f"r_centroid: mean={float(r_mag.mean()):.3f} "
+                f"min={float(r_mag.min()):.3f} max={float(r_mag.max()):.3f}"
+            )
         # Electrostatic force on ligand from receptor field
         if self._elec_grids_gpu:
-            f, e = self._eval_batch(lig_positions, lig_charges,
-                                    self._elec_grids_gpu, 0.0, False)
-            forces   += f
+            f, e = self._eval_batch(
+                lig_positions, lig_charges, self._elec_grids_gpu, 0.0, False
+            )
+            forces += f
             energies += e
             if self._call_count < 3:
                 fm = float(cp.linalg.norm(f, axis=1).mean())
                 print(f"    [COMPONENT] ELEC:   |F|_mean={fm:.6e} kBT/Å")
         elif self._has_yukawa:
             f, e = self._yukawa_forces_gpu(lig_positions, lig_charges)
-            forces   += f
+            forces += f
             energies += e
         # Born desolvation direction 1: rec Born grid on lig atoms
         if self._born_grids_gpu:
-            f, e = self._eval_batch(lig_positions, lig_charges,
-                                    self._born_grids_gpu, self.alpha, True)
-            forces   += f
+            f, e = self._eval_batch(
+                lig_positions, lig_charges, self._born_grids_gpu, self.alpha, True
+            )
+            forces += f
             energies += e
             if self._call_count < 3:
                 fm = float(cp.linalg.norm(f, axis=1).mean())
@@ -499,14 +580,20 @@ class GPUBatchForceEngine:
         # Born desolvation direction 2: lig Born grid on rec atoms
         # Evaluates lig Born grid at rec atom positions -> force on rec.
         # Newton's 3rd law: force on lig = -force on rec.
-        if (self._lig_born_grids_gpu and self._rec_pos_gpu is not None
-                and R_matrices is not None and centroids is not None
-                and self.alpha > 1e-12):
+        if (
+            self._lig_born_grids_gpu
+            and self._rec_pos_gpu is not None
+            and R_matrices is not None
+            and centroids is not None
+            and self.alpha > 1e-12
+        ):
             f2 = self._eval_born_reverse(R_matrices, centroids, N_traj)
             forces += f2
             if self._call_count < 3:
                 fm = float(cp.linalg.norm(f2, axis=1).mean())
-                print(f"    [COMPONENT] BORN2:  |F|_mean={fm:.6e} kBT/Å  - lig Born on {self._rec_pos_gpu.shape[0]} rec atoms")
+                print(
+                    f"    [COMPONENT] BORN2:  |F|_mean={fm:.6e} kBT/Å  - lig Born on {self._rec_pos_gpu.shape[0]} rec atoms"
+                )
         # Torque placeholder
         mask = cp.abs(lig_charges) > 1e-9
         torques = cp.zeros((N_traj, 3), dtype=cp.float64)
@@ -533,7 +620,7 @@ class GPUBatchForceEngine:
         # Get ligand Born grid extent - skip if no rec atoms can reach it
         if self._lig_born_grids_gpu:
             g = self._lig_born_grids_gpu[0]
-            lig_grid_radius = float(max(abs(g['lo'][0]), abs(g['hi'][0])))
+            lig_grid_radius = float(max(abs(g["lo"][0]), abs(g["hi"][0])))
         else:
             return result
         # Chunk size: limit to ~500 MB for the (chunk, N_rec, 3) array
@@ -551,17 +638,20 @@ class GPUBatchForceEngine:
             if min_possible_dist > lig_grid_radius:
                 continue  # no rec atoms can be inside lig Born grid
             # rec_pos_rel: (nc, N_rec, 3) = rec_pos - centroid
-            rec_pos_rel = (self._rec_pos_gpu[None, :, :]
-                           - centroids[c0:c1, None, :])
+            rec_pos_rel = self._rec_pos_gpu[None, :, :] - centroids[c0:c1, None, :]
             # Transform to lig frame: R^T @ rec_pos_rel
             R_T = cp.swapaxes(R_matrices[c0:c1], 1, 2)
-            rec_in_lig = cp.einsum('nij,nkj->nki', R_T, rec_pos_rel)
+            rec_in_lig = cp.einsum("nij,nkj->nki", R_T, rec_pos_rel)
             # Evaluate lig Born grid at rec positions in lig frame
             f_lig, e_lig = self._eval_batch(
-                rec_in_lig, self._rec_charges_gpu,
-                self._lig_born_grids_gpu, self.alpha, True)
+                rec_in_lig,
+                self._rec_charges_gpu,
+                self._lig_born_grids_gpu,
+                self.alpha,
+                True,
+            )
             # Rotate back to lab frame: R @ f_lig
-            f_lab = cp.einsum('nij,nj->ni', R_matrices[c0:c1], f_lig)
+            f_lab = cp.einsum("nij,nj->ni", R_matrices[c0:c1], f_lig)
             # Newton's 3rd: force on lig = -force on rec
             result[c0:c1] = -f_lab
         return result

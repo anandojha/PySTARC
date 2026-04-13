@@ -15,8 +15,8 @@ PySTARC uses three independent constraints, taking the minimum:
     Δt_pair = f² × r² / (2 D₀)    where f = 0.1
 
 This ensures the RMS displacement √(2 D₀ Δt) is at most 10% of
-the intermolecular separation r.  At large r, Δt can be very large, 
-making the simulation efficient.  At small r, Δt shrinks to maintain 
+the intermolecular separation r.  At large r, Δt can be very large,
+making the simulation efficient.  At small r, Δt shrinks to maintain
 accuracy.
 
 2. Force constraint (Δt_force)
@@ -42,16 +42,15 @@ from __future__ import annotations
 from typing import Optional
 import math
 
-_FRAC     = 0.1      # mean displacement must be < frac * separation (pair_dt)
-_GROWTH   = 1.1      # dt growth factor per step
-_RXN_FRAC = 0.0001   # reaction zone: 0.01% of reaction distance (Rxn_Tester)
-_LARGE    = 1.0e30
+_FRAC = 0.1  # mean displacement must be < frac * separation (pair_dt)
+_GROWTH = 1.1  # dt growth factor per step
+_RXN_FRAC = 0.0001  # reaction zone: 0.01% of reaction distance (Rxn_Tester)
+_LARGE = 1.0e30
 
-def max_time_step(r: float,
-                  D_rel: float,
-                  D_rot: float,
-                  r_hydro1: float,
-                  r_hydro2: float) -> float:
+
+def max_time_step(
+    r: float, D_rel: float, D_rot: float, r_hydro1: float, r_hydro2: float
+) -> float:
     """
     Compute the maximum allowed time step from geometry.
     For two rigid bodies:
@@ -70,10 +69,10 @@ def max_time_step(r: float,
     dt_max (ps)
     """
     if r <= 0 or D_rel <= 0:
-        return 0.2   # fallback
-    # pair_dt: mean displacement < frac * r  
+        return 0.2  # fallback
+    # pair_dt: mean displacement < frac * r
     dt_pair = (_FRAC**2 / 2.0) * r**2 / D_rel
-    # rotational constraint: dt_rot = pi^2 / Dr 
+    # rotational constraint: dt_rot = pi^2 / Dr
     if D_rot > 0:
         dt_rot = math.pi**2 / D_rot
     else:
@@ -81,9 +80,10 @@ def max_time_step(r: float,
     # size constraint: dt_size = 4*R^3 / D_factor
     # where D_factor = kT/mu (viscosity factor)
     # Approximated as: dt_size ~ r_hydro^2 / D_rel
-    r_min   = min(r_hydro1, r_hydro2)
+    r_min = min(r_hydro1, r_hydro2)
     dt_size = 4.0 * r_min**2 / D_rel if D_rel > 0 else _LARGE
     return min(dt_pair, dt_rot, dt_size)
+
 
 def reaction_time_step(rho_min: float, D_rel: float) -> float:
     """
@@ -97,7 +97,8 @@ def reaction_time_step(rho_min: float, D_rel: float) -> float:
     """
     if rho_min <= 0 or D_rel <= 0:
         return 0.05
-    return 0.5 * (_RXN_FRAC * rho_min)**2 / D_rel
+    return 0.5 * (_RXN_FRAC * rho_min) ** 2 / D_rel
+
 
 class AdaptiveTimeStep:
     """
@@ -112,6 +113,7 @@ class AdaptiveTimeStep:
                                 rxn_distances, dt_min, dt_rxn_min)
             ... BD step ...
     """
+
     def __init__(self):
         self._last_dt: Optional[float] = None
 
@@ -119,15 +121,17 @@ class AdaptiveTimeStep:
         """Reset after trajectory restart."""
         self._last_dt = None
 
-    def get_dt(self,
-               r:           float,
-               D_rel:       float,
-               D_rot:       float,
-               r_hydro1:    float,
-               r_hydro2:    float,
-               rxn_distances: list,
-               dt_min:      float = 0.001,
-               dt_rxn_min:  float = 1e-6) -> float:
+    def get_dt(
+        self,
+        r: float,
+        D_rel: float,
+        D_rot: float,
+        r_hydro1: float,
+        r_hydro2: float,
+        rxn_distances: list,
+        dt_min: float = 0.001,
+        dt_rxn_min: float = 1e-6,
+    ) -> float:
         """
         Compute the time step for the current BD step.
         Parameters
@@ -152,7 +156,7 @@ class AdaptiveTimeStep:
             if r < 1.5 * rho_min:
                 dt_rxn = reaction_time_step(rho_min, D_rel)
                 dt_geo = min(dt_geo, dt_rxn)
-        # grow from last step 
+        # grow from last step
         if self._last_dt is None:
             dt = dt_geo
         else:

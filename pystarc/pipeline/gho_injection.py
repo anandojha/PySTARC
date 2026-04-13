@@ -21,7 +21,8 @@ from dataclasses import dataclass, field
 import xml.etree.ElementTree as ET
 import numpy as np
 
-# Data structures 
+
+# Data structures
 @dataclass
 class GHOAtom:
     """
@@ -29,8 +30,10 @@ class GHOAtom:
     pos_rel: position relative to the hydrodynamic centre of the molecule
     atom_index: 0-based atom index within the dummy molecule
     """
+
     atom_index: int
-    pos_rel:    np.ndarray   # (3,) A, relative to hydro centre
+    pos_rel: np.ndarray  # (3,) A, relative to hydro centre
+
 
 @dataclass
 class DummyMolecule:
@@ -41,11 +44,13 @@ class DummyMolecule:
     core_name : name of the rigid core it belongs to
     atoms     : list of GHOAtom (positions relative to core hydro centre)
     """
-    name:      str
-    core_name: str
-    atoms:     List[GHOAtom] = field(default_factory=list)
 
-# Parser 
+    name: str
+    core_name: str
+    atoms: List[GHOAtom] = field(default_factory=list)
+
+
+# Parser
 def parse_rxns_xml(rxns_xml_path: str) -> List[DummyMolecule]:
     """
     Parse a reactions XML file and extract all dummy molecule definitions.
@@ -68,7 +73,7 @@ def parse_rxns_xml(rxns_xml_path: str) -> List[DummyMolecule]:
         <ghost_atoms>
             mol_idx,atom_idx,distance
         </ghost_atoms>
-    This function also handles rxns files where dummy positions are encoded as comment 
+    This function also handles rxns files where dummy positions are encoded as comment
     lines or explicit <dummy> blocks.
     Returns list of DummyMolecule (may be empty if no dummies found).
     """
@@ -79,10 +84,10 @@ def parse_rxns_xml(rxns_xml_path: str) -> List[DummyMolecule]:
     except Exception as e:
         raise ValueError(f"Cannot parse rxns XML {rxns_xml_path}: {e}")
     # Look for <dummy> blocks anywhere in the tree
-    for dummy_node in root.iter('dummy'):
-        name      = _text(dummy_node, 'name',  required=True)
-        core_name = _text(dummy_node, 'core',  required=True)
-        atoms_txt = _text(dummy_node, 'atoms', required=False) or ''
+    for dummy_node in root.iter("dummy"):
+        name = _text(dummy_node, "name", required=True)
+        core_name = _text(dummy_node, "core", required=True)
+        atoms_txt = _text(dummy_node, "atoms", required=False) or ""
         dm = DummyMolecule(name=name, core_name=core_name)
         # Parse atom positions - each line: "atom_idx x y z"
         for line in atoms_txt.strip().splitlines():
@@ -91,19 +96,19 @@ def parse_rxns_xml(rxns_xml_path: str) -> List[DummyMolecule]:
                 try:
                     idx = int(parts[0])
                     x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
-                    dm.atoms.append(GHOAtom(
-                        atom_index = idx,
-                        pos_rel    = np.array([x, y, z])
-                    ))
+                    dm.atoms.append(
+                        GHOAtom(atom_index=idx, pos_rel=np.array([x, y, z]))
+                    )
                 except ValueError:
                     continue
         if dm.atoms:
             dummies.append(dm)
     return dummies
 
-def parse_ghost_atoms_from_input(ghost_atoms_text: str,
-                                 mol_positions: Dict[int, np.ndarray]
-                                 ) -> List[GHOAtom]:
+
+def parse_ghost_atoms_from_input(
+    ghost_atoms_text: str, mol_positions: Dict[int, np.ndarray]
+) -> List[GHOAtom]:
     """
     Parse the <ghost_atoms> section from a pystarc_input.xml.
     Format (one per line):  mol_index, atom_index, distance_cutoff
@@ -120,10 +125,10 @@ def parse_ghost_atoms_from_input(ghost_atoms_text: str,
         line = line.strip()
         if not line:
             continue
-        parts = [p.strip() for p in line.split(',')]
+        parts = [p.strip() for p in line.split(",")]
         if len(parts) >= 3:
             try:
-                mol_idx  = int(parts[0])
+                mol_idx = int(parts[0])
                 atom_idx = int(parts[1])
                 # distance is the reaction criterion, not position
                 pos = mol_positions.get(mol_idx, np.zeros(3))
@@ -132,11 +137,13 @@ def parse_ghost_atoms_from_input(ghost_atoms_text: str,
                 continue
     return atoms
 
-# GHO position computation 
-def gho_world_position(gho_atom:     GHOAtom,
-                       rotation_mat: np.ndarray,   # (3,3)
-                       translation:  np.ndarray,   # (3,)
-                       ) -> np.ndarray:
+
+# GHO position computation
+def gho_world_position(
+    gho_atom: GHOAtom,
+    rotation_mat: np.ndarray,  # (3,3)
+    translation: np.ndarray,  # (3,)
+) -> np.ndarray:
     """
     Compute world-frame position of a GHO atom given the current
     rigid body pose.
@@ -148,13 +155,15 @@ def gho_world_position(gho_atom:     GHOAtom,
     """
     return rotation_mat @ gho_atom.pos_rel + translation
 
-def gho_criterion_distance(gho1:    GHOAtom,
-                           rot1:    np.ndarray,
-                           trans1:  np.ndarray,
-                           gho2:    GHOAtom,
-                           rot2:    np.ndarray,
-                           trans2:  np.ndarray,
-                           ) -> float:
+
+def gho_criterion_distance(
+    gho1: GHOAtom,
+    rot1: np.ndarray,
+    trans1: np.ndarray,
+    gho2: GHOAtom,
+    rot2: np.ndarray,
+    trans2: np.ndarray,
+) -> float:
     """
     Distance between two GHO atoms in world frame.
     Used by the reaction criterion evaluator.
@@ -163,11 +172,13 @@ def gho_criterion_distance(gho1:    GHOAtom,
     p2 = gho_world_position(gho2, rot2, trans2)
     return float(np.linalg.norm(p2 - p1))
 
-# Auto-injection from rxns XML 
-def inject_gho_from_rxns_xml(rxns_xml_path:  str,
-                             mol1_hydro_cen: np.ndarray,
-                             mol2_hydro_cen: np.ndarray,
-                             ) -> Tuple[List[GHOAtom], List[GHOAtom]]:
+
+# Auto-injection from rxns XML
+def inject_gho_from_rxns_xml(
+    rxns_xml_path: str,
+    mol1_hydro_cen: np.ndarray,
+    mol2_hydro_cen: np.ndarray,
+) -> Tuple[List[GHOAtom], List[GHOAtom]]:
     """
     Parse a rxns XML and return GHO atoms for mol1 and mol2.
     Parameters
@@ -189,19 +200,21 @@ def inject_gho_from_rxns_xml(rxns_xml_path:  str,
         for atom in dm.atoms:
             # Adjust for hydrodynamic centre offset
             atom_adjusted = GHOAtom(
-                atom_index = atom.atom_index,
-                pos_rel    = atom.pos_rel - mol1_hydro_cen  # receptor default
+                atom_index=atom.atom_index,
+                pos_rel=atom.pos_rel - mol1_hydro_cen,  # receptor default
             )
         # If we cannot determine assignment from XML, return all under mol1
         mol1_ghos.extend(dm.atoms)
     return mol1_ghos, mol2_ghos
 
-def inject_gho_from_manual(ghost_atoms_spec: str,
-                           mol1_positions:   np.ndarray,
-                           mol2_positions:   np.ndarray,
-                           mol1_hydro_cen:   np.ndarray,
-                           mol2_hydro_cen:   np.ndarray,
-                           ) -> Tuple[List[GHOAtom], List[GHOAtom]]:
+
+def inject_gho_from_manual(
+    ghost_atoms_spec: str,
+    mol1_positions: np.ndarray,
+    mol2_positions: np.ndarray,
+    mol1_hydro_cen: np.ndarray,
+    mol2_hydro_cen: np.ndarray,
+) -> Tuple[List[GHOAtom], List[GHOAtom]]:
     """
     Build GHO atoms from manual specification in pystarc_input.xml format:
         <ghost_atoms>
@@ -223,70 +236,68 @@ def inject_gho_from_manual(ghost_atoms_spec: str,
         line = line.strip()
         if not line:
             continue
-        parts = [p.strip() for p in line.split(',')]
+        parts = [p.strip() for p in line.split(",")]
         if len(parts) < 2:
             continue
         try:
             global_atom_idx = int(parts[0])
-            rxn_atom_idx    = int(parts[1])
+            rxn_atom_idx = int(parts[1])
 
             # Determine which molecule this atom belongs to
             if global_atom_idx < n1:
                 # Atom is in molecule 1 (receptor)
-                pos_abs = mol1_positions[global_atom_idx] if global_atom_idx < n1 \
-                          else centroid1
+                pos_abs = (
+                    mol1_positions[global_atom_idx]
+                    if global_atom_idx < n1
+                    else centroid1
+                )
                 pos_rel = pos_abs - mol1_hydro_cen
-                mol1_ghos.append(GHOAtom(
-                    atom_index = rxn_atom_idx,
-                    pos_rel    = pos_rel
-                ))
+                mol1_ghos.append(GHOAtom(atom_index=rxn_atom_idx, pos_rel=pos_rel))
             else:
                 # Atom is in molecule 2 (ligand)
                 local_idx = global_atom_idx - n1
-                pos_abs = mol2_positions[local_idx] if local_idx < n2 \
-                          else centroid2
+                pos_abs = mol2_positions[local_idx] if local_idx < n2 else centroid2
                 pos_rel = pos_abs - mol2_hydro_cen
-                mol2_ghos.append(GHOAtom(
-                    atom_index = rxn_atom_idx,
-                    pos_rel    = pos_rel
-                ))
+                mol2_ghos.append(GHOAtom(atom_index=rxn_atom_idx, pos_rel=pos_rel))
         except (ValueError, IndexError):
             continue
     return mol1_ghos, mol2_ghos
 
-# Reaction criterion with GHO atoms 
+
+# Reaction criterion with GHO atoms
 class GHOReactionCriterion:
     """
     Reaction criterion using GHO ghost atoms.
     A reaction is satisfied if ALL specified GHO pair distances are within
     their cutoffs (n_needed = all pairs, matching the reference implementation default).
     """
+
     def __init__(self, pairs: List[Tuple[GHOAtom, GHOAtom, float]]):
         """
         pairs: list of (gho_mol1, gho_mol2, cutoff_distance)
         """
         self.pairs = pairs
 
-    def is_satisfied(self,
-                     rot1:   np.ndarray,   # (3,3) mol1 rotation
-                     trans1: np.ndarray,   # (3,)  mol1 translation
-                     rot2:   np.ndarray,   # (3,3) mol2 rotation
-                     trans2: np.ndarray,   # (3,)  mol2 translation
-                     ) -> bool:
+    def is_satisfied(
+        self,
+        rot1: np.ndarray,  # (3,3) mol1 rotation
+        trans1: np.ndarray,  # (3,)  mol1 translation
+        rot2: np.ndarray,  # (3,3) mol2 rotation
+        trans2: np.ndarray,  # (3,)  mol2 translation
+    ) -> bool:
         """
         Returns True if all GHO pairs are within their cutoff distances.
         """
         for gho1, gho2, cutoff in self.pairs:
-            d = gho_criterion_distance(gho1, rot1, trans1,
-                                       gho2, rot2, trans2)
+            d = gho_criterion_distance(gho1, rot1, trans1, gho2, rot2, trans2)
             if d > cutoff:
                 return False
         return True
 
     @classmethod
-    def from_rxns_xml(cls, rxns_xml_path: str,
-                      mol1_ghos: List[GHOAtom],
-                      mol2_ghos: List[GHOAtom]) -> 'GHOReactionCriterion':
+    def from_rxns_xml(
+        cls, rxns_xml_path: str, mol1_ghos: List[GHOAtom], mol2_ghos: List[GHOAtom]
+    ) -> "GHOReactionCriterion":
         """
         Build criterion from rxns XML with pre-parsed GHO atoms.
         """
@@ -294,20 +305,24 @@ class GHOReactionCriterion:
         try:
             tree = ET.parse(rxns_xml_path)
             root = tree.getroot()
-            for pair_node in root.iter('pair'):
+            for pair_node in root.iter("pair"):
                 # Parse atom1/atom2 indices and distance
-                a1_txt = _text(pair_node, 'atom1', required=False) or ''
-                a2_txt = _text(pair_node, 'atom2', required=False) or ''
-                dist_txt = _text(pair_node, 'distance', required=False) or '5.0'
+                a1_txt = _text(pair_node, "atom1", required=False) or ""
+                a2_txt = _text(pair_node, "atom2", required=False) or ""
+                dist_txt = _text(pair_node, "distance", required=False) or "5.0"
                 try:
                     idx1 = int(a1_txt.strip().split()[0]) if a1_txt.strip() else 0
                     idx2 = int(a2_txt.strip().split()[0]) if a2_txt.strip() else 0
                     cutoff = float(dist_txt.strip())
 
-                    gho1 = next((g for g in mol1_ghos if g.atom_index == idx1),
-                                GHOAtom(idx1, np.zeros(3)))
-                    gho2 = next((g for g in mol2_ghos if g.atom_index == idx2),
-                                GHOAtom(idx2, np.zeros(3)))
+                    gho1 = next(
+                        (g for g in mol1_ghos if g.atom_index == idx1),
+                        GHOAtom(idx1, np.zeros(3)),
+                    )
+                    gho2 = next(
+                        (g for g in mol2_ghos if g.atom_index == idx2),
+                        GHOAtom(idx2, np.zeros(3)),
+                    )
                     pairs.append((gho1, gho2, cutoff))
                 except (ValueError, IndexError):
                     continue
@@ -315,7 +330,8 @@ class GHOReactionCriterion:
             pass
         return cls(pairs)
 
-# Helpers 
+
+# Helpers
 def _text(node: ET.Element, tag: str, required: bool = True) -> Optional[str]:
     child = node.find(tag)
     if child is None or child.text is None:

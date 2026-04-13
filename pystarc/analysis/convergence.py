@@ -46,6 +46,7 @@ import math
 import json
 import os
 
+
 def analyse_convergence(
     n_reacted: int,
     n_escaped: int,
@@ -87,7 +88,7 @@ def analyse_convergence(
         relative_SE = SE / P
     elif P == 0:
         SE = 0.0
-        relative_SE = float('inf')
+        relative_SE = float("inf")
     else:
         SE = 0.0
         relative_SE = 0.0
@@ -116,7 +117,7 @@ def analyse_convergence(
         "P_rxn": P,
         "SE": SE,
         "relative_SE": relative_SE,
-        "relative_SE_pct": relative_SE * 100 if P > 0 else float('inf'),
+        "relative_SE_pct": relative_SE * 100 if P > 0 else float("inf"),
         "k_on": k_on,
         "SE_kon": SE_kon,
         "wilson_CI": [wilson_lo_kon, wilson_hi_kon],
@@ -127,6 +128,7 @@ def analyse_convergence(
         "N_needed": targets,
     }
     return result
+
 
 def print_convergence(result: dict) -> str:
     """Print convergence analysis to terminal and return as string."""
@@ -141,29 +143,39 @@ def print_convergence(result: dict) -> str:
     lines.append(f"  N completed      = {result['N']:,}")
     lines.append(f"  P_rxn            = {result['P_rxn']:.6f}")
     lines.append(f"  SE(P_rxn)        = {result['SE']:.6f}")
-    if result['P_rxn'] > 0:
-        lines.append(f"  Relative SE      = {result['relative_SE_pct']:.2f}%"
-                      f"     - k_on known to ±{result['relative_SE_pct']:.2f}%")
+    if result["P_rxn"] > 0:
+        lines.append(
+            f"  Relative SE      = {result['relative_SE_pct']:.2f}%"
+            f"     - k_on known to ±{result['relative_SE_pct']:.2f}%"
+        )
     else:
         lines.append(f"  Relative SE      = inf (P_rxn = 0, no reactions)")
-    lines.append(f"  Wilson 95% CI    = [{result['wilson_CI'][0]:.4e}, "
-                 f"{result['wilson_CI'][1]:.4e}] M⁻¹s⁻¹")
-    tol_pct = result['tol_pct']
-    if result['converged']:
-        lines.append(f"  Converged (relative SE {result['relative_SE_pct']:.2f}% < {tol_pct:.0f}% threshold)")
+    lines.append(
+        f"  Wilson 95% CI    = [{result['wilson_CI'][0]:.4e}, "
+        f"{result['wilson_CI'][1]:.4e}] M⁻¹s⁻¹"
+    )
+    tol_pct = result["tol_pct"]
+    if result["converged"]:
+        lines.append(
+            f"  Converged (relative SE {result['relative_SE_pct']:.2f}% < {tol_pct:.0f}% threshold)"
+        )
     else:
-        lines.append(f"  Not converged (relative SE {result['relative_SE_pct']:.2f}% > {tol_pct:.0f}% threshold)")
-    if result['N_needed']:
+        lines.append(
+            f"  Not converged (relative SE {result['relative_SE_pct']:.2f}% > {tol_pct:.0f}% threshold)"
+        )
+    if result["N_needed"]:
         lines.append(f"  Trajectories needed")
-        for label, n in result['N_needed'].items():
-            status = "done" if result['N'] >= n else "need more"
+        for label, n in result["N_needed"].items():
+            status = "done" if result["N"] >= n else "need more"
             lines.append(f"    For ±{label} relative SE: {n:,} ({status})")
     text = "\n".join(lines)
     print(text)
     return text
 
+
 def save_convergence(result: dict, work_dir: str = ".") -> None:
     import json, os
+
     path = os.path.join(work_dir, "convergence.json")
     with open(path, "w") as f:
         json.dump(result, f, indent=2, default=str)

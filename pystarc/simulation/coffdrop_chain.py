@@ -44,70 +44,81 @@ from typing import List, Optional, Tuple
 import numpy as np
 import math
 
-# Bead data structure 
+
+# Bead data structure
 @dataclass
 class ChainBead:
     """
     One coarse-grained bead in a COFFDROP chain.
     """
-    pos:     np.ndarray        # (3,) current position (A)
-    force:   np.ndarray        # (3,) current force (kBT/A)
-    radius:  float             # (A) Stokes radius for diffusion
-    charge:  float             # (e) partial charge
-    resname: str   = ''        # residue name (1-letter or 3-letter)
-    resid:   int   = 0         # residue index
+
+    pos: np.ndarray  # (3,) current position (A)
+    force: np.ndarray  # (3,) current force (kBT/A)
+    radius: float  # (A) Stokes radius for diffusion
+    charge: float  # (e) partial charge
+    resname: str = ""  # residue name (1-letter or 3-letter)
+    resid: int = 0  # residue index
 
     def __post_init__(self):
-        self.pos   = np.asarray(self.pos,   dtype=float)
+        self.pos = np.asarray(self.pos, dtype=float)
         self.force = np.asarray(self.force, dtype=float)
+
 
 @dataclass
 class ChainBond:
     """
     Bonded interaction between two beads.
     """
-    i:          int     # bead index
-    j:          int     # bead index
-    r0:         float   # equilibrium distance (A)
-    k_spring:   float   # spring constant (kBT/A^2)
+
+    i: int  # bead index
+    j: int  # bead index
+    r0: float  # equilibrium distance (A)
+    k_spring: float  # spring constant (kBT/A^2)
+
 
 @dataclass
 class ChainAngle:
     """
     Three-body angle interaction.
     """
+
     i: int
-    j: int    # central bead
+    j: int  # central bead
     k: int
-    theta0:  float   # equilibrium angle (rad)
-    k_angle: float   # force constant (kBT/rad^2)
+    theta0: float  # equilibrium angle (rad)
+    k_angle: float  # force constant (kBT/rad^2)
+
 
 @dataclass
 class ChainTorsion:
     """
     Four-body torsion/dihedral interaction.
     """
+
     i: int
     j: int
     k: int
     l: int
-    phi0:  float   # equilibrium dihedral (rad)
-    k_tor: float   # force constant (kBT)
-    n:     int     # periodicity
+    phi0: float  # equilibrium dihedral (rad)
+    k_tor: float  # force constant (kBT)
+    n: int  # periodicity
+
 
 # Chain state
+
 
 @dataclass
 class FlexibleChain:
     """
     State of a COFFDROP flexible chain.
     """
-    beads:    List[ChainBead]
-    bonds:    List[ChainBond]    = field(default_factory=list)
-    angles:   List[ChainAngle]   = field(default_factory=list)
+
+    beads: List[ChainBead]
+    bonds: List[ChainBond] = field(default_factory=list)
+    angles: List[ChainAngle] = field(default_factory=list)
     torsions: List[ChainTorsion] = field(default_factory=list)
-    name:     str                = ''
-    frozen:   bool               = False   # if True, chain doesn't move
+    name: str = ""
+    frozen: bool = False  # if True, chain doesn't move
 
     @property
     def n_beads(self) -> int:
@@ -127,14 +138,16 @@ class FlexibleChain:
         for b in self.beads:
             b.force = np.zeros(3)
 
+
 # Force evaluation
+
 
 class ChainForceEvaluator:
     """
     Evaluates all bonded and non-bonded forces on a flexible chain.
     """
-    def compute_forces(self, chain: FlexibleChain,
-                       kT: float = 0.5961) -> np.ndarray:
+
+    def compute_forces(self, chain: FlexibleChain, kT: float = 0.5961) -> np.ndarray:
         """
         Compute all forces on chain beads. Returns (n_beads, 3) force array.
         Forces are in kBT/A units.
@@ -154,34 +167,37 @@ class ChainForceEvaluator:
         F += self._excluded_volume_forces(chain, kT)
         return F
 
-    def _bond_force(self, chain: FlexibleChain,
-                    bond: ChainBond, kT: float) -> np.ndarray:
+    def _bond_force(
+        self, chain: FlexibleChain, bond: ChainBond, kT: float
+    ) -> np.ndarray:
         F = np.zeros((chain.n_beads, 3))
         ri = chain.beads[bond.i].pos
         rj = chain.beads[bond.j].pos
-        dr   = rj - ri
-        r    = float(np.linalg.norm(dr))
+        dr = rj - ri
+        r = float(np.linalg.norm(dr))
         if r < 1e-8:
             return F
         r_hat = dr / r
-        f_mag = -bond.k_spring * (r - bond.r0)   # kBT/A
+        f_mag = -bond.k_spring * (r - bond.r0)  # kBT/A
         F[bond.i] -= f_mag * r_hat
         F[bond.j] += f_mag * r_hat
         return F
 
-    def _angle_force(self, chain: FlexibleChain,
-                     angle: ChainAngle, kT: float) -> np.ndarray:
+    def _angle_force(
+        self, chain: FlexibleChain, angle: ChainAngle, kT: float
+    ) -> np.ndarray:
         F = np.zeros((chain.n_beads, 3))
         ri = chain.beads[angle.i].pos
         rj = chain.beads[angle.j].pos
         rk = chain.beads[angle.k].pos
-        u  = ri - rj
-        v  = rk - rj
+        u = ri - rj
+        v = rk - rj
         nu = float(np.linalg.norm(u))
         nv = float(np.linalg.norm(v))
         if nu < 1e-8 or nv < 1e-8:
             return F
-        u /= nu; v /= nv
+        u /= nu
+        v /= nv
         cos_t = float(np.dot(u, v))
         cos_t = max(-1.0, min(1.0, cos_t))
         theta = math.acos(cos_t)
@@ -195,11 +211,12 @@ class ChainForceEvaluator:
         fk = coeff * (u - cos_t * v) / nv
         F[angle.i] += fi
         F[angle.k] += fk
-        F[angle.j] -= (fi + fk)
+        F[angle.j] -= fi + fk
         return F
 
-    def _torsion_force(self, chain: FlexibleChain,
-                       tor: ChainTorsion, kT: float) -> np.ndarray:
+    def _torsion_force(
+        self, chain: FlexibleChain, tor: ChainTorsion, kT: float
+    ) -> np.ndarray:
         F = np.zeros((chain.n_beads, 3))
         ri = chain.beads[tor.i].pos
         rj = chain.beads[tor.j].pos
@@ -214,47 +231,52 @@ class ChainForceEvaluator:
         n2_norm = float(np.linalg.norm(n2))
         if n1_norm < 1e-8 or n2_norm < 1e-8:
             return F
-        n1 /= n1_norm; n2 /= n2_norm
+        n1 /= n1_norm
+        n2 /= n2_norm
         cos_phi = float(np.dot(n1, n2))
         cos_phi = max(-1.0, min(1.0, cos_phi))
         phi = math.acos(cos_phi)
         # dV/dphi = -k * n * sin(n*phi - phi0)
         dV = -tor.k_tor * tor.n * math.sin(tor.n * phi - tor.phi0)
-        b2_hat = b2 / float(np.linalg.norm(b2)) if float(np.linalg.norm(b2)) > 1e-8 else b2
+        b2_hat = (
+            b2 / float(np.linalg.norm(b2)) if float(np.linalg.norm(b2)) > 1e-8 else b2
+        )
         F[tor.i] += -dV * (n1 / n1_norm) / float(np.linalg.norm(b1))
-        F[tor.l] +=  dV * (n2 / n2_norm) / float(np.linalg.norm(b3))
+        F[tor.l] += dV * (n2 / n2_norm) / float(np.linalg.norm(b3))
         return F
 
-    def _excluded_volume_forces(self, chain: FlexibleChain,
-                                 kT: float) -> np.ndarray:
+    def _excluded_volume_forces(self, chain: FlexibleChain, kT: float) -> np.ndarray:
         """Soft-sphere excluded volume between non-bonded bead pairs."""
         n = chain.n_beads
         F = np.zeros((n, 3))
-        bonded_pairs = {(b.i, b.j) for b in chain.bonds} | \
-                       {(b.j, b.i) for b in chain.bonds}
+        bonded_pairs = {(b.i, b.j) for b in chain.bonds} | {
+            (b.j, b.i) for b in chain.bonds
+        }
         for i in range(n):
-            for j in range(i+2, n):   # skip bonded neighbours
+            for j in range(i + 2, n):  # skip bonded neighbours
                 if (i, j) in bonded_pairs:
                     continue
                 ri = chain.beads[i].pos
                 rj = chain.beads[j].pos
-                dr   = rj - ri
-                r    = float(np.linalg.norm(dr))
-                sig  = chain.beads[i].radius + chain.beads[j].radius
+                dr = rj - ri
+                r = float(np.linalg.norm(dr))
+                sig = chain.beads[i].radius + chain.beads[j].radius
                 if r < 1e-8 or r >= sig:
                     continue
                 # WCA-style repulsion
-                sr   = sig / r
+                sr = sig / r
                 sr12 = sr**12
-                sr6  = sr**6
-                eps  = 1.0   # kBT units
-                f_mag = eps * (12*sr12 - 6*sr6) / (r*r)
-                fvec  = f_mag * dr
+                sr6 = sr**6
+                eps = 1.0  # kBT units
+                f_mag = eps * (12 * sr12 - 6 * sr6) / (r * r)
+                fvec = f_mag * dr
                 F[i] += fvec
                 F[j] -= fvec
         return F
 
-# BD propagation for chain 
+
+# BD propagation for chain
+
 
 class ChainBDPropagator:
     """
@@ -264,18 +286,21 @@ class ChainBDPropagator:
     """
 
     def __init__(self, kT: float = 0.5961, viscosity: float = 8.904e-4):
-        self.kT   = kT
-        self.eta  = viscosity   # Pa*s converted to kcal*ps/A^3
+        self.kT = kT
+        self.eta = viscosity  # Pa*s converted to kcal*ps/A^3
         self._evaluator = ChainForceEvaluator()
 
     def D_trans(self, radius: float) -> float:
         """Stokes-Einstein translational diffusion (A^2/ps)."""
         return self.kT / (6.0 * math.pi * self.eta * radius)
 
-    def step(self, chain: FlexibleChain,
-             dt: float,
-             rng: np.random.Generator,
-             force_evaluator=None) -> FlexibleChain:
+    def step(
+        self,
+        chain: FlexibleChain,
+        dt: float,
+        rng: np.random.Generator,
+        force_evaluator=None,
+    ) -> FlexibleChain:
         """
         Advance chain by one BD step of size dt (ps).
             dpos  = mob * f * dt
@@ -296,7 +321,7 @@ class ChainBDPropagator:
             b.force = forces[i]
         # Propagate each bead
         for i, b in enumerate(chain.beads):
-            mob = 1.0 / (6.0 * math.pi * self.eta * b.radius)   # A^3/(kBT*ps)
+            mob = 1.0 / (6.0 * math.pi * self.eta * b.radius)  # A^3/(kBT*ps)
             # Deterministic drift: dpos = mob * F * dt
             drift = mob * b.force * dt
             # Stochastic: wdpos = sqrt(2 * kT * mob) * dW
@@ -304,7 +329,7 @@ class ChainBDPropagator:
             noise = sigma * rng.standard_normal(3)
             b.pos += drift + noise
         return chain
-    
+
     def max_time_step(self, chain: FlexibleChain) -> float:
         """
         Geometry-based maximum time step for chain.
@@ -317,9 +342,9 @@ class ChainBDPropagator:
         # 4*R^3/D_factor simplified to R^2/D here
         return min_R**2 / D_max if D_max > 0 else 0.001
 
-    def satisfy_bond_constraints(self, chain: FlexibleChain,
-                                  tol: float = 1e-4,
-                                  max_iter: int = 100):
+    def satisfy_bond_constraints(
+        self, chain: FlexibleChain, tol: float = 1e-4, max_iter: int = 100
+    ):
         """
         RATTLE-style bond constraint satisfaction.
         """
@@ -329,7 +354,7 @@ class ChainBDPropagator:
                 ri = chain.beads[bond.i].pos
                 rj = chain.beads[bond.j].pos
                 dr = rj - ri
-                r  = float(np.linalg.norm(dr))
+                r = float(np.linalg.norm(dr))
                 if r < 1e-8:
                     continue
                 viol = abs(r - bond.r0) / bond.r0
@@ -342,13 +367,15 @@ class ChainBDPropagator:
             if max_viol < tol:
                 break
 
-# Simple chain builder 
-def build_linear_chain(n_residues:  int,
-                       bead_radius: float = 2.0,
-                       bead_charge: float = 0.0,
-                       bond_length: float = 3.8,
-                       start_pos:   Optional[np.ndarray] = None,
-                       ) -> FlexibleChain:
+
+# Simple chain builder
+def build_linear_chain(
+    n_residues: int,
+    bead_radius: float = 2.0,
+    bead_charge: float = 0.0,
+    bond_length: float = 3.8,
+    start_pos: Optional[np.ndarray] = None,
+) -> FlexibleChain:
     """
     Build a simple linear chain of n_residues beads.
     Useful for testing; production use should load from COFFDROP XML.
@@ -358,21 +385,25 @@ def build_linear_chain(n_residues:  int,
     beads = []
     for i in range(n_residues):
         pos = start_pos + np.array([i * bond_length, 0.0, 0.0])
-        beads.append(ChainBead(
-            pos     = pos,
-            force   = np.zeros(3),
-            radius  = bead_radius,
-            charge  = bead_charge,
-            resname = 'UNK',
-            resid   = i
-        ))
+        beads.append(
+            ChainBead(
+                pos=pos,
+                force=np.zeros(3),
+                radius=bead_radius,
+                charge=bead_charge,
+                resname="UNK",
+                resid=i,
+            )
+        )
     bonds = [
-        ChainBond(i=i, j=i+1, r0=bond_length, k_spring=100.0)
+        ChainBond(i=i, j=i + 1, r0=bond_length, k_spring=100.0)
         for i in range(n_residues - 1)
     ]
-    return FlexibleChain(beads=beads, bonds=bonds, name='chain')
+    return FlexibleChain(beads=beads, bonds=bonds, name="chain")
 
-# COFFDROP tabulated force evaluator 
+
+# COFFDROP tabulated force evaluator
+
 
 class COFFDROPForceEvaluator:
     """
@@ -390,6 +421,7 @@ class COFFDROPForceEvaluator:
         evaluator = COFFDROPForceEvaluator(params)
         F = evaluator.compute_forces(chain)
     """
+
     def __init__(self, params):
         """
         Parameters
@@ -398,7 +430,7 @@ class COFFDROPForceEvaluator:
         """
         self.params = params
 
-    def compute_forces(self, chain: 'FlexibleChain') -> np.ndarray:
+    def compute_forces(self, chain: "FlexibleChain") -> np.ndarray:
         """
         Compute all forces on chain beads using COFFDROP tabulated potentials.
         Returns (n_beads, 3) force array in kBT/A.
@@ -430,38 +462,38 @@ class COFFDROPForceEvaluator:
         for i in range(n - 2):
             if i in bonded_next and bonded_next[i] == i + 1:
                 if i + 1 in bonded_next and bonded_next[i + 1] == i + 2:
-                    f_i, f_j, f_k = self._angle_forces(chain, i, i+1, i+2)
-                    F[i]   += f_i
-                    F[i+1] += f_j
-                    F[i+2] += f_k
+                    f_i, f_j, f_k = self._angle_forces(chain, i, i + 1, i + 2)
+                    F[i] += f_i
+                    F[i + 1] += f_j
+                    F[i + 2] += f_k
         # 3. Dihedral forces (quadruplets)
         for i in range(n - 3):
-            f_i, f_j, f_k, f_l = self._dihedral_forces(chain, i, i+1, i+2, i+3)
-            F[i]   += f_i
-            F[i+1] += f_j
-            F[i+2] += f_k
-            F[i+3] += f_l
+            f_i, f_j, f_k, f_l = self._dihedral_forces(chain, i, i + 1, i + 2, i + 3)
+            F[i] += f_i
+            F[i + 1] += f_j
+            F[i + 2] += f_k
+            F[i + 3] += f_l
         return F
 
-    def _pair_force_vec(self, chain: 'FlexibleChain',
-                        i: int, j: int) -> np.ndarray:
+    def _pair_force_vec(self, chain: "FlexibleChain", i: int, j: int) -> np.ndarray:
         """
         Vector force on bead i from bead j via COFFDROP pair potential.
         """
         bi = chain.beads[i]
         bj = chain.beads[j]
-        dr   = bi.pos - bj.pos
-        r    = float(np.linalg.norm(dr))
+        dr = bi.pos - bj.pos
+        r = float(np.linalg.norm(dr))
         if r < 1e-10:
             return np.zeros(3)
-        dVdr = self.params.pair_force(bi.resname, self._bead_type(bi),
-                                       bj.resname, self._bead_type(bj), r)
+        dVdr = self.params.pair_force(
+            bi.resname, self._bead_type(bi), bj.resname, self._bead_type(bj), r
+        )
         # F_i = -dV/dr * rhat  (force on i is away from j when repulsive)
         return -dVdr * (dr / r)
 
-    def _angle_forces(self, chain: 'FlexibleChain',
-                      i: int, j: int, k: int
-                      ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _angle_forces(
+        self, chain: "FlexibleChain", i: int, j: int, k: int
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Forces from bond-angle potential on beads i-j-k.
         Returns forces on (i, j, k).
@@ -480,7 +512,7 @@ class COFFDROPForceEvaluator:
             (bi.resname, bj.resname, bk.resname),
             (self._bead_type(bi), self._bead_type(bj), self._bead_type(bk)),
             self._angle_orders(chain, i, j, k),
-            theta_deg
+            theta_deg,
         )  # kBT/deg
         if abs(math.sin(theta_deg * math.pi / 180.0)) < 1e-10:
             return np.zeros(3), np.zeros(3), np.zeros(3)
@@ -498,14 +530,16 @@ class COFFDROPForceEvaluator:
         fk = -dVdth_rad * df_k
         return fi, fj, fk
 
-    def _dihedral_forces(self, chain: 'FlexibleChain',
-                         i: int, j: int, k: int, l: int
-                         ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def _dihedral_forces(
+        self, chain: "FlexibleChain", i: int, j: int, k: int, l: int
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Forces from dihedral potential on beads i-j-k-l.
         """
-        bi = chain.beads[i]; bj = chain.beads[j]
-        bk = chain.beads[k]; bl = chain.beads[l]
+        bi = chain.beads[i]
+        bj = chain.beads[j]
+        bk = chain.beads[k]
+        bl = chain.beads[l]
         b1 = bj.pos - bi.pos
         b2 = bk.pos - bj.pos
         b3 = bl.pos - bk.pos
@@ -528,31 +562,36 @@ class COFFDROPForceEvaluator:
         phi_deg = phi_deg % 360.0
         dVdphi = self.params.dihedral_force(
             (bi.resname, bj.resname, bk.resname, bl.resname),
-            (self._bead_type(bi), self._bead_type(bj),
-             self._bead_type(bk), self._bead_type(bl)),
+            (
+                self._bead_type(bi),
+                self._bead_type(bj),
+                self._bead_type(bk),
+                self._bead_type(bl),
+            ),
             self._dihedral_orders(chain, i, j, k, l),
-            phi_deg
+            phi_deg,
         )  # kBT/deg
         dVdphi_rad = dVdphi / (math.pi / 180.0)  # kBT/rad
-        # Gradient of phi w.r.t. positions 
+        # Gradient of phi w.r.t. positions
         b2_norm = float(np.linalg.norm(b2))
         if b2_norm < 1e-10:
             return np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)
-        fi =  (b2_norm / (n1_norm**2)) * n1
+        fi = (b2_norm / (n1_norm**2)) * n1
         fl = -(b2_norm / (n2_norm**2)) * n2
-        fj = (-np.dot(b1, b2) / (b2_norm**2 * n1_norm**2) * n1 * b2_norm
-               + np.dot(b3, b2) / (b2_norm**2 * n2_norm**2) * n2 * b2_norm)
+        fj = (
+            -np.dot(b1, b2) / (b2_norm**2 * n1_norm**2) * n1 * b2_norm
+            + np.dot(b3, b2) / (b2_norm**2 * n2_norm**2) * n2 * b2_norm
+        )
         fk = -fi - fj - fl
-        return (-dVdphi_rad * fi, -dVdphi_rad * fj,
-                -dVdphi_rad * fk, -dVdphi_rad * fl)
+        return (-dVdphi_rad * fi, -dVdphi_rad * fj, -dVdphi_rad * fk, -dVdphi_rad * fl)
 
-    # Helper methods 
-    def _bead_type(self, bead: 'ChainBead') -> str:
+    # Helper methods
+    def _bead_type(self, bead: "ChainBead") -> str:
         """Get the COFFDROP bead type name for a chain bead."""
-        if ':' in bead.resname:
-            return bead.resname.split(':')[1]
+        if ":" in bead.resname:
+            return bead.resname.split(":")[1]
         # Default: CA for backbone beads
-        return 'CA'
+        return "CA"
 
     def _angle_orders(self, chain, i, j, k):
         """Sequence orders for an angle triplet."""
@@ -563,10 +602,10 @@ class COFFDROPForceEvaluator:
         """Sequence orders for a dihedral quartet."""
         return (i + 1, j + 1, k + 1, l + 1)
 
-def build_chain_from_coffdrop(residues: List[str],
-                              params,
-                              start_pos: Optional[np.ndarray] = None
-                              ) -> 'FlexibleChain':
+
+def build_chain_from_coffdrop(
+    residues: List[str], params, start_pos: Optional[np.ndarray] = None
+) -> "FlexibleChain":
     """
     Build a FlexibleChain from a sequence of residue names using COFFDROP
     equilibrium bond lengths and charges from the parameter files.
@@ -585,23 +624,22 @@ def build_chain_from_coffdrop(residues: List[str],
     pos = start_pos.copy()
     for i, resname in enumerate(residues):
         # Get charge from charges.xml (CA bead is backbone, usually neutral)
-        charge = params.bead_charge(resname, 'CA')
+        charge = params.bead_charge(resname, "CA")
         bead = ChainBead(
-            pos     = pos.copy(),
-            force   = np.zeros(3),
-            radius  = 2.0,           # typical CA Stokes radius
-            charge  = charge,
-            resname = resname,
-            resid   = i,
+            pos=pos.copy(),
+            force=np.zeros(3),
+            radius=2.0,  # typical CA Stokes radius
+            charge=charge,
+            resname=resname,
+            resid=i,
         )
         beads.append(bead)
         # Advance position by CA-CA backbone bond length
-        ca_ca_len = params.bond_length('XXX', 'CA', 1, 'XXX', 'CA', 2) or 3.8
+        ca_ca_len = params.bond_length("XXX", "CA", 1, "XXX", "CA", 2) or 3.8
         pos = pos + np.array([ca_ca_len, 0.0, 0.0])
     # Build bonds using equilibrium lengths from connectivity.xml
     bonds = []
     for i in range(len(residues) - 1):
-        r0 = params.bond_length('XXX', 'CA', 1, 'XXX', 'CA', 2) or 3.8
-        bonds.append(ChainBond(i=i, j=i+1, r0=r0, k_spring=100.0))
-    return FlexibleChain(beads=beads, bonds=bonds,
-                         name='-'.join(residues[:3]) + '...')
+        r0 = params.bond_length("XXX", "CA", 1, "XXX", "CA", 2) or 3.8
+        bonds.append(ChainBond(i=i, j=i + 1, r0=r0, k_spring=100.0))
+    return FlexibleChain(beads=beads, bonds=bonds, name="-".join(residues[:3]) + "...")

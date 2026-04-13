@@ -15,7 +15,12 @@ Requirements
     pip install dist/pystarc-1.1.0-py3-none-any.whl
     pip install cupy-cuda12x    # GPU (NVIDIA only, optional)
 """
-from pystarc.analysis.convergence import analyse_convergence, print_convergence, save_convergence
+
+from pystarc.analysis.convergence import (
+    analyse_convergence,
+    print_convergence,
+    save_convergence,
+)
 from pystarc.pipeline.input_parser import write_template
 from pystarc.pipeline.input_parser import parse
 from pystarc.pipeline.pipeline import run
@@ -29,10 +34,12 @@ import sys
 import csv
 import os
 
+
 class _Tee:
     """Write to both stdout and a log file simultaneously."""
+
     def __init__(self, stream, log_file):
-        self._stream   = stream
+        self._stream = stream
         self._log_file = log_file
 
     def write(self, data):
@@ -49,11 +56,12 @@ class _Tee:
     def __getattr__(self, name):
         return getattr(self._stream, name)
 
+
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] in ('-h', '--help'):
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
         print(__doc__)
         sys.exit(0)
-    if sys.argv[1] == '--template':
+    if sys.argv[1] == "--template":
         out = sys.argv[2] if len(sys.argv) > 2 else "pystarc_input.xml"
         write_template(out)
         print(f"Edit {out} then run:  python run_pystarc.py {out}")
@@ -64,18 +72,21 @@ def main():
         print("Generate a template with:  python run_pystarc.py --template")
         sys.exit(1)
     cfg = parse(xml_path)
-    # Set up log file in work_dir 
+    # Set up log file in work_dir
     work_dir = Path(cfg.work_dir)
     if not work_dir.is_absolute():
         work_dir = xml_path.parent / work_dir
     work_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path  = work_dir / f"pystarc_{timestamp}.log"
+    log_path = work_dir / f"pystarc_{timestamp}.log"
     # Detect GPU
     _gpu_name = "N/A"
     try:
-        _r = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total",
-                       "--format=csv,noheader"], capture_output=True, text=True)
+        _r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+        )
         if _r.returncode == 0:
             _gpu_name = _r.stdout.strip().split("\n")[0]
     except Exception:
@@ -85,7 +96,9 @@ def main():
         log_f.write("=" * 64 + "\n")
         log_f.write("  PySTARC run log\n")
         log_f.write("=" * 64 + "\n")
-        log_f.write(f"  Started      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        log_f.write(
+            f"  Started      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        )
         log_f.write(f"  Input        : {xml_path.resolve()}\n")
         log_f.write(f"  Host         : {os.uname().nodename}\n")
         log_f.write(f"  Platform     : {os.uname().sysname} {os.uname().release}\n")
@@ -122,15 +135,19 @@ def main():
             if rj_path.exists():
                 rj = json.loads(rj_path.read_text())
                 _footer.append(f"  k_on           : {rj['k_on']:.4e} M-1 s-1")
-                _footer.append(f"  95% CI         : [{rj['k_on_low']:.4e}, {rj['k_on_high']:.4e}]")
+                _footer.append(
+                    f"  95% CI         : [{rj['k_on_low']:.4e}, {rj['k_on_high']:.4e}]"
+                )
                 # Formatted with error: (value ± error) × 10^n
-                _kon = rj['k_on']
-                _kon_err = (rj['k_on_high'] - rj['k_on_low']) / 2.0
+                _kon = rj["k_on"]
+                _kon_err = (rj["k_on_high"] - rj["k_on_low"]) / 2.0
                 if _kon > 0:
                     _exp = int(math.floor(math.log10(_kon)))
                     _man = _kon / 10**_exp
                     _man_err = _kon_err / 10**_exp
-                    _footer.append(f"  k_on (± error) : ({_man:.1f} ± {_man_err:.1f}) x 10^{_exp} M-1 s-1")
+                    _footer.append(
+                        f"  k_on (± error) : ({_man:.1f} ± {_man_err:.1f}) x 10^{_exp} M-1 s-1"
+                    )
                 _footer.append(f"  k_b            : {rj['k_b']:.4f} A3/ps")
             _footer += [
                 f"  BD wall time   : {result.elapsed_sec:.1f} s",
@@ -143,7 +160,7 @@ def main():
                 print(line)
             # Convergence analysis
             if cfg.convergence_check:
-                _k_b = rj.get('k_b', 0.0) if rj_path.exists() else 0.0
+                _k_b = rj.get("k_b", 0.0) if rj_path.exists() else 0.0
                 _conv = analyse_convergence(
                     n_reacted=result.n_reacted,
                     n_escaped=result.n_escaped,
@@ -159,6 +176,7 @@ def main():
         finally:
             sys.stdout = original_stdout
     print(f"\n  Log saved -> {log_path}")
+
 
 if __name__ == "__main__":
     main()

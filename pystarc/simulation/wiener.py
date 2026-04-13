@@ -22,11 +22,14 @@ from dataclasses import dataclass, field
 import numpy as np
 import math
 
+
 @dataclass
 class WienerStep:
     """One pending Wiener increment with its time step."""
-    dW: np.ndarray   # shape (n_dof,) - the random increment
-    dt: float        # time step for this increment
+
+    dW: np.ndarray  # shape (n_dof,) - the random increment
+    dt: float  # time step for this increment
+
 
 class WienerProcess:
     """
@@ -36,7 +39,7 @@ class WienerProcess:
     top of the stack. If a backstep is needed, the current step is
     split into two halves and both pushed back.
     """
-    
+
     def __init__(self, dW: np.ndarray, dt: float):
         self._stack: List[WienerStep] = [WienerStep(dW.copy(), dt)]
         self._t: float = 0.0
@@ -74,9 +77,9 @@ class WienerProcess:
           next.w = old.w - new_cur.w
           next.dt = new_cur.dt
         """
-        old  = self._stack[-1]
-        hdt  = old.dt / 2.0
-        s    = math.sqrt(hdt / 2.0)
+        old = self._stack[-1]
+        hdt = old.dt / 2.0
+        s = math.sqrt(hdt / 2.0)
         n_dof = len(old.dW)
         # midpoint increment
         w_mid = 0.5 * old.dW + s * rng.standard_normal(n_dof)
@@ -88,12 +91,13 @@ class WienerProcess:
         # push first half (runs first - top of stack)
         self._stack.append(WienerStep(w_mid, hdt))
 
+
 def do_one_full_step(
-        advance_fn:   Callable[[np.ndarray, float, float], Tuple[bool, bool]],
-        step_back_fn: Callable[[float, float], None],
-        rng:          np.random.Generator,
-        dW_init:      np.ndarray,
-        dt0:          float,
+    advance_fn: Callable[[np.ndarray, float, float], Tuple[bool, bool]],
+    step_back_fn: Callable[[float, float], None],
+    rng: np.random.Generator,
+    dW_init: np.ndarray,
+    dt0: float,
 ) -> float:
     """
     Execute one full BD step with automatic Wiener subdivision.
@@ -116,7 +120,7 @@ def do_one_full_step(
     final_dt = dt0
     while not process.at_end:
         dt = process.dt
-        t  = process.t
+        t = process.t
         is_done, must_backstep = advance_fn(process.dW, t, dt)
         if not is_done:
             if must_backstep:
@@ -131,8 +135,8 @@ def do_one_full_step(
 
     return final_dt
 
-def make_initial_dW(n_dof: int, dt: float,
-                    rng: np.random.Generator) -> np.ndarray:
+
+def make_initial_dW(n_dof: int, dt: float, rng: np.random.Generator) -> np.ndarray:
     """
     Generate initial Wiener increment: dW ~ Normal(0, sqrt(dt)*I)
     shape (n_dof,)

@@ -14,7 +14,7 @@ so that the interaction potential is approximately centrosymmetric:
 
     b = max_receptor_extent + max_ligand_extent + padding
 
-Typically b ≈ 3-5 × molecular_radius. 
+Typically b ≈ 3-5 × molecular_radius.
 
 2. Escape sphere
 The escape sphere at r_esc = 2b is where the outer propagator
@@ -40,15 +40,18 @@ from dataclasses import dataclass
 from pathlib import Path
 import numpy as np
 
+
 @dataclass
 class AtomRecord:
-    index:   int
-    name:    str
+    index: int
+    name: str
     resname: str
-    resid:   int
-    x: float; y: float; z: float
-    charge:  float
-    radius:  float
+    resid: int
+    x: float
+    y: float
+    z: float
+    charge: float
+    radius: float
 
     @property
     def pos(self) -> np.ndarray:
@@ -56,53 +59,63 @@ class AtomRecord:
 
     @property
     def is_ghost(self) -> bool:
-        return (self.name.strip().upper() == 'GHO' or
-                self.radius < 1e-6 or
-                abs(self.charge) < 1e-9 and self.radius < 1e-6)
+        return (
+            self.name.strip().upper() == "GHO"
+            or self.radius < 1e-6
+            or abs(self.charge) < 1e-9
+            and self.radius < 1e-6
+        )
+
 
 @dataclass
 class MoleculeGeometry:
-    n_atoms:          int
-    n_charged:        int
-    n_ghost:          int
-    centroid:         np.ndarray
-    max_radius:       float     # max distance from centroid to atom surface
-    hydrodynamic_r:   float     # hydrodynamic radius (= max_radius for rigid body)
-    ghost_indices:    List[int] # 0-based indices of ghost atoms
-    ghost_positions:  List[np.ndarray]
-    total_charge:     float
+    n_atoms: int
+    n_charged: int
+    n_ghost: int
+    centroid: np.ndarray
+    max_radius: float  # max distance from centroid to atom surface
+    hydrodynamic_r: float  # hydrodynamic radius (= max_radius for rigid body)
+    ghost_indices: List[int]  # 0-based indices of ghost atoms
+    ghost_positions: List[np.ndarray]
+    total_charge: float
+
 
 def parse_pqr(pqr_path: Path) -> List[AtomRecord]:
     """Parse a PQR file and return list of AtomRecord."""
     atoms = []
     with open(pqr_path) as f:
         for line in f:
-            if not (line.startswith('ATOM') or line.startswith('HETATM')):
+            if not (line.startswith("ATOM") or line.startswith("HETATM")):
                 continue
             parts = line.split()
             if len(parts) < 9:
                 continue
             try:
-                atoms.append(AtomRecord(
-                    index   = len(atoms),
-                    name    = parts[2],
-                    resname = parts[3],
-                    resid   = int(parts[4]),
-                    x       = float(parts[5]),
-                    y       = float(parts[6]),
-                    z       = float(parts[7]),
-                    charge  = float(parts[8]),
-                    radius  = float(parts[9]) if len(parts) > 9 else 1.5,
-                ))
+                atoms.append(
+                    AtomRecord(
+                        index=len(atoms),
+                        name=parts[2],
+                        resname=parts[3],
+                        resid=int(parts[4]),
+                        x=float(parts[5]),
+                        y=float(parts[6]),
+                        z=float(parts[7]),
+                        charge=float(parts[8]),
+                        radius=float(parts[9]) if len(parts) > 9 else 1.5,
+                    )
+                )
             except (ValueError, IndexError):
                 continue
     return atoms
 
-def analyse_molecule(pqr_path: Path,
-                     use_mc_hydro: bool = True,
-                     grid_spacing: float = None,
-                     n_mc: int = 1_000_000,
-                     srad: float = 0.0) -> MoleculeGeometry:
+
+def analyse_molecule(
+    pqr_path: Path,
+    use_mc_hydro: bool = True,
+    grid_spacing: float = None,
+    n_mc: int = 1_000_000,
+    srad: float = 0.0,
+) -> MoleculeGeometry:
     """
     Compute geometric properties of a molecule from its PQR file.
 
@@ -122,29 +135,32 @@ def analyse_molecule(pqr_path: Path,
     if not atoms:
         raise ValueError(f"No atoms found in {pqr_path}")
     coords = np.array([[a.x, a.y, a.z] for a in atoms])
-    radii  = np.array([a.radius for a in atoms])
+    radii = np.array([a.radius for a in atoms])
     # b-sphere (max_radius): always geometric - used for BD setup, not Stokes-Einstein
-    centroid   = coords.mean(axis=0)
-    dists      = np.linalg.norm(coords - centroid, axis=1)
+    centroid = coords.mean(axis=0)
+    dists = np.linalg.norm(coords - centroid, axis=1)
     max_radius = float(np.max(dists + radii))
     # Grid spacing: uses spacing=1.0Å for large proteins,
     # but adapts for small molecules (bbox/100 capped to [0.02, 1.0]).
     if grid_spacing is None:
         radii_bbox = radii + srad if srad > 0.0 else radii
-        bbox = float(np.max(
-            np.max(coords + radii_bbox[:,None], axis=0) -
-            np.min(coords - radii_bbox[:,None], axis=0)))
+        bbox = float(
+            np.max(
+                np.max(coords + radii_bbox[:, None], axis=0)
+                - np.min(coords - radii_bbox[:, None], axis=0)
+            )
+        )
         grid_spacing = max(0.02, min(1.0, bbox / 100.0))
     # Solvent-excluded surface: effective radius = vdW + probe
     radii_hydro = radii + srad if srad > 0.0 else radii
     # Hydrodynamic radius: MC algorithm or geometric fallback
     # Cache result next to PQR file so re-runs skip the expensive MC calculation.
-    cache_path = Path(str(pqr_path) + f'.r_hydro_s{grid_spacing}_p{srad:.4g}.cache')
+    cache_path = Path(str(pqr_path) + f".r_hydro_s{grid_spacing}_p{srad:.4g}.cache")
     if use_mc_hydro:
         if cache_path.exists():
             try:
                 cached = cache_path.read_text().strip().split()
-                r_h      = float(cached[0])
+                r_h = float(cached[0])
                 centroid = np.array([float(x) for x in cached[1:4]])
                 print(f"    r_hydro cache hit: {cache_path.name}")
             except Exception:
@@ -156,7 +172,8 @@ def analyse_molecule(pqr_path: Path,
         if r_h is None:
             try:
                 r_h, mc_center, _ = mc_hydrodynamic_radius(
-                    coords, radii_hydro, spacing=grid_spacing, n_mc=n_mc)
+                    coords, radii_hydro, spacing=grid_spacing, n_mc=n_mc
+                )
                 centroid = mc_center
                 # Save to cache
                 try:
@@ -168,35 +185,39 @@ def analyse_molecule(pqr_path: Path,
             except Exception:
                 r_h = max_radius
     else:
-        r_h = max_radius          # geometric approximation
+        r_h = max_radius  # geometric approximation
     ghost_idx = [a.index for a in atoms if a.is_ghost]
-    ghost_pos = [a.pos   for a in atoms if a.is_ghost]
+    ghost_pos = [a.pos for a in atoms if a.is_ghost]
     return MoleculeGeometry(
-        n_atoms        = len(atoms),
-        n_charged      = sum(1 for a in atoms if abs(a.charge) > 1e-9),
-        n_ghost        = len(ghost_idx),
-        centroid       = centroid,
-        max_radius     = max_radius,
-        hydrodynamic_r = r_h,
-        ghost_indices  = ghost_idx,
-        ghost_positions= ghost_pos,
-        total_charge   = float(sum(a.charge for a in atoms)),
+        n_atoms=len(atoms),
+        n_charged=sum(1 for a in atoms if abs(a.charge) > 1e-9),
+        n_ghost=len(ghost_idx),
+        centroid=centroid,
+        max_radius=max_radius,
+        hydrodynamic_r=r_h,
+        ghost_indices=ghost_idx,
+        ghost_positions=ghost_pos,
+        total_charge=float(sum(a.charge for a in atoms)),
     )
+
 
 @dataclass
 class SystemGeometry:
-    receptor:    MoleculeGeometry
-    ligand:      MoleculeGeometry
-    r_start:     float   # b-sphere radius (Å)
-    r_escape:    float   # escape sphere (2 × b-sphere)
+    receptor: MoleculeGeometry
+    ligand: MoleculeGeometry
+    r_start: float  # b-sphere radius (Å)
+    r_escape: float  # escape sphere (2 × b-sphere)
 
-def compute_geometry(receptor_pqr:               Path,
-                     ligand_pqr:                 Path,
-                     bd_milestone_radius:        float = 13.0,
-                     bd_milestone_radius_inner:  float = 12.0,
-                     srad:                       float = 0.0,
-                     r_hydro_rec:                float = 0.0,
-                     r_hydro_lig:                float = 0.0) -> SystemGeometry:
+
+def compute_geometry(
+    receptor_pqr: Path,
+    ligand_pqr: Path,
+    bd_milestone_radius: float = 13.0,
+    bd_milestone_radius_inner: float = 12.0,
+    srad: float = 0.0,
+    r_hydro_rec: float = 0.0,
+    r_hydro_lig: float = 0.0,
+) -> SystemGeometry:
     """
     Compute full system geometry for BD setup.
     b-sphere = bd_milestone_radius (outermost SEEKR milestone, user-defined)
@@ -208,46 +229,64 @@ def compute_geometry(receptor_pqr:               Path,
     rec = analyse_molecule(receptor_pqr, srad=srad)
     lig = analyse_molecule(ligand_pqr, srad=srad)
     if r_hydro_rec > 0:
-        print(f"    r_hydro receptor override: {rec.hydrodynamic_r:.3f} -> {r_hydro_rec:.4f} Å (from XML)")
+        print(
+            f"    r_hydro receptor override: {rec.hydrodynamic_r:.3f} -> {r_hydro_rec:.4f} Å (from XML)"
+        )
         rec = MoleculeGeometry(
-            n_atoms=rec.n_atoms, n_charged=rec.n_charged,
-            n_ghost=rec.n_ghost, centroid=rec.centroid,
-            max_radius=rec.max_radius, hydrodynamic_r=r_hydro_rec,
+            n_atoms=rec.n_atoms,
+            n_charged=rec.n_charged,
+            n_ghost=rec.n_ghost,
+            centroid=rec.centroid,
+            max_radius=rec.max_radius,
+            hydrodynamic_r=r_hydro_rec,
             ghost_indices=rec.ghost_indices,
             ghost_positions=rec.ghost_positions,
-            total_charge=rec.total_charge)
+            total_charge=rec.total_charge,
+        )
     if r_hydro_lig > 0:
-        print(f"    r_hydro ligand override: {lig.hydrodynamic_r:.3f} -> {r_hydro_lig:.4f} Å (from XML)")
+        print(
+            f"    r_hydro ligand override: {lig.hydrodynamic_r:.3f} -> {r_hydro_lig:.4f} Å (from XML)"
+        )
         lig = MoleculeGeometry(
-            n_atoms=lig.n_atoms, n_charged=lig.n_charged,
-            n_ghost=lig.n_ghost, centroid=lig.centroid,
-            max_radius=lig.max_radius, hydrodynamic_r=r_hydro_lig,
+            n_atoms=lig.n_atoms,
+            n_charged=lig.n_charged,
+            n_ghost=lig.n_ghost,
+            centroid=lig.centroid,
+            max_radius=lig.max_radius,
+            hydrodynamic_r=r_hydro_lig,
             ghost_indices=lig.ghost_indices,
             ghost_positions=lig.ghost_positions,
-            total_charge=lig.total_charge)
-    r_start  = bd_milestone_radius
+            total_charge=lig.total_charge,
+        )
+    r_start = bd_milestone_radius
     r_escape = 2.0 * r_start
-    print(f"  Receptor : {rec.n_atoms:5d} atoms  q={rec.total_charge:+.2f} e  "
-          f"r_hydro={rec.hydrodynamic_r:.3f} Å  "
-          f"ghost={rec.n_ghost}")
-    print(f"  Ligand   : {lig.n_atoms:5d} atoms  q={lig.total_charge:+.2f} e  "
-          f"r_hydro={lig.hydrodynamic_r:.3f} Å  "
-          f"ghost={lig.n_ghost}")
+    print(
+        f"  Receptor : {rec.n_atoms:5d} atoms  q={rec.total_charge:+.2f} e  "
+        f"r_hydro={rec.hydrodynamic_r:.3f} Å  "
+        f"ghost={rec.n_ghost}"
+    )
+    print(
+        f"  Ligand   : {lig.n_atoms:5d} atoms  q={lig.total_charge:+.2f} e  "
+        f"r_hydro={lig.hydrodynamic_r:.3f} Å  "
+        f"ghost={lig.n_ghost}"
+    )
     print(f"  b-surface (milestone) : {r_start:.1f} Å")
     print(f"  Escape sphere         : {r_escape:.1f} Å  (= 2 × b-surface)")
     return SystemGeometry(
-        receptor = rec,
-        ligand   = lig,
-        r_start  = r_start,
-        r_escape = r_escape,
+        receptor=rec,
+        ligand=lig,
+        r_start=r_start,
+        r_escape=r_escape,
     )
 
-# Ghost atom / reaction criteria detection 
+
+# Ghost atom / reaction criteria detection
 @dataclass
 class ReactionPair:
-    rec_index:  int     # 0-based atom index in receptor
-    lig_index:  int     # 0-based atom index in ligand
-    cutoff:     float   # distance cutoff in Å
+    rec_index: int  # 0-based atom index in receptor
+    lig_index: int  # 0-based atom index in ligand
+    cutoff: float  # distance cutoff in Å
+
 
 def _parse_rxns_xml_criteria(rxns_path):
     """
@@ -264,64 +303,71 @@ def _parse_rxns_xml_criteria(rxns_path):
     try:
         tree = ET.parse(str(rxns_path))
         root = tree.getroot()
-        for reaction in root.iter('reaction'):
-            crit = reaction.find('criterion')
+        for reaction in root.iter("reaction"):
+            crit = reaction.find("criterion")
             if crit is None:
                 continue
-            # Read n_needed if present 
-            nn_node = crit.find('n_needed')
+            # Read n_needed if present
+            nn_node = crit.find("n_needed")
             if nn_node is not None:
                 try:
                     n_needed = int(nn_node.text.strip())
                 except ValueError:
                     pass
-            for pair_node in crit.findall('pair'):
+            for pair_node in crit.findall("pair"):
                 # Format 1: <atom1>rec_idx charge cutoff</atom1> <atom2>lig_idx...</atom2>
-                a1 = pair_node.find('atom1')
-                a2 = pair_node.find('atom2')
+                a1 = pair_node.find("atom1")
+                a2 = pair_node.find("atom2")
                 if a1 is not None and a2 is not None:
                     try:
                         p1 = a1.text.strip().split()
                         p2 = a2.text.strip().split()
-                        rec_idx = int(p1[0]) - 1   # convert 1-based -> 0-based
+                        rec_idx = int(p1[0]) - 1  # convert 1-based -> 0-based
                         lig_idx = int(p2[0]) - 1
-                        cutoff  = float(p1[2]) if len(p1) >= 3 else 5.0
-                        pairs.append(ReactionPair(
-                            rec_index = rec_idx,
-                            lig_index = lig_idx,
-                            cutoff    = cutoff,
-                        ))
+                        cutoff = float(p1[2]) if len(p1) >= 3 else 5.0
+                        pairs.append(
+                            ReactionPair(
+                                rec_index=rec_idx,
+                                lig_index=lig_idx,
+                                cutoff=cutoff,
+                            )
+                        )
                     except (ValueError, IndexError):
                         continue
                     continue
                 # Format 2: <atoms>rec_idx lig_idx</atoms> <distance>cutoff</distance>
-                atoms_node    = pair_node.find('atoms')
-                distance_node = pair_node.find('distance')
+                atoms_node = pair_node.find("atoms")
+                distance_node = pair_node.find("distance")
                 if atoms_node is not None and distance_node is not None:
                     try:
                         idx = atoms_node.text.strip().split()
-                        rec_idx = int(idx[0]) - 1   # convert 1-based -> 0-based
+                        rec_idx = int(idx[0]) - 1  # convert 1-based -> 0-based
                         lig_idx = int(idx[1]) - 1
-                        cutoff  = float(distance_node.text.strip())
-                        pairs.append(ReactionPair(
-                            rec_index = rec_idx,
-                            lig_index = lig_idx,
-                            cutoff    = cutoff,
-                        ))
+                        cutoff = float(distance_node.text.strip())
+                        pairs.append(
+                            ReactionPair(
+                                rec_index=rec_idx,
+                                lig_index=lig_idx,
+                                cutoff=cutoff,
+                            )
+                        )
                     except (ValueError, IndexError):
                         continue
     except Exception as e:
         print(f"  Warning: could not parse rxns XML {rxns_path}: {e}")
     return pairs, n_needed
 
-def auto_detect_reactions(geom:                      "SystemGeometry",
-                          ghost_atoms:               str   = "auto",
-                          rxns_xml:                  str   = "",
-                          bd_milestone_radius:        float = 13.0,
-                          bd_milestone_radius_inner:  float = 12.0) -> "List[List[ReactionPair]]":
+
+def auto_detect_reactions(
+    geom: "SystemGeometry",
+    ghost_atoms: str = "auto",
+    rxns_xml: str = "",
+    bd_milestone_radius: float = 13.0,
+    bd_milestone_radius_inner: float = 12.0,
+) -> "List[List[ReactionPair]]":
     """
     Build reaction criteria from GHO ghost atoms.
-    1. rxns_xml given  -> parse criteria from the reference implementation rxns file 
+    1. rxns_xml given  -> parse criteria from the reference implementation rxns file
     2. ghost_atoms manual spec -> parse triplets rec_idx,lig_idx,cutoff
     3. ghost_atoms == 'auto' -> detect GHO atoms in PQR, use bd_milestone_radius as cutoff
     4. No GHO found -> raise clear error (centroid fallback removed - physically wrong)
@@ -337,10 +383,14 @@ def auto_detect_reactions(geom:                      "SystemGeometry",
             pairs, n_needed = _parse_rxns_xml_criteria(rxns_path)
             if pairs:
                 nn_str = str(n_needed) if n_needed > 0 else f"all ({len(pairs)})"
-                print(f"  GHO criteria from rxns XML ({rxns_path.name}): "
-                      f"{len(pairs)} pair(s), n_needed={nn_str}")
+                print(
+                    f"  GHO criteria from rxns XML ({rxns_path.name}): "
+                    f"{len(pairs)} pair(s), n_needed={nn_str}"
+                )
                 for p in pairs:
-                    print(f"    rec[{p.rec_index}] -- lig[{p.lig_index}] < {p.cutoff:.1f} A")
+                    print(
+                        f"    rec[{p.rec_index}] -- lig[{p.lig_index}] < {p.cutoff:.1f} A"
+                    )
                 return [pairs], n_needed
             print(f"  Warning: no pairs in {rxns_path.name}, falling back")
         else:
@@ -352,14 +402,18 @@ def auto_detect_reactions(geom:                      "SystemGeometry",
             line = line.strip()
             if not line:
                 continue
-            parts = line.split(',')
+            parts = line.split(",")
             if len(parts) != 3:
-                raise ValueError(f"ghost_atoms line must be 'rec_idx,lig_idx,cutoff': {line!r}")
-            pairs.append(ReactionPair(
-                rec_index = int(parts[0]),
-                lig_index = int(parts[1]),
-                cutoff    = float(parts[2]),
-            ))
+                raise ValueError(
+                    f"ghost_atoms line must be 'rec_idx,lig_idx,cutoff': {line!r}"
+                )
+            pairs.append(
+                ReactionPair(
+                    rec_index=int(parts[0]),
+                    lig_index=int(parts[1]),
+                    cutoff=float(parts[2]),
+                )
+            )
         return [pairs], -1
     # Priority 3: auto-detect GHO atoms in PQR
     rec_ghosts = geom.receptor.ghost_indices
@@ -373,10 +427,16 @@ def auto_detect_reactions(geom:                      "SystemGeometry",
         # q-surface (reaction) = bd_milestone_radius_inner (inner milestone)
         # b-surface (start)    = bd_milestone_radius (outer milestone)
         # Ligand starts at b-surface and reacts when it reaches the q-surface
-        rxn_cutoff = bd_milestone_radius_inner if bd_milestone_radius_inner > 0                      else bd_milestone_radius
+        rxn_cutoff = (
+            bd_milestone_radius_inner
+            if bd_milestone_radius_inner > 0
+            else bd_milestone_radius
+        )
         pairs = [ReactionPair(rec_gho, lig_gho, rxn_cutoff)]
-        print(f"  GHO reaction criterion: rec[{rec_gho}] -- lig[{lig_gho}] "
-              f"< {rxn_cutoff:.1f} A  (q-surface / inner milestone)")
+        print(
+            f"  GHO reaction criterion: rec[{rec_gho}] -- lig[{lig_gho}] "
+            f"< {rxn_cutoff:.1f} A  (q-surface / inner milestone)"
+        )
         return [pairs], 1
     # No GHO atoms - raise a clear error (centroid fallback removed)
     # The user must run with GHO-injected PQRs.

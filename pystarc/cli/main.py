@@ -16,25 +16,26 @@ import numpy as np
 import click
 import sys
 
+
 @click.group()
 @click.version_option(package_name="pystarc")
 def cli():
     """PySTARC - Python Simulation Toolkit for Association Rate Constants"""
     pass
 
-# nam_simulation 
-@cli.command("nam_simulation")
-@click.option("--mol1",       required=True, help="PQR file for molecule 1")
-@click.option("--mol2",       required=True, help="PQR file for molecule 2")
-@click.option("--rxn",        required=True, help="Reaction XML file")
-@click.option("--n",          default=1000,  show_default=True, help="Number of trajectories")
-@click.option("--dt",         default=0.2,   show_default=True, help="Time step (ps)")
-@click.option("--r-start",    default=100.0, show_default=True, help="Start radius (Å)")
-@click.option("--dx",         multiple=True,                    help="APBS .dx grid file(s)")
-@click.option("--seed",       default=None,  type=int,          help="Random seed")
-@click.option("--verbose",    is_flag=True,                     help="Print progress")
-@click.option("--output",     default="results.xml",            help="Output XML file")
 
+# nam_simulation
+@cli.command("nam_simulation")
+@click.option("--mol1", required=True, help="PQR file for molecule 1")
+@click.option("--mol2", required=True, help="PQR file for molecule 2")
+@click.option("--rxn", required=True, help="Reaction XML file")
+@click.option("--n", default=1000, show_default=True, help="Number of trajectories")
+@click.option("--dt", default=0.2, show_default=True, help="Time step (ps)")
+@click.option("--r-start", default=100.0, show_default=True, help="Start radius (Å)")
+@click.option("--dx", multiple=True, help="APBS .dx grid file(s)")
+@click.option("--seed", default=None, type=int, help="Random seed")
+@click.option("--verbose", is_flag=True, help="Print progress")
+@click.option("--output", default="results.xml", help="Output XML file")
 def nam_simulation(mol1, mol2, rxn, n, dt, r_start, dx, seed, verbose, output):
     """Run a NAM Brownian dynamics simulation."""
     click.echo(f"Loading molecules …")
@@ -57,8 +58,9 @@ def nam_simulation(mol1, mol2, rxn, n, dt, r_start, dx, seed, verbose, output):
         click.echo(f"  loaded grid: {g}")
     # Build force function
     if grids:
+
         def force_fn(mol_1, mol_2):
-            force  = np.zeros(3)
+            force = np.zeros(3)
             torque = np.zeros(3)
             energy = 0.0
             for grid in grids:
@@ -66,12 +68,13 @@ def nam_simulation(mol1, mol2, rxn, n, dt, r_start, dx, seed, verbose, output):
                     if abs(atom.charge) < 1e-9:
                         continue
                     f = grid.force_on_charge(atom.position, atom.charge)
-                    force  += f
+                    force += f
                     energy += grid.interpolate(atom.position) * atom.charge
                     # torque = r × f
                     r = atom.position - mol_2.centroid()
                     torque += np.cross(r, f)
             return force, torque, energy
+
     else:
         force_fn = zero_force
     params = NAMParameters(
@@ -94,7 +97,8 @@ def nam_simulation(mol1, mol2, rxn, n, dt, r_start, dx, seed, verbose, output):
     click.echo(f"  k_assoc : {k:.3e} M⁻¹s⁻¹")
     click.echo(f"{'-'*50}")
 
-# bounding_box 
+
+# bounding_box
 @cli.command("bounding_box")
 @click.argument("pqr_file")
 @click.option("--padding", default=5.0, show_default=True, help="Padding in Å")
@@ -109,7 +113,8 @@ def bounding_box_cmd(pqr_file, padding):
     click.echo(f"  center: {bb.center}")
     click.echo(f"  size:   {bb.size}")
 
-# pqr_to_xml 
+
+# pqr_to_xml
 @cli.command("pqr_to_xml")
 @click.argument("pqr_file")
 @click.option("--output", "-o", default=None, help="Output XML file")
@@ -118,22 +123,29 @@ def pqr_to_xml(pqr_file, output):
     mol = parse_pqr(pqr_file)
     root = ET.Element("molecule", name=mol.name)
     for a in mol.atoms:
-        ET.SubElement(root, "atom",
-                       index=str(a.index),
-                       name=a.name,
-                       resname=a.residue_name,
-                       resid=str(a.residue_index),
-                       x=f"{a.x:.4f}", y=f"{a.y:.4f}", z=f"{a.z:.4f}",
-                       charge=f"{a.charge:.4f}",
-                       radius=f"{a.radius:.4f}")
+        ET.SubElement(
+            root,
+            "atom",
+            index=str(a.index),
+            name=a.name,
+            resname=a.residue_name,
+            resid=str(a.residue_index),
+            x=f"{a.x:.4f}",
+            y=f"{a.y:.4f}",
+            z=f"{a.z:.4f}",
+            charge=f"{a.charge:.4f}",
+            radius=f"{a.radius:.4f}",
+        )
     tree = ET.ElementTree(root)
     ET.indent(tree, space="  ")
     out = output or (Path(pqr_file).stem + ".xml")
     tree.write(out, encoding="unicode", xml_declaration=True)
     click.echo(f"Written: {out}  ({len(mol.atoms)} atoms)")
 
+
 def main():
     cli()
+
 
 if __name__ == "__main__":
     main()

@@ -26,12 +26,15 @@ import math
 
 # LJ atom type parameters
 
+
 @dataclass
 class LJAtomType:
     """Per-atom-type LJ parameters."""
-    name:    str
-    epsilon: float   # kcal/mol
-    sigma:   float   # A (radius, NOT diameter)
+
+    name: str
+    epsilon: float  # kcal/mol
+    sigma: float  # A (radius, NOT diameter)
+
 
 @dataclass
 class LJParams:
@@ -41,9 +44,10 @@ class LJParams:
     one_four_factor: scaling for 1-4 interactions (default 0.5)
     use_wca: if True, use WCA (purely repulsive) cutoff
     """
-    atom_types:      List[LJAtomType] = field(default_factory=list)
+
+    atom_types: List[LJAtomType] = field(default_factory=list)
     one_four_factor: float = 0.5
-    use_wca:         bool  = False
+    use_wca: bool = False
 
     def epsilon(self, type_idx: int) -> float:
         return self.atom_types[type_idx].epsilon
@@ -51,29 +55,33 @@ class LJParams:
     def sigma(self, type_idx: int) -> float:
         return self.atom_types[type_idx].sigma
 
+
 # Hydrophobic SASA parameters
 @dataclass
 class HydrophobicParams:
     """
     SASA-based hydrophobic interaction parameters.
     """
-    a:    float = 3.1      # A - inner cutoff
-    b:    float = 4.35     # A - outer cutoff
-    c:    float = 0.5      # dimensionless
-    beta: float = -0.025   # kcal/mol/A^2 (negative = attractive)
+
+    a: float = 3.1  # A - inner cutoff
+    b: float = 4.35  # A - outer cutoff
+    c: float = 0.5  # dimensionless
+    beta: float = -0.025  # kcal/mol/A^2 (negative = attractive)
+
     @property
     def factor(self) -> float:
         """beta * c / (b - a)  [kcal/mol/A^3]"""
         return self.beta * self.c / (self.b - self.a)
 
-# Core LJ force function 
+
+# Core LJ force function
 def lj_pair_force(
-        pos_a:   np.ndarray,   # (3,) A
-        pos_b:   np.ndarray,   # (3,) A
-        epsilon: float,        # kcal/mol
-        sigma:   float,        # A
-        factor:  float = 1.0,  # scaling (e.g. 1-4 factor)
-        use_wca: bool  = False,
+    pos_a: np.ndarray,  # (3,) A
+    pos_b: np.ndarray,  # (3,) A
+    epsilon: float,  # kcal/mol
+    sigma: float,  # A
+    factor: float = 1.0,  # scaling (e.g. 1-4 factor)
+    use_wca: bool = False,
 ) -> Tuple[np.ndarray, float]:
     """
     LJ force on atom a due to atom b, and the interaction energy.
@@ -84,53 +92,57 @@ def lj_pair_force(
     (force_on_a, energy)   force_on_a is (3,) pointing a -> b direction
     """
     dpos = pos_b - pos_a
-    r2   = float(np.dot(dpos, dpos))
+    r2 = float(np.dot(dpos, dpos))
     if r2 < 1e-6:
         return np.zeros(3), 0.0
-    r    = math.sqrt(r2)
-    sr   = sigma / r
-    sr2  = sr * sr
-    sr6  = sr2 * sr2 * sr2
+    r = math.sqrt(r2)
+    sr = sigma / r
+    sr2 = sr * sr
+    sr6 = sr2 * sr2 * sr2
     sr12 = sr6 * sr6
     # WCA: only repulsive part, cutoff at r = 2^(1/6) * sigma
     if use_wca:
-        r_cut = 2.0 ** (1.0/6.0) * sigma
+        r_cut = 2.0 ** (1.0 / 6.0) * sigma
         if r > r_cut:
             return np.zeros(3), 0.0
-    energy  = factor * epsilon * (sr12 - sr6)
+    energy = factor * epsilon * (sr12 - sr6)
     # F = -dV/dr * r_hat, magnitude = eps*(12*sr12 - 6*sr6)/r^2
-    f_mag   = factor * epsilon * (12.0 * sr12 - 6.0 * sr6) / r2
-    force_a = f_mag * dpos   # force on a in direction a->b
+    f_mag = factor * epsilon * (12.0 * sr12 - 6.0 * sr6) / r2
+    force_a = f_mag * dpos  # force on a in direction a->b
     return force_a, energy
 
-# Hydrophobic SASA force 
+
+# Hydrophobic SASA force
 def hydrophobic_sasa_force(
-        r:      float,        # centre-to-centre distance (A)
-        r_vec:  np.ndarray,   # (3,) unit vector a->b
-        radius_a: float,      # VdW radius of atom a (A)
-        radius_b: float,      # VdW radius of atom b (A)
-        sasa_a:   float,      # SASA of atom a (A^2)
-        sasa_b:   float,      # SASA of atom b (A^2)
-        hp:       HydrophobicParams = HydrophobicParams(),
+    r: float,  # centre-to-centre distance (A)
+    r_vec: np.ndarray,  # (3,) unit vector a->b
+    radius_a: float,  # VdW radius of atom a (A)
+    radius_b: float,  # VdW radius of atom b (A)
+    sasa_a: float,  # SASA of atom a (A^2)
+    sasa_b: float,  # SASA of atom b (A^2)
+    hp: HydrophobicParams = HydrophobicParams(),
 ) -> Tuple[np.ndarray, float]:
     """
     SASA-based hydrophobic force.
     """
-    fac = hp.factor   # kcal/mol/A^3 (negative = attractive)
-    
+    fac = hp.factor  # kcal/mol/A^3 (negative = attractive)
+
     def sasa_contrib(radius_self: float, area_other: float) -> float:
         ri = r + radius_self
         if hp.a <= ri <= hp.b:
             return fac * area_other
         return 0.0
+
     f_scalar = sasa_contrib(radius_a, sasa_b) + sasa_contrib(radius_b, sasa_a)
     # Force acts along the intermolecular axis
-    force_a  = f_scalar * r_vec
+    force_a = f_scalar * r_vec
     # Approximate energy (trapezoid integral of force over contact range)
-    energy   = f_scalar * (hp.b - hp.a) * 0.5
+    energy = f_scalar * (hp.b - hp.a) * 0.5
     return force_a, energy
 
-# Full pairwise LJ + hydrophobic force engine 
+
+# Full pairwise LJ + hydrophobic force engine
+
 
 class LJForceEngine:
     """
@@ -140,22 +152,26 @@ class LJForceEngine:
         engine = LJForceEngine(lj_params, hydrophobic_params)
         total_force, total_energy = engine.compute(mol1, mol2)
     """
-    def __init__(self,
-                 lj_params:   Optional[LJParams]          = None,
-                 hp_params:   Optional[HydrophobicParams] = None):
+
+    def __init__(
+        self,
+        lj_params: Optional[LJParams] = None,
+        hp_params: Optional[HydrophobicParams] = None,
+    ):
         self.lj = lj_params
         self.hp = hp_params
-        
-    def compute(self,
-                positions1:  np.ndarray,   # (N1, 3) A
-                positions2:  np.ndarray,   # (N2, 3) A
-                type_ids1:   List[int],    # LJ type index for each atom in mol1
-                type_ids2:   List[int],    # LJ type index for each atom in mol2
-                radii1:      Optional[np.ndarray] = None,   # (N1,) A for SASA
-                radii2:      Optional[np.ndarray] = None,   # (N2,) A for SASA
-                sasa1:       Optional[np.ndarray] = None,   # (N1,) A^2
-                sasa2:       Optional[np.ndarray] = None,   # (N2,) A^2
-                ) -> Tuple[np.ndarray, np.ndarray, float]:
+
+    def compute(
+        self,
+        positions1: np.ndarray,  # (N1, 3) A
+        positions2: np.ndarray,  # (N2, 3) A
+        type_ids1: List[int],  # LJ type index for each atom in mol1
+        type_ids2: List[int],  # LJ type index for each atom in mol2
+        radii1: Optional[np.ndarray] = None,  # (N1,) A for SASA
+        radii2: Optional[np.ndarray] = None,  # (N2,) A for SASA
+        sasa1: Optional[np.ndarray] = None,  # (N1,) A^2
+        sasa2: Optional[np.ndarray] = None,  # (N2,) A^2
+    ) -> Tuple[np.ndarray, np.ndarray, float]:
         """
         Compute total LJ + hydrophobic forces on both molecules.
         Returns
@@ -166,13 +182,13 @@ class LJForceEngine:
         N1, N2 = len(positions1), len(positions2)
         f1 = np.zeros(3)
         f2 = np.zeros(3)
-        E  = 0.0
+        E = 0.0
         for i in range(N1):
             for j in range(N2):
                 pos_i = positions1[i]
                 pos_j = positions2[j]
-                dpos  = pos_j - pos_i
-                r     = float(np.linalg.norm(dpos))
+                dpos = pos_j - pos_i
+                r = float(np.linalg.norm(dpos))
                 if r < 1e-6:
                     continue
                 r_hat = dpos / r
@@ -184,20 +200,29 @@ class LJForceEngine:
                     eps_ij = math.sqrt(self.lj.epsilon(ti) * self.lj.epsilon(tj))
                     sig_ij = self.lj.sigma(ti) + self.lj.sigma(tj)
                     f_lj, e_lj = lj_pair_force(
-                        pos_i, pos_j, eps_ij, sig_ij, use_wca=self.lj.use_wca)
+                        pos_i, pos_j, eps_ij, sig_ij, use_wca=self.lj.use_wca
+                    )
                     f1 += f_lj
                     f2 -= f_lj
-                    E  += e_lj
+                    E += e_lj
                 # Hydrophobic SASA contribution
-                if (self.hp is not None and
-                        radii1 is not None and radii2 is not None and
-                        sasa1  is not None and sasa2  is not None):
+                if (
+                    self.hp is not None
+                    and radii1 is not None
+                    and radii2 is not None
+                    and sasa1 is not None
+                    and sasa2 is not None
+                ):
                     f_hp, e_hp = hydrophobic_sasa_force(
-                        r, r_hat,
-                        float(radii1[i]), float(radii2[j]),
-                        float(sasa1[i]),  float(sasa2[j]),
-                        self.hp)
+                        r,
+                        r_hat,
+                        float(radii1[i]),
+                        float(radii2[j]),
+                        float(sasa1[i]),
+                        float(sasa2[j]),
+                        self.hp,
+                    )
                     f1 += f_hp
                     f2 -= f_hp
-                    E  += e_hp
+                    E += e_hp
         return f1, f2, E

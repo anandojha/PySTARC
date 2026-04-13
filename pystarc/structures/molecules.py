@@ -8,10 +8,12 @@ from typing import List, Optional, Tuple
 import numpy as np
 import math
 
+
 # Atom
 @dataclass
 class Atom:
     """A single point-charge atom with PQR data."""
+
     index: int = 0
     name: str = ""
     residue_name: str = ""
@@ -35,21 +37,25 @@ class Atom:
         dx = self.x - other.x
         dy = self.y - other.y
         dz = self.z - other.z
-        return math.sqrt(dx*dx + dy*dy + dz*dz)
+        return math.sqrt(dx * dx + dy * dy + dz * dz)
 
     def __repr__(self) -> str:
-        return (f"Atom({self.name!r} res={self.residue_name}{self.residue_index} "
-                f"pos=({self.x:.2f},{self.y:.2f},{self.z:.2f}) "
-                f"q={self.charge:.3f} r={self.radius:.2f})")
+        return (
+            f"Atom({self.name!r} res={self.residue_name}{self.residue_index} "
+            f"pos=({self.x:.2f},{self.y:.2f},{self.z:.2f}) "
+            f"q={self.charge:.3f} r={self.radius:.2f})"
+        )
 
 
-# Molecule 
+# Molecule
 @dataclass
 class Molecule:
     """Collection of atoms representing one rigid body."""
+
     name: str = ""
     atoms: List[Atom] = field(default_factory=list)
-    # geometry helpers 
+
+    # geometry helpers
     def centroid(self) -> np.ndarray:
         if not self.atoms:
             return np.zeros(3)
@@ -68,17 +74,14 @@ class Molecule:
             return 0.0
         c = self.centroid()
         pos = np.array([a.position for a in self.atoms])
-        return float(np.sqrt(((pos - c)**2).sum(axis=1).mean()))
+        return float(np.sqrt(((pos - c) ** 2).sum(axis=1).mean()))
 
     def bounding_radius(self) -> float:
         """Maximum distance from centroid to any atom surface."""
         if not self.atoms:
             return 0.0
         c = self.centroid()
-        return max(
-            np.linalg.norm(a.position - c) + a.radius
-            for a in self.atoms
-        )
+        return max(np.linalg.norm(a.position - c) + a.radius for a in self.atoms)
 
     def positions_array(self) -> np.ndarray:
         return np.array([a.position for a in self.atoms])
@@ -114,10 +117,11 @@ class Molecule:
         return f"Molecule({self.name!r}, {len(self.atoms)} atoms, q={self.total_charge():.2f})"
 
 
-# BoundingBox 
+# BoundingBox
 @dataclass
 class BoundingBox:
     """Axis-aligned bounding box."""
+
     xmin: float = 0.0
     xmax: float = 0.0
     ymin: float = 0.0
@@ -133,53 +137,67 @@ class BoundingBox:
         ys = [a.y for a in mol.atoms]
         zs = [a.z for a in mol.atoms]
         return cls(
-            xmin=min(xs) - padding, xmax=max(xs) + padding,
-            ymin=min(ys) - padding, ymax=max(ys) + padding,
-            zmin=min(zs) - padding, zmax=max(zs) + padding,
+            xmin=min(xs) - padding,
+            xmax=max(xs) + padding,
+            ymin=min(ys) - padding,
+            ymax=max(ys) + padding,
+            zmin=min(zs) - padding,
+            zmax=max(zs) + padding,
         )
 
     @property
     def center(self) -> np.ndarray:
-        return np.array([
-            (self.xmin + self.xmax) / 2,
-            (self.ymin + self.ymax) / 2,
-            (self.zmin + self.zmax) / 2,
-        ])
+        return np.array(
+            [
+                (self.xmin + self.xmax) / 2,
+                (self.ymin + self.ymax) / 2,
+                (self.zmin + self.zmax) / 2,
+            ]
+        )
 
     @property
     def size(self) -> np.ndarray:
-        return np.array([
-            self.xmax - self.xmin,
-            self.ymax - self.ymin,
-            self.zmax - self.zmin,
-        ])
+        return np.array(
+            [
+                self.xmax - self.xmin,
+                self.ymax - self.ymin,
+                self.zmax - self.zmin,
+            ]
+        )
 
     def contains(self, point: np.ndarray) -> bool:
-        return (self.xmin <= point[0] <= self.xmax and
-                self.ymin <= point[1] <= self.ymax and
-                self.zmin <= point[2] <= self.zmax)
+        return (
+            self.xmin <= point[0] <= self.xmax
+            and self.ymin <= point[1] <= self.ymax
+            and self.zmin <= point[2] <= self.zmax
+        )
 
     def __repr__(self) -> str:
-        return (f"BoundingBox(x=[{self.xmin:.1f},{self.xmax:.1f}] "
-                f"y=[{self.ymin:.1f},{self.ymax:.1f}] "
-                f"z=[{self.zmin:.1f},{self.zmax:.1f}])")
+        return (
+            f"BoundingBox(x=[{self.xmin:.1f},{self.xmax:.1f}] "
+            f"y=[{self.ymin:.1f},{self.ymax:.1f}] "
+            f"z=[{self.zmin:.1f},{self.zmax:.1f}])"
+        )
 
 
-# ContactPair 
+# ContactPair
 @dataclass
 class ContactPair:
     """A single reaction contact between an atom in mol1 and mol2."""
+
     mol1_atom_index: int = 0
     mol2_atom_index: int = 0
-    distance_cutoff: float = 5.0    # Å
+    distance_cutoff: float = 5.0  # Å
 
     def __repr__(self) -> str:
-        return (f"ContactPair(mol1[{self.mol1_atom_index}] ↔ "
-                f"mol2[{self.mol2_atom_index}], "
-                f"cutoff={self.distance_cutoff:.1f} Å)")
+        return (
+            f"ContactPair(mol1[{self.mol1_atom_index}] ↔ "
+            f"mol2[{self.mol2_atom_index}], "
+            f"cutoff={self.distance_cutoff:.1f} Å)"
+        )
 
 
-# ReactionCriteria 
+# ReactionCriteria
 @dataclass
 class ReactionCriteria:
     """
@@ -188,19 +206,18 @@ class ReactionCriteria:
     Default n_needed = len(pairs) (all pairs must be satisfied).
     Setting n_needed < len(pairs) allows or-like logic.
     """
-    name:     str = "reaction"
-    pairs:    List[ContactPair] = field(default_factory=list)
-    n_needed: int = -1   # -1 means all pairs (default: all pairs)
-        
-    def is_satisfied(self,
-                     mol1: Molecule,
-                     mol2: Molecule) -> bool:
+
+    name: str = "reaction"
+    pairs: List[ContactPair] = field(default_factory=list)
+    n_needed: int = -1  # -1 means all pairs (default: all pairs)
+
+    def is_satisfied(self, mol1: Molecule, mol2: Molecule) -> bool:
         """
-            n_satis = 0
-            for pair in pairs:
-                if distance < req_distance: n_satis++
-                if n_satis >= n_needed: return True
-            return False
+        n_satis = 0
+        for pair in pairs:
+            if distance < req_distance: n_satis++
+            if n_satis >= n_needed: return True
+        return False
         """
         threshold = len(self.pairs) if self.n_needed < 0 else self.n_needed
         if threshold == 0:

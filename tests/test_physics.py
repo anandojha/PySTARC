@@ -1,6 +1,6 @@
 """
 PySTARC Physics validation test suite (pytest)
-Every test here verifies numerical agreement. 
+Every test here verifies numerical agreement.
 Run with:  pytest tests/test_ref_physics.py -v
 """
 
@@ -12,12 +12,13 @@ import pytest
 import math
 
 # Physical constants
-reference_EPS0 = 0.000142     # e²/(kBT·Å)  — vacuum permittivity in reference units
-reference_MU   = 0.243        # kBT·ps/Å³   — water viscosity at 20°C
-reference_KT   = 1.0          # kBT         — energy unit
-reference_PI   = math.pi
-reference_SDIE = 78.0         # solvent dielectric
+reference_EPS0 = 0.000142  # e²/(kBT·Å)  — vacuum permittivity in reference units
+reference_MU = 0.243  # kBT·ps/Å³   — water viscosity at 20°C
+reference_KT = 1.0  # kBT         — energy unit
+reference_PI = math.pi
+reference_SDIE = 78.0  # solvent dielectric
 reference_CONV = 602000000.0  # Å³/ps → M⁻¹s⁻¹ (from compute_rate_constant.ml)
+
 
 # 1. Physical constants
 class TestPhysicalConstants:
@@ -49,7 +50,8 @@ class TestPhysicalConstants:
         assert abs(alpha - 0.07957747) < 1e-5
 
     def test_qb_factor(self):
-        assert 1.1 == 1.1 
+        assert 1.1 == 1.1
+
 
 # 2. Diffusion coefficients
 class TestDiffusionCoefficients:
@@ -80,8 +82,12 @@ class TestDiffusionCoefficients:
 
     def test_D_rotational_inverse_cube(self):
         """D_rot = kT/(8πμa³)"""
-        def D_rot(a): return reference_KT / (8.0 * reference_PI * reference_MU * a**3)
+
+        def D_rot(a):
+            return reference_KT / (8.0 * reference_PI * reference_MU * a**3)
+
         assert abs(D_rot(10.0) / D_rot(20.0) - 8.0) < 0.01
+
 
 # 3. Yukawa potential and gradient
 class TestYukawaPotential:
@@ -108,12 +114,12 @@ class TestYukawaPotential:
         V = self._V_factor(self.Q_REC, self.Q_LIG)
         r = 10.0
         # Analytical
-        dphi_dr = V * math.exp(-r/self.DEBYE) * (-1/r**2 - 1/(r*self.DEBYE))
+        dphi_dr = V * math.exp(-r / self.DEBYE) * (-1 / r**2 - 1 / (r * self.DEBYE))
         # Central difference (PySTARC CUDA method)
         h = 0.016
-        phi_p = V * math.exp(-(r+h)/self.DEBYE) / (r+h)
-        phi_m = V * math.exp(-(r-h)/self.DEBYE) / (r-h)
-        grad_cd = (phi_p - phi_m) / (2*h)
+        phi_p = V * math.exp(-(r + h) / self.DEBYE) / (r + h)
+        phi_m = V * math.exp(-(r - h) / self.DEBYE) / (r - h)
+        grad_cd = (phi_p - phi_m) / (2 * h)
         assert abs(dphi_dr - grad_cd) / abs(dphi_dr) < 1e-4
 
     def test_force_attractive_for_opposite_charges(self):
@@ -121,7 +127,7 @@ class TestYukawaPotential:
         # V_factor for receptor potential (not interaction potential)
         V_rec = self.Q_REC / (4.0 * reference_PI * reference_SDIE * reference_EPS0)
         r = 10.0
-        dphi_dr = V_rec * math.exp(-r/self.DEBYE) * (-1/r**2 - 1/(r*self.DEBYE))
+        dphi_dr = V_rec * math.exp(-r / self.DEBYE) * (-1 / r**2 - 1 / (r * self.DEBYE))
         # dphi_dr < 0 (phi decreases from positive toward zero with r)
         F_x = -self.Q_LIG * dphi_dr  # -(-1) × (negative) = negative
         assert F_x < 0  # negative x = toward receptor at origin = attractive
@@ -129,7 +135,7 @@ class TestYukawaPotential:
     def test_force_repulsive_for_same_charges(self):
         V_rec = 1.0 / (4.0 * reference_PI * reference_SDIE * reference_EPS0)
         r = 10.0
-        dphi_dr = V_rec * math.exp(-r/self.DEBYE) * (-1/r**2 - 1/(r*self.DEBYE))
+        dphi_dr = V_rec * math.exp(-r / self.DEBYE) * (-1 / r**2 - 1 / (r * self.DEBYE))
         F_x = -(1.0) * dphi_dr  # -(+1) × (negative) = positive
         assert F_x > 0  # repulsive
 
@@ -137,9 +143,14 @@ class TestYukawaPotential:
     def test_force_decays_with_distance(self, r):
         """Force magnitude should decrease with distance."""
         V = self._V_factor(self.Q_REC, self.Q_LIG)
-        dphi_r1 = V * math.exp(-r/self.DEBYE) * (-1/r**2 - 1/(r*self.DEBYE))
-        dphi_r2 = V * math.exp(-(r+1)/self.DEBYE) * (-1/(r+1)**2 - 1/((r+1)*self.DEBYE))
+        dphi_r1 = V * math.exp(-r / self.DEBYE) * (-1 / r**2 - 1 / (r * self.DEBYE))
+        dphi_r2 = (
+            V
+            * math.exp(-(r + 1) / self.DEBYE)
+            * (-1 / (r + 1) ** 2 - 1 / ((r + 1) * self.DEBYE))
+        )
         assert abs(dphi_r1) > abs(dphi_r2)
+
 
 # 4. Grid bounds
 # gradient requires in_range2: ix ∈ [1, nx-3]
@@ -149,23 +160,23 @@ class TestGridBounds:
 
     def test_ref_potential_range(self):
         """reference in_range1: ix in [0, nx-2] inclusive."""
-        nx = 129 
-        assert 0 <= 0 and 0 <= nx - 2       # low end
-        assert 0 <= nx-2 and nx-2 <= nx-2   # high end
+        nx = 129
+        assert 0 <= 0 and 0 <= nx - 2  # low end
+        assert 0 <= nx - 2 and nx - 2 <= nx - 2  # high end
 
     def test_ref_gradient_range(self):
         nx = 129
         assert 1 <= 1 and 1 <= nx - 3
-        assert 1 <= nx-3 and nx-3 <= nx - 3
+        assert 1 <= nx - 3 and nx - 3 <= nx - 3
 
     def test_pystarc_gradient_aware_bounds(self):
         """valid range is [origin+0.5*sp, origin+(n-2.5)*sp]."""
         origin, sp, nx = 0.0, 1.0, 129
-        lo = origin + 0.5 * sp         # = 0.5
+        lo = origin + 0.5 * sp  # = 0.5
         hi = origin + (nx - 2.5) * sp  # = 126.5
         # Must cover interior: 1 to 127 in reference index space
-        assert lo <= 1.0 * sp          # lo covers ix=1
-        assert hi >= (nx - 3) * sp     # hi covers ix=126
+        assert lo <= 1.0 * sp  # lo covers ix=1
+        assert hi >= (nx - 3) * sp  # hi covers ix=126
 
     def test_two_spheres_grid_coverage(self):
         """charged_spheres: coarse grid spacing 0.16, nx=129, origin≈-10.25.
@@ -173,13 +184,14 @@ class TestGridBounds:
         sp = 0.1602
         nx = 129
         origin = -10.25  # approximate
-        lo = origin + 0.5 * sp    # ≈ -10.17
-        hi = origin + (nx-2.5) * sp  # ≈ +10.00
+        lo = origin + 0.5 * sp  # ≈ -10.17
+        hi = origin + (nx - 2.5) * sp  # ≈ +10.00
         # At r=10: position = 10.0, which is at the boundary hi ≈ 10.00
         # This means the atom may be outside and Yukawa fallback kicks in
         assert abs(hi - 10.0) < 0.5  # grid edge near b-sphere
 
-# 5. P_rxn pure diffusion 
+
+# 5. P_rxn pure diffusion
 # Smoluchowski: P = (1/b - 1/q) / (1/a - 1/q)
 class TestPureDiffusion:
     """Verify pure diffusion P_rxn matches Smoluchowski formula."""
@@ -187,13 +199,14 @@ class TestPureDiffusion:
     def test_smoluchowski_two_spheres(self):
         """a=2.5, b=10, q=20 → P_diff = 0.1429"""
         a, b, q = 2.5, 10.0, 20.0
-        P = (1/b - 1/q) / (1/a - 1/q)
+        P = (1 / b - 1 / q) / (1 / a - 1 / q)
         assert abs(P - 0.1429) < 0.001
 
     def test_expected_P_with_attraction(self):
         P_ref = 0.44
         P_diff = 0.143
         assert P_ref > 3 * P_diff  # attraction triples P_rxn
+
 
 # 6. BD step (Ermack-McCammon)
 #   dpos = (1/(6πμa)) × F × dt = D × F × dt  [since kT=1]
@@ -233,6 +246,7 @@ class TestBDStepPhysics:
         D_rel = D1 + D2
         assert abs(D_rel - 0.43371) < 0.002
 
+
 # 7. Adaptive time step
 # dt_edge = min(r-b, q-r)² / (18·D)
 # dt_force = alpha / |D·dF/dr|
@@ -262,6 +276,7 @@ class TestAdaptiveTimestep:
         dt_edge = dist**2 / (18.0 * self.D)
         assert dt_edge > 0
 
+
 # 8. Outer propagator (LMZ)
 #   return_prob = relative_rate(bradius) / relative_rate(qradius)
 #   relative_rate(b) = 4π / ∫₀^{1/b} exp(U(1/s))/D ds
@@ -273,16 +288,18 @@ class TestOuterPropagator:
 
     @staticmethod
     def _romberg(f, a, b, tol=1e-8, max_iter=20):
-        n = 1; h = b - a
-        R = [[0]*(max_iter+1) for _ in range(max_iter+1)]
-        R[0][0] = 0.5*h*(f(a)+f(b))
-        for i in range(1, max_iter+1):
-            n *= 2; h = (b-a)/n
-            s = sum(f(a+(2*k-1)*h) for k in range(1, n//2+1))
-            R[i][0] = 0.5*R[i-1][0] + h*s
-            for j in range(1, i+1):
-                R[i][j] = R[i][j-1] + (R[i][j-1]-R[i-1][j-1])/(4**j-1)
-            if i > 1 and abs(R[i][i]-R[i-1][i-1]) < tol*abs(R[i][i]):
+        n = 1
+        h = b - a
+        R = [[0] * (max_iter + 1) for _ in range(max_iter + 1)]
+        R[0][0] = 0.5 * h * (f(a) + f(b))
+        for i in range(1, max_iter + 1):
+            n *= 2
+            h = (b - a) / n
+            s = sum(f(a + (2 * k - 1) * h) for k in range(1, n // 2 + 1))
+            R[i][0] = 0.5 * R[i - 1][0] + h * s
+            for j in range(1, i + 1):
+                R[i][j] = R[i][j - 1] + (R[i][j - 1] - R[i - 1][j - 1]) / (4**j - 1)
+            if i > 1 and abs(R[i][i] - R[i - 1][i - 1]) < tol * abs(R[i][i]):
                 return R[i][i]
         return R[max_iter][max_iter]
 
@@ -292,11 +309,14 @@ class TestOuterPropagator:
 
     def _relative_rate(self, b):
         V = self._V_both()
+
         def intgd(s):
-            if s == 0.0: return 1.0 / self.D
-            r = 1.0/s
-            return math.exp(V * math.exp(-r/self.DEBYE) / r) / self.D
-        igral = self._romberg(intgd, 0.0, 1.0/b)
+            if s == 0.0:
+                return 1.0 / self.D
+            r = 1.0 / s
+            return math.exp(V * math.exp(-r / self.DEBYE) / r) / self.D
+
+        igral = self._romberg(intgd, 0.0, 1.0 / b)
         return 4.0 * reference_PI / igral
 
     def test_k_b_two_spheres(self):
@@ -328,7 +348,8 @@ class TestOuterPropagator:
         rp = k_b / k_q
         assert 0 < rp < 1
 
-# 9. Romberg Integration 
+
+# 9. Romberg Integration
 class TestRombergPhysics:
     """Verify Romberg integration"""
 
@@ -338,10 +359,13 @@ class TestRombergPhysics:
         eps_s = reference_SDIE * reference_EPS0
         V = 1.0 * (-1.0) / (4.0 * reference_PI * eps_s)
         debye = 7.828
+
         def intgd(s):
-            if s == 0.0: return 1.0/D
-            r = 1.0/s
-            return math.exp(V * math.exp(-r/debye)/r) / D
+            if s == 0.0:
+                return 1.0 / D
+            r = 1.0 / s
+            return math.exp(V * math.exp(-r / debye) / r) / D
+
         val = TestOuterPropagator._romberg(intgd, 0.0, 0.1)
         assert val > 0 and math.isfinite(val)
 
@@ -349,11 +373,12 @@ class TestRombergPhysics:
     def test_power_integrals(self, n):
         """∫₀¹ xⁿ dx = 1/(n+1)"""
         val = TestOuterPropagator._romberg(lambda x: x**n, 0.0, 1.0)
-        assert abs(val - 1.0/(n+1)) < 1e-8
+        assert abs(val - 1.0 / (n + 1)) < 1e-8
 
     def test_sin_integral(self):
         val = TestOuterPropagator._romberg(math.sin, 0.0, reference_PI)
         assert abs(val - 2.0) < 1e-8
+
 
 # 10. Rate constant
 #   rate = conv_factor × kdb × beta
@@ -378,14 +403,16 @@ class TestRateConstant:
         """No reactions → k_on = 0."""
         assert 6.022e8 * 57.5 * 0.0 == 0.0
 
-    @pytest.mark.parametrize("P,k_expected", [
-        (0.1, 3.46e9), (0.2, 6.93e9), (0.3, 1.04e10),
-        (0.4, 1.39e10), (0.5, 1.73e10)])
+    @pytest.mark.parametrize(
+        "P,k_expected",
+        [(0.1, 3.46e9), (0.2, 6.93e9), (0.3, 1.04e10), (0.4, 1.39e10), (0.5, 1.73e10)],
+    )
     def test_k_on_linear_in_P(self, P, k_expected):
         """k_on ∝ P_rxn (linear relationship)."""
         k_b = 57.5
         k_on = 6.022e8 * k_b * P
         assert abs(k_on - k_expected) / k_expected < 0.02
+
 
 # 11. Born desolvation
 #   F = -alpha × q² × grad(born_field)
@@ -414,6 +441,7 @@ class TestBornDesolvation:
         # F > 0: pushes ligand outward (desolvation penalty increases on approach)
         assert F > 0
 
+
 # 12. Screened coulomb (reference chain-chain pairwise)
 #   F = q0*q1*(r/L + 1)*exp(-r/L)/(r³*4π*ε) × r_vec
 class TestScreenedCoulomb:
@@ -425,7 +453,9 @@ class TestScreenedCoulomb:
         r = 10.0
         L = 7.828
         eps = reference_SDIE * reference_EPS0
-        F_mag = abs(q0*q1*(r/L + 1)*math.exp(-r/L) / (r**3 * 4*reference_PI*eps))
+        F_mag = abs(
+            q0 * q1 * (r / L + 1) * math.exp(-r / L) / (r**3 * 4 * reference_PI * eps)
+        )
         assert F_mag > 0
 
     def test_newton_third_law(self):
@@ -435,9 +465,17 @@ class TestScreenedCoulomb:
         r = 10.0
         L = 7.828
         eps = reference_SDIE * reference_EPS0
-        F12 = q0*q1*(r/L + 1)*math.exp(-r/L) / (r**3 * 4*reference_PI*eps) * r_vec
+        F12 = (
+            q0
+            * q1
+            * (r / L + 1)
+            * math.exp(-r / L)
+            / (r**3 * 4 * reference_PI * eps)
+            * r_vec
+        )
         F21 = -F12  # Newton's 3rd law
         assert np.allclose(F12, -F21)
+
 
 # 13. Yukawa far-field fallback
 class TestYukawaFallback:
@@ -457,19 +495,22 @@ class TestYukawaFallback:
     def test_force_matches_numerical_gradient(self):
         """Yukawa analytical force should match finite-diff of Yukawa potential."""
         V = 1.0 * (-1.0) / (4.0 * reference_PI * reference_SDIE * reference_EPS0)
-        r = 10.0; debye = 7.828; h = 0.001
-        phi_p = V * math.exp(-(r+h)/debye) / (r+h)
-        phi_m = V * math.exp(-(r-h)/debye) / (r-h)
-        grad_num = (phi_p - phi_m) / (2*h)
-        grad_ana = V * math.exp(-r/debye) * (-1/r**2 - 1/(r*debye))
+        r = 10.0
+        debye = 7.828
+        h = 0.001
+        phi_p = V * math.exp(-(r + h) / debye) / (r + h)
+        phi_m = V * math.exp(-(r - h) / debye) / (r - h)
+        grad_num = (phi_p - phi_m) / (2 * h)
+        grad_ana = V * math.exp(-r / debye) * (-1 / r**2 - 1 / (r * debye))
         assert abs(grad_num - grad_ana) / abs(grad_ana) < 1e-6
 
     def test_monopole_matches_ref_far_field(self):
         """Chebyshev blob reduces to monopole at large r.
         Here, the Yukawa is the monopole term."""
         V = 1.0 / (4.0 * reference_PI * reference_SDIE * reference_EPS0)
-        r = 50.0; debye = 7.828
-        phi_mono = V * math.exp(-r/debye) / r
+        r = 50.0
+        debye = 7.828
+        phi_mono = V * math.exp(-r / debye) / r
         # Higher multipoles (dipole, quadrupole) decay as 1/r², 1/r³
         # At r=50, monopole dominates
         assert phi_mono > 0
@@ -484,9 +525,10 @@ class TestYukawaFallback:
         """|phi(r)| should decrease with r."""
         V = -7.1847
         debye = 7.828
-        phi_r = abs(V * math.exp(-r/debye) / r)
-        phi_r1 = abs(V * math.exp(-(r+1)/debye) / (r+1))
+        phi_r = abs(V * math.exp(-r / debye) / r)
+        phi_r1 = abs(V * math.exp(-(r + 1) / debye) / (r + 1))
         assert phi_r > phi_r1
+
 
 # 14. End-to-end expected results
 class TestExpectedResults:
@@ -506,6 +548,7 @@ class TestExpectedResults:
         """Experimental k_on ≈ 4e7 M⁻¹s⁻¹ for thrombin-thrombomodulin."""
         k_exp = 4e7
         assert k_exp > 1e7
+
 
 # 15. Reaction criterion
 class TestReactionCriterionPhysics:
@@ -527,26 +570,30 @@ class TestReactionCriterionPhysics:
         # With 21 pairs and n_needed=3, ANY 3 of 21 can trigger
         assert True  # documents the semantics
 
+
 # Multipole far-field tests
+
 
 class TestMultipoleExpansion:
     """Test the MultipoleExpansion class."""
 
     def test_monopole_only(self):
         """Single point charge → only monopole, no dipole/quadrupole."""
-        mp = MultipoleExpansion(np.array([[0, 0, 0.0]]), np.array([5.0]),
-                                debye_length=7.86)
+        mp = MultipoleExpansion(
+            np.array([[0, 0, 0.0]]), np.array([5.0]), debye_length=7.86
+        )
         assert abs(mp.Q - 5.0) < 1e-10
         assert mp.dipole_mag < 1e-10
         assert mp.quad_mag < 1e-10
 
     def test_monopole_potential_exact(self):
         """Monopole potential matches hand calculation exactly."""
-        mp = MultipoleExpansion(np.array([[0, 0, 0.0]]), np.array([3.0]),
-                                debye_length=7.86)
+        mp = MultipoleExpansion(
+            np.array([[0, 0, 0.0]]), np.array([3.0]), debye_length=7.86
+        )
         r = 20.0
         eps = 78.0 * 0.000142
-        V_exact = 3.0 / (4*math.pi*eps*r) * math.exp(-r/7.86)
+        V_exact = 3.0 / (4 * math.pi * eps * r) * math.exp(-r / 7.86)
         V_mp = mp.potential(np.array([r, 0, 0]))
         assert abs(V_mp - V_exact) / abs(V_exact) < 1e-10
 
@@ -555,7 +602,8 @@ class TestMultipoleExpansion:
         mp = MultipoleExpansion(
             np.array([[5.0, 0, 0], [-5.0, 0, 0]]),
             np.array([1.0, -1.0]),
-            debye_length=7.86)
+            debye_length=7.86,
+        )
         assert abs(mp.Q) < 1e-10
         assert abs(mp.dipole_mag - 10.0) < 1e-10
 
@@ -564,14 +612,16 @@ class TestMultipoleExpansion:
         mp = MultipoleExpansion(
             np.array([[5.0, 0, 0], [-5.0, 0, 0]]),
             np.array([1.0, -1.0]),
-            debye_length=7.86)
+            debye_length=7.86,
+        )
         V = mp.potential(np.array([50.0, 0, 0]))
         assert abs(V) > 1e-6  # not zero — dipole contributes
 
     def test_potential_decays_with_distance(self):
         """Potential magnitude should decrease with r."""
         mp = MultipoleExpansion(
-            np.array([[0, 0, 0.0]]), np.array([3.0]), debye_length=7.86)
+            np.array([[0, 0, 0.0]]), np.array([3.0]), debye_length=7.86
+        )
         V10 = abs(mp.potential(np.array([10.0, 0, 0])))
         V20 = abs(mp.potential(np.array([20.0, 0, 0])))
         V50 = abs(mp.potential(np.array([50.0, 0, 0])))
@@ -580,21 +630,25 @@ class TestMultipoleExpansion:
     def test_force_is_negative_gradient(self):
         """Force should match -dV/dr numerically."""
         mp = MultipoleExpansion(
-            np.array([[0, 0, 0.0]]), np.array([3.0]), debye_length=7.86)
+            np.array([[0, 0, 0.0]]), np.array([3.0]), debye_length=7.86
+        )
         r_vec = np.array([15.0, 3.0, -2.0])
         F = mp.force(r_vec)
         # Central difference check
         h = 0.0001
         for i in range(3):
-            rp = r_vec.copy(); rp[i] += h
-            rm = r_vec.copy(); rm[i] -= h
-            F_num = -(mp.potential(rp) - mp.potential(rm)) / (2*h)
+            rp = r_vec.copy()
+            rp[i] += h
+            rm = r_vec.copy()
+            rm[i] -= h
+            F_num = -(mp.potential(rp) - mp.potential(rm)) / (2 * h)
             assert abs(F[i] - F_num) < 1e-4 * max(abs(F_num), 1e-10)
 
     def test_repulsive_force_same_sign(self):
         """Q_rec=+3, test point at +x → gradient points outward (repulsive)."""
         mp = MultipoleExpansion(
-            np.array([[0, 0, 0.0]]), np.array([3.0]), debye_length=7.86)
+            np.array([[0, 0, 0.0]]), np.array([3.0]), debye_length=7.86
+        )
         F = mp.force(np.array([20.0, 0, 0]))
         # Q_rec=+3: V > 0, dV/dr < 0 (decaying), F = -dV/dr > 0 (outward)
         assert F[0] > 0  # repulsive for same-sign charges
@@ -610,7 +664,8 @@ class TestMultipoleExpansion:
     def test_summary_string(self):
         """Summary should contain key info."""
         mp = MultipoleExpansion(
-            np.array([[0, 0, 0.0]]), np.array([3.0]), debye_length=7.86)
+            np.array([[0, 0, 0.0]]), np.array([3.0]), debye_length=7.86
+        )
         s = mp.summary()
         assert "Monopole" in s
         assert "Dipole" in s
@@ -621,7 +676,8 @@ class TestMultipoleExpansion:
         mp = MultipoleExpansion(
             np.array([[1, 0, 0.0], [-1, 0, 0.0]]),
             np.array([0.0, 0.0]),
-            debye_length=7.86)
+            debye_length=7.86,
+        )
         V = mp.potential(np.array([20.0, 0, 0]))
         assert abs(V) < 1e-15
 
@@ -634,10 +690,11 @@ class TestMultipoleExpansion:
         # At r=100Å, monopole should be ~100% of total
         V_total = mp.potential(np.array([100.0, 0, 0]))
         eps = 78.0 * 0.000142
-        V_mono = 5.0 / (4*math.pi*eps*100) * math.exp(-100/7.86)
+        V_mono = 5.0 / (4 * math.pi * eps * 100) * math.exp(-100 / 7.86)
         # Monopole should be >95% of total
         if abs(V_total) > 1e-15:
             assert abs(V_mono / V_total) > 0.9
+
 
 class TestOverlapCheck:
     """Test the overlap check configuration."""
@@ -667,6 +724,7 @@ class TestOverlapCheck:
 </pystarc>""")
         cfg = parse(xml)
         assert cfg.overlap_check is True
+
 
 class TestMultipoleFallbackConfig:
     """Test multipole_fallback configuration."""
@@ -698,6 +756,7 @@ class TestMultipoleFallbackConfig:
         cfg = parse(xml)
         assert cfg.overlap_check is False
         assert cfg.multipole_fallback is True
+
 
 class TestLJForcesConfig:
     """Test lj_forces configuration."""

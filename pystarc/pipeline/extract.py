@@ -13,23 +13,44 @@ from pathlib import Path
 
 # Residue names that are never part of the receptor protein
 _SOLVENT_RESIDUES = {
-    'WAT', 'HOH', 'TIP', 'SOL',         # water models
-    'NA',  'CL',  'K',   'MG', 'CA',    # ions
-    'Na+', 'Cl-', 'K+',                 # Amber ion names
+    "WAT",
+    "HOH",
+    "TIP",
+    "SOL",  # water models
+    "NA",
+    "CL",
+    "K",
+    "MG",
+    "CA",  # ions
+    "Na+",
+    "Cl-",
+    "K+",  # Amber ion names
 }
-_SKIP_RECORD_TYPES = {'TER', 'END', 'CRYST1', 'REMARK', 'HEADER',
-                       'TITLE', 'COMPND', 'SOURCE', 'SEQRES'}
+_SKIP_RECORD_TYPES = {
+    "TER",
+    "END",
+    "CRYST1",
+    "REMARK",
+    "HEADER",
+    "TITLE",
+    "COMPND",
+    "SOURCE",
+    "SEQRES",
+}
+
 
 def _is_atom_line(line: str) -> bool:
-    return line.startswith('ATOM') or line.startswith('HETATM')
+    return line.startswith("ATOM") or line.startswith("HETATM")
+
 
 def _residue_name(line: str) -> str:
     """Extract residue name from PDB ATOM/HETATM line (cols 17-20)."""
     return line[17:20].strip()
 
-def extract(pdb_path: str | Path,
-            ligand_resname: str,
-            work_dir: str | Path) -> Tuple[Path, Path]:
+
+def extract(
+    pdb_path: str | Path, ligand_resname: str, work_dir: str | Path
+) -> Tuple[Path, Path]:
     """
     Split a complex PDB into receptor.pdb and ligand.pdb.
 
@@ -46,9 +67,9 @@ def extract(pdb_path: str | Path,
     pdb_path = Path(pdb_path)
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
-    ligand_resname  = ligand_resname.strip().upper()
+    ligand_resname = ligand_resname.strip().upper()
     receptor_lines: List[str] = []
-    ligand_lines:   List[str] = []
+    ligand_lines: List[str] = []
     with open(pdb_path) as f:
         for line in f:
             if not _is_atom_line(line):
@@ -68,7 +89,7 @@ def extract(pdb_path: str | Path,
             f"No receptor atoms found in {pdb_path} after removing "
             f"ligand '{ligand_resname}' and solvent."
         )
-    ligand_pdb   = work_dir / "ligand.pdb"
+    ligand_pdb = work_dir / "ligand.pdb"
     receptor_pdb = work_dir / "receptor.pdb"
     ligand_pdb.write_text("".join(ligand_lines) + "END\n")
     receptor_pdb.write_text("".join(receptor_lines) + "END\n")
