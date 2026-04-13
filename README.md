@@ -1,3 +1,5 @@
+[![codecov](https://codecov.io/gh/anandojha/PySTARC/graph/badge.svg)](https://codecov.io/gh/anandojha/PySTARC)
+
 # PySTARC - Python Simulation Toolkit for Association Rate Constants
 
 **PySTARC** computes bimolecular association rate constants (k<sub>on</sub>) via GPU-accelerated rigid-body Brownian dynamics.

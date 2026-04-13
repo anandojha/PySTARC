@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash -l {0}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: "3.11"
+          channels: conda-forge,defaults
+          activate-environment: pystarc-ci
+
+      - name: Install conda dependencies
+        run: |
+          conda install -c conda-forge ambertools apbs -y
+
+      - name: Install pip dependencies
+        run: |
+          pip install matplotlib pdb2pqr pytest pytest-cov
+          pip install dist/pystarc-1.1.0-py3-none-any.whl --force-reinstall
+
+      - name: Run tests with coverage
+        run: |
+          python -m pytest tests/ -v --cov=pystarc --cov-report=xml --cov-report=term
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
