@@ -11,3 +11,4 @@ slurm-*.out
 *.log
 *.cache
 summary.txt
+FETCH_HEAD
