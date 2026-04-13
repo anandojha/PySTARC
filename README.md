@@ -39,7 +39,6 @@ pip install dist/pystarc-1.1.0-py3-none-any.whl --force-reinstall
 
 ```bash
 python -m pytest tests/ -v          
-python -m pytest tests/ -q          # quiet mode
 ```
 
 ## Quick start
