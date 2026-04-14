@@ -1,0 +1,4 @@
+click==8.3.2
+cupy-cuda12x==14.0.1
+numpy==2.4.4
+scipy==1.17.1
