@@ -22,141 +22,6 @@ from pystarc.global_defs.constants import (
     TWO_PI,
     T_DEFAULT,
 )
-from pystarc.lib.numerical import (
-    CubicSpline,
-    dipole_moment,
-    legendre_p,
-    legendre_series,
-    monopole_moment,
-    quadrupole_moment,
-    romberg_integrate,
-    wiener_step,
-)
-from pystarc.aux.aux_tools import (
-    born_integral,
-    bounding_box,
-    contact_distances,
-    electrostatic_center,
-    hydrodynamic_radius_from_rg,
-    lumped_charges,
-    surface_spheres,
-)
-from pystarc.motion.do_bd_step import (
-    FORCE_CHANGE_ALPHA,
-    WATER_VISCOSITY,
-    backstep_due_to_force,
-    bd_step,
-    ermak_mccammon_rotation,
-    ermak_mccammon_translation,
-    escape_radius,
-)
-from pystarc.forces.lj import (
-    HydrophobicParams,
-    LJAtomType,
-    LJForceEngine,
-    LJParams,
-    hydrophobic_sasa_force,
-    lj_pair_force,
-)
-from pystarc.pathways.reaction_interface import (
-    ContactPair,
-    PathwaySet,
-    ReactionCriteria,
-    ReactionInterface,
-    make_default_reaction,
-)
-from pystarc.pipeline.gho_injection import (
-    GHOAtom,
-    GHOReactionCriterion,
-    gho_criterion_distance,
-    gho_world_position,
-    inject_gho_from_manual,
-)
-from pystarc.structures.molecules import (
-    Atom,
-    BoundingBox,
-    ContactPair,
-    Molecule,
-    ReactionCriteria,
-)
-from pystarc.hydrodynamics.mc_hydro_radius import (
-    _extract_surface,
-    _fingerprint,
-    _voxelise,
-    mc_hydrodynamic_radius,
-)
-from pystarc.hydrodynamics.rotne_prager import (
-    MobilityTensor,
-    rpy_offdiagonal,
-    stokes_rotational_diffusion,
-    stokes_translational_diffusion,
-)
-from pystarc.pipeline.geometry import (
-    MoleculeGeometry,
-    SystemGeometry,
-    _parse_rxns_xml_criteria,
-    auto_detect_reactions,
-)
-from pystarc.simulation.diffusional_rotation import (
-    diffusional_rotation,
-    quat_multiply,
-    quat_of_rotvec,
-    random_unit_quat,
-)
-from pystarc.simulation.nam_simulator import (
-    NAMParameters,
-    NAMSimulator,
-    SimulationResult,
-    zero_force,
-)
-from pystarc.simulation.wiener import (
-    WienerProcess,
-    WienerStep,
-    do_one_full_step,
-    make_initial_dW,
-)
-from pystarc.transforms.quaternion import (
-    Quaternion,
-    RigidTransform,
-    random_quaternion,
-    small_rotation_quaternion,
-)
-from pystarc.xml_io.simulation_io import (
-    parse_reaction_xml,
-    parse_simulation_xml,
-    write_reaction_xml,
-    write_simulation_xml,
-)
-from pystarc.analysis.convergence import (
-    analyse_convergence,
-    print_convergence,
-    save_convergence,
-)
-from pystarc.forces.electrostatic.grid_force import (
-    DXGrid,
-    debye_huckel_energy,
-    debye_huckel_force,
-)
-from pystarc.molsystem.system_state import (
-    Fate,
-    SystemState,
-    TrajectoryResult,
-)
-from pystarc.motion.adaptive_time_step import (
-    AdaptiveTimeStep,
-    max_time_step,
-    reaction_time_step,
-)
-from pystarc.pipeline.input_parser import (
-    OutputConfig,
-    PySTARCConfig,
-    parse,
-)
-from pystarc.simulation.coffdrop_chain import (
-    ChainBDPropagator,
-    ChainForceEvaluator,
-    build_linear_chain,
-)
 from pystarc.simulation.coffdrop_params import (
     BeadDef,
     BondDef,
@@ -169,6 +34,116 @@ from pystarc.simulation.coffdrop_params import (
     _parse_mapping,
     _txt_to_floats,
 )
+from pystarc.motion.do_bd_step import (
+    FORCE_CHANGE_ALPHA,
+    WATER_VISCOSITY,
+    backstep_due_to_force,
+    bd_step,
+    ermak_mccammon_rotation,
+    ermak_mccammon_translation,
+    escape_radius,
+)
+from pystarc.aux.aux_tools import (
+    born_integral,
+    bounding_box,
+    contact_distances,
+    electrostatic_center,
+    hydrodynamic_radius_from_rg,
+    lumped_charges,
+    surface_spheres,
+)
+from pystarc.lib.numerical import (
+    CubicSpline,
+    dipole_moment,
+    legendre_p,
+    legendre_series,
+    monopole_moment,
+    quadrupole_moment,
+    romberg_integrate,
+    wiener_step,
+)
+from pystarc.pipeline.gho_injection import (
+    GHOAtom,
+    GHOReactionCriterion,
+    gho_criterion_distance,
+    gho_world_position,
+    inject_gho_from_manual,
+)
+from pystarc.hydrodynamics.rotne_prager import (
+    MobilityTensor,
+    rpy_offdiagonal,
+    stokes_rotational_diffusion,
+    stokes_translational_diffusion,
+)
+from pystarc.pathways.reaction_interface import (
+    ContactPair,
+    PathwaySet,
+    ReactionCriteria,
+    ReactionInterface,
+    make_default_reaction,
+)
+from pystarc.xml_io.simulation_io import (
+    parse_reaction_xml,
+    parse_simulation_xml,
+    write_reaction_xml,
+    write_simulation_xml,
+)
+from pystarc.forces.lj import (
+    HydrophobicParams,
+    LJAtomType,
+    LJForceEngine,
+    LJParams,
+    hydrophobic_sasa_force,
+    lj_pair_force,
+)
+from pystarc.simulation.diffusional_rotation import (
+    diffusional_rotation,
+    quat_multiply,
+    quat_of_rotvec,
+    random_unit_quat,
+)
+from pystarc.pipeline.geometry import (
+    MoleculeGeometry,
+    SystemGeometry,
+    _parse_rxns_xml_criteria,
+    auto_detect_reactions,
+)
+from pystarc.hydrodynamics.mc_hydro_radius import (
+    _extract_surface,
+    _fingerprint,
+    _voxelise,
+    mc_hydrodynamic_radius,
+)
+from pystarc.transforms.quaternion import (
+    Quaternion,
+    RigidTransform,
+    random_quaternion,
+    small_rotation_quaternion,
+)
+from pystarc.simulation.coffdrop_chain import (
+    ChainBDPropagator,
+    ChainForceEvaluator,
+    build_linear_chain,
+)
+from pystarc.simulation.nam_simulator import (
+    NAMParameters,
+    NAMSimulator,
+    SimulationResult,
+    zero_force,
+)
+from pystarc.structures.molecules import (
+    Atom,
+    BoundingBox,
+    ContactPair,
+    Molecule,
+    ReactionCriteria,
+)
+from pystarc.simulation.wiener import (
+    WienerProcess,
+    WienerStep,
+    do_one_full_step,
+    make_initial_dW,
+)
 from pystarc.multi_GPU.combine_data import (
     _concat_csv,
     _concat_npz,
@@ -176,22 +151,38 @@ from pystarc.multi_GPU.combine_data import (
     _sum_csv,
     _sum_npz,
 )
-from pystarc.simulation.we_simulator import WEParameters, WEResult, WETrajectory
-from pystarc.pipeline.extract import _is_atom_line, _residue_name, extract
-from pystarc.pipeline.geometry import AtomRecord as GeomAtomRecord
-from pystarc.pipeline.geometry import MoleculeGeometry
-from pystarc.pipeline.geometry import analyse_molecule as geom_analyse
-from pystarc.pipeline.geometry import parse_pqr as geom_parse_pqr
-from pystarc.forces.multipole import EffectiveCharges, load_effective_charges
-from pystarc.simulation.step_near_surface import _inv_erf, step_near_absorbing_surface
-from pystarc.structures.pqr_io import parse_pqr, write_pqr
-from pystarc.forces.multipole_farfield import MultipoleExpansion
-from pystarc.forces.engine import _Grid
-from pystarc.global_defs import (
-    constants as C,
+from pystarc.forces.electrostatic.grid_force import (
+    DXGrid,
+    debye_huckel_energy,
+    debye_huckel_force,
 )
-from pystarc.pipeline.output_writer import write_all
+from pystarc.analysis.convergence import (
+    analyse_convergence,
+    print_convergence,
+    save_convergence,
+)
+from pystarc.motion.adaptive_time_step import (
+    AdaptiveTimeStep,
+    max_time_step,
+    reaction_time_step,
+)
+from pystarc.simulation.step_near_surface import _inv_erf, step_near_absorbing_surface
+from pystarc.simulation.we_simulator import WEParameters, WEResult, WETrajectory
+from pystarc.molsystem.system_state import Fate, SystemState, TrajectoryResult
+from pystarc.forces.multipole import EffectiveCharges, load_effective_charges
+from pystarc.pipeline.input_parser import OutputConfig, PySTARCConfig, parse
+from pystarc.pipeline.extract import _is_atom_line, _residue_name, extract
+from pystarc.pipeline.geometry import analyse_molecule as geom_analyse
+from pystarc.pipeline.geometry import AtomRecord as GeomAtomRecord
+from pystarc.pipeline.geometry import parse_pqr as geom_parse_pqr
 from pystarc.simulation.gpu_batch_simulator import GPUBatchResult
+from pystarc.forces.multipole_farfield import MultipoleExpansion
+from pystarc.structures.pqr_io import parse_pqr, write_pqr
+from pystarc.pipeline.geometry import MoleculeGeometry
+from pystarc.pipeline.output_writer import write_all
+from pystarc.global_defs import constants as C
+from pystarc.forces.engine import _Grid
+import xml.etree.ElementTree as ET
 from dataclasses import fields
 from pathlib import Path
 import numpy as np
@@ -203,7 +194,6 @@ import pytest
 import math
 import json
 import csv
-import xml.etree.ElementTree as ET
 import os
 
 
@@ -6237,10 +6227,16 @@ class TestCLI:
 class TestPipelineExtract:
 
     def test_is_atom_line_atom(self):
-        assert _is_atom_line("ATOM      1  CA  ALA     1       1.0   2.0   3.0  0.5  1.8") is True
+        assert (
+            _is_atom_line("ATOM      1  CA  ALA     1       1.0   2.0   3.0  0.5  1.8")
+            is True
+        )
 
     def test_is_atom_line_hetatm(self):
-        assert _is_atom_line("HETATM    1  C1  BEN     1       1.0   2.0   3.0  0.5  1.8") is True
+        assert (
+            _is_atom_line("HETATM    1  C1  BEN     1       1.0   2.0   3.0  0.5  1.8")
+            is True
+        )
 
     def test_is_atom_line_remark(self):
         assert _is_atom_line("REMARK test line") is False
@@ -6337,14 +6333,25 @@ class TestCOFFDROPParams:
         assert rd.beads == []
 
     def test_bond_def_dataclass(self):
-        bond = BondDef(residues=("ALA", "GLY"), atoms=("CA", "CA"), orders=(0, 1), length=3.8, index=0)
+        bond = BondDef(
+            residues=("ALA", "GLY"),
+            atoms=("CA", "CA"),
+            orders=(0, 1),
+            length=3.8,
+            index=0,
+        )
         assert bond.length == 3.8
         assert bond.residues == ("ALA", "GLY")
 
     def test_tabulated_potential_linear(self):
         pot = TabulatedPotential(
-            x_min=0.0, x_max=10.0, values=np.linspace(0, 10, 11),
-            residues=(0,), atoms=(0,), orders=(0,), index=0,
+            x_min=0.0,
+            x_max=10.0,
+            values=np.linspace(0, 10, 11),
+            residues=(0,),
+            atoms=(0,),
+            orders=(0,),
+            index=0,
         )
         assert pot.value(5.0) == pytest.approx(5.0)
         assert pot.value(0.0) == pytest.approx(0.0)
@@ -6352,66 +6359,111 @@ class TestCOFFDROPParams:
 
     def test_tabulated_potential_clamp_low(self):
         pot = TabulatedPotential(
-            x_min=0.0, x_max=10.0, values=np.linspace(0, 10, 11),
-            residues=(0,), atoms=(0,), orders=(0,), index=0,
+            x_min=0.0,
+            x_max=10.0,
+            values=np.linspace(0, 10, 11),
+            residues=(0,),
+            atoms=(0,),
+            orders=(0,),
+            index=0,
         )
         assert pot.value(-5.0) == pytest.approx(0.0)
 
     def test_tabulated_potential_clamp_high(self):
         pot = TabulatedPotential(
-            x_min=0.0, x_max=10.0, values=np.linspace(0, 10, 11),
-            residues=(0,), atoms=(0,), orders=(0,), index=0,
+            x_min=0.0,
+            x_max=10.0,
+            values=np.linspace(0, 10, 11),
+            residues=(0,),
+            atoms=(0,),
+            orders=(0,),
+            index=0,
         )
         assert pot.value(20.0) == pytest.approx(10.0)
 
     def test_tabulated_potential_deriv(self):
         pot = TabulatedPotential(
-            x_min=0.0, x_max=10.0, values=np.linspace(0, 10, 11),
-            residues=(0,), atoms=(0,), orders=(0,), index=0,
+            x_min=0.0,
+            x_max=10.0,
+            values=np.linspace(0, 10, 11),
+            residues=(0,),
+            atoms=(0,),
+            orders=(0,),
+            index=0,
         )
         assert pot.deriv(5.0) == pytest.approx(1.0)
 
     def test_tabulated_potential_quadratic(self):
         xs = np.linspace(0, 10, 101)
-        vals = xs ** 2
+        vals = xs**2
         pot = TabulatedPotential(
-            x_min=0.0, x_max=10.0, values=vals,
-            residues=(0,), atoms=(0,), orders=(0,), index=0,
+            x_min=0.0,
+            x_max=10.0,
+            values=vals,
+            residues=(0,),
+            atoms=(0,),
+            orders=(0,),
+            index=0,
         )
         assert pot.value(3.0) == pytest.approx(9.0, abs=0.1)
 
     def test_match_pot_exact(self):
         pot = TabulatedPotential(
-            x_min=0, x_max=1, values=np.array([1.0, 2.0]),
-            residues=(1, 2), atoms=(3, 4), orders=(0, 0), index=0,
+            x_min=0,
+            x_max=1,
+            values=np.array([1.0, 2.0]),
+            residues=(1, 2),
+            atoms=(3, 4),
+            orders=(0, 0),
+            index=0,
         )
         found = _match_pot([pot], (1, 2), (3, 4), (0, 0))
         assert found is pot
 
     def test_match_pot_wildcard(self):
         pot = TabulatedPotential(
-            x_min=0, x_max=1, values=np.array([1.0]),
-            residues=(0, 0), atoms=(3, 4), orders=(0, 0), index=0,
+            x_min=0,
+            x_max=1,
+            values=np.array([1.0]),
+            residues=(0, 0),
+            atoms=(3, 4),
+            orders=(0, 0),
+            index=0,
         )
         found = _match_pot([pot], (5, 6), (3, 4), (0, 0), wildcard=0)
         assert found is pot
 
     def test_match_pot_no_match(self):
         pot = TabulatedPotential(
-            x_min=0, x_max=1, values=np.array([1.0]),
-            residues=(1, 2), atoms=(3, 4), orders=(0, 0), index=0,
+            x_min=0,
+            x_max=1,
+            values=np.array([1.0]),
+            residues=(1, 2),
+            atoms=(3, 4),
+            orders=(0, 0),
+            index=0,
         )
         found = _match_pot([pot], (5, 6), (7, 8), (0, 0))
         assert found is None
 
     def test_match_pot_exact_over_wildcard(self):
         wild = TabulatedPotential(
-            x_min=0, x_max=1, values=np.array([10.0]),
-            residues=(0, 0), atoms=(1, 2), orders=(0, 0), index=0,
+            x_min=0,
+            x_max=1,
+            values=np.array([10.0]),
+            residues=(0, 0),
+            atoms=(1, 2),
+            orders=(0, 0),
+            index=0,
         )
         exact = TabulatedPotential(
-            x_min=0, x_max=1, values=np.array([20.0]),
-            residues=(3, 4), atoms=(1, 2), orders=(0, 0), index=1,
+            x_min=0,
+            x_max=1,
+            values=np.array([20.0]),
+            residues=(3, 4),
+            atoms=(1, 2),
+            orders=(0, 0),
+            index=1,
         )
         found = _match_pot([wild, exact], (3, 4), (1, 2), (0, 0))
         assert found is exact
@@ -6495,8 +6547,13 @@ class TestCOFFDROPParams:
 
     def test_coffdrop_params_pair_potential(self):
         pot = TabulatedPotential(
-            x_min=0.0, x_max=20.0, values=np.linspace(5, 0, 21),
-            residues=(1, 1), atoms=(1, 1), orders=(0, 0), index=0,
+            x_min=0.0,
+            x_max=20.0,
+            values=np.linspace(5, 0, 21),
+            residues=(1, 1),
+            atoms=(1, 1),
+            orders=(0, 0),
+            index=0,
         )
         params = COFFDROPParams(
             mapping={},
@@ -6512,8 +6569,13 @@ class TestCOFFDROPParams:
 
     def test_coffdrop_params_pair_force(self):
         pot = TabulatedPotential(
-            x_min=0.0, x_max=20.0, values=np.linspace(5, 0, 21),
-            residues=(1, 1), atoms=(1, 1), orders=(0, 0), index=0,
+            x_min=0.0,
+            x_max=20.0,
+            values=np.linspace(5, 0, 21),
+            residues=(1, 1),
+            atoms=(1, 1),
+            orders=(0, 0),
+            index=0,
         )
         params = COFFDROPParams(
             mapping={},
@@ -6545,7 +6607,13 @@ class TestCOFFDROPParams:
         assert params.dihedral_force(("ALA",), ("CA",), (0,), 180.0) == 0.0
 
     def test_coffdrop_params_bond_length(self):
-        bond = BondDef(residues=("ALA", "GLY"), atoms=("CA", "CA"), orders=(0, 1), length=3.8, index=0)
+        bond = BondDef(
+            residues=("ALA", "GLY"),
+            atoms=("CA", "CA"),
+            orders=(0, 1),
+            length=3.8,
+            index=0,
+        )
         params = COFFDROPParams(
             mapping={},
             bonds=[bond],
@@ -6618,7 +6686,14 @@ class TestCombineDataHelpers:
                     w = csv.DictWriter(f, fieldnames=["r", "count", "density"])
                     w.writeheader()
                     w.writerow({"r": "5.0", "count": count, "density": "0.0"})
-            _sum_csv([d1, d2], "radial.csv", td, sum_col="count", recompute_col="density", total_N=100)
+            _sum_csv(
+                [d1, d2],
+                "radial.csv",
+                td,
+                sum_col="count",
+                recompute_col="density",
+                total_N=100,
+            )
             with open(os.path.join(td, "radial.csv")) as f:
                 rows = list(csv.DictReader(f))
             assert len(rows) == 1
@@ -6630,8 +6705,16 @@ class TestCombineDataHelpers:
             d2 = os.path.join(td, "bd_2")
             os.makedirs(d1)
             os.makedirs(d2)
-            np.savez(os.path.join(d1, "paths.npz"), data=np.array([[1, 2], [3, 4]]), columns=np.array(["x", "y"]))
-            np.savez(os.path.join(d2, "paths.npz"), data=np.array([[5, 6]]), columns=np.array(["x", "y"]))
+            np.savez(
+                os.path.join(d1, "paths.npz"),
+                data=np.array([[1, 2], [3, 4]]),
+                columns=np.array(["x", "y"]),
+            )
+            np.savez(
+                os.path.join(d2, "paths.npz"),
+                data=np.array([[5, 6]]),
+                columns=np.array(["x", "y"]),
+            )
             _concat_npz([d1, d2], "paths.npz", td)
             npz = np.load(os.path.join(td, "paths.npz"))
             assert npz["data"].shape == (3, 2)
@@ -6642,9 +6725,19 @@ class TestCombineDataHelpers:
             d2 = os.path.join(td, "bd_2")
             os.makedirs(d1)
             os.makedirs(d2)
-            np.savez(os.path.join(d1, "matrix.npz"), matrix=np.ones((3, 3)), milestones=np.array([1, 2, 3]))
-            np.savez(os.path.join(d2, "matrix.npz"), matrix=np.ones((3, 3)) * 2, milestones=np.array([1, 2, 3]))
-            _sum_npz([d1, d2], "matrix.npz", td, sum_key="matrix", copy_keys=["milestones"])
+            np.savez(
+                os.path.join(d1, "matrix.npz"),
+                matrix=np.ones((3, 3)),
+                milestones=np.array([1, 2, 3]),
+            )
+            np.savez(
+                os.path.join(d2, "matrix.npz"),
+                matrix=np.ones((3, 3)) * 2,
+                milestones=np.array([1, 2, 3]),
+            )
+            _sum_npz(
+                [d1, d2], "matrix.npz", td, sum_key="matrix", copy_keys=["milestones"]
+            )
             npz = np.load(os.path.join(td, "matrix.npz"))
             np.testing.assert_allclose(npz["matrix"], np.ones((3, 3)) * 3)
 
@@ -6689,19 +6782,31 @@ class TestWEDataStructures:
 
     def test_we_result_reaction_probability(self):
         r = WEResult(
-            n_iterations=100, n_per_bin=10, n_bins=40,
-            flux_reaction=0.1, flux_escape=0.2,
-            weight_reacted=0.3, weight_escaped=0.7,
-            r_start=50.0, r_escape=100.0, dt=0.2,
+            n_iterations=100,
+            n_per_bin=10,
+            n_bins=40,
+            flux_reaction=0.1,
+            flux_escape=0.2,
+            weight_reacted=0.3,
+            weight_escaped=0.7,
+            r_start=50.0,
+            r_escape=100.0,
+            dt=0.2,
         )
         assert r.reaction_probability == pytest.approx(0.3)
 
     def test_we_result_zero_weight(self):
         r = WEResult(
-            n_iterations=0, n_per_bin=10, n_bins=40,
-            flux_reaction=0, flux_escape=0,
-            weight_reacted=0, weight_escaped=0,
-            r_start=50.0, r_escape=100.0, dt=0.2,
+            n_iterations=0,
+            n_per_bin=10,
+            n_bins=40,
+            flux_reaction=0,
+            flux_escape=0,
+            weight_reacted=0,
+            weight_escaped=0,
+            r_start=50.0,
+            r_escape=100.0,
+            dt=0.2,
         )
         assert r.reaction_probability == 0.0
 
@@ -6740,15 +6845,45 @@ class TestForceEngineGrid:
 class TestGeometryPipeline:
 
     def test_geom_atom_record_pos(self):
-        a = GeomAtomRecord(index=0, name="CA", resname="ALA", resid=1, x=1.0, y=2.0, z=3.0, charge=0.5, radius=1.8)
+        a = GeomAtomRecord(
+            index=0,
+            name="CA",
+            resname="ALA",
+            resid=1,
+            x=1.0,
+            y=2.0,
+            z=3.0,
+            charge=0.5,
+            radius=1.8,
+        )
         np.testing.assert_allclose(a.pos, [1.0, 2.0, 3.0])
 
     def test_geom_atom_record_is_ghost(self):
-        gho = GeomAtomRecord(index=0, name="GHO", resname="X", resid=1, x=0, y=0, z=0, charge=0.0, radius=0.0)
+        gho = GeomAtomRecord(
+            index=0,
+            name="GHO",
+            resname="X",
+            resid=1,
+            x=0,
+            y=0,
+            z=0,
+            charge=0.0,
+            radius=0.0,
+        )
         assert gho.is_ghost is True
 
     def test_geom_atom_record_not_ghost(self):
-        normal = GeomAtomRecord(index=0, name="CA", resname="ALA", resid=1, x=0, y=0, z=0, charge=0.5, radius=1.8)
+        normal = GeomAtomRecord(
+            index=0,
+            name="CA",
+            resname="ALA",
+            resid=1,
+            x=0,
+            y=0,
+            z=0,
+            charge=0.5,
+            radius=1.8,
+        )
         assert normal.is_ghost is False
 
     def test_geom_parse_pqr(self):
@@ -6780,9 +6915,14 @@ class TestGeometryPipeline:
 
     def test_molecule_geometry_dataclass(self):
         mg = MoleculeGeometry(
-            n_atoms=100, n_charged=80, n_ghost=2,
-            centroid=np.zeros(3), max_radius=25.0, hydrodynamic_r=20.0,
-            ghost_indices=[98, 99], ghost_positions=[np.zeros(3), np.ones(3)],
+            n_atoms=100,
+            n_charged=80,
+            n_ghost=2,
+            centroid=np.zeros(3),
+            max_radius=25.0,
+            hydrodynamic_r=20.0,
+            ghost_indices=[98, 99],
+            ghost_positions=[np.zeros(3), np.ones(3)],
             total_charge=6.0,
         )
         assert mg.n_atoms == 100
@@ -6810,6 +6950,7 @@ class TestGHOInjectionParsing:
 
     def test_parse_rxns_xml_with_dummies(self):
         from pystarc.pipeline.gho_injection import parse_rxns_xml
+
         xml = (
             '<?xml version="1.0"?>\n<reactions>\n'
             "  <dummy><name>gho_rec</name><core>receptor</core>\n"
@@ -6829,6 +6970,7 @@ class TestGHOInjectionParsing:
 
     def test_parse_rxns_xml_empty(self):
         from pystarc.pipeline.gho_injection import parse_rxns_xml
+
         xml = '<?xml version="1.0"?>\n<reactions></reactions>\n'
         with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
             f.write(xml)
@@ -6839,6 +6981,7 @@ class TestGHOInjectionParsing:
 
     def test_parse_rxns_xml_bad_file(self):
         from pystarc.pipeline.gho_injection import parse_rxns_xml
+
         with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
             f.write("not xml at all{{{")
             f.flush()
@@ -6848,6 +6991,7 @@ class TestGHOInjectionParsing:
 
     def test_parse_ghost_atoms_from_input(self):
         from pystarc.pipeline.gho_injection import parse_ghost_atoms_from_input
+
         text = "3220,0,17.0\n3221,1,10.0\n"
         positions = {3220: np.array([1.0, 2.0, 3.0]), 3221: np.array([4.0, 5.0, 6.0])}
         atoms = parse_ghost_atoms_from_input(text, positions)
@@ -6857,12 +7001,14 @@ class TestGHOInjectionParsing:
 
     def test_parse_ghost_atoms_empty_lines(self):
         from pystarc.pipeline.gho_injection import parse_ghost_atoms_from_input
+
         text = "\n\n  \n"
         atoms = parse_ghost_atoms_from_input(text, {})
         assert len(atoms) == 0
 
     def test_parse_ghost_atoms_bad_values(self):
         from pystarc.pipeline.gho_injection import parse_ghost_atoms_from_input
+
         text = "abc,def,ghi\n3220,0,17.0\n"
         atoms = parse_ghost_atoms_from_input(text, {3220: np.zeros(3)})
         assert len(atoms) == 1
@@ -6894,12 +7040,14 @@ class TestGHOInjectionParsing:
 
     def test_text_helper_required_missing(self):
         from pystarc.pipeline.gho_injection import _text
+
         node = ET.Element("test")
         with pytest.raises(ValueError, match="Missing required"):
             _text(node, "nonexistent")
 
     def test_text_helper_optional_missing(self):
         from pystarc.pipeline.gho_injection import _text
+
         node = ET.Element("test")
         assert _text(node, "nonexistent", required=False) is None
 
@@ -6975,6 +7123,7 @@ class TestCOFFDROPParseFF:
 
     def test_parse_ff_synthetic(self):
         from pystarc.simulation.coffdrop_params import _parse_ff
+
         xml = (
             '<?xml version="1.0"?>\n<coffdrop>\n'
             "  <types>\n"
@@ -7018,6 +7167,7 @@ class TestCOFFDROPParseFF:
 
     def test_parse_ff_no_types(self):
         from pystarc.simulation.coffdrop_params import _parse_ff
+
         xml = '<?xml version="1.0"?>\n<coffdrop></coffdrop>\n'
         with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
             f.write(xml)
@@ -7136,30 +7286,35 @@ class TestDiffusionalRotationSampling:
 
     def test_sample_rotation_angle_callable(self):
         from pystarc.simulation.diffusional_rotation import _sample_rotation_angle
+
         rng = np.random.default_rng(42)
         angle = _sample_rotation_angle(rng, 0.5)
         assert 0 <= angle <= math.pi
 
     def test_sample_quat_for_tau(self):
         from pystarc.simulation.diffusional_rotation import _sample_quat_for_tau
+
         rng = np.random.default_rng(42)
         q = _sample_quat_for_tau(rng, 0.5)
         assert abs(np.linalg.norm(q) - 1.0) < 1e-10
 
     def test_spline_rot_0p5(self):
         from pystarc.simulation.diffusional_rotation import _spline_rot_0p5
+
         rng = np.random.default_rng(42)
         q = _spline_rot_0p5(rng)
         assert abs(np.linalg.norm(q) - 1.0) < 1e-10
 
     def test_spline_rot_1p0(self):
         from pystarc.simulation.diffusional_rotation import _spline_rot_1p0
+
         rng = np.random.default_rng(42)
         q = _spline_rot_1p0(rng)
         assert abs(np.linalg.norm(q) - 1.0) < 1e-10
 
     def test_spline_rot_2p0(self):
         from pystarc.simulation.diffusional_rotation import _spline_rot_2p0
+
         rng = np.random.default_rng(42)
         q = _spline_rot_2p0(rng)
         assert abs(np.linalg.norm(q) - 1.0) < 1e-10
@@ -7170,29 +7325,47 @@ class TestWEResultExtended:
 
     def test_rate_constant_nonzero(self):
         r = WEResult(
-            n_iterations=100, n_per_bin=10, n_bins=40,
-            flux_reaction=0.1, flux_escape=0.2,
-            weight_reacted=0.3, weight_escaped=0.7,
-            r_start=50.0, r_escape=100.0, dt=0.2,
+            n_iterations=100,
+            n_per_bin=10,
+            n_bins=40,
+            flux_reaction=0.1,
+            flux_escape=0.2,
+            weight_reacted=0.3,
+            weight_escaped=0.7,
+            r_start=50.0,
+            r_escape=100.0,
+            dt=0.2,
         )
         k = r.rate_constant(D_rel=0.1)
         assert k > 0
 
     def test_rate_constant_zero_prxn(self):
         r = WEResult(
-            n_iterations=0, n_per_bin=10, n_bins=40,
-            flux_reaction=0, flux_escape=0,
-            weight_reacted=0, weight_escaped=0,
-            r_start=50.0, r_escape=100.0, dt=0.2,
+            n_iterations=0,
+            n_per_bin=10,
+            n_bins=40,
+            flux_reaction=0,
+            flux_escape=0,
+            weight_reacted=0,
+            weight_escaped=0,
+            r_start=50.0,
+            r_escape=100.0,
+            dt=0.2,
         )
         assert r.rate_constant(D_rel=0.1) == 0.0
 
     def test_repr(self):
         r = WEResult(
-            n_iterations=100, n_per_bin=10, n_bins=40,
-            flux_reaction=0.1, flux_escape=0.2,
-            weight_reacted=0.3, weight_escaped=0.7,
-            r_start=50.0, r_escape=100.0, dt=0.2,
+            n_iterations=100,
+            n_per_bin=10,
+            n_bins=40,
+            flux_reaction=0.1,
+            flux_escape=0.2,
+            weight_reacted=0.3,
+            weight_escaped=0.7,
+            r_start=50.0,
+            r_escape=100.0,
+            dt=0.2,
         )
         s = repr(r)
         assert "WEResult" in s
@@ -7204,6 +7377,7 @@ class TestGridStack:
 
     def test_gridstack_creation(self):
         from pystarc.forces.engine import _GridStack
+
         g1 = DXGrid(np.zeros(3), np.diag([2.0, 2.0, 2.0]), np.ones((5, 5, 5)))
         g2 = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), np.ones((10, 10, 10)))
         gs = _GridStack([g1, g2])
@@ -7212,12 +7386,14 @@ class TestGridStack:
 
     def test_gridstack_empty(self):
         from pystarc.forces.engine import _GridStack
+
         gs = _GridStack([])
         assert len(gs) == 0
         assert bool(gs) is False
 
     def test_gridstack_finest_first(self):
         from pystarc.forces.engine import _GridStack
+
         coarse = DXGrid(np.zeros(3), np.diag([2.0, 2.0, 2.0]), np.ones((10, 10, 10)))
         fine = DXGrid(np.zeros(3), np.diag([0.5, 0.5, 0.5]), np.ones((10, 10, 10)))
         gs = _GridStack([coarse, fine])
@@ -7228,12 +7404,14 @@ class TestGridStack:
 
     def test_gridstack_outside_returns_none(self):
         from pystarc.forces.engine import _GridStack
+
         g = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), np.ones((5, 5, 5)))
         gs = _GridStack([g])
         assert gs.finest_for(np.array([100.0, 100.0, 100.0])) is None
 
     def test_gridstack_eval_empty(self):
         from pystarc.forces.engine import _GridStack
+
         gs = _GridStack([])
         F, T, E = gs.eval_atoms(np.zeros((1, 3)), np.array([1.0]), 0.5, False, "numpy")
         np.testing.assert_allclose(F, [0, 0, 0])
