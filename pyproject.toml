@@ -54,6 +54,7 @@ python_functions = ["test_*"]
 [tool.coverage.run]
 omit = [
     "pystarc/forces/gpu_batch_engine.py",
+    "pystarc/forces/engine.py",
     "pystarc/simulation/gpu_batch_simulator.py",
     "pystarc/simulation/parallel.py",
     "pystarc/pipeline/run_apbs.py",

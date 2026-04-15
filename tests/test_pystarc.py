@@ -121,8 +121,13 @@ from pystarc.transforms.quaternion import (
     small_rotation_quaternion,
 )
 from pystarc.simulation.coffdrop_chain import (
+    ChainAngle,
     ChainBDPropagator,
+    ChainBead,
+    ChainBond,
     ChainForceEvaluator,
+    ChainTorsion,
+    FlexibleChain,
     build_linear_chain,
 )
 from pystarc.simulation.nam_simulator import (
@@ -170,6 +175,7 @@ from pystarc.simulation.step_near_surface import _inv_erf, step_near_absorbing_s
 from pystarc.simulation.we_simulator import WEParameters, WEResult, WETrajectory
 from pystarc.molsystem.system_state import Fate, SystemState, TrajectoryResult
 from pystarc.forces.multipole import EffectiveCharges, load_effective_charges
+from pystarc.simulation.outer_propagator import OPGroupInfo, OuterPropagator
 from pystarc.pipeline.input_parser import OutputConfig, PySTARCConfig, parse
 from pystarc.pipeline.extract import _is_atom_line, _residue_name, extract
 from pystarc.pipeline.geometry import analyse_molecule as geom_analyse
@@ -7441,3 +7447,737 @@ class TestMultipoleFarfieldExtended:
         me = MultipoleExpansion(positions, charges, debye_length=7.86)
         V = me.potential(np.array([0.0, 0.0, 0.0]))
         assert V == 0.0
+
+
+# Chain with angles and torsions
+class TestChainAngleForces:
+
+    def _make_chain_with_angle(self):
+        beads = [
+            ChainBead(
+                pos=np.array([0.0, 0.0, 0.0]),
+                force=np.zeros(3),
+                radius=2.0,
+                charge=0.0,
+                resname="A",
+                resid=0,
+            ),
+            ChainBead(
+                pos=np.array([3.8, 0.0, 0.0]),
+                force=np.zeros(3),
+                radius=2.0,
+                charge=0.0,
+                resname="B",
+                resid=1,
+            ),
+            ChainBead(
+                pos=np.array([7.6, 0.0, 0.0]),
+                force=np.zeros(3),
+                radius=2.0,
+                charge=0.0,
+                resname="C",
+                resid=2,
+            ),
+        ]
+        bonds = [ChainBond(0, 1, 3.8, 100.0), ChainBond(1, 2, 3.8, 100.0)]
+        angles = [ChainAngle(0, 1, 2, math.pi, 50.0)]
+        return FlexibleChain(
+            beads=beads, bonds=bonds, angles=angles, name="angle_chain"
+        )
+
+    def test_angle_equilibrium_zero_force(self):
+        chain = self._make_chain_with_angle()
+        evaluator = ChainForceEvaluator()
+        F = evaluator.compute_forces(chain)
+        assert np.max(np.abs(F)) < 1.0
+
+    def test_angle_bent_produces_force(self):
+        chain = self._make_chain_with_angle()
+        chain.beads[2].pos = np.array([5.0, 3.0, 0.0])
+        evaluator = ChainForceEvaluator()
+        F = evaluator.compute_forces(chain)
+        assert np.max(np.abs(F)) > 0.1
+
+    def test_angle_force_shape(self):
+        chain = self._make_chain_with_angle()
+        evaluator = ChainForceEvaluator()
+        F = evaluator.compute_forces(chain)
+        assert F.shape == (3, 3)
+
+
+class TestChainTorsionForces:
+
+    def _make_chain_with_torsion(self):
+        beads = [
+            ChainBead(
+                pos=np.array([0.0, 0.0, 0.0]),
+                force=np.zeros(3),
+                radius=2.0,
+                charge=0.0,
+                resname="A",
+                resid=0,
+            ),
+            ChainBead(
+                pos=np.array([3.8, 0.0, 0.0]),
+                force=np.zeros(3),
+                radius=2.0,
+                charge=0.0,
+                resname="B",
+                resid=1,
+            ),
+            ChainBead(
+                pos=np.array([7.6, 3.0, 0.0]),
+                force=np.zeros(3),
+                radius=2.0,
+                charge=0.0,
+                resname="C",
+                resid=2,
+            ),
+            ChainBead(
+                pos=np.array([11.4, 3.0, 3.0]),
+                force=np.zeros(3),
+                radius=2.0,
+                charge=0.0,
+                resname="D",
+                resid=3,
+            ),
+        ]
+        bonds = [
+            ChainBond(0, 1, 3.8, 100.0),
+            ChainBond(1, 2, 5.0, 100.0),
+            ChainBond(2, 3, 5.0, 100.0),
+        ]
+        torsions = [ChainTorsion(0, 1, 2, 3, 0.0, 10.0, 1)]
+        return FlexibleChain(
+            beads=beads, bonds=bonds, torsions=torsions, name="torsion_chain"
+        )
+
+    def test_torsion_force_shape(self):
+        chain = self._make_chain_with_torsion()
+        evaluator = ChainForceEvaluator()
+        F = evaluator.compute_forces(chain)
+        assert F.shape == (4, 3)
+
+    def test_torsion_force_nonzero(self):
+        chain = self._make_chain_with_torsion()
+        evaluator = ChainForceEvaluator()
+        F = evaluator.compute_forces(chain)
+        assert np.any(np.abs(F) > 0)
+
+
+class TestChainExcludedVolume:
+
+    def test_overlapping_beads_repel(self):
+        beads = [
+            ChainBead(
+                pos=np.array([0.0, 0.0, 0.0]),
+                force=np.zeros(3),
+                radius=3.0,
+                charge=0.0,
+                resname="A",
+                resid=0,
+            ),
+            ChainBead(
+                pos=np.array([4.0, 0.0, 0.0]),
+                force=np.zeros(3),
+                radius=3.0,
+                charge=0.0,
+                resname="B",
+                resid=1,
+            ),
+        ]
+        bonds = [ChainBond(0, 1, 3.8, 100.0)]
+        chain = FlexibleChain(beads=beads, bonds=bonds, name="overlap")
+        evaluator = ChainForceEvaluator()
+        F = evaluator.compute_forces(chain)
+        assert F.shape == (2, 3)
+        assert np.any(np.abs(F) > 0)
+
+    def test_well_separated_beads_no_force(self):
+        beads = [
+            ChainBead(
+                pos=np.array([0.0, 0.0, 0.0]),
+                force=np.zeros(3),
+                radius=1.0,
+                charge=0.0,
+                resname="A",
+                resid=0,
+            ),
+            ChainBead(
+                pos=np.array([20.0, 0.0, 0.0]),
+                force=np.zeros(3),
+                radius=1.0,
+                charge=0.0,
+                resname="B",
+                resid=1,
+            ),
+        ]
+        chain = FlexibleChain(beads=beads, name="separated")
+        evaluator = ChainForceEvaluator()
+        F = evaluator.compute_forces(chain)
+        assert np.max(np.abs(F)) < 1e-10
+
+
+# Chain BD propagator advanced
+class TestChainBDPropagatorAdvanced:
+
+    def test_step_moves_beads(self):
+        chain = build_linear_chain(n_residues=3, bond_length=3.8)
+        prop = ChainBDPropagator()
+        rng = np.random.default_rng(42)
+        pos_before = chain.positions_array().copy()
+        prop.step(chain, dt=0.1, rng=rng)
+        pos_after = chain.positions_array()
+        assert not np.allclose(pos_before, pos_after)
+
+    def test_frozen_chain_no_move(self):
+        chain = build_linear_chain(n_residues=3, bond_length=3.8)
+        chain.frozen = True
+        prop = ChainBDPropagator()
+        rng = np.random.default_rng(42)
+        pos_before = chain.positions_array().copy()
+        prop.step(chain, dt=0.1, rng=rng)
+        pos_after = chain.positions_array()
+        np.testing.assert_allclose(pos_before, pos_after)
+
+    def test_max_time_step_positive(self):
+        chain = build_linear_chain(n_residues=5, bond_length=3.8)
+        prop = ChainBDPropagator()
+        dt = prop.max_time_step(chain)
+        assert dt > 0
+
+    def test_max_time_step_empty_chain(self):
+        chain = FlexibleChain(beads=[], name="empty")
+        prop = ChainBDPropagator()
+        dt = prop.max_time_step(chain)
+        assert dt == 0.1
+
+    def test_satisfy_bond_constraints(self):
+        chain = build_linear_chain(n_residues=3, bond_length=3.8)
+        chain.beads[1].pos = np.array([5.0, 0.0, 0.0])
+        prop = ChainBDPropagator()
+        prop.satisfy_bond_constraints(chain, tol=0.01)
+        for bond in chain.bonds:
+            r = np.linalg.norm(chain.beads[bond.j].pos - chain.beads[bond.i].pos)
+            assert abs(r - bond.r0) / bond.r0 < 0.01
+
+    def test_D_trans_positive(self):
+        prop = ChainBDPropagator()
+        D = prop.D_trans(2.0)
+        assert D > 0
+
+    def test_step_with_external_evaluator(self):
+        chain = build_linear_chain(n_residues=3, bond_length=3.8)
+        prop = ChainBDPropagator()
+        evaluator = ChainForceEvaluator()
+        rng = np.random.default_rng(42)
+        prop.step(chain, dt=0.1, rng=rng, force_evaluator=evaluator)
+        assert chain.beads[0].pos is not None
+
+
+# WE simulator construction and bin methods
+class TestWESimulatorConstruction:
+
+    def _make_simple_molecules(self):
+        mol1 = Molecule(name="rec")
+        mol1.atoms.append(
+            Atom(
+                index=0,
+                name="A",
+                residue_name="X",
+                residue_index=1,
+                chain="A",
+                x=0,
+                y=0,
+                z=0,
+                charge=1.0,
+                radius=2.0,
+            )
+        )
+        mol2 = Molecule(name="lig")
+        mol2.atoms.append(
+            Atom(
+                index=0,
+                name="B",
+                residue_name="Y",
+                residue_index=1,
+                chain="A",
+                x=50,
+                y=0,
+                z=0,
+                charge=-1.0,
+                radius=2.0,
+            )
+        )
+        return mol1, mol2
+
+    def test_we_simulator_constructs(self):
+        mol1, mol2 = self._make_simple_molecules()
+        mob = MobilityTensor.from_radii(10.0, 5.0)
+        criteria = ReactionCriteria(
+            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
+        )
+        rxn = ReactionInterface(name="rxn", criteria=criteria)
+        ps = PathwaySet(reactions=[rxn])
+        params = WEParameters(
+            n_per_bin=2, n_bins=5, n_iterations=1, r_start=50.0, seed=42
+        )
+        from pystarc.simulation.we_simulator import WESimulator
+
+        sim = WESimulator(mol1, mol2, mob, ps, params)
+        assert sim.params.r_start == 50.0
+        assert len(sim._bins) == 6
+
+    def test_we_bin_of_interior(self):
+        mol1, mol2 = self._make_simple_molecules()
+        mob = MobilityTensor.from_radii(10.0, 5.0)
+        criteria = ReactionCriteria(
+            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
+        )
+        rxn = ReactionInterface(name="rxn", criteria=criteria)
+        ps = PathwaySet(reactions=[rxn])
+        params = WEParameters(
+            n_per_bin=2, n_bins=5, n_iterations=1, r_start=50.0, seed=42
+        )
+        from pystarc.simulation.we_simulator import WESimulator
+
+        sim = WESimulator(mol1, mol2, mob, ps, params)
+        idx = sim._bin_of(30.0)
+        assert 0 <= idx < 5
+
+    def test_we_bin_of_outside(self):
+        mol1, mol2 = self._make_simple_molecules()
+        mob = MobilityTensor.from_radii(10.0, 5.0)
+        criteria = ReactionCriteria(
+            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
+        )
+        rxn = ReactionInterface(name="rxn", criteria=criteria)
+        ps = PathwaySet(reactions=[rxn])
+        params = WEParameters(
+            n_per_bin=2, n_bins=5, n_iterations=1, r_start=50.0, seed=42
+        )
+        from pystarc.simulation.we_simulator import WESimulator
+
+        sim = WESimulator(mol1, mol2, mob, ps, params)
+        assert sim._bin_of(200.0) == -1
+        assert sim._bin_of(0.1) == -1
+
+    def test_we_place_mol2(self):
+        mol1, mol2 = self._make_simple_molecules()
+        mob = MobilityTensor.from_radii(10.0, 5.0)
+        criteria = ReactionCriteria(
+            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
+        )
+        rxn = ReactionInterface(name="rxn", criteria=criteria)
+        ps = PathwaySet(reactions=[rxn])
+        params = WEParameters(
+            n_per_bin=2, n_bins=5, n_iterations=1, r_start=50.0, seed=42
+        )
+        from pystarc.simulation.we_simulator import WESimulator
+
+        sim = WESimulator(mol1, mol2, mob, ps, params)
+        pos = np.array([30.0, 0.0, 0.0])
+        ori = Quaternion.identity()
+        placed = sim._place_mol2(pos, ori)
+        assert abs(placed.atoms[0].x - 30.0) < 1e-6
+
+    def test_we_init_ensemble(self):
+        mol1, mol2 = self._make_simple_molecules()
+        mob = MobilityTensor.from_radii(10.0, 5.0)
+        criteria = ReactionCriteria(
+            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
+        )
+        rxn = ReactionInterface(name="rxn", criteria=criteria)
+        ps = PathwaySet(reactions=[rxn])
+        params = WEParameters(
+            n_per_bin=2, n_bins=5, n_iterations=1, r_start=50.0, seed=42
+        )
+        from pystarc.simulation.we_simulator import WESimulator
+
+        sim = WESimulator(mol1, mol2, mob, ps, params)
+        ensemble = sim._init_ensemble()
+        assert len(ensemble) > 0
+        total_weight = sum(t.weight for t in ensemble)
+        assert total_weight == pytest.approx(1.0, abs=1e-10)
+
+    def test_we_log_bins(self):
+        mol1, mol2 = self._make_simple_molecules()
+        mob = MobilityTensor.from_radii(10.0, 5.0)
+        criteria = ReactionCriteria(
+            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
+        )
+        rxn = ReactionInterface(name="rxn", criteria=criteria)
+        ps = PathwaySet(reactions=[rxn])
+        params = WEParameters(
+            n_per_bin=2,
+            n_bins=10,
+            n_iterations=1,
+            r_start=50.0,
+            seed=42,
+            bin_scheme="log",
+        )
+        from pystarc.simulation.we_simulator import WESimulator
+
+        sim = WESimulator(mol1, mol2, mob, ps, params)
+        assert len(sim._bins) == 11
+        assert sim._bins[0] < sim._bins[-1]
+
+    def test_we_linear_bins(self):
+        mol1, mol2 = self._make_simple_molecules()
+        mob = MobilityTensor.from_radii(10.0, 5.0)
+        criteria = ReactionCriteria(
+            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
+        )
+        rxn = ReactionInterface(name="rxn", criteria=criteria)
+        ps = PathwaySet(reactions=[rxn])
+        params = WEParameters(
+            n_per_bin=2,
+            n_bins=10,
+            n_iterations=1,
+            r_start=50.0,
+            seed=42,
+            bin_scheme="linear",
+        )
+        from pystarc.simulation.we_simulator import WESimulator
+
+        sim = WESimulator(mol1, mol2, mob, ps, params)
+        diffs = np.diff(sim._bins)
+        assert np.allclose(diffs, diffs[0], rtol=0.01)
+
+
+# NAM simulator with tiny molecules
+class TestNAMSimulatorRun:
+
+    def _make_setup(self, n_traj=10, max_steps=50):
+        mol1 = Molecule(name="rec")
+        mol1.atoms.append(
+            Atom(
+                index=0,
+                name="A",
+                residue_name="X",
+                residue_index=1,
+                chain="A",
+                x=0,
+                y=0,
+                z=0,
+                charge=1.0,
+                radius=2.0,
+            )
+        )
+        mol2 = Molecule(name="lig")
+        mol2.atoms.append(
+            Atom(
+                index=0,
+                name="B",
+                residue_name="Y",
+                residue_index=1,
+                chain="A",
+                x=10,
+                y=0,
+                z=0,
+                charge=-1.0,
+                radius=2.0,
+            )
+        )
+        mob = MobilityTensor.from_radii(3.0, 2.0)
+        criteria = ReactionCriteria(
+            name="r", pairs=[ContactPair(0, 0, 5.0)], n_needed=1
+        )
+        rxn = ReactionInterface(name="rxn", criteria=criteria)
+        ps = PathwaySet(reactions=[rxn])
+        params = NAMParameters(
+            n_trajectories=n_traj,
+            dt=0.2,
+            r_start=20.0,
+            max_steps=max_steps,
+            seed=42,
+            verbose=False,
+        )
+        return mol1, mol2, mob, ps, params
+
+    def test_nam_run_returns_result(self):
+        mol1, mol2, mob, ps, params = self._make_setup()
+        sim = NAMSimulator(mol1, mol2, mob, ps, params, zero_force)
+        result = sim.run()
+        assert isinstance(result, SimulationResult)
+        assert (
+            result.n_reacted + result.n_escaped + result.n_max_steps
+            == params.n_trajectories
+        )
+
+    def test_nam_run_reaction_probability_bounded(self):
+        mol1, mol2, mob, ps, params = self._make_setup()
+        sim = NAMSimulator(mol1, mol2, mob, ps, params, zero_force)
+        result = sim.run()
+        assert 0.0 <= result.reaction_probability <= 1.0
+
+    def test_nam_different_seeds(self):
+        mol1, mol2, mob, ps, params = self._make_setup(n_traj=50)
+        sim1 = NAMSimulator(mol1, mol2, mob, ps, params, zero_force)
+        r1 = sim1.run()
+        params2 = NAMParameters(
+            n_trajectories=50,
+            dt=0.2,
+            r_start=20.0,
+            max_steps=50,
+            seed=999,
+            verbose=False,
+        )
+        sim2 = NAMSimulator(mol1, mol2, mob, ps, params2, zero_force)
+        r2 = sim2.run()
+        assert r1.n_reacted != r2.n_reacted or r1.n_escaped != r2.n_escaped
+
+
+# Outer propagator construction
+class TestOuterPropagatorConstruction:
+
+    def test_op_group_info(self):
+        g = OPGroupInfo(q=6.0, Dtrans=0.01, Drot=0.001)
+        assert g.q == 6.0
+        assert g.Dtrans == 0.01
+
+    def test_outer_propagator_constructs(self):
+        g0 = OPGroupInfo(q=2.0, Dtrans=0.01, Drot=0.001)
+        g1 = OPGroupInfo(q=-5.0, Dtrans=0.015, Drot=0.002)
+        op = OuterPropagator(
+            b_radius=80.0,
+            max_radius=25.0,
+            has_hi=True,
+            kT=0.5961,
+            viscosity=0.243,
+            dielectric=78.54,
+            vacuum_perm=0.000142,
+            debye_len=13.6,
+            g0=g0,
+            g1=g1,
+        )
+        assert op.bradius == 80.0
+        assert op.qradius == 500.0
+
+    def test_outer_propagator_k_b_positive(self):
+        g0 = OPGroupInfo(q=2.0, Dtrans=0.01, Drot=0.001)
+        g1 = OPGroupInfo(q=-5.0, Dtrans=0.015, Drot=0.002)
+        op = OuterPropagator(
+            b_radius=80.0,
+            max_radius=25.0,
+            has_hi=True,
+            kT=0.5961,
+            viscosity=0.243,
+            dielectric=78.54,
+            vacuum_perm=0.000142,
+            debye_len=13.6,
+            g0=g0,
+            g1=g1,
+        )
+        assert op.V_factor != 0
+        assert op.D_factor > 0
+
+    def test_outer_propagator_no_hi(self):
+        g0 = OPGroupInfo(q=1.0, Dtrans=0.01, Drot=0.001)
+        g1 = OPGroupInfo(q=-1.0, Dtrans=0.01, Drot=0.001)
+        op = OuterPropagator(
+            b_radius=50.0,
+            max_radius=10.0,
+            has_hi=False,
+            kT=0.5961,
+            viscosity=0.243,
+            dielectric=78.54,
+            vacuum_perm=0.000142,
+            debye_len=7.86,
+            g0=g0,
+            g1=g1,
+        )
+        assert op.D_factor > 0
+        assert op.has_hi is False
+
+    def test_outer_propagator_return_probability(self):
+        g0 = OPGroupInfo(q=2.0, Dtrans=0.01, Drot=0.001)
+        g1 = OPGroupInfo(q=-5.0, Dtrans=0.015, Drot=0.002)
+        op = OuterPropagator(
+            b_radius=80.0,
+            max_radius=25.0,
+            has_hi=True,
+            kT=0.5961,
+            viscosity=0.243,
+            dielectric=78.54,
+            vacuum_perm=0.000142,
+            debye_len=13.6,
+            g0=g0,
+            g1=g1,
+        )
+        assert 0 < op.return_prob <= 1.0
+
+
+# Geometry auto_detect_reactions
+class TestGeometryAutoDetect:
+
+    def _make_gho_pqr(self, td, name, atoms_text):
+        path = Path(td) / name
+        path.write_text(atoms_text)
+        return path
+
+    def test_auto_detect_from_rxns_xml(self):
+        xml = (
+            '<?xml version="1.0"?>\n<reactions>\n'
+            "  <reaction><criterion>\n"
+            "    <pair><atoms>100 50</atoms><distance>6.5</distance></pair>\n"
+            "  </criterion></reaction>\n</reactions>\n"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            rec_pqr = self._make_gho_pqr(
+                td,
+                "rec.pqr",
+                "ATOM      1  CA  ALA     1       0.000   0.000   0.000  0.500  1.800\n",
+            )
+            lig_pqr = self._make_gho_pqr(
+                td,
+                "lig.pqr",
+                "ATOM      1  CA  ALA     1       5.000   0.000   0.000  0.500  1.800\n",
+            )
+            rxns_path = Path(td) / "rxns.xml"
+            rxns_path.write_text(xml)
+            geom = SystemGeometry(
+                receptor=MoleculeGeometry(
+                    n_atoms=1,
+                    n_charged=1,
+                    n_ghost=0,
+                    centroid=np.zeros(3),
+                    max_radius=2.0,
+                    hydrodynamic_r=2.0,
+                    ghost_indices=[],
+                    ghost_positions=[],
+                    total_charge=0.5,
+                ),
+                ligand=MoleculeGeometry(
+                    n_atoms=1,
+                    n_charged=1,
+                    n_ghost=0,
+                    centroid=np.array([5, 0, 0]),
+                    max_radius=2.0,
+                    hydrodynamic_r=2.0,
+                    ghost_indices=[],
+                    ghost_positions=[],
+                    total_charge=0.5,
+                ),
+                r_start=50.0,
+                r_escape=100.0,
+            )
+            pairs_list, n_needed = auto_detect_reactions(
+                geom,
+                rxns_xml=str(rxns_path),
+                ghost_atoms="auto",
+                bd_milestone_radius=50.0,
+                bd_milestone_radius_inner=0.0,
+            )
+            assert len(pairs_list) > 0
+            assert len(pairs_list[0]) == 1
+
+    def test_auto_detect_manual_ghost_atoms(self):
+        geom = SystemGeometry(
+            receptor=MoleculeGeometry(
+                n_atoms=1,
+                n_charged=1,
+                n_ghost=0,
+                centroid=np.zeros(3),
+                max_radius=2.0,
+                hydrodynamic_r=2.0,
+                ghost_indices=[],
+                ghost_positions=[],
+                total_charge=0.5,
+            ),
+            ligand=MoleculeGeometry(
+                n_atoms=1,
+                n_charged=1,
+                n_ghost=0,
+                centroid=np.array([5, 0, 0]),
+                max_radius=2.0,
+                hydrodynamic_r=2.0,
+                ghost_indices=[],
+                ghost_positions=[],
+                total_charge=0.5,
+            ),
+            r_start=50.0,
+            r_escape=100.0,
+        )
+        pairs_list, n_needed = auto_detect_reactions(
+            geom,
+            rxns_xml="",
+            ghost_atoms="0,0,17.0",
+            bd_milestone_radius=50.0,
+            bd_milestone_radius_inner=0.0,
+        )
+        assert len(pairs_list) > 0
+        assert pairs_list[0][0].cutoff == 17.0
+
+    def test_auto_detect_gho_in_pqr(self):
+        geom = SystemGeometry(
+            receptor=MoleculeGeometry(
+                n_atoms=10,
+                n_charged=8,
+                n_ghost=1,
+                centroid=np.zeros(3),
+                max_radius=20.0,
+                hydrodynamic_r=15.0,
+                ghost_indices=[9],
+                ghost_positions=[np.array([5, 0, 0])],
+                total_charge=2.0,
+            ),
+            ligand=MoleculeGeometry(
+                n_atoms=5,
+                n_charged=4,
+                n_ghost=1,
+                centroid=np.array([50, 0, 0]),
+                max_radius=10.0,
+                hydrodynamic_r=8.0,
+                ghost_indices=[4],
+                ghost_positions=[np.array([50, 0, 0])],
+                total_charge=-1.0,
+            ),
+            r_start=50.0,
+            r_escape=100.0,
+        )
+        pairs_list, n_needed = auto_detect_reactions(
+            geom,
+            rxns_xml="",
+            ghost_atoms="auto",
+            bd_milestone_radius=50.0,
+            bd_milestone_radius_inner=17.0,
+        )
+        assert len(pairs_list) > 0
+        assert n_needed == 1
+
+    def test_auto_detect_no_gho_raises(self):
+        geom = SystemGeometry(
+            receptor=MoleculeGeometry(
+                n_atoms=10,
+                n_charged=10,
+                n_ghost=0,
+                centroid=np.zeros(3),
+                max_radius=20.0,
+                hydrodynamic_r=15.0,
+                ghost_indices=[],
+                ghost_positions=[],
+                total_charge=2.0,
+            ),
+            ligand=MoleculeGeometry(
+                n_atoms=5,
+                n_charged=5,
+                n_ghost=0,
+                centroid=np.array([50, 0, 0]),
+                max_radius=10.0,
+                hydrodynamic_r=8.0,
+                ghost_indices=[],
+                ghost_positions=[],
+                total_charge=-1.0,
+            ),
+            r_start=50.0,
+            r_escape=100.0,
+        )
+        with pytest.raises(RuntimeError, match="No GHO"):
+            auto_detect_reactions(
+                geom,
+                rxns_xml="",
+                ghost_atoms="auto",
+                bd_milestone_radius=50.0,
+                bd_milestone_radius_inner=0.0,
+            )
