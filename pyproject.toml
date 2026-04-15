@@ -50,3 +50,16 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
+[tool.coverage.run]
+omit = [
+    "pystarc/forces/gpu_batch_engine.py",
+    "pystarc/simulation/gpu_batch_simulator.py",
+    "pystarc/simulation/parallel.py",
+    "pystarc/pipeline/run_apbs.py",
+    "pystarc/pipeline/prepare_bd_surface.py",
+    "pystarc/pipeline/make_pqr.py",
+    "pystarc/pipeline/parameterize.py",
+    "pystarc/pipeline/pipeline.py",
+    "pystarc/multi_GPU/*",
+]

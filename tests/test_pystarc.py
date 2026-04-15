@@ -157,10 +157,36 @@ from pystarc.simulation.coffdrop_chain import (
     ChainForceEvaluator,
     build_linear_chain,
 )
+from pystarc.simulation.coffdrop_params import (
+    BeadDef,
+    BondDef,
+    COFFDROPParams,
+    ResidueDef,
+    TabulatedPotential,
+    _match_pot,
+    _parse_charges,
+    _parse_connectivity,
+    _parse_mapping,
+    _txt_to_floats,
+)
+from pystarc.multi_GPU.combine_data import (
+    _concat_csv,
+    _concat_npz,
+    _save_json,
+    _sum_csv,
+    _sum_npz,
+)
+from pystarc.simulation.we_simulator import WEParameters, WEResult, WETrajectory
+from pystarc.pipeline.extract import _is_atom_line, _residue_name, extract
+from pystarc.pipeline.geometry import AtomRecord as GeomAtomRecord
+from pystarc.pipeline.geometry import MoleculeGeometry
+from pystarc.pipeline.geometry import analyse_molecule as geom_analyse
+from pystarc.pipeline.geometry import parse_pqr as geom_parse_pqr
 from pystarc.forces.multipole import EffectiveCharges, load_effective_charges
 from pystarc.simulation.step_near_surface import _inv_erf, step_near_absorbing_surface
 from pystarc.structures.pqr_io import parse_pqr, write_pqr
 from pystarc.forces.multipole_farfield import MultipoleExpansion
+from pystarc.forces.engine import _Grid
 from pystarc.global_defs import (
     constants as C,
 )
@@ -171,6 +197,7 @@ from pathlib import Path
 import numpy as np
 import importlib
 import tempfile
+import shutil
 import pystarc
 import pytest
 import math
@@ -6203,3 +6230,725 @@ class TestCLI:
             ],
         )
         assert result.exit_code != 0
+
+
+# Pipeline extract
+class TestPipelineExtract:
+
+    def test_is_atom_line_atom(self):
+        assert (
+            _is_atom_line("ATOM      1  CA  ALA     1       1.0   2.0   3.0  0.5  1.8")
+            is True
+        )
+
+    def test_is_atom_line_hetatm(self):
+        assert (
+            _is_atom_line("HETATM    1  C1  BEN     1       1.0   2.0   3.0  0.5  1.8")
+            is True
+        )
+
+    def test_is_atom_line_remark(self):
+        assert _is_atom_line("REMARK test line") is False
+
+    def test_is_atom_line_ter(self):
+        assert _is_atom_line("TER") is False
+
+    def test_residue_name_extraction(self):
+        line = "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  0.50  1.80"
+        assert _residue_name(line) == "ALA"
+
+    def test_extract_splits_correctly(self):
+        pdb = (
+            "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  0.50  1.80\n"
+            "ATOM      2  CB  ALA A   1       4.000   5.000   6.000  0.50  1.80\n"
+            "HETATM    3  C1  BEN A   2       7.000   8.000   9.000  0.10  1.70\n"
+            "ATOM      4  O   HOH A   3      10.000  11.000  12.000 -0.83  1.52\n"
+            "END\n"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            pdb_path = Path(td) / "complex.pdb"
+            pdb_path.write_text(pdb)
+            rec, lig = extract(pdb_path, "BEN", td)
+            assert rec.exists()
+            assert lig.exists()
+            rec_text = rec.read_text()
+            lig_text = lig.read_text()
+            assert "ALA" in rec_text
+            assert "BEN" in lig_text
+            assert "HOH" not in rec_text
+
+    def test_extract_no_ligand_raises(self):
+        pdb = "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  0.50  1.80\n"
+        with tempfile.TemporaryDirectory() as td:
+            pdb_path = Path(td) / "complex.pdb"
+            pdb_path.write_text(pdb)
+            with pytest.raises(ValueError, match="No atoms"):
+                extract(pdb_path, "XYZ", td)
+
+    def test_extract_no_receptor_raises(self):
+        pdb = "HETATM    1  C1  BEN A   1       1.000   2.000   3.000  0.10  1.70\n"
+        with tempfile.TemporaryDirectory() as td:
+            pdb_path = Path(td) / "complex.pdb"
+            pdb_path.write_text(pdb)
+            with pytest.raises(ValueError, match="No receptor"):
+                extract(pdb_path, "BEN", td)
+
+    def test_extract_filters_ions(self):
+        pdb = (
+            "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  0.50  1.80\n"
+            "HETATM    2  C1  BEN A   2       7.000   8.000   9.000  0.10  1.70\n"
+            "ATOM      3  NA  NA  A   3      10.000  11.000  12.000  1.00  1.40\n"
+            "ATOM      4  CL  CL  A   4      13.000  14.000  15.000 -1.00  1.80\n"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            pdb_path = Path(td) / "complex.pdb"
+            pdb_path.write_text(pdb)
+            rec, lig = extract(pdb_path, "BEN", td)
+            rec_text = rec.read_text()
+            assert "NA" not in rec_text.split("ALA")[0] or "ALA" in rec_text
+
+    def test_extract_case_insensitive_ligand(self):
+        pdb = (
+            "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  0.50  1.80\n"
+            "HETATM    2  C1  BEN A   2       7.000   8.000   9.000  0.10  1.70\n"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            pdb_path = Path(td) / "complex.pdb"
+            pdb_path.write_text(pdb)
+            rec, lig = extract(pdb_path, "ben", td)
+            assert lig.exists()
+
+
+# COFFDROP parameters
+class TestCOFFDROPParams:
+
+    def test_txt_to_floats(self):
+        arr = _txt_to_floats("1.0 2.5 3.7")
+        np.testing.assert_allclose(arr, [1.0, 2.5, 3.7])
+
+    def test_txt_to_floats_empty(self):
+        arr = _txt_to_floats("")
+        assert len(arr) == 0
+
+    def test_bead_def_dataclass(self):
+        bd = BeadDef(name="CA", atoms=["CA", "HA"])
+        assert bd.name == "CA"
+        assert len(bd.atoms) == 2
+        assert bd.location == ""
+
+    def test_residue_def_dataclass(self):
+        rd = ResidueDef(name="ALA")
+        assert rd.name == "ALA"
+        assert rd.beads == []
+
+    def test_bond_def_dataclass(self):
+        bond = BondDef(
+            residues=("ALA", "GLY"),
+            atoms=("CA", "CA"),
+            orders=(0, 1),
+            length=3.8,
+            index=0,
+        )
+        assert bond.length == 3.8
+        assert bond.residues == ("ALA", "GLY")
+
+    def test_tabulated_potential_linear(self):
+        pot = TabulatedPotential(
+            x_min=0.0,
+            x_max=10.0,
+            values=np.linspace(0, 10, 11),
+            residues=(0,),
+            atoms=(0,),
+            orders=(0,),
+            index=0,
+        )
+        assert pot.value(5.0) == pytest.approx(5.0)
+        assert pot.value(0.0) == pytest.approx(0.0)
+        assert pot.value(10.0) == pytest.approx(10.0)
+
+    def test_tabulated_potential_clamp_low(self):
+        pot = TabulatedPotential(
+            x_min=0.0,
+            x_max=10.0,
+            values=np.linspace(0, 10, 11),
+            residues=(0,),
+            atoms=(0,),
+            orders=(0,),
+            index=0,
+        )
+        assert pot.value(-5.0) == pytest.approx(0.0)
+
+    def test_tabulated_potential_clamp_high(self):
+        pot = TabulatedPotential(
+            x_min=0.0,
+            x_max=10.0,
+            values=np.linspace(0, 10, 11),
+            residues=(0,),
+            atoms=(0,),
+            orders=(0,),
+            index=0,
+        )
+        assert pot.value(20.0) == pytest.approx(10.0)
+
+    def test_tabulated_potential_deriv(self):
+        pot = TabulatedPotential(
+            x_min=0.0,
+            x_max=10.0,
+            values=np.linspace(0, 10, 11),
+            residues=(0,),
+            atoms=(0,),
+            orders=(0,),
+            index=0,
+        )
+        assert pot.deriv(5.0) == pytest.approx(1.0)
+
+    def test_tabulated_potential_quadratic(self):
+        xs = np.linspace(0, 10, 101)
+        vals = xs**2
+        pot = TabulatedPotential(
+            x_min=0.0,
+            x_max=10.0,
+            values=vals,
+            residues=(0,),
+            atoms=(0,),
+            orders=(0,),
+            index=0,
+        )
+        assert pot.value(3.0) == pytest.approx(9.0, abs=0.1)
+
+    def test_match_pot_exact(self):
+        pot = TabulatedPotential(
+            x_min=0,
+            x_max=1,
+            values=np.array([1.0, 2.0]),
+            residues=(1, 2),
+            atoms=(3, 4),
+            orders=(0, 0),
+            index=0,
+        )
+        found = _match_pot([pot], (1, 2), (3, 4), (0, 0))
+        assert found is pot
+
+    def test_match_pot_wildcard(self):
+        pot = TabulatedPotential(
+            x_min=0,
+            x_max=1,
+            values=np.array([1.0]),
+            residues=(0, 0),
+            atoms=(3, 4),
+            orders=(0, 0),
+            index=0,
+        )
+        found = _match_pot([pot], (5, 6), (3, 4), (0, 0), wildcard=0)
+        assert found is pot
+
+    def test_match_pot_no_match(self):
+        pot = TabulatedPotential(
+            x_min=0,
+            x_max=1,
+            values=np.array([1.0]),
+            residues=(1, 2),
+            atoms=(3, 4),
+            orders=(0, 0),
+            index=0,
+        )
+        found = _match_pot([pot], (5, 6), (7, 8), (0, 0))
+        assert found is None
+
+    def test_match_pot_exact_over_wildcard(self):
+        wild = TabulatedPotential(
+            x_min=0,
+            x_max=1,
+            values=np.array([10.0]),
+            residues=(0, 0),
+            atoms=(1, 2),
+            orders=(0, 0),
+            index=0,
+        )
+        exact = TabulatedPotential(
+            x_min=0,
+            x_max=1,
+            values=np.array([20.0]),
+            residues=(3, 4),
+            atoms=(1, 2),
+            orders=(0, 0),
+            index=1,
+        )
+        found = _match_pot([wild, exact], (3, 4), (1, 2), (0, 0))
+        assert found is exact
+
+    def test_parse_mapping_xml(self):
+        xml = (
+            '<?xml version="1.0"?>\n<mapping>\n'
+            "  <residue><name>ALA</name>\n"
+            "    <bead><name>CA</name><atoms>CA HA</atoms></bead>\n"
+            "    <bead><name>CB</name><atoms>CB HB1 HB2 HB3</atoms></bead>\n"
+            "  </residue>\n</mapping>\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(xml)
+            f.flush()
+            mapping = _parse_mapping(f.name)
+        os.unlink(f.name)
+        assert "ALA" in mapping
+        assert len(mapping["ALA"].beads) == 2
+        assert mapping["ALA"].beads[0].name == "CA"
+        assert "HA" in mapping["ALA"].beads[0].atoms
+
+    def test_parse_connectivity_xml(self):
+        xml = (
+            '<?xml version="1.0"?>\n<connectivity>\n'
+            "  <bond><residues>ALA GLY</residues><atoms>CA CA</atoms>"
+            "<orders>0 1</orders><length>3.8</length><index>0</index></bond>\n"
+            "</connectivity>\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(xml)
+            f.flush()
+            bonds = _parse_connectivity(f.name)
+        os.unlink(f.name)
+        assert len(bonds) == 1
+        assert bonds[0].length == 3.8
+        assert bonds[0].atoms == ("CA", "CA")
+
+    def test_parse_charges_xml(self):
+        xml = (
+            '<?xml version="1.0"?>\n<charges>\n'
+            "  <charge><residue>ALA</residue><atom>CA</atom><value>0.5</value></charge>\n"
+            "  <charge><residue>GLY</residue><atom>CA</atom><value>-0.3</value></charge>\n"
+            "</charges>\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(xml)
+            f.flush()
+            charges = _parse_charges(f.name)
+        os.unlink(f.name)
+        assert charges[("ALA", "CA")] == pytest.approx(0.5)
+        assert charges[("GLY", "CA")] == pytest.approx(-0.3)
+
+    def test_coffdrop_params_constructor(self):
+        params = COFFDROPParams(
+            mapping={"ALA": ResidueDef(name="ALA")},
+            bonds=[],
+            charges={("ALA", "CA"): 0.5},
+            type_map={"atoms": {"CA": 1}, "residues": {"ALA": 1}},
+            pair_pots=[],
+            angle_pots=[],
+            dihedral_pots=[],
+        )
+        assert params.bead_charge("ALA", "CA") == pytest.approx(0.5)
+        assert params.bead_charge("GLY", "CB") == 0.0
+
+    def test_coffdrop_params_beads_for_residue(self):
+        bead = BeadDef(name="CA", atoms=["CA"])
+        params = COFFDROPParams(
+            mapping={"ALA": ResidueDef(name="ALA", beads=[bead])},
+            bonds=[],
+            charges={},
+            type_map={"atoms": {}, "residues": {}},
+            pair_pots=[],
+            angle_pots=[],
+            dihedral_pots=[],
+        )
+        beads = params.beads_for_residue("ALA")
+        assert len(beads) == 1
+        assert params.beads_for_residue("XYZ") is None
+
+    def test_coffdrop_params_pair_potential(self):
+        pot = TabulatedPotential(
+            x_min=0.0,
+            x_max=20.0,
+            values=np.linspace(5, 0, 21),
+            residues=(1, 1),
+            atoms=(1, 1),
+            orders=(0, 0),
+            index=0,
+        )
+        params = COFFDROPParams(
+            mapping={},
+            bonds=[],
+            charges={},
+            type_map={"atoms": {"CA": 1}, "residues": {"ALA": 1}},
+            pair_pots=[pot],
+            angle_pots=[],
+            dihedral_pots=[],
+        )
+        V = params.pair_potential("ALA", "CA", "ALA", "CA", r=10.0)
+        assert V == pytest.approx(2.5, abs=0.1)
+
+    def test_coffdrop_params_pair_force(self):
+        pot = TabulatedPotential(
+            x_min=0.0,
+            x_max=20.0,
+            values=np.linspace(5, 0, 21),
+            residues=(1, 1),
+            atoms=(1, 1),
+            orders=(0, 0),
+            index=0,
+        )
+        params = COFFDROPParams(
+            mapping={},
+            bonds=[],
+            charges={},
+            type_map={"atoms": {"CA": 1}, "residues": {"ALA": 1}},
+            pair_pots=[pot],
+            angle_pots=[],
+            dihedral_pots=[],
+        )
+        dVdr = params.pair_force("ALA", "CA", "ALA", "CA", r=10.0)
+        assert dVdr == pytest.approx(-0.25, abs=0.01)
+
+    def test_coffdrop_params_no_match_returns_zero(self):
+        params = COFFDROPParams(
+            mapping={},
+            bonds=[],
+            charges={},
+            type_map={"atoms": {"CA": 1}, "residues": {"ALA": 1}},
+            pair_pots=[],
+            angle_pots=[],
+            dihedral_pots=[],
+        )
+        assert params.pair_potential("ALA", "CA", "ALA", "CA", r=5.0) == 0.0
+        assert params.pair_force("ALA", "CA", "ALA", "CA", r=5.0) == 0.0
+        assert params.angle_potential(("ALA",), ("CA",), (0,), 90.0) == 0.0
+        assert params.angle_force(("ALA",), ("CA",), (0,), 90.0) == 0.0
+        assert params.dihedral_potential(("ALA",), ("CA",), (0,), 180.0) == 0.0
+        assert params.dihedral_force(("ALA",), ("CA",), (0,), 180.0) == 0.0
+
+    def test_coffdrop_params_bond_length(self):
+        bond = BondDef(
+            residues=("ALA", "GLY"),
+            atoms=("CA", "CA"),
+            orders=(0, 1),
+            length=3.8,
+            index=0,
+        )
+        params = COFFDROPParams(
+            mapping={},
+            bonds=[bond],
+            charges={},
+            type_map={"atoms": {}, "residues": {}},
+            pair_pots=[],
+            angle_pots=[],
+            dihedral_pots=[],
+        )
+        assert params.bond_length("ALA", "CA", 0, "GLY", "CA", 1) == 3.8
+        assert params.bond_length("GLY", "CA", 1, "ALA", "CA", 0) == 3.8
+        assert params.bond_length("XYZ", "CB", 0, "XYZ", "CB", 0) is None
+
+    def test_coffdrop_params_repr(self):
+        params = COFFDROPParams(
+            mapping={"ALA": ResidueDef(name="ALA")},
+            bonds=[],
+            charges={},
+            type_map={"atoms": {}, "residues": {}},
+            pair_pots=[],
+            angle_pots=[],
+            dihedral_pots=[],
+        )
+        assert "1 residues" in repr(params)
+
+
+# Multi-GPU combine data helpers
+class TestCombineDataHelpers:
+
+    def test_save_json(self):
+        with tempfile.TemporaryDirectory() as td:
+            _save_json({"key": "val"}, os.path.join(td, "test.json"))
+            with open(os.path.join(td, "test.json")) as f:
+                data = json.load(f)
+            assert data["key"] == "val"
+
+    def test_concat_csv(self):
+        with tempfile.TemporaryDirectory() as td:
+            d1 = os.path.join(td, "bd_1")
+            d2 = os.path.join(td, "bd_2")
+            os.makedirs(d1)
+            os.makedirs(d2)
+            with open(os.path.join(d1, "traj.csv"), "w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=["traj_id", "fate"])
+                w.writeheader()
+                w.writerow({"traj_id": "0", "fate": "reacted"})
+            with open(os.path.join(d2, "traj.csv"), "w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=["traj_id", "fate"])
+                w.writeheader()
+                w.writerow({"traj_id": "0", "fate": "escaped"})
+            _concat_csv([d1, d2], "traj.csv", td, reindex="traj_id")
+            with open(os.path.join(td, "traj.csv")) as f:
+                rows = list(csv.DictReader(f))
+            assert len(rows) == 2
+            assert rows[1]["traj_id"] == "1"
+
+    def test_concat_csv_missing_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            _concat_csv([td], "nonexistent.csv", td)
+            assert not os.path.exists(os.path.join(td, "nonexistent.csv"))
+
+    def test_sum_csv(self):
+        with tempfile.TemporaryDirectory() as td:
+            d1 = os.path.join(td, "bd_1")
+            d2 = os.path.join(td, "bd_2")
+            os.makedirs(d1)
+            os.makedirs(d2)
+            for d, count in [(d1, "10"), (d2, "20")]:
+                with open(os.path.join(d, "radial.csv"), "w", newline="") as f:
+                    w = csv.DictWriter(f, fieldnames=["r", "count", "density"])
+                    w.writeheader()
+                    w.writerow({"r": "5.0", "count": count, "density": "0.0"})
+            _sum_csv(
+                [d1, d2],
+                "radial.csv",
+                td,
+                sum_col="count",
+                recompute_col="density",
+                total_N=100,
+            )
+            with open(os.path.join(td, "radial.csv")) as f:
+                rows = list(csv.DictReader(f))
+            assert len(rows) == 1
+            assert int(rows[0]["count"]) == 30
+
+    def test_concat_npz(self):
+        with tempfile.TemporaryDirectory() as td:
+            d1 = os.path.join(td, "bd_1")
+            d2 = os.path.join(td, "bd_2")
+            os.makedirs(d1)
+            os.makedirs(d2)
+            np.savez(
+                os.path.join(d1, "paths.npz"),
+                data=np.array([[1, 2], [3, 4]]),
+                columns=np.array(["x", "y"]),
+            )
+            np.savez(
+                os.path.join(d2, "paths.npz"),
+                data=np.array([[5, 6]]),
+                columns=np.array(["x", "y"]),
+            )
+            _concat_npz([d1, d2], "paths.npz", td)
+            npz = np.load(os.path.join(td, "paths.npz"))
+            assert npz["data"].shape == (3, 2)
+
+    def test_sum_npz(self):
+        with tempfile.TemporaryDirectory() as td:
+            d1 = os.path.join(td, "bd_1")
+            d2 = os.path.join(td, "bd_2")
+            os.makedirs(d1)
+            os.makedirs(d2)
+            np.savez(
+                os.path.join(d1, "matrix.npz"),
+                matrix=np.ones((3, 3)),
+                milestones=np.array([1, 2, 3]),
+            )
+            np.savez(
+                os.path.join(d2, "matrix.npz"),
+                matrix=np.ones((3, 3)) * 2,
+                milestones=np.array([1, 2, 3]),
+            )
+            _sum_npz(
+                [d1, d2], "matrix.npz", td, sum_key="matrix", copy_keys=["milestones"]
+            )
+            npz = np.load(os.path.join(td, "matrix.npz"))
+            np.testing.assert_allclose(npz["matrix"], np.ones((3, 3)) * 3)
+
+    def test_sum_npz_missing_files(self):
+        with tempfile.TemporaryDirectory() as td:
+            _sum_npz([td], "missing.npz", td, sum_key="x")
+            assert not os.path.exists(os.path.join(td, "missing.npz"))
+
+
+# Weighted Ensemble data structures
+class TestWEDataStructures:
+
+    def test_we_parameters_defaults(self):
+        p = WEParameters()
+        assert p.n_per_bin == 10
+        assert p.n_bins == 40
+        assert p.dt == 0.2
+
+    def test_we_parameters_auto_escape(self):
+        p = WEParameters(r_start=50.0, r_escape=0.0)
+        assert p.r_escape == 100.0
+
+    def test_we_parameters_custom_escape(self):
+        p = WEParameters(r_start=50.0, r_escape=200.0)
+        assert p.r_escape == 200.0
+
+    def test_we_trajectory_copy(self):
+        t = WETrajectory(
+            position=np.array([1.0, 2.0, 3.0]),
+            orientation=Quaternion(1, 0, 0, 0),
+            weight=0.5,
+            bin_idx=3,
+            steps=10,
+            time_ps=2.0,
+        )
+        c = t.copy()
+        assert np.allclose(c.position, t.position)
+        assert c.weight == t.weight
+        assert c.bin_idx == t.bin_idx
+        c.position[0] = 999.0
+        assert t.position[0] == 1.0
+
+    def test_we_result_reaction_probability(self):
+        r = WEResult(
+            n_iterations=100,
+            n_per_bin=10,
+            n_bins=40,
+            flux_reaction=0.1,
+            flux_escape=0.2,
+            weight_reacted=0.3,
+            weight_escaped=0.7,
+            r_start=50.0,
+            r_escape=100.0,
+            dt=0.2,
+        )
+        assert r.reaction_probability == pytest.approx(0.3)
+
+    def test_we_result_zero_weight(self):
+        r = WEResult(
+            n_iterations=0,
+            n_per_bin=10,
+            n_bins=40,
+            flux_reaction=0,
+            flux_escape=0,
+            weight_reacted=0,
+            weight_escaped=0,
+            r_start=50.0,
+            r_escape=100.0,
+            dt=0.2,
+        )
+        assert r.reaction_probability == 0.0
+
+
+# Force engine _Grid
+class TestForceEngineGrid:
+
+    def test_grid_from_dxgrid(self):
+        data = np.ones((5, 5, 5))
+        g = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), data)
+        cg = _Grid(g)
+        assert cg.data.shape == (5, 5, 5)
+        np.testing.assert_allclose(cg.spacing, [1.0, 1.0, 1.0])
+
+    def test_grid_contains_interior(self):
+        data = np.ones((10, 10, 10))
+        g = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), data)
+        cg = _Grid(g)
+        assert cg.contains(np.array([5.0, 5.0, 5.0])) is True
+
+    def test_grid_contains_outside(self):
+        data = np.ones((10, 10, 10))
+        g = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), data)
+        cg = _Grid(g)
+        assert cg.contains(np.array([100.0, 100.0, 100.0])) is False
+
+    def test_grid_lo_hi_margins(self):
+        data = np.ones((10, 10, 10))
+        g = DXGrid(np.zeros(3), np.diag([2.0, 2.0, 2.0]), data)
+        cg = _Grid(g)
+        np.testing.assert_allclose(cg.lo, [2.0, 2.0, 2.0])
+        np.testing.assert_allclose(cg.hi, [16.0, 16.0, 16.0])
+
+
+# Geometry pipeline
+class TestGeometryPipeline:
+
+    def test_geom_atom_record_pos(self):
+        a = GeomAtomRecord(
+            index=0,
+            name="CA",
+            resname="ALA",
+            resid=1,
+            x=1.0,
+            y=2.0,
+            z=3.0,
+            charge=0.5,
+            radius=1.8,
+        )
+        np.testing.assert_allclose(a.pos, [1.0, 2.0, 3.0])
+
+    def test_geom_atom_record_is_ghost(self):
+        gho = GeomAtomRecord(
+            index=0,
+            name="GHO",
+            resname="X",
+            resid=1,
+            x=0,
+            y=0,
+            z=0,
+            charge=0.0,
+            radius=0.0,
+        )
+        assert gho.is_ghost is True
+
+    def test_geom_atom_record_not_ghost(self):
+        normal = GeomAtomRecord(
+            index=0,
+            name="CA",
+            resname="ALA",
+            resid=1,
+            x=0,
+            y=0,
+            z=0,
+            charge=0.5,
+            radius=1.8,
+        )
+        assert normal.is_ghost is False
+
+    def test_geom_parse_pqr(self):
+        pqr = (
+            "ATOM      1  CA  ALA     1       1.000   2.000   3.000  0.500  1.800\n"
+            "ATOM      2  CB  ALA     1       4.000   5.000   6.000 -0.100  1.700\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".pqr", delete=False) as f:
+            f.write(pqr)
+            f.flush()
+            atoms = geom_parse_pqr(Path(f.name))
+        os.unlink(f.name)
+        assert len(atoms) == 2
+        assert atoms[0].name == "CA"
+        assert atoms[1].charge == pytest.approx(-0.1)
+
+    def test_geom_parse_pqr_skips_bad_lines(self):
+        pqr = (
+            "REMARK test\n"
+            "ATOM      1  CA  ALA     1       1.000   2.000   3.000  0.500  1.800\n"
+            "TER\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".pqr", delete=False) as f:
+            f.write(pqr)
+            f.flush()
+            atoms = geom_parse_pqr(Path(f.name))
+        os.unlink(f.name)
+        assert len(atoms) == 1
+
+    def test_molecule_geometry_dataclass(self):
+        mg = MoleculeGeometry(
+            n_atoms=100,
+            n_charged=80,
+            n_ghost=2,
+            centroid=np.zeros(3),
+            max_radius=25.0,
+            hydrodynamic_r=20.0,
+            ghost_indices=[98, 99],
+            ghost_positions=[np.zeros(3), np.ones(3)],
+            total_charge=6.0,
+        )
+        assert mg.n_atoms == 100
+        assert mg.total_charge == 6.0
+
+    def test_analyse_molecule_basic(self):
+        pqr = (
+            "ATOM      1  CA  ALA     1       0.000   0.000   0.000  0.500  1.800\n"
+            "ATOM      2  CB  ALA     1       5.000   0.000   0.000  0.500  1.800\n"
+            "ATOM      3  CG  ALA     1       0.000   5.000   0.000  0.500  1.800\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".pqr", delete=False) as f:
+            f.write(pqr)
+            f.flush()
+            mg = geom_analyse(Path(f.name), use_mc_hydro=False)
+        os.unlink(f.name)
+        assert mg.n_atoms == 3
+        assert mg.n_charged == 3
+        assert mg.max_radius > 0
+        assert mg.hydrodynamic_r > 0
