@@ -203,6 +203,7 @@ import pytest
 import math
 import json
 import csv
+import xml.etree.ElementTree as ET
 import os
 
 
@@ -6236,16 +6237,10 @@ class TestCLI:
 class TestPipelineExtract:
 
     def test_is_atom_line_atom(self):
-        assert (
-            _is_atom_line("ATOM      1  CA  ALA     1       1.0   2.0   3.0  0.5  1.8")
-            is True
-        )
+        assert _is_atom_line("ATOM      1  CA  ALA     1       1.0   2.0   3.0  0.5  1.8") is True
 
     def test_is_atom_line_hetatm(self):
-        assert (
-            _is_atom_line("HETATM    1  C1  BEN     1       1.0   2.0   3.0  0.5  1.8")
-            is True
-        )
+        assert _is_atom_line("HETATM    1  C1  BEN     1       1.0   2.0   3.0  0.5  1.8") is True
 
     def test_is_atom_line_remark(self):
         assert _is_atom_line("REMARK test line") is False
@@ -6342,25 +6337,14 @@ class TestCOFFDROPParams:
         assert rd.beads == []
 
     def test_bond_def_dataclass(self):
-        bond = BondDef(
-            residues=("ALA", "GLY"),
-            atoms=("CA", "CA"),
-            orders=(0, 1),
-            length=3.8,
-            index=0,
-        )
+        bond = BondDef(residues=("ALA", "GLY"), atoms=("CA", "CA"), orders=(0, 1), length=3.8, index=0)
         assert bond.length == 3.8
         assert bond.residues == ("ALA", "GLY")
 
     def test_tabulated_potential_linear(self):
         pot = TabulatedPotential(
-            x_min=0.0,
-            x_max=10.0,
-            values=np.linspace(0, 10, 11),
-            residues=(0,),
-            atoms=(0,),
-            orders=(0,),
-            index=0,
+            x_min=0.0, x_max=10.0, values=np.linspace(0, 10, 11),
+            residues=(0,), atoms=(0,), orders=(0,), index=0,
         )
         assert pot.value(5.0) == pytest.approx(5.0)
         assert pot.value(0.0) == pytest.approx(0.0)
@@ -6368,111 +6352,66 @@ class TestCOFFDROPParams:
 
     def test_tabulated_potential_clamp_low(self):
         pot = TabulatedPotential(
-            x_min=0.0,
-            x_max=10.0,
-            values=np.linspace(0, 10, 11),
-            residues=(0,),
-            atoms=(0,),
-            orders=(0,),
-            index=0,
+            x_min=0.0, x_max=10.0, values=np.linspace(0, 10, 11),
+            residues=(0,), atoms=(0,), orders=(0,), index=0,
         )
         assert pot.value(-5.0) == pytest.approx(0.0)
 
     def test_tabulated_potential_clamp_high(self):
         pot = TabulatedPotential(
-            x_min=0.0,
-            x_max=10.0,
-            values=np.linspace(0, 10, 11),
-            residues=(0,),
-            atoms=(0,),
-            orders=(0,),
-            index=0,
+            x_min=0.0, x_max=10.0, values=np.linspace(0, 10, 11),
+            residues=(0,), atoms=(0,), orders=(0,), index=0,
         )
         assert pot.value(20.0) == pytest.approx(10.0)
 
     def test_tabulated_potential_deriv(self):
         pot = TabulatedPotential(
-            x_min=0.0,
-            x_max=10.0,
-            values=np.linspace(0, 10, 11),
-            residues=(0,),
-            atoms=(0,),
-            orders=(0,),
-            index=0,
+            x_min=0.0, x_max=10.0, values=np.linspace(0, 10, 11),
+            residues=(0,), atoms=(0,), orders=(0,), index=0,
         )
         assert pot.deriv(5.0) == pytest.approx(1.0)
 
     def test_tabulated_potential_quadratic(self):
         xs = np.linspace(0, 10, 101)
-        vals = xs**2
+        vals = xs ** 2
         pot = TabulatedPotential(
-            x_min=0.0,
-            x_max=10.0,
-            values=vals,
-            residues=(0,),
-            atoms=(0,),
-            orders=(0,),
-            index=0,
+            x_min=0.0, x_max=10.0, values=vals,
+            residues=(0,), atoms=(0,), orders=(0,), index=0,
         )
         assert pot.value(3.0) == pytest.approx(9.0, abs=0.1)
 
     def test_match_pot_exact(self):
         pot = TabulatedPotential(
-            x_min=0,
-            x_max=1,
-            values=np.array([1.0, 2.0]),
-            residues=(1, 2),
-            atoms=(3, 4),
-            orders=(0, 0),
-            index=0,
+            x_min=0, x_max=1, values=np.array([1.0, 2.0]),
+            residues=(1, 2), atoms=(3, 4), orders=(0, 0), index=0,
         )
         found = _match_pot([pot], (1, 2), (3, 4), (0, 0))
         assert found is pot
 
     def test_match_pot_wildcard(self):
         pot = TabulatedPotential(
-            x_min=0,
-            x_max=1,
-            values=np.array([1.0]),
-            residues=(0, 0),
-            atoms=(3, 4),
-            orders=(0, 0),
-            index=0,
+            x_min=0, x_max=1, values=np.array([1.0]),
+            residues=(0, 0), atoms=(3, 4), orders=(0, 0), index=0,
         )
         found = _match_pot([pot], (5, 6), (3, 4), (0, 0), wildcard=0)
         assert found is pot
 
     def test_match_pot_no_match(self):
         pot = TabulatedPotential(
-            x_min=0,
-            x_max=1,
-            values=np.array([1.0]),
-            residues=(1, 2),
-            atoms=(3, 4),
-            orders=(0, 0),
-            index=0,
+            x_min=0, x_max=1, values=np.array([1.0]),
+            residues=(1, 2), atoms=(3, 4), orders=(0, 0), index=0,
         )
         found = _match_pot([pot], (5, 6), (7, 8), (0, 0))
         assert found is None
 
     def test_match_pot_exact_over_wildcard(self):
         wild = TabulatedPotential(
-            x_min=0,
-            x_max=1,
-            values=np.array([10.0]),
-            residues=(0, 0),
-            atoms=(1, 2),
-            orders=(0, 0),
-            index=0,
+            x_min=0, x_max=1, values=np.array([10.0]),
+            residues=(0, 0), atoms=(1, 2), orders=(0, 0), index=0,
         )
         exact = TabulatedPotential(
-            x_min=0,
-            x_max=1,
-            values=np.array([20.0]),
-            residues=(3, 4),
-            atoms=(1, 2),
-            orders=(0, 0),
-            index=1,
+            x_min=0, x_max=1, values=np.array([20.0]),
+            residues=(3, 4), atoms=(1, 2), orders=(0, 0), index=1,
         )
         found = _match_pot([wild, exact], (3, 4), (1, 2), (0, 0))
         assert found is exact
@@ -6556,13 +6495,8 @@ class TestCOFFDROPParams:
 
     def test_coffdrop_params_pair_potential(self):
         pot = TabulatedPotential(
-            x_min=0.0,
-            x_max=20.0,
-            values=np.linspace(5, 0, 21),
-            residues=(1, 1),
-            atoms=(1, 1),
-            orders=(0, 0),
-            index=0,
+            x_min=0.0, x_max=20.0, values=np.linspace(5, 0, 21),
+            residues=(1, 1), atoms=(1, 1), orders=(0, 0), index=0,
         )
         params = COFFDROPParams(
             mapping={},
@@ -6578,13 +6512,8 @@ class TestCOFFDROPParams:
 
     def test_coffdrop_params_pair_force(self):
         pot = TabulatedPotential(
-            x_min=0.0,
-            x_max=20.0,
-            values=np.linspace(5, 0, 21),
-            residues=(1, 1),
-            atoms=(1, 1),
-            orders=(0, 0),
-            index=0,
+            x_min=0.0, x_max=20.0, values=np.linspace(5, 0, 21),
+            residues=(1, 1), atoms=(1, 1), orders=(0, 0), index=0,
         )
         params = COFFDROPParams(
             mapping={},
@@ -6616,13 +6545,7 @@ class TestCOFFDROPParams:
         assert params.dihedral_force(("ALA",), ("CA",), (0,), 180.0) == 0.0
 
     def test_coffdrop_params_bond_length(self):
-        bond = BondDef(
-            residues=("ALA", "GLY"),
-            atoms=("CA", "CA"),
-            orders=(0, 1),
-            length=3.8,
-            index=0,
-        )
+        bond = BondDef(residues=("ALA", "GLY"), atoms=("CA", "CA"), orders=(0, 1), length=3.8, index=0)
         params = COFFDROPParams(
             mapping={},
             bonds=[bond],
@@ -6695,14 +6618,7 @@ class TestCombineDataHelpers:
                     w = csv.DictWriter(f, fieldnames=["r", "count", "density"])
                     w.writeheader()
                     w.writerow({"r": "5.0", "count": count, "density": "0.0"})
-            _sum_csv(
-                [d1, d2],
-                "radial.csv",
-                td,
-                sum_col="count",
-                recompute_col="density",
-                total_N=100,
-            )
+            _sum_csv([d1, d2], "radial.csv", td, sum_col="count", recompute_col="density", total_N=100)
             with open(os.path.join(td, "radial.csv")) as f:
                 rows = list(csv.DictReader(f))
             assert len(rows) == 1
@@ -6714,16 +6630,8 @@ class TestCombineDataHelpers:
             d2 = os.path.join(td, "bd_2")
             os.makedirs(d1)
             os.makedirs(d2)
-            np.savez(
-                os.path.join(d1, "paths.npz"),
-                data=np.array([[1, 2], [3, 4]]),
-                columns=np.array(["x", "y"]),
-            )
-            np.savez(
-                os.path.join(d2, "paths.npz"),
-                data=np.array([[5, 6]]),
-                columns=np.array(["x", "y"]),
-            )
+            np.savez(os.path.join(d1, "paths.npz"), data=np.array([[1, 2], [3, 4]]), columns=np.array(["x", "y"]))
+            np.savez(os.path.join(d2, "paths.npz"), data=np.array([[5, 6]]), columns=np.array(["x", "y"]))
             _concat_npz([d1, d2], "paths.npz", td)
             npz = np.load(os.path.join(td, "paths.npz"))
             assert npz["data"].shape == (3, 2)
@@ -6734,19 +6642,9 @@ class TestCombineDataHelpers:
             d2 = os.path.join(td, "bd_2")
             os.makedirs(d1)
             os.makedirs(d2)
-            np.savez(
-                os.path.join(d1, "matrix.npz"),
-                matrix=np.ones((3, 3)),
-                milestones=np.array([1, 2, 3]),
-            )
-            np.savez(
-                os.path.join(d2, "matrix.npz"),
-                matrix=np.ones((3, 3)) * 2,
-                milestones=np.array([1, 2, 3]),
-            )
-            _sum_npz(
-                [d1, d2], "matrix.npz", td, sum_key="matrix", copy_keys=["milestones"]
-            )
+            np.savez(os.path.join(d1, "matrix.npz"), matrix=np.ones((3, 3)), milestones=np.array([1, 2, 3]))
+            np.savez(os.path.join(d2, "matrix.npz"), matrix=np.ones((3, 3)) * 2, milestones=np.array([1, 2, 3]))
+            _sum_npz([d1, d2], "matrix.npz", td, sum_key="matrix", copy_keys=["milestones"])
             npz = np.load(os.path.join(td, "matrix.npz"))
             np.testing.assert_allclose(npz["matrix"], np.ones((3, 3)) * 3)
 
@@ -6791,31 +6689,19 @@ class TestWEDataStructures:
 
     def test_we_result_reaction_probability(self):
         r = WEResult(
-            n_iterations=100,
-            n_per_bin=10,
-            n_bins=40,
-            flux_reaction=0.1,
-            flux_escape=0.2,
-            weight_reacted=0.3,
-            weight_escaped=0.7,
-            r_start=50.0,
-            r_escape=100.0,
-            dt=0.2,
+            n_iterations=100, n_per_bin=10, n_bins=40,
+            flux_reaction=0.1, flux_escape=0.2,
+            weight_reacted=0.3, weight_escaped=0.7,
+            r_start=50.0, r_escape=100.0, dt=0.2,
         )
         assert r.reaction_probability == pytest.approx(0.3)
 
     def test_we_result_zero_weight(self):
         r = WEResult(
-            n_iterations=0,
-            n_per_bin=10,
-            n_bins=40,
-            flux_reaction=0,
-            flux_escape=0,
-            weight_reacted=0,
-            weight_escaped=0,
-            r_start=50.0,
-            r_escape=100.0,
-            dt=0.2,
+            n_iterations=0, n_per_bin=10, n_bins=40,
+            flux_reaction=0, flux_escape=0,
+            weight_reacted=0, weight_escaped=0,
+            r_start=50.0, r_escape=100.0, dt=0.2,
         )
         assert r.reaction_probability == 0.0
 
@@ -6854,45 +6740,15 @@ class TestForceEngineGrid:
 class TestGeometryPipeline:
 
     def test_geom_atom_record_pos(self):
-        a = GeomAtomRecord(
-            index=0,
-            name="CA",
-            resname="ALA",
-            resid=1,
-            x=1.0,
-            y=2.0,
-            z=3.0,
-            charge=0.5,
-            radius=1.8,
-        )
+        a = GeomAtomRecord(index=0, name="CA", resname="ALA", resid=1, x=1.0, y=2.0, z=3.0, charge=0.5, radius=1.8)
         np.testing.assert_allclose(a.pos, [1.0, 2.0, 3.0])
 
     def test_geom_atom_record_is_ghost(self):
-        gho = GeomAtomRecord(
-            index=0,
-            name="GHO",
-            resname="X",
-            resid=1,
-            x=0,
-            y=0,
-            z=0,
-            charge=0.0,
-            radius=0.0,
-        )
+        gho = GeomAtomRecord(index=0, name="GHO", resname="X", resid=1, x=0, y=0, z=0, charge=0.0, radius=0.0)
         assert gho.is_ghost is True
 
     def test_geom_atom_record_not_ghost(self):
-        normal = GeomAtomRecord(
-            index=0,
-            name="CA",
-            resname="ALA",
-            resid=1,
-            x=0,
-            y=0,
-            z=0,
-            charge=0.5,
-            radius=1.8,
-        )
+        normal = GeomAtomRecord(index=0, name="CA", resname="ALA", resid=1, x=0, y=0, z=0, charge=0.5, radius=1.8)
         assert normal.is_ghost is False
 
     def test_geom_parse_pqr(self):
@@ -6924,14 +6780,9 @@ class TestGeometryPipeline:
 
     def test_molecule_geometry_dataclass(self):
         mg = MoleculeGeometry(
-            n_atoms=100,
-            n_charged=80,
-            n_ghost=2,
-            centroid=np.zeros(3),
-            max_radius=25.0,
-            hydrodynamic_r=20.0,
-            ghost_indices=[98, 99],
-            ghost_positions=[np.zeros(3), np.ones(3)],
+            n_atoms=100, n_charged=80, n_ghost=2,
+            centroid=np.zeros(3), max_radius=25.0, hydrodynamic_r=20.0,
+            ghost_indices=[98, 99], ghost_positions=[np.zeros(3), np.ones(3)],
             total_charge=6.0,
         )
         assert mg.n_atoms == 100
@@ -6952,3 +6803,463 @@ class TestGeometryPipeline:
         assert mg.n_charged == 3
         assert mg.max_radius > 0
         assert mg.hydrodynamic_r > 0
+
+
+# GHO injection XML parsing
+class TestGHOInjectionParsing:
+
+    def test_parse_rxns_xml_with_dummies(self):
+        from pystarc.pipeline.gho_injection import parse_rxns_xml
+        xml = (
+            '<?xml version="1.0"?>\n<reactions>\n'
+            "  <dummy><name>gho_rec</name><core>receptor</core>\n"
+            "    <atoms>42 1.0 2.0 3.0\n99 4.0 5.0 6.0</atoms>\n"
+            "  </dummy>\n</reactions>\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(xml)
+            f.flush()
+            dummies = parse_rxns_xml(f.name)
+        os.unlink(f.name)
+        assert len(dummies) == 1
+        assert dummies[0].name == "gho_rec"
+        assert len(dummies[0].atoms) == 2
+        assert dummies[0].atoms[0].atom_index == 42
+        np.testing.assert_allclose(dummies[0].atoms[1].pos_rel, [4.0, 5.0, 6.0])
+
+    def test_parse_rxns_xml_empty(self):
+        from pystarc.pipeline.gho_injection import parse_rxns_xml
+        xml = '<?xml version="1.0"?>\n<reactions></reactions>\n'
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(xml)
+            f.flush()
+            dummies = parse_rxns_xml(f.name)
+        os.unlink(f.name)
+        assert len(dummies) == 0
+
+    def test_parse_rxns_xml_bad_file(self):
+        from pystarc.pipeline.gho_injection import parse_rxns_xml
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write("not xml at all{{{")
+            f.flush()
+            with pytest.raises(ValueError, match="Cannot parse"):
+                parse_rxns_xml(f.name)
+        os.unlink(f.name)
+
+    def test_parse_ghost_atoms_from_input(self):
+        from pystarc.pipeline.gho_injection import parse_ghost_atoms_from_input
+        text = "3220,0,17.0\n3221,1,10.0\n"
+        positions = {3220: np.array([1.0, 2.0, 3.0]), 3221: np.array([4.0, 5.0, 6.0])}
+        atoms = parse_ghost_atoms_from_input(text, positions)
+        assert len(atoms) == 2
+        assert atoms[0].atom_index == 0
+        np.testing.assert_allclose(atoms[0].pos_rel, [1.0, 2.0, 3.0])
+
+    def test_parse_ghost_atoms_empty_lines(self):
+        from pystarc.pipeline.gho_injection import parse_ghost_atoms_from_input
+        text = "\n\n  \n"
+        atoms = parse_ghost_atoms_from_input(text, {})
+        assert len(atoms) == 0
+
+    def test_parse_ghost_atoms_bad_values(self):
+        from pystarc.pipeline.gho_injection import parse_ghost_atoms_from_input
+        text = "abc,def,ghi\n3220,0,17.0\n"
+        atoms = parse_ghost_atoms_from_input(text, {3220: np.zeros(3)})
+        assert len(atoms) == 1
+
+    def test_gho_reaction_criterion_from_rxns_xml(self):
+        xml = (
+            '<?xml version="1.0"?>\n<reactions>\n'
+            "  <reaction><criterion>\n"
+            "    <pair><atom1>10</atom1><atom2>5</atom2><distance>17.0</distance></pair>\n"
+            "  </criterion></reaction>\n</reactions>\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(xml)
+            f.flush()
+            gho1 = GHOAtom(atom_index=10, pos_rel=np.zeros(3))
+            gho2 = GHOAtom(atom_index=5, pos_rel=np.zeros(3))
+            crit = GHOReactionCriterion.from_rxns_xml(f.name, [gho1], [gho2])
+        os.unlink(f.name)
+        assert len(crit.pairs) == 1
+
+    def test_gho_reaction_criterion_empty_xml(self):
+        xml = '<?xml version="1.0"?>\n<reactions></reactions>\n'
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(xml)
+            f.flush()
+            crit = GHOReactionCriterion.from_rxns_xml(f.name, [], [])
+        os.unlink(f.name)
+        assert len(crit.pairs) == 0
+
+    def test_text_helper_required_missing(self):
+        from pystarc.pipeline.gho_injection import _text
+        node = ET.Element("test")
+        with pytest.raises(ValueError, match="Missing required"):
+            _text(node, "nonexistent")
+
+    def test_text_helper_optional_missing(self):
+        from pystarc.pipeline.gho_injection import _text
+        node = ET.Element("test")
+        assert _text(node, "nonexistent", required=False) is None
+
+
+# Geometry _parse_rxns_xml_criteria
+class TestGeometryRxnsCriteria:
+
+    def test_parse_format1_atom1_atom2(self):
+        xml = (
+            '<?xml version="1.0"?>\n<reactions>\n'
+            "  <reaction><criterion>\n"
+            "    <pair><atom1>3221 0.0 17.0</atom1><atom2>19 0.0 17.0</atom2></pair>\n"
+            "  </criterion></reaction>\n</reactions>\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(xml)
+            f.flush()
+            pairs, n_needed = _parse_rxns_xml_criteria(Path(f.name))
+        os.unlink(f.name)
+        assert len(pairs) == 1
+        assert pairs[0].rec_index == 3220
+        assert pairs[0].lig_index == 18
+        assert pairs[0].cutoff == 17.0
+
+    def test_parse_format2_atoms_distance(self):
+        xml = (
+            '<?xml version="1.0"?>\n<reactions>\n'
+            "  <reaction><criterion>\n"
+            "    <pair><atoms>100 50</atoms><distance>6.5</distance></pair>\n"
+            "  </criterion></reaction>\n</reactions>\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(xml)
+            f.flush()
+            pairs, n_needed = _parse_rxns_xml_criteria(Path(f.name))
+        os.unlink(f.name)
+        assert len(pairs) == 1
+        assert pairs[0].rec_index == 99
+        assert pairs[0].lig_index == 49
+        assert pairs[0].cutoff == 6.5
+
+    def test_parse_n_needed(self):
+        xml = (
+            '<?xml version="1.0"?>\n<reactions>\n'
+            "  <reaction><criterion><n_needed>2</n_needed>\n"
+            "    <pair><atoms>10 20</atoms><distance>5.0</distance></pair>\n"
+            "    <pair><atoms>30 40</atoms><distance>5.0</distance></pair>\n"
+            "  </criterion></reaction>\n</reactions>\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(xml)
+            f.flush()
+            pairs, n_needed = _parse_rxns_xml_criteria(Path(f.name))
+        os.unlink(f.name)
+        assert len(pairs) == 2
+        assert n_needed == 2
+
+    def test_parse_empty_criterion(self):
+        xml = (
+            '<?xml version="1.0"?>\n<reactions>\n'
+            "  <reaction><criterion></criterion></reaction>\n</reactions>\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(xml)
+            f.flush()
+            pairs, n_needed = _parse_rxns_xml_criteria(Path(f.name))
+        os.unlink(f.name)
+        assert len(pairs) == 0
+
+
+# COFFDROP _parse_ff with synthetic XML
+class TestCOFFDROPParseFF:
+
+    def test_parse_ff_synthetic(self):
+        from pystarc.simulation.coffdrop_params import _parse_ff
+        xml = (
+            '<?xml version="1.0"?>\n<coffdrop>\n'
+            "  <types>\n"
+            "    <atoms><type><name>CA</name><index>1</index></type></atoms>\n"
+            "    <residues><type><name>ALA</name><index>1</index></type></residues>\n"
+            "  </types>\n"
+            "  <pairs><distance>3.0 20.0</distance>\n"
+            "    <potentials>\n"
+            "      <potential><index>0</index><residues>1 1</residues>"
+            "<atoms>1 1</atoms><orders>0 0</orders>"
+            "<data>1.0 0.8 0.5 0.2 0.0</data></potential>\n"
+            "    </potentials>\n"
+            "  </pairs>\n"
+            "  <bond_angles><angle>0.0 180.0</angle>\n"
+            "    <potentials>\n"
+            "      <potential><index>0</index><residues>1 1 1</residues>"
+            "<atoms>1 1 1</atoms><orders>0 0 0</orders>"
+            "<data>0.0 0.5 1.0 0.5 0.0</data></potential>\n"
+            "    </potentials>\n"
+            "  </bond_angles>\n"
+            "  <dihedral_angles><angle>-180.0 180.0</angle>\n"
+            "    <potentials>\n"
+            "      <potential><index>0</index><residues>1 1 1 1</residues>"
+            "<atoms>1 1 1 1</atoms><orders>0 0 0 0</orders>"
+            "<data>0.0 1.0 0.0 -1.0 0.0</data></potential>\n"
+            "    </potentials>\n"
+            "  </dihedral_angles>\n"
+            "</coffdrop>\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(xml)
+            f.flush()
+            type_map, pairs, angles, dihedrals = _parse_ff(f.name)
+        os.unlink(f.name)
+        assert "CA" in type_map["atoms"]
+        assert "ALA" in type_map["residues"]
+        assert len(pairs) == 1
+        assert len(angles) == 1
+        assert len(dihedrals) == 1
+        assert pairs[0].value(3.0) > 0
+
+    def test_parse_ff_no_types(self):
+        from pystarc.simulation.coffdrop_params import _parse_ff
+        xml = '<?xml version="1.0"?>\n<coffdrop></coffdrop>\n'
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(xml)
+            f.flush()
+            type_map, pairs, angles, dihedrals = _parse_ff(f.name)
+        os.unlink(f.name)
+        assert type_map == {"atoms": {}, "residues": {}}
+        assert pairs == []
+
+
+# COFFDROP chain force evaluator
+class TestCOFFDROPChainForces:
+
+    def test_chain_force_evaluator_bond(self):
+        chain = build_linear_chain(n_residues=3, bond_length=3.8)
+        chain.beads[1].pos = np.array([3.5, 0.0, 0.0])
+        evaluator = ChainForceEvaluator()
+        F = evaluator.compute_forces(chain)
+        assert F.shape == (3, 3)
+        assert np.any(np.abs(F) > 0)
+
+    def test_chain_positions_set(self):
+        chain = build_linear_chain(n_residues=4, bond_length=3.8)
+        new_pos = np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0]], dtype=float)
+        chain.set_positions(new_pos)
+        np.testing.assert_allclose(chain.beads[2].pos, [2.0, 0.0, 0.0])
+
+    def test_chain_zero_forces(self):
+        chain = build_linear_chain(n_residues=3, bond_length=3.8)
+        chain.beads[0].force = np.array([1.0, 2.0, 3.0])
+        chain.zero_forces()
+        np.testing.assert_allclose(chain.beads[0].force, [0.0, 0.0, 0.0])
+
+    def test_chain_positions_array(self):
+        chain = build_linear_chain(n_residues=3, bond_length=3.8)
+        pos = chain.positions_array()
+        assert pos.shape == (3, 3)
+
+    def test_chain_forces_array(self):
+        chain = build_linear_chain(n_residues=3, bond_length=3.8)
+        farr = chain.forces_array()
+        assert farr.shape == (3, 3)
+
+    def test_equilibrium_forces_small(self):
+        chain = build_linear_chain(n_residues=3, bond_length=3.8)
+        evaluator = ChainForceEvaluator()
+        F = evaluator.compute_forces(chain)
+        assert np.max(np.abs(F)) < 1.0
+
+    def test_stretched_bond_restoring_force(self):
+        chain = build_linear_chain(n_residues=2, bond_length=3.8)
+        chain.beads[1].pos = np.array([10.0, 0.0, 0.0])
+        evaluator = ChainForceEvaluator()
+        F = evaluator.compute_forces(chain)
+        assert F[0, 0] > 0
+        assert F[1, 0] < 0
+
+
+# Quaternion uncovered branches
+class TestQuaternionFromMatrix:
+
+    def test_from_rotation_matrix_identity(self):
+        R = np.eye(3)
+        q = Quaternion.from_rotation_matrix(R)
+        assert abs(q.norm() - 1.0) < 1e-10
+        assert abs(q.w) > 0.9
+
+    def test_from_rotation_matrix_90z(self):
+        R = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]], dtype=float)
+        q = Quaternion.from_rotation_matrix(R)
+        assert abs(q.norm() - 1.0) < 1e-10
+        R2 = q.to_rotation_matrix()
+        np.testing.assert_allclose(R2, R, atol=1e-10)
+
+    def test_from_rotation_matrix_90x(self):
+        R = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=float)
+        q = Quaternion.from_rotation_matrix(R)
+        R2 = q.to_rotation_matrix()
+        np.testing.assert_allclose(R2, R, atol=1e-10)
+
+    def test_from_rotation_matrix_90y(self):
+        R = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]], dtype=float)
+        q = Quaternion.from_rotation_matrix(R)
+        R2 = q.to_rotation_matrix()
+        np.testing.assert_allclose(R2, R, atol=1e-10)
+
+    def test_from_rotation_matrix_180z(self):
+        R = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=float)
+        q = Quaternion.from_rotation_matrix(R)
+        R2 = q.to_rotation_matrix()
+        np.testing.assert_allclose(R2, R, atol=1e-10)
+
+    def test_from_rotation_matrix_arbitrary(self):
+        q_orig = Quaternion.from_axis_angle(np.array([1, 1, 1]) / math.sqrt(3), 1.23)
+        R = q_orig.to_rotation_matrix()
+        q_back = Quaternion.from_rotation_matrix(R)
+        R2 = q_back.to_rotation_matrix()
+        np.testing.assert_allclose(R2, R, atol=1e-10)
+
+    def test_normalized_zero_quaternion(self):
+        q = Quaternion(0, 0, 0, 0)
+        n = q.normalized()
+        assert n.w == 1.0
+
+    def test_random_quaternion_no_rng(self):
+        q = random_quaternion(rng=None)
+        assert abs(q.norm() - 1.0) < 1e-10
+
+    def test_small_rotation_quaternion_no_rng(self):
+        q = small_rotation_quaternion(0.01, rng=None)
+        assert abs(q.norm() - 1.0) < 1e-10
+
+
+# Diffusional rotation uncovered functions
+class TestDiffusionalRotationSampling:
+
+    def test_sample_rotation_angle_callable(self):
+        from pystarc.simulation.diffusional_rotation import _sample_rotation_angle
+        rng = np.random.default_rng(42)
+        angle = _sample_rotation_angle(rng, 0.5)
+        assert 0 <= angle <= math.pi
+
+    def test_sample_quat_for_tau(self):
+        from pystarc.simulation.diffusional_rotation import _sample_quat_for_tau
+        rng = np.random.default_rng(42)
+        q = _sample_quat_for_tau(rng, 0.5)
+        assert abs(np.linalg.norm(q) - 1.0) < 1e-10
+
+    def test_spline_rot_0p5(self):
+        from pystarc.simulation.diffusional_rotation import _spline_rot_0p5
+        rng = np.random.default_rng(42)
+        q = _spline_rot_0p5(rng)
+        assert abs(np.linalg.norm(q) - 1.0) < 1e-10
+
+    def test_spline_rot_1p0(self):
+        from pystarc.simulation.diffusional_rotation import _spline_rot_1p0
+        rng = np.random.default_rng(42)
+        q = _spline_rot_1p0(rng)
+        assert abs(np.linalg.norm(q) - 1.0) < 1e-10
+
+    def test_spline_rot_2p0(self):
+        from pystarc.simulation.diffusional_rotation import _spline_rot_2p0
+        rng = np.random.default_rng(42)
+        q = _spline_rot_2p0(rng)
+        assert abs(np.linalg.norm(q) - 1.0) < 1e-10
+
+
+# WE result rate constant and repr
+class TestWEResultExtended:
+
+    def test_rate_constant_nonzero(self):
+        r = WEResult(
+            n_iterations=100, n_per_bin=10, n_bins=40,
+            flux_reaction=0.1, flux_escape=0.2,
+            weight_reacted=0.3, weight_escaped=0.7,
+            r_start=50.0, r_escape=100.0, dt=0.2,
+        )
+        k = r.rate_constant(D_rel=0.1)
+        assert k > 0
+
+    def test_rate_constant_zero_prxn(self):
+        r = WEResult(
+            n_iterations=0, n_per_bin=10, n_bins=40,
+            flux_reaction=0, flux_escape=0,
+            weight_reacted=0, weight_escaped=0,
+            r_start=50.0, r_escape=100.0, dt=0.2,
+        )
+        assert r.rate_constant(D_rel=0.1) == 0.0
+
+    def test_repr(self):
+        r = WEResult(
+            n_iterations=100, n_per_bin=10, n_bins=40,
+            flux_reaction=0.1, flux_escape=0.2,
+            weight_reacted=0.3, weight_escaped=0.7,
+            r_start=50.0, r_escape=100.0, dt=0.2,
+        )
+        s = repr(r)
+        assert "WEResult" in s
+        assert "P_rxn" in s
+
+
+# Engine _GridStack
+class TestGridStack:
+
+    def test_gridstack_creation(self):
+        from pystarc.forces.engine import _GridStack
+        g1 = DXGrid(np.zeros(3), np.diag([2.0, 2.0, 2.0]), np.ones((5, 5, 5)))
+        g2 = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), np.ones((10, 10, 10)))
+        gs = _GridStack([g1, g2])
+        assert len(gs) == 2
+        assert bool(gs) is True
+
+    def test_gridstack_empty(self):
+        from pystarc.forces.engine import _GridStack
+        gs = _GridStack([])
+        assert len(gs) == 0
+        assert bool(gs) is False
+
+    def test_gridstack_finest_first(self):
+        from pystarc.forces.engine import _GridStack
+        coarse = DXGrid(np.zeros(3), np.diag([2.0, 2.0, 2.0]), np.ones((10, 10, 10)))
+        fine = DXGrid(np.zeros(3), np.diag([0.5, 0.5, 0.5]), np.ones((10, 10, 10)))
+        gs = _GridStack([coarse, fine])
+        pt = np.array([2.0, 2.0, 2.0])
+        g = gs.finest_for(pt)
+        assert g is not None
+        np.testing.assert_allclose(g.spacing, [0.5, 0.5, 0.5])
+
+    def test_gridstack_outside_returns_none(self):
+        from pystarc.forces.engine import _GridStack
+        g = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), np.ones((5, 5, 5)))
+        gs = _GridStack([g])
+        assert gs.finest_for(np.array([100.0, 100.0, 100.0])) is None
+
+    def test_gridstack_eval_empty(self):
+        from pystarc.forces.engine import _GridStack
+        gs = _GridStack([])
+        F, T, E = gs.eval_atoms(np.zeros((1, 3)), np.array([1.0]), 0.5, False, "numpy")
+        np.testing.assert_allclose(F, [0, 0, 0])
+        assert E == 0.0
+
+
+# Multipole farfield summary and repr
+class TestMultipoleFarfieldExtended:
+
+    def test_summary_monopole_dominant(self):
+        charges = np.array([5.0, -2.0])
+        positions = np.array([[0, 0, 0], [1, 0, 0]], dtype=float)
+        me = MultipoleExpansion(positions, charges, debye_length=7.86)
+        s = me.summary()
+        assert "Monopole" in s or "monopole" in s.lower() or "Q" in s
+
+    def test_summary_dipole_dominant(self):
+        charges = np.array([1.0, -1.0])
+        positions = np.array([[0, 0, 0], [5, 0, 0]], dtype=float)
+        me = MultipoleExpansion(positions, charges, debye_length=7.86)
+        s = me.summary()
+        assert len(s) > 0
+
+    def test_potential_at_zero(self):
+        charges = np.array([1.0])
+        positions = np.array([[0, 0, 0]], dtype=float)
+        me = MultipoleExpansion(positions, charges, debye_length=7.86)
+        V = me.potential(np.array([0.0, 0.0, 0.0]))
+        assert V == 0.0
