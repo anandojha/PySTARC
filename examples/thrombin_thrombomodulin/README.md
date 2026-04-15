@@ -22,7 +22,7 @@
 | `ligand.pqr`       | Thrombomodulin PQR file (pre-computed).                                                              |
 | `rxns.xml`         | Reaction criterion with binding-site atom pairs and cutoff distances.                                |
 | `input.xml`        | PySTARC input file with simulation parameters.                                                       |
-| `bb_effect.py`     | Brownian bridge A/B test: runs 4 seeds to verify BB genuinely improves P_rxn (diagnostic script).    |
+| `bb_effect.py`     | Brownian bridge A/B test: runs 4 seeds to verify BB genuinely improves P<sub>rxn</sub> (diagnostic script). |
 | `run.sh`           | Runs BD simulation in one command.                                                                   |
 
 ## Run
@@ -47,8 +47,8 @@ After a simulation completes, all results are written to `bd_sims/`.
 
 | Output file              | Description                                                                                                                    |
 |--------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| `results.json`           | k_on, P_rxn, Wilson 95% CI, k_b, D_rel, wall time, and GPU info.                                                               |
-| `convergence.json`       | Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.          |
+| `results.json`           | k<sub>on</sub>, P<sub>rxn</sub>, Wilson 95% CI, k<sub>b</sub>, D<sub>rel</sub>, wall time, and GPU info.                      |
+| `convergence.json`       | Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.           |
 | `trajectories.csv`       | Per-trajectory record: number of steps, starting pose, minimum distance reached, and number of returns from the escape sphere. |
 | `encounters.csv`         | Binding encounter poses for reacted trajectories: final position, orientation, and contact distances.                          |
 | `near_misses.csv`        | Trajectories that approached the reaction surface but escaped.                                                                 |

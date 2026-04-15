@@ -15,7 +15,7 @@
 | Born desolvation       | enabled                              |
 | Hydrodynamic radii     | receptor 22.5, ligand 5.0 Angstrom   |
 | Trajectories           | 100,000                              |
-| Experimental k_on      | 2.9 x 10^7 M^-1 s^-1                 |
+| Experimental k<sub>on</sub> | 2.9 x 10<sup>7</sup> M<sup>-1</sup>s<sup>-1</sup> |
 
 ## Input files (provided)
 
@@ -39,7 +39,7 @@ Running `python setup.py` produces:
 ## Setup and run
 ```bash
 conda activate PySTARC
-mocule load cuda
+module load cuda
 cd examples/trypsin_benzamidine
 python setup.py
 python ../../run_pystarc.py input.xml
@@ -59,7 +59,7 @@ After the simulation completes, all results are written to `bd_sims/`.
 
 | Output file              | Description                                                                                                                    |
 |--------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| `results.json`           | k_on, P_rxn, Wilson 95% CI, k_b, D_rel, wall time, and GPU info.                                                              |
+| `results.json`           | k<sub>on</sub>, P<sub>rxn</sub>, Wilson 95% CI, k<sub>b</sub>, D<sub>rel</sub>, wall time, and GPU info.                      |
 | `convergence.json`       | Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.           |
 | `trajectories.csv`       | Per-trajectory record: number of steps, starting pose, minimum distance reached, and number of returns from the escape sphere. |
 | `encounters.csv`         | Binding encounter poses for reacted trajectories: final position, orientation, and contact distances.                          |

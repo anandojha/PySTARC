@@ -42,7 +42,7 @@ The following scripts are in the `beta_cyclodextrin_guests/` directory:
 | File                | Description                                                                                                                            |
 |---------------------|----------------------------------------------------------------------------------------------------------------------------------------|
 | `run.sh`            | Runs setup and BD simulation for all 7 complexes sequentially, then compares rates against experiment.                                 |
-| `compare_rates.py`  | Collects k_on from all 7 complexes, compares against experimental values, computes Spearman rank correlation, and saves `summary.txt`. |
+| `compare_rates.py`  | Collects k<sub>on</sub> from all 7 complexes, compares against experimental values, computes Spearman rank correlation, and saves `summary.txt`. |
 
 ## What setup.py generates
 Running `python setup.py` produces:
@@ -71,15 +71,15 @@ cd examples/beta_cyclodextrin_guests
 chmod +x run.sh
 bash run.sh
 ```
-`run.sh` performs the following for each of the 7 complexes: cleans any previous output files, runs `setup.py` to generate PQR files and input XMLs, then runs the BD simulation. After all simulations complete, on-rates are printed to terminal and saved to `summary.txt`. The comparison includes PySTARC k_on, experimental k_on, their ratio, and a Spearman rank correlation across all 7 complexes.
+`run.sh` performs the following for each of the 7 complexes: cleans any previous output files, runs `setup.py` to generate PQR files and input XMLs, then runs the BD simulation. After all simulations complete, on-rates are printed to terminal and saved to `summary.txt`. The comparison includes PySTARC k<sub>on</sub>, experimental k<sub>on</sub>, their ratio, and a Spearman rank correlation across all 7 complexes.
 
 ## Output files
 After a simulation completes, all results are written to `bd_sims/` within each receptor-ligand complex directory.
 
 | Output file              | Description                                                                                                                    |
 |--------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| `results.json`           | k_on, P_rxn, Wilson 95% CI, k_b, D_rel, wall time, and GPU info.                                                               |
-| `convergence.json`       | Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.          |
+| `results.json`           | k<sub>on</sub>, P<sub>rxn</sub>, Wilson 95% CI, k<sub>b</sub>, D<sub>rel</sub>, wall time, and GPU info.                      |
+| `convergence.json`       | Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.           |
 | `trajectories.csv`       | Per-trajectory record: number of steps, starting pose, minimum distance reached, and number of returns from the escape sphere. |
 | `encounters.csv`         | Binding encounter poses for reacted trajectories: final position, orientation, and contact distances.                          |
 | `near_misses.csv`        | Trajectories that approached the reaction surface but escaped.                                                                 |

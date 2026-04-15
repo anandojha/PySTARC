@@ -15,8 +15,8 @@ This system has an exact analytical solution (Smoluchowski first-passage with re
 | Hydrodynamic interactions | disabled                                          |
 | Overlap check             | disabled                                          |
 | Trajectories              | 100,000                                           |
-| Exact P_rxn               | 0.4501                                            |
-| Exact k_on                | 1.56 x 10^10 M^-1 s^-1                            |
+| Exact P<sub>rxn</sub>     | 0.4501                                            |
+| Exact k<sub>on</sub>      | 1.56 x 10<sup>10</sup> M<sup>-1</sup>s<sup>-1</sup> |
 
 ## Input files (provided)
 
@@ -28,7 +28,7 @@ This system has an exact analytical solution (Smoluchowski first-passage with re
 | `input.xml`        | PySTARC input file with simulation parameters.                                             |
 | `analytical.py`    | Computes exact Smoluchowski solution and compares against simulation results.              |
 | `convergence.py`   | Multi-seed convergence test (4 seeds x 10k trajectories).                                  |
-| `run.sh`           | Runs BD simulation, verifies against the analytical solution, and runs the multi-seed convergence test.                           |
+| `run.sh`           | Runs BD simulation, verifies against the analytical solution, and runs the multi-seed convergence test. |
 
 ## Run
 `run.sh` runs the BD simulation, then runs `analytical.py` to compare against the exact Smoluchowski solution, and finally runs `convergence.py` (4 seeds x 10k trajectories) to verify consistency across random seeds.
@@ -53,8 +53,8 @@ After a simulation completes, all results are written to `bd_sims/`.
 
 | Output file              | Description                                                                                                                    |
 |--------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| `results.json`           | k_on, P_rxn, Wilson 95% CI, k_b, D_rel, wall time, and GPU info.                                                               |
-| `convergence.json`       | Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.          |
+| `results.json`           | k<sub>on</sub>, P<sub>rxn</sub>, Wilson 95% CI, k<sub>b</sub>, D<sub>rel</sub>, wall time, and GPU info.                      |
+| `convergence.json`       | Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.           |
 | `trajectories.csv`       | Per-trajectory record: number of steps, starting pose, minimum distance reached, and number of returns from the escape sphere. |
 | `encounters.csv`         | Binding encounter poses for reacted trajectories: final position, orientation, and contact distances.                          |
 | `near_misses.csv`        | Trajectories that approached the reaction surface but escaped.                                                                 |
