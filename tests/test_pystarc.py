@@ -143,12 +143,6 @@ from pystarc.structures.molecules import (
     Molecule,
     ReactionCriteria,
 )
-from pystarc.simulation.wiener import (
-    WienerProcess,
-    WienerStep,
-    do_one_full_step,
-    make_initial_dW,
-)
 from pystarc.multi_GPU.combine_data import (
     _concat_csv,
     _concat_npz,
@@ -160,6 +154,12 @@ from pystarc.forces.electrostatic.grid_force import (
     DXGrid,
     debye_huckel_energy,
     debye_huckel_force,
+)
+from pystarc.simulation.wiener import (
+    WienerProcess,
+    WienerStep,
+    do_one_full_step,
+    make_initial_dW,
 )
 from pystarc.analysis.convergence import (
     analyse_convergence,
@@ -175,8 +175,8 @@ from pystarc.simulation.step_near_surface import _inv_erf, step_near_absorbing_s
 from pystarc.simulation.we_simulator import WEParameters, WEResult, WETrajectory
 from pystarc.molsystem.system_state import Fate, SystemState, TrajectoryResult
 from pystarc.forces.multipole import EffectiveCharges, load_effective_charges
-from pystarc.simulation.outer_propagator import OPGroupInfo, OuterPropagator
 from pystarc.pipeline.input_parser import OutputConfig, PySTARCConfig, parse
+from pystarc.simulation.outer_propagator import OPGroupInfo, OuterPropagator
 from pystarc.pipeline.extract import _is_atom_line, _residue_name, extract
 from pystarc.pipeline.geometry import analyse_molecule as geom_analyse
 from pystarc.pipeline.geometry import AtomRecord as GeomAtomRecord
@@ -8181,3 +8181,264 @@ class TestGeometryAutoDetect:
                 bd_milestone_radius=50.0,
                 bd_milestone_radius_inner=0.0,
             )
+
+
+# NAM simulator full run loop integration
+class TestNAMSimulatorIntegration:
+
+    def _make_dh_force(self):
+        def dh_force(mol1, mol2):
+            q1 = mol1.total_charge()
+            q2 = mol2.total_charge()
+            c1 = mol1.centroid()
+            c2 = mol2.centroid()
+            dr = c2 - c1
+            r = float(np.linalg.norm(dr))
+            if r < 1e-8:
+                return np.zeros(3), np.zeros(3), 0.0
+            lB = 7.18
+            lD = 7.86
+            phi = q1 * lB * math.exp(-r / lD) / r
+            energy = q2 * phi
+            dphi_dr = -q1 * lB * math.exp(-r / lD) * (1.0 / r**2 + 1.0 / (r * lD))
+            force = -q2 * dphi_dr * dr / r
+            torque = np.zeros(3)
+            return force, torque, energy
+
+        return dh_force
+
+    def _make_molecules(self, n_atoms=3, q1=5.0, q2=-3.0, sep=15.0):
+        mol1 = Molecule(name="rec")
+        for i in range(n_atoms):
+            mol1.atoms.append(
+                Atom(
+                    index=i,
+                    name=f"A{i}",
+                    residue_name="REC",
+                    residue_index=1,
+                    chain="A",
+                    x=float(i),
+                    y=0.0,
+                    z=0.0,
+                    charge=q1 / n_atoms,
+                    radius=1.5,
+                )
+            )
+        mol2 = Molecule(name="lig")
+        for i in range(n_atoms):
+            mol2.atoms.append(
+                Atom(
+                    index=i,
+                    name=f"B{i}",
+                    residue_name="LIG",
+                    residue_index=1,
+                    chain="A",
+                    x=sep + float(i),
+                    y=0.0,
+                    z=0.0,
+                    charge=q2 / n_atoms,
+                    radius=1.5,
+                )
+            )
+        return mol1, mol2
+
+    def test_nam_full_run_with_dh_force(self):
+        mol1, mol2 = self._make_molecules()
+        mob = MobilityTensor.from_radii(3.0, 3.0)
+        criteria = ReactionCriteria(
+            name="r", pairs=[ContactPair(0, 0, 8.0)], n_needed=1
+        )
+        rxn = ReactionInterface(name="rxn", criteria=criteria)
+        ps = PathwaySet(reactions=[rxn])
+        params = NAMParameters(
+            n_trajectories=100,
+            dt=0.2,
+            r_start=20.0,
+            max_steps=500,
+            seed=42,
+            verbose=False,
+            n_threads=1,
+        )
+        sim = NAMSimulator(mol1, mol2, mob, ps, params, self._make_dh_force())
+        result = sim.run()
+        assert result.n_reacted + result.n_escaped + result.n_max_steps == 100
+        assert 0.0 <= result.reaction_probability <= 1.0
+
+    def test_nam_run_one_trajectory(self):
+        mol1, mol2 = self._make_molecules()
+        mob = MobilityTensor.from_radii(3.0, 3.0)
+        criteria = ReactionCriteria(
+            name="r", pairs=[ContactPair(0, 0, 8.0)], n_needed=1
+        )
+        rxn = ReactionInterface(name="rxn", criteria=criteria)
+        ps = PathwaySet(reactions=[rxn])
+        params = NAMParameters(
+            n_trajectories=1,
+            dt=0.2,
+            r_start=20.0,
+            max_steps=500,
+            seed=42,
+            verbose=False,
+            n_threads=1,
+        )
+        sim = NAMSimulator(mol1, mol2, mob, ps, params, self._make_dh_force())
+        result = sim.run_one()
+        assert result.fate in (Fate.REACTED, Fate.ESCAPED, Fate.MAX_STEPS)
+        assert result.steps >= 0
+
+    def test_nam_rate_constant_positive(self):
+        mol1, mol2 = self._make_molecules(q1=10.0, q2=-10.0)
+        mob = MobilityTensor.from_radii(3.0, 3.0)
+        criteria = ReactionCriteria(
+            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
+        )
+        rxn = ReactionInterface(name="rxn", criteria=criteria)
+        ps = PathwaySet(reactions=[rxn])
+        params = NAMParameters(
+            n_trajectories=200,
+            dt=0.2,
+            r_start=20.0,
+            max_steps=500,
+            seed=42,
+            verbose=False,
+            n_threads=1,
+        )
+        sim = NAMSimulator(mol1, mol2, mob, ps, params, self._make_dh_force())
+        result = sim.run()
+        D_rel = mob.relative_translational_diffusion()
+        k = result.rate_constant(D_rel)
+        assert k >= 0
+
+
+# WE simulator full run loop integration
+class TestWESimulatorIntegration:
+
+    def _make_dh_force(self):
+        def dh_force(mol1, mol2):
+            q1 = mol1.total_charge()
+            q2 = mol2.total_charge()
+            c1 = mol1.centroid()
+            c2 = mol2.centroid()
+            dr = c2 - c1
+            r = float(np.linalg.norm(dr))
+            if r < 1e-8:
+                return np.zeros(3), np.zeros(3), 0.0
+            lB = 7.18
+            lD = 7.86
+            phi = q1 * lB * math.exp(-r / lD) / r
+            energy = q2 * phi
+            dphi_dr = -q1 * lB * math.exp(-r / lD) * (1.0 / r**2 + 1.0 / (r * lD))
+            force = -q2 * dphi_dr * dr / r
+            return force, np.zeros(3), energy
+
+        return dh_force
+
+    def test_we_full_run(self):
+        from pystarc.simulation.we_simulator import WESimulator
+
+        mol1 = Molecule(name="rec")
+        mol1.atoms.append(
+            Atom(
+                index=0,
+                name="A",
+                residue_name="X",
+                residue_index=1,
+                chain="A",
+                x=0,
+                y=0,
+                z=0,
+                charge=5.0,
+                radius=2.0,
+            )
+        )
+        mol2 = Molecule(name="lig")
+        mol2.atoms.append(
+            Atom(
+                index=0,
+                name="B",
+                residue_name="Y",
+                residue_index=1,
+                chain="A",
+                x=30,
+                y=0,
+                z=0,
+                charge=-3.0,
+                radius=2.0,
+            )
+        )
+        mob = MobilityTensor.from_radii(3.0, 3.0)
+        criteria = ReactionCriteria(
+            name="r", pairs=[ContactPair(0, 0, 8.0)], n_needed=1
+        )
+        rxn = ReactionInterface(name="rxn", criteria=criteria)
+        ps = PathwaySet(reactions=[rxn])
+        params = WEParameters(
+            n_per_bin=3,
+            n_bins=5,
+            n_iterations=5,
+            r_start=30.0,
+            dt=0.2,
+            seed=42,
+            steps_per_iteration=20,
+            verbose=False,
+        )
+        sim = WESimulator(mol1, mol2, mob, ps, params, self._make_dh_force())
+        result = sim.run()
+        assert isinstance(result, WEResult)
+        assert result.n_iterations == 5
+        assert result.weight_reacted >= 0
+        assert result.weight_escaped >= 0
+
+    def test_we_run_produces_flux(self):
+        from pystarc.simulation.we_simulator import WESimulator
+
+        mol1 = Molecule(name="rec")
+        mol1.atoms.append(
+            Atom(
+                index=0,
+                name="A",
+                residue_name="X",
+                residue_index=1,
+                chain="A",
+                x=0,
+                y=0,
+                z=0,
+                charge=10.0,
+                radius=2.0,
+            )
+        )
+        mol2 = Molecule(name="lig")
+        mol2.atoms.append(
+            Atom(
+                index=0,
+                name="B",
+                residue_name="Y",
+                residue_index=1,
+                chain="A",
+                x=20,
+                y=0,
+                z=0,
+                charge=-10.0,
+                radius=2.0,
+            )
+        )
+        mob = MobilityTensor.from_radii(3.0, 3.0)
+        criteria = ReactionCriteria(
+            name="r", pairs=[ContactPair(0, 0, 12.0)], n_needed=1
+        )
+        rxn = ReactionInterface(name="rxn", criteria=criteria)
+        ps = PathwaySet(reactions=[rxn])
+        params = WEParameters(
+            n_per_bin=5,
+            n_bins=8,
+            n_iterations=10,
+            r_start=20.0,
+            dt=0.5,
+            seed=42,
+            steps_per_iteration=50,
+            verbose=False,
+        )
+        sim = WESimulator(mol1, mol2, mob, ps, params, self._make_dh_force())
+        result = sim.run()
+        assert result.flux_reaction >= 0
+        assert len(result.iteration_fluxes) == 10
