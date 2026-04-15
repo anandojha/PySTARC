@@ -12,3 +12,4 @@ slurm-*.out
 *.cache
 summary.txt
 FETCH_HEAD
+.coverage
