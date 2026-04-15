@@ -174,6 +174,39 @@ All complexes use the AMBER ff14SB force field for charge assignment via ambpdb,
 
 ---
 
+## 6. p38 MAPK / SB203580 complex
+
+**Purpose.** This complex validates PySTARC on a kinase-inhibitor system where the ligand is electrically neutral and the receptor carries a large net negative charge. It provides a comparison point against published Browndye2 BD results for the same system.
+
+**System.** p38 MAPK alpha in the DFG-in conformation from PDB 1A9U (chain A, residues 4–354, His-tag excluded) contains 5658 atoms with a net charge of −9e and a maximum radius of 37.8 Å. SB203580 is a type I kinase inhibitor with 27 atoms and zero net charge. The receptor is parameterized with ff14SB and the ligand with GAFF2 and AM1-BCC partial charges via antechamber. The ligand binds in the ATP pocket at the hinge region.
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| b surface radius | 60.0 Å | The sum of maximum radii (37.8 + 7.8 = 45.6 Å) plus 14 Å of clearance. |
+| Hydrodynamic radii | Auto-computed | Determined from the PQR files via Monte Carlo surface integration. |
+| Debye length | 7.86 Å | Corresponds to 150 mM ionic strength. |
+| APBS fine grid length | 128 Å | Covers ±64 Å. At the b surface, b + R<sub>max, lig</sub> = 68 Å, which is 4 Å beyond the grid edge. The Yukawa multipole fallback handles the overshoot for the outermost ligand atoms. |
+| APBS grid dimension | 257 | Yields a grid spacing of 0.50 Å on the fine grid. |
+| Max timestep cap | 0 (no cap) | Not needed. The adaptive timestep at r = 60 Å is moderate for a small ligand with high diffusivity. |
+| Trajectories | 100,000 | Initial validation run. |
+
+**Reaction criterion.** Four crystal-structure contacts between p38 and SB203580 define the binding interface. These were identified from the co-crystal structure and represent key pharmacophoric interactions.
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| Pair 1 | MET106 N (hinge backbone) and NB1 (pyridine N) | The canonical hinge hydrogen bond that anchors type I kinase inhibitors. |
+| Pair 2 | LYS50 NZ (catalytic lysine) and NC3 (imidazole N) | The catalytic lysine contact, important for positioning the inhibitor in the ATP pocket. |
+| Pair 3 | VAL102 O (backbone carbonyl) and FD3 (fluorine) | Backbone contact in the gatekeeper region. |
+| Pair 4 | THR103 N (backbone amide) and FD3 (fluorine) | Adjacent backbone contact reinforcing the gatekeeper interaction. |
+| Cutoff | 7.0 Å (all pairs) | Uniform cutoff accommodating rigid-body approach to the buried ATP pocket. |
+| Contacts needed | 2 | Two of the four contacts must be satisfied simultaneously. This balances selectivity (requiring genuine approach to the binding site) with geometric accessibility (the ATP pocket is partially occluded). |
+
+**Key physics.** SB203580 is electrically neutral, so there is no electrostatic steering. The receptor carries a large negative charge (−9e), but this does not attract the neutral ligand. Association is purely diffusion-limited, governed by the geometric accessibility of the ATP-binding pocket. The published Browndye2 result of k<sub>on</sub> = 6.6 × 10⁷ M⁻¹s⁻¹ (Huang, 2021) provides a direct comparison target for PySTARC on the same system.
+
+**Experimental references.** The experimental k<sub>on</sub> = 1.5 × 10⁷ M⁻¹s⁻¹ was measured by Miao et al. (2018). The Browndye2 BD result of k<sub>on</sub> = 6.6 × 10⁷ M⁻¹s⁻¹ was reported by Huang (2021). Both values are within the expected range for diffusion-limited encounter with a partially buried kinase active site.
+
+---
+
 ## Common parameters
 
 All complexes share the following parameters.
@@ -203,5 +236,6 @@ For protein-protein complexes where the b surface is 80 Å or larger, the adapti
 | Charged spheres | 10 | 10 | 0.5 | No |
 | β-cyclodextrin host-guest | 30 | 90 | 1.5 | No |
 | Trypsin-benzamidine | 45 | 191 | 3.4 | No |
-| Thrombin-thrombomodulin | 85 | 1806 | 5.4 | Yes, 100 ps |
+| p38 MAPK / SB203580 | 60 | ~360 | ~3.0 | No |
 | Barnase-barstar | 80 | 1295 | 8.8 | Yes, 100 ps |
+| Thrombin-thrombomodulin | 85 | 1806 | 5.4 | Yes, 100 ps |
