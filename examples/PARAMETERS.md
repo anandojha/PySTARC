@@ -1,4 +1,4 @@
-# PySTARC benchmark complexes: Parameter selection guide
+# Parameter selection for PySTARC simulations
 
 ## Overview
 
@@ -174,7 +174,7 @@ All complexes use the AMBER ff14SB force field for charge assignment via ambpdb,
 
 ---
 
-## 6. p38 MAPK / SB203580 complex
+## 6. p38 MAPK - SB203580 complex
 
 **Purpose.** This complex validates PySTARC on a kinase-inhibitor system where the ligand is electrically neutral and the receptor carries a large net negative charge. It provides a comparison point against published Browndye2 BD results for the same system.
 
@@ -207,6 +207,50 @@ All complexes use the AMBER ff14SB force field for charge assignment via ambpdb,
 
 ---
 
+## 7. Carbonic anhydrase sulfonamide inhibitors
+
+**Purpose.** Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII, CA I, CA II) test PySTARC on a multi-target protein-ligand benchmark where all ligands carry the same charge (−1e) and bind the same active-site motif (Zn-coordinating sulfonamide), but differ in scaffold, size, and isozyme selectivity.
+
+**System.** All ligands are deprotonated sulfonamides (NH⁻SO₂R, net charge = −1e). At physiological pH, only ~0.1% of the sulfonamide exists in this binding-competent form. The experimental intrinsic k<sub>on</sub> (corrected for protonation equilibrium) is the correct comparison target for BD, not the observed k<sub>on</sub>. Five systems use CA XIII (PDB 3CZV, chain A, 258 residues, Q ≈ −1e), one uses CA I (PDB 2NMX, Q ≈ 0e), and one uses CA II (PDB 3HS4, Q ≈ 0e). The active-site Zn²⁺ ion is included in the receptor parameterization via `frcmod.ions234lm_126_tip3p`. Ligands are generated from SMILES via rdkit, converted to mol2 with obabel, and parameterized with antechamber (GAFF2 + AM1-BCC).
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| b surface radius | 60.0 Å | The receptor maximum radius is approximately 27 Å and ligand radii range from 4 to 8 Å, giving a sum of ~35 Å plus 25 Å of clearance. |
+| Hydrodynamic radii | Auto-computed | Determined from the PQR files via Monte Carlo surface integration. |
+| Debye length | 9.62 Å | Corresponds to 100 mM ionic strength, matching the SPR experimental conditions of Linkuviene et al. (2018). |
+| Ion concentration | 0.10 M | One hundred millimolar sodium chloride. |
+| APBS fine grid length | 128 Å | Covers ±64 Å. At the b surface, b + R<sub>max, lig</sub> ≈ 68 Å, which is slightly beyond the grid edge. The Yukawa multipole fallback handles the overshoot. |
+| APBS grid dimension | 257 | Yields a grid spacing of 0.50 Å on the fine grid. |
+| Max timestep cap | 0 (no cap) | Not needed. The adaptive timestep at r = 60 Å is moderate for small ligands with high diffusivity. |
+| Trajectories | 100,000 | Per system (example default). Production runs used 10,000,000. |
+
+**Reaction criterion.** Two crystal-structure contacts between the protein active site and the sulfonamide define the reaction criterion, consistent across all seven systems.
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| Pair 1 | THR199 OG1 (gatekeeper hydroxyl) and sulfonamide N | The Zn-coordinating hydrogen bond. THR199 is the conserved gatekeeper residue across all CA isozymes. Residue number 196 after tleap renumbering (offset −3 from PDB numbering). |
+| Pair 2 | GLU106 OE1 (proton shuttle) and amide N | The relay hydrogen bond through the proton shuttle network. Residue number 103 after tleap renumbering. |
+| Cutoff | 5.0 Å | Tight cutoff reflecting the compact geometry of the CA active site. The crystal distances are ~2.9 Å (THR199-N) and ~3.2 Å (GLU106-N), so 5.0 Å provides ~2 Å of slack. |
+| Contacts needed | 2 | Both contacts must be satisfied simultaneously. The CA active site is a deep conical funnel, and both hydrogen bonds are required for productive binding. |
+
+**Results.**
+
+| System | Isozyme | Exp k<sub>on</sub> (M⁻¹s⁻¹) | PySTARC k<sub>on</sub> (M⁻¹s⁻¹) | Ratio |
+|--------|---------|------------------------------|-----------------------------------|-------|
+| CA I-VD12-69-1 | CA I | 2.7 × 10⁶ | 2.6 × 10⁶ | 1.0× |
+| CA XIII-VD11-26 | CA XIII | 1.5 × 10⁶ | 1.9 × 10⁶ | 1.3× |
+| CA XIII-AZM | CA XIII | 1.5 × 10⁶ | 2.6 × 10⁶ | 1.7× |
+| CA XIII-VD12-69-1 | CA XIII | 2.5 × 10⁶ | 4.3 × 10⁶ | 1.7× |
+| CA XIII-VD11-25 | CA XIII | 4.6 × 10⁵ | 2.0 × 10⁶ | 4.3× |
+| CA XIII-VD12-09 | CA XIII | 3.3 × 10⁵ | 2.4 × 10⁶ | 7.4× |
+| CA II-VD11-4-2 | CA II | 1.8 × 10⁶ | 2.1 × 10⁵ | 0.12× |
+
+**Key physics.** PySTARC predicts a uniform diffusion-limited encounter rate of ~2 × 10⁶ M⁻¹s⁻¹ for the CA XIII active site with deprotonated sulfonamides. Four of seven systems with experimental k<sub>on</sub> ≥ 10⁶ agree within 2×. Two systems (VD12-09 and VD11-25) with experimental k<sub>on</sub> < 5 × 10⁵ are overestimated because the experimental rate is dominated by post-diffusional gating that rigid-body BD cannot capture. The CA II system (VD11-4-2) is underestimated because CA II has near-neutral net charge compared to the weakly negative CA XIII, resulting in weaker electrostatic steering of the anionic ligand. This isozyme-dependent difference is real physics captured by BD.
+
+**Experimental references.** Linkuviene et al. (2018). Intrinsic thermodynamics of inhibitor binding to human carbonic anhydrase isozymes I, II, VII, XII, and XIII. J. Med. Chem., 61(16), 7500-7512.
+
+---
+
 ## Common parameters
 
 All complexes share the following parameters.
@@ -236,6 +280,7 @@ For protein-protein complexes where the b surface is 80 Å or larger, the adapti
 | Charged spheres | 10 | 10 | 0.5 | No |
 | β-cyclodextrin host-guest | 30 | 90 | 1.5 | No |
 | Trypsin-benzamidine | 45 | 191 | 3.4 | No |
-| p38 MAPK / SB203580 | 60 | ~360 | ~3.0 | No |
+| p38 MAPK - SB203580 | 60 | ~360 | ~3.0 | No |
+| Carbonic anhydrase inhibitors | 60 | ~360 | ~3.0 | No |
 | Barnase-barstar | 80 | 1295 | 8.8 | Yes, 100 ps |
 | Thrombin-thrombomodulin | 85 | 1806 | 5.4 | Yes, 100 ps |

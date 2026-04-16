@@ -1,15 +1,16 @@
 # PySTARC examples
 
-Six validation examples of increasing complexity:
+Seven validation examples of increasing complexity:
 
-| Example                    | System                                  | Type                  |
-|----------------------------|-----------------------------------------|-----------------------|
-| `two_charged_spheres/`     | Two oppositely charged spheres          | Analytical validation |
-| `trypsin_benzamidine/`     | Trypsin-benzamidine                     | Protein-ligand        |
-| `beta_cyclodextrin_guests/`| 7 BCD host-guest complexes              | Host-guest            |
-| `thrombin_thrombomodulin/` | Thrombin-thrombomodulin                 | Protein-protein       |
-| `barnase_barstar/`         | Barnase-barstar (WT + R59A mutant)      | Protein-protein       |
-| `p38_SB2/`                 | p38 MAPK / SB203580                     | Protein-ligand        |
+| Example                              | System                                  | Type                  |
+|--------------------------------------|-----------------------------------------|-----------------------|
+| `two_charged_spheres/`               | Two oppositely charged spheres          | Analytical validation |
+| `trypsin_benzamidine/`               | Trypsin-benzamidine                     | Protein-ligand        |
+| `beta_cyclodextrin_guests/`          | 7 BCD host-guest complexes              | Host-guest            |
+| `thrombin_thrombomodulin/`           | Thrombin-thrombomodulin                 | Protein-protein       |
+| `barnase_barstar/`                   | Barnase-barstar (WT + R59A mutant)      | Protein-protein       |
+| `p38_SB2/`                           | p38 MAPK / SB203580                     | Protein-ligand        |
+| `carbonic_anhydrase_inhibitors/`     | 7 CA sulfonamide inhibitors (3 isozymes)| Protein-ligand        |
 
 Each example directory contains its own `README.md` with system parameters, input files, run instructions, and output file descriptions. See [`PARAMETERS.md`](PARAMETERS.md) for a detailed parameter selection guide covering all benchmark complexes.
 
@@ -88,10 +89,23 @@ examples/
 │       ├── setup.py
 │       └── run.sh
 │
-└── p38_SB2/                            Protein-ligand (neutral inhibitor, kinase)
+├── p38_SB2/                            Protein-ligand (neutral kinase inhibitor)
+│   ├── README.md
+│   ├── setup.py                        Downloads PDB, parameterizes with antechamber
+│   └── run.sh                          Run setup + simulation
+│
+└── carbonic_anhydrase_inhibitors/      Protein-ligand (7 sulfonamides, 3 CA isozymes)
     ├── README.md
-    ├── setup.py                        Downloads PDB, parameterizes with antechamber
-    └── run.sh                          Run setup + simulation
+    ├── ca13_azm/                       CA XIII + acetazolamide (PDB 3CZV)
+    │   ├── setup.py
+    │   ├── run.sh
+    │   ├── *.pdb, *.pqr, *.prmtop, *.rst7, rxns.xml, input.xml
+    ├── ca13_vd1125/                    CA XIII + VD11-25 (PDB 3CZV)
+    ├── ca13_vd1126/                    CA XIII + VD11-26 (PDB 3CZV)
+    ├── ca13_vd1209/                    CA XIII + VD12-09 (PDB 3CZV)
+    ├── ca13_vd1269/                    CA XIII + VD12-69-1 (PDB 3CZV)
+    ├── ca1_vd1269/                     CA I + VD12-69-1 (PDB 2NMX)
+    └── ca2_vd1142/                     CA II + VD11-4-2 (PDB 3HS4)
 ```
 
 ## Quick start
