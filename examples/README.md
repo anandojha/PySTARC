@@ -9,7 +9,7 @@ Seven validation examples of increasing complexity:
 | `beta_cyclodextrin_guests/`          | 7 BCD host-guest complexes              | Host-guest            |
 | `thrombin_thrombomodulin/`           | Thrombin-thrombomodulin                 | Protein-protein       |
 | `barnase_barstar/`                   | Barnase-barstar (WT + R59A mutant)      | Protein-protein       |
-| `p38_SB2/`                           | p38 MAPK / SB203580                     | Protein-ligand        |
+| `p38_mapk_sb203580/`                           | p38 MAPK / SB203580                     | Protein-ligand        |
 | `carbonic_anhydrase_inhibitors/`     | 7 CA sulfonamide inhibitors (3 isozymes)| Protein-ligand        |
 
 Each example directory contains its own `README.md` with system parameters, input files, run instructions, and output file descriptions. See [`PARAMETERS.md`](PARAMETERS.md) for a detailed parameter selection guide covering all benchmark complexes.
@@ -89,7 +89,7 @@ examples/
 │       ├── setup.py
 │       └── run.sh
 │
-├── p38_SB2/                            Protein-ligand (neutral kinase inhibitor)
+├── p38_mapk_sb203580/                            Protein-ligand (neutral kinase inhibitor)
 │   ├── README.md
 │   ├── setup.py                        Downloads PDB, parameterizes with antechamber
 │   └── run.sh                          Run setup + simulation

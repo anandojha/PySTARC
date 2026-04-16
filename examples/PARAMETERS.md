@@ -60,7 +60,7 @@ All complexes use the AMBER ff14SB force field for charge assignment via ambpdb,
 
 **Purpose.** Seven small-molecule guests binding β-cyclodextrin were simulated to test PySTARC on a neutral host-guest benchmark where experimental association rates span an order of magnitude.
 
-**System.** β-cyclodextrin contains 147 atoms with zero net charge and a maximum radius of 8.6 Å. All seven guests also carry a net charge of zero and have radii ranging from 3 to 5 Å. Because all molecules are electrically neutral, no electrostatic steering occurs. Structures were taken from the qmrebind manuscript (doi.org/10.1039/D3SC04195F). The seven guests are 1-butanol, 1-propanol, 1-naphthylethanol, 2-naphthylethanol, aspirin, methyl butyrate, and tert-butanol.
+**System.** β-cyclodextrin contains 147 atoms with zero net charge and a maximum radius of 8.6 Å. All seven guest molecules also carry a net charge of zero and have radii ranging from 3 to 5 Å. Because all molecules are electrically neutral, no electrostatic steering occurs. Structures were taken from the qmrebind manuscript (doi.org/10.1039/D3SC04195F). The seven guest molecules are 1-butanol, 1-propanol, 1-naphthylethanol, 2-naphthylethanol, aspirin, methyl butyrate, and tert-butanol.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
@@ -245,7 +245,7 @@ All complexes use the AMBER ff14SB force field for charge assignment via ambpdb,
 | CA XIII-VD12-09 | CA XIII | 3.3 × 10⁵ | 2.4 × 10⁶ | 7.4× |
 | CA II-VD11-4-2 | CA II | 1.8 × 10⁶ | 2.1 × 10⁵ | 0.12× |
 
-**Key physics.** PySTARC predicts a uniform diffusion-limited encounter rate of ~2 × 10⁶ M⁻¹s⁻¹ for the CA XIII active site with deprotonated sulfonamides. Four of seven systems with experimental k<sub>on</sub> ≥ 10⁶ agree within 2×. Two systems (VD12-09 and VD11-25) with experimental k<sub>on</sub> < 5 × 10⁵ are overestimated because the experimental rate is dominated by post-diffusional gating that rigid-body BD cannot capture. The CA II system (VD11-4-2) is underestimated because CA II has near-neutral net charge compared to the weakly negative CA XIII, resulting in weaker electrostatic steering of the anionic ligand. This isozyme-dependent difference is real physics captured by BD.
+**Key physics.** PySTARC predicts a uniform diffusion-limited encounter rate of ~2 × 10⁶ M⁻¹s⁻¹ for the CA XIII active site with deprotonated sulfonamides. Four of seven systems with experimental k<sub>on</sub> ≥ 10⁶ agree within 2×. Two systems (VD12-09 and VD11-25) with experimental k<sub>on</sub> 5 × 10⁵ are overestimated because the experimental rate is dominated by post-diffusional gating that rigid-body BD cannot capture. The CA II system (VD11-4-2) is underestimated because CA II has near-neutral net charge compared to the weakly negative CA XIII, resulting in weaker electrostatic steering of the anionic ligand. This isozyme-dependent difference is real physics captured by BD.
 
 **Experimental references.** Linkuviene et al. (2018). Intrinsic thermodynamics of inhibitor binding to human carbonic anhydrase isozymes I, II, VII, XII, and XIII. J. Med. Chem., 61(16), 7500-7512.
 

@@ -44,7 +44,7 @@ Pre-generated files are not included because the ligand parameterization (antech
 ```bash
 conda activate PySTARC
 module load cuda
-cd examples/p38_SB2
+cd examples/p38_mapk_sb203580
 python setup.py
 python ../../run_pystarc.py input.xml
 ```
@@ -54,7 +54,7 @@ Or in one command:
 ```bash
 conda activate PySTARC
 module load cuda
-cd examples/p38_SB2
+cd examples/p38_mapk_sb203580
 bash run.sh
 ```
 
