@@ -58,29 +58,29 @@ PySTARC computes bimolecular association rate constants (k<sub>on</sub>) via rig
 
 ### GPU-native performance
 
-- **Batch trajectory propagation** — All trajectories advance simultaneously as GPU arrays for positions, quaternions, and status flags. A single RTX 6000 Ada sustains ~400,000 steps/sec for a 2-atom system and ~28,000 steps/sec for barnase-barstar (10 million trajectories in 50 minutes).
-- **Automatic multi-GPU scaling** — Split simulations across GPUs with shared APBS grids and pooled result combining via `combine_data.py`.
-- **Memory-safe Born force chunking** — Reverse-direction Born desolvation is batched to fit within GPU memory, enabling use with large receptors.
+- **Batch trajectory propagation** - All trajectories advance simultaneously as GPU arrays for positions, quaternions, and status flags. A single RTX 6000 Ada sustains ~400,000 steps/sec for a 2-atom system and ~28,000 steps/sec for barnase-barstar (10 million trajectories in 50 minutes).
+- **Automatic multi-GPU scaling** - Split simulations across GPUs with shared APBS grids and pooled result combining via `combine_data.py`.
+- **Memory-safe Born force chunking** - Reverse-direction Born desolvation is batched to fit within GPU memory, enabling use with large receptors.
 
 ### Model and algorithms
 
-- **Exact Brownian bridge reaction detection** — Closed-form crossing probability `P = exp(-x₀·x₁/D_eff·Δt)` captures mid-step reactions at constant cost per step with no bias, no retry loops, and no minimum-timestep floors.
-- **Three-term Yukawa multipole far-field** — Monopole, dipole, and quadrupole analytical expansion for atoms outside the APBS grid. The dipole term is critical for electrically neutral molecules such as β-cyclodextrin (Q = 0) where the monopole contribution vanishes.
-- **Zuk et al. (2014) RPY hydrodynamics** — Exact three-regime Rotne-Prager-Yamakawa formula covering far-field, partial overlap, and full enclosure. Accurate at close approach for protein-protein complexes where hydrodynamic radii overlap.
-- **Hansen Monte Carlo hydrodynamic radius** — Full voxelised solvent-excluded surface with Kirkwood double-sum over 10⁶ surface point pairs. Accurate to within 1% against analytical reference.
-- **Bidirectional Born desolvation** — Computes Born forces in both directions, receptor at ligand positions and ligand at receptor positions, with Newton's third law for the reverse. Captures mutual desolvation as both molecules approach.
-- **Wilson score confidence interval** — Valid for any P<sub>rxn</sub> and any N ≥ 1, including the low-P<sub>rxn</sub> regime typical of tight reaction criteria where normal-approximation intervals break down.
-- **Configurable adaptive timestep** — User-controlled `max_dt` ceiling on the adaptive timestep. Prevents trajectory overshoot past the b-surface in protein-protein systems where unchecked timestep growth produces ballistic steps.
-- **Exact quaternion rotation** — Direct quaternion composition for rotational diffusion. No interpolation error at any rotation magnitude.
+- **Exact Brownian bridge reaction detection** - Closed-form crossing probability `P = exp(-x₀·x₁/D_eff·Δt)` captures mid-step reactions at constant cost per step with no bias, no retry loops, and no minimum-timestep floors.
+- **Three-term Yukawa multipole far-field** - Monopole, dipole, and quadrupole analytical expansion for atoms outside the APBS grid. The dipole term is critical for electrically neutral molecules such as β-cyclodextrin (Q = 0) where the monopole contribution vanishes.
+- **Zuk et al. (2014) RPY hydrodynamics** - Exact three-regime Rotne-Prager-Yamakawa formula covering far-field, partial overlap, and full enclosure. Accurate at close approach for protein-protein complexes where hydrodynamic radii overlap.
+- **Hansen Monte Carlo hydrodynamic radius** - Full voxelised solvent-excluded surface with Kirkwood double-sum over 10⁶ surface point pairs. Accurate to within 1% against analytical reference.
+- **Bidirectional Born desolvation** - Computes Born forces in both directions, receptor at ligand positions and ligand at receptor positions, with Newton's third law for the reverse. Captures mutual desolvation as both molecules approach.
+- **Wilson score confidence interval** - Valid for any P<sub>rxn</sub> and any N ≥ 1, including the low-P<sub>rxn</sub> regime typical of tight reaction criteria where normal-approximation intervals break down.
+- **Configurable adaptive timestep** - User-controlled `max_dt` ceiling on the adaptive timestep. Prevents trajectory overshoot past the b-surface in protein-protein systems where unchecked timestep growth produces ballistic steps.
+- **Exact quaternion rotation** - Direct quaternion composition for rotational diffusion. No interpolation error at any rotation magnitude.
 
 ### Automation and reproducibility
 
-- **End-to-end setup** — `setup.py` takes a PDB and topology and produces PQR files, APBS grids, reaction criteria, and `input.xml` in one command. Includes automated reaction-criterion construction from crystal-structure contacts with configurable polar or all-heavy-atom modes.
-- **Convergence diagnostics** — Relative SE, Wilson 95% CI, cumulative convergence curve, first-half to second-half split test, and N-needed estimates for target precision.
-- **14 structured output files** — Trajectories, encounters, near-misses, first-passage times, radial density, angular occupancy maps, pose clusters, milestone flux, transition matrices, commitment probabilities, and energetics.
-- **Live progress** — k<sub>on</sub> and P<sub>rxn</sub> printed at configurable intervals with running Wilson CI.
-- **Checkpointing** — Automatic save and resume for long production runs.
-- **1,027 unit tests** — CodeFactor grade A, pip-installable via `pip install pystarc`.
+- **End-to-end setup** - `setup.py` takes a PDB and topology and produces PQR files, APBS grids, reaction criteria, and `input.xml` in one command. Includes automated reaction-criterion construction from crystal-structure contacts with configurable polar or all-heavy-atom modes.
+- **Convergence diagnostics** - Relative SE, Wilson 95% CI, cumulative convergence curve, first-half to second-half split test, and N-needed estimates for target precision.
+- **14 structured output files** - Trajectories, encounters, near-misses, first-passage times, radial density, angular occupancy maps, pose clusters, milestone flux, transition matrices, commitment probabilities, and energetics.
+- **Live progress** - k<sub>on</sub> and P<sub>rxn</sub> printed at configurable intervals with running Wilson CI.
+- **Checkpointing** - Automatic save and resume for long production runs.
+- **1,027 unit tests** - CodeFactor grade A, pip-installable via `pip install pystarc`.
 ## Installation
 
 **GPU (Linux / HPC):**
