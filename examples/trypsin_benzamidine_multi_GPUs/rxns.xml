@@ -1,0 +1,28 @@
+<?xml version="1.0" ?>
+<top>
+  <first_state> start </first_state>
+  <reactions>
+    <reaction>
+      <n> association </n>
+      <state_before> start </state_before>
+      <state_after> end </state_after>
+      <criterion>
+        <molecules>
+          <molecule0> rec rec </molecule0>
+          <molecule1> lig lig </molecule1>
+        </molecules>
+        <n_needed> 4 </n_needed>
+        <pair><atoms> 2767 9 </atoms><distance> 6.0 </distance></pair>
+        <pair><atoms> 2743 9 </atoms><distance> 6.0 </distance></pair>
+        <pair><atoms> 2497 8 </atoms><distance> 6.0 </distance></pair>
+        <pair><atoms> 2924 9 </atoms><distance> 6.5 </distance></pair>
+        <pair><atoms> 2498 8 </atoms><distance> 7.0 </distance></pair>
+        <pair><atoms> 2768 9 </atoms><distance> 7.5 </distance></pair>
+        <pair><atoms> 2484 9 </atoms><distance> 7.5 </distance></pair>
+        <pair><atoms> 2534 8 </atoms><distance> 7.5 </distance></pair>
+        <pair><atoms> 2522 8 </atoms><distance> 8.0 </distance></pair>
+        <pair><atoms> 2925 9 </atoms><distance> 8.5 </distance></pair>
+      </criterion>
+    </reaction>
+  </reactions>
+</top>

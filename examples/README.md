@@ -1,16 +1,17 @@
 # PySTARC examples
 
-Seven validation examples of increasing complexity:
+Eight validation examples of increasing complexity:
 
-| Example                              | System                                  | Type                  |
-|--------------------------------------|-----------------------------------------|-----------------------|
-| `two_charged_spheres/`               | Two oppositely charged spheres          | Analytical validation |
-| `trypsin_benzamidine/`               | Trypsin-benzamidine                     | Protein-ligand        |
-| `beta_cyclodextrin_guests/`          | 7 BCD host-guest complexes              | Host-guest            |
-| `thrombin_thrombomodulin/`           | Thrombin-thrombomodulin                 | Protein-protein       |
-| `barnase_barstar/`                   | Barnase-barstar (WT + R59A mutant)      | Protein-protein       |
-| `p38_mapk_sb203580/`                           | p38 MAPK / SB203580                     | Protein-ligand        |
-| `carbonic_anhydrase_inhibitors/`     | 7 CA sulfonamide inhibitors (3 isozymes)| Protein-ligand        |
+| Example                               | System                                  | Type                       |
+|---------------------------------------|-----------------------------------------|----------------------------|
+| `two_charged_spheres/`                | Two oppositely charged spheres          | Analytical validation      |
+| `trypsin_benzamidine/`                | Trypsin-benzamidine                     | Protein-ligand             |
+| `beta_cyclodextrin_guests/`           | 7 BCD host-guest complexes              | Host-guest                 |
+| `thrombin_thrombomodulin/`            | Thrombin-thrombomodulin                 | Protein-protein            |
+| `barnase_barstar/`                    | Barnase-barstar (WT + R59A mutant)      | Protein-protein            |
+| `p38_mapk_sb203580/`                  | p38 MAPK / SB203580                     | Protein-ligand             |
+| `carbonic_anhydrase_inhibitors/`      | 7 CA sulfonamide inhibitors (3 isozymes)| Protein-ligand             |
+| `trypsin_benzamidine_multi_GPUs/`     | Trypsin-benzamidine (SLURM, 1 and 4 GPUs)| Cluster / multi-GPU demo  |
 
 Each example directory contains its own `README.md` with system parameters, input files, run instructions, and output file descriptions. See [`PARAMETERS.md`](PARAMETERS.md) for a detailed parameter selection guide covering all benchmark complexes.
 
@@ -89,28 +90,40 @@ examples/
 │       ├── setup.py
 │       └── run.sh
 │
-├── p38_mapk_sb203580/                            Protein-ligand (neutral kinase inhibitor)
+├── p38_mapk_sb203580/                  Protein-ligand (neutral kinase inhibitor)
 │   ├── README.md
 │   ├── setup.py                        Downloads PDB, parameterizes with antechamber
 │   └── run.sh                          Run setup + simulation
 │
-└── carbonic_anhydrase_inhibitors/      Protein-ligand (7 sulfonamides, 3 CA isozymes)
+├── carbonic_anhydrase_inhibitors/      Protein-ligand (7 sulfonamides, 3 CA isozymes)
+│   ├── README.md
+│   ├── ca13_azm/                       CA XIII + acetazolamide (PDB 3CZV)
+│   │   ├── setup.py
+│   │   ├── run.sh
+│   │   ├── *.pdb, *.pqr, *.prmtop, *.rst7, rxns.xml, input.xml
+│   ├── ca13_vd1125/                    CA XIII + VD11-25 (PDB 3CZV)
+│   ├── ca13_vd1126/                    CA XIII + VD11-26 (PDB 3CZV)
+│   ├── ca13_vd1209/                    CA XIII + VD12-09 (PDB 3CZV)
+│   ├── ca13_vd1269/                    CA XIII + VD12-69-1 (PDB 3CZV)
+│   ├── ca1_vd1269/                     CA I + VD12-69-1 (PDB 2NMX)
+│   └── ca2_vd1142/                     CA II + VD11-4-2 (PDB 3HS4)
+│
+└── trypsin_benzamidine_multi_GPUs/     Cluster SLURM demo (single-GPU and multi-GPU)
     ├── README.md
-    ├── ca13_azm/                       CA XIII + acetazolamide (PDB 3CZV)
-    │   ├── setup.py
-    │   ├── run.sh
-    │   ├── *.pdb, *.pqr, *.prmtop, *.rst7, rxns.xml, input.xml
-    ├── ca13_vd1125/                    CA XIII + VD11-25 (PDB 3CZV)
-    ├── ca13_vd1126/                    CA XIII + VD11-26 (PDB 3CZV)
-    ├── ca13_vd1209/                    CA XIII + VD12-09 (PDB 3CZV)
-    ├── ca13_vd1269/                    CA XIII + VD12-69-1 (PDB 3CZV)
-    ├── ca1_vd1269/                     CA I + VD12-69-1 (PDB 2NMX)
-    └── ca2_vd1142/                     CA II + VD11-4-2 (PDB 3HS4)
+    ├── complex.pdb                     Bound-state PDB
+    ├── complex.prmtop                  AMBER topology
+    ├── setup.py                        Generates PQR, rxns.xml, input.xml
+    ├── receptor.pqr                    Pre-generated trypsin PQR
+    ├── ligand.pqr                      Pre-generated benzamidine PQR
+    ├── rxns.xml                        Reaction criterion
+    ├── input.xml                       Simulation parameters
+    ├── submit_SLURM_single_GPU.sh      SLURM: 1 GPU x 10M trajectories
+    └── submit_SLURM_multi_GPUs.sh      SLURM: 4 GPUs x 2.5M trajectories, auto-combine
 ```
 
 ## Quick start
 
-All examples follow the same pattern:
+All examples follow the same pattern for interactive runs:
 
 ```bash
 conda activate PySTARC
@@ -119,4 +132,11 @@ cd examples/<example_name>
 bash run.sh
 ```
 
-Results are written to `bd_sims/` within each example directory. The primary output is `bd_sims/results.json` containing k<sub>on</sub>, P<sub>rxn</sub>, confidence intervals, and run statistics.
+For the SLURM cluster example:
+
+```bash
+cd examples/trypsin_benzamidine_multi_GPUs
+sbatch submit_SLURM_single_GPU.sh       # or submit_SLURM_multi_GPUs.sh
+```
+
+Results are written to `bd_sims/` within each example directory. The primary output is `bd_sims/results.json` containing k<sub>on</sub>, P<sub>rxn</sub>, confidence intervals, and run statistics. Multi-GPU runs additionally produce `bd_sims/combined_results.json` pooling results across all GPUs.
