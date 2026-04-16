@@ -43,7 +43,7 @@ echo "Created and activated: $(python --version)"
 # 4. Conda dependencies
 echo ""
 echo "[4/7] Installing conda dependencies (ambertools, apbs)"
-conda install -c conda-forge ambertools apbs rdkit openbabel openmm -y
+conda install -c conda-forge ambertools apbs rdkit openbabel -y
 echo "ambertools and apbs installed"
 # 5. GPU + pip dependencies
 echo ""
@@ -76,7 +76,6 @@ which tleap    >/dev/null 2>&1 && echo "tleap"    || echo "tleap not found"
 which apbs     >/dev/null 2>&1 && echo "apbs"     || echo "apbs not found"
 which obabel   >/dev/null 2>&1 && echo "obabel"   || echo "obabel not found"
 python -c "from rdkit import Chem; print(f'RDKit {Chem.rdBase.rdkitVersion}')" 2>/dev/null || echo "RDKit not available"
-python -c "import openmm; print(f'OpenMM {openmm.__version__}')" 2>/dev/null || echo "OpenMM not available"
 # Run tests
 echo ""
 echo "Running tests."
