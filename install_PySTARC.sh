@@ -43,7 +43,7 @@ echo "Created and activated: $(python --version)"
 # 4. Conda dependencies
 echo ""
 echo "[4/7] Installing conda dependencies (ambertools, apbs)"
-conda install -c conda-forge ambertools apbs -y
+conda install -c conda-forge ambertools apbs rdkit openbabel openmm -y
 echo "ambertools and apbs installed"
 # 5. GPU + pip dependencies
 echo ""
@@ -67,7 +67,6 @@ echo ""
 python -c "import pystarc; print(f'PySTARC {pystarc.__version__}')"
 python -c "import numpy; print(f'NumPy {numpy.__version__}')"
 python -c "import scipy; print(f'SciPy {scipy.__version__}')"
-python -c "import numba; print(f'Numba {numba.__version__}')"
 python -c "import matplotlib; print(f'Matplotlib {matplotlib.__version__}')"
 python -c "import pdb2pqr; print(f'pdb2pqr')" 2>/dev/null || echo "pdb2pqr not available"
 python -c "import cupy; print(f'CuPy {cupy.__version__} (GPU ready)')" 2>/dev/null || echo "CuPy not available (no GPU on this node)"
@@ -75,6 +74,9 @@ which cpptraj  >/dev/null 2>&1 && echo "cpptraj"  || echo "cpptraj not found"
 which ambpdb   >/dev/null 2>&1 && echo "ambpdb"   || echo "ambpdb not found"
 which tleap    >/dev/null 2>&1 && echo "tleap"    || echo "tleap not found"
 which apbs     >/dev/null 2>&1 && echo "apbs"     || echo "apbs not found"
+which obabel   >/dev/null 2>&1 && echo "obabel"   || echo "obabel not found"
+python -c "from rdkit import Chem; print(f'RDKit {Chem.rdBase.rdkitVersion}')" 2>/dev/null || echo "RDKit not available"
+python -c "import openmm; print(f'OpenMM {openmm.__version__}')" 2>/dev/null || echo "OpenMM not available"
 # Run tests
 echo ""
 echo "Running tests."

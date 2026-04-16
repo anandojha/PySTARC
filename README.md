@@ -61,7 +61,7 @@ git clone https://github.com/anandojha/PySTARC.git
 cd PySTARC
 conda create -n PySTARC python=3.11 -y
 conda activate PySTARC
-conda install -c conda-forge ambertools apbs -y
+conda install -c conda-forge ambertools apbs rdkit openbabel openmm -y
 pip install matplotlib pdb2pqr
 pip install dist/pystarc-1.1.0-py3-none-any.whl --force-reinstall
 ```
