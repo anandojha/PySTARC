@@ -91,12 +91,13 @@ See [`examples/`](examples/) for complete setup instructions and [`examples/PARA
 
 ```
 examples/
-├── two_charged_spheres/          Analytical validation (exact Smoluchowski solution)
-├── trypsin_benzamidine/          Protein-ligand (charged ligand, surface pocket)
-├── beta_cyclodextrin_guests/     Host-guest (7 neutral guests, same receptor)
-├── thrombin_thrombomodulin/      Protein-protein (electrostatically steered)
-├── barnase_barstar/              Protein-protein (WT + R59A mutant)
-└── p38_SB2/                      Protein-ligand (neutral kinase inhibitor)
+├── two_charged_spheres/              Analytical validation (exact Smoluchowski solution)
+├── trypsin_benzamidine/              Protein-ligand (charged ligand, surface pocket)
+├── beta_cyclodextrin_guests/         Host-guest (7 neutral guests, same receptor)
+├── thrombin_thrombomodulin/          Protein-protein (electrostatically steered)
+├── barnase_barstar/                  Protein-protein (WT + R59A mutant)
+├── p38_SB2/                          Protein-ligand (neutral kinase inhibitor)
+└── carbonic_anhydrase_inhibitors/    Protein-ligand (7 sulfonamides, 3 CA isozymes)
 ```
 
 ## Requirements
