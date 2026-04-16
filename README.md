@@ -1,12 +1,12 @@
 <div align="center">
 
-```
-╭──────────────────────────╮
-│   ◈  P y S T A R C  ◈   │
-╰──────────────────────────╯
-```
+<pre>
+╭────────────────────────────────────╮
+│     ◈  P y S T A R C  ◈           │
+╰────────────────────────────────────╯
+</pre>
 
-**Python Simulation Toolkit for Association Rate Constants**
+<code><b>P</b>ython <b>S</b>imulation <b>T</b>oolkit for <b>A</b>ssociation <b>R</b>ate <b>C</b>onstants</code>
 
 GPU-accelerated rigid-body Brownian dynamics for computing bimolecular association rate constants (k<sub>on</sub>)
 
@@ -81,26 +81,9 @@ cd examples/two_charged_spheres
 bash run.sh
 ```
 
-## Benchmark systems
-
-PySTARC has been validated across six benchmark systems spanning analytical, protein-ligand, host-guest, and protein-protein complexes:
-
-| System | Type | Experimental k<sub>on</sub> | PySTARC k<sub>on</sub> |
-|--------|------|------------------------------|------------------------|
-| Two charged spheres | Analytical | 1.56 × 10<sup>10</sup> | 1.55 × 10<sup>10</sup> (0.5% error) |
-| Trypsin-benzamidine | Protein-ligand | 2.9 × 10<sup>7</sup> | 1.6 × 10<sup>7</sup> |
-| p38 MAPK / SB203580 | Protein-ligand | 1.5 × 10<sup>7</sup> | 1.7 × 10<sup>7</sup> |
-| β-cyclodextrin / 7 guests | Host-guest | 2.8–7.2 × 10<sup>8</sup> | ~10<sup>8</sup> (encounter rate) |
-| Thrombin-thrombomodulin | Protein-protein | 6.7 × 10<sup>6</sup> | 1.5 × 10<sup>7</sup> |
-| Barnase-barstar (WT) | Protein-protein | 3–6 × 10<sup>8</sup> | 3.3 × 10<sup>8</sup> |
-| Barnase-barstar (R59A) | Mutant | ~6.5 × 10<sup>7</sup> | 2.2 × 10<sup>8</sup> |
-| Carbonic anhydrase (7 systems) | Protein-ligand | 3.3 × 10<sup>5</sup> – 2.7 × 10<sup>6</sup> | 2.2 × 10<sup>5</sup> – 4.3 × 10<sup>6</sup> |
-
-Overall: R² = 0.83, Spearman ρ = 0.86 across 19 systems spanning 5 orders of magnitude in k<sub>on</sub>.
+## Examples
 
 See [`examples/`](examples/) for complete setup instructions and [`examples/PARAMETERS.md`](examples/PARAMETERS.md) for the parameter selection guide.
-
-## Examples
 
 ```
 examples/
