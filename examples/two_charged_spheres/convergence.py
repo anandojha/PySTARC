@@ -84,6 +84,7 @@ for seed in [11111111, 22222222, 33333333, 44444444]:
     cfg = parse("input.xml")
     cfg.seed = seed
     cfg.n_trajectories = 10000
+    cfg.work_dir = f"bd_sims/convergence_seed_{seed}"
     print(f"\n{'='*60}")
     print(f"  Seed={seed}")
     print(f"{'='*60}")
