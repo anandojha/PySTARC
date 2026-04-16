@@ -12,6 +12,7 @@ import math
 import time
 import sys
 import os
+from pathlib import Path
 
 
 class _Tee:
@@ -84,7 +85,8 @@ for seed in [11111111, 22222222, 33333333, 44444444]:
     cfg = parse("input.xml")
     cfg.seed = seed
     cfg.n_trajectories = 10000
-    cfg.work_dir = f"bd_sims/convergence_seed_{seed}"
+    cfg.work_dir = Path(f"bd_sims/convergence_seed_{seed}")
+    os.makedirs(cfg.work_dir, exist_ok=True)
     print(f"\n{'='*60}")
     print(f"  Seed={seed}")
     print(f"{'='*60}")
