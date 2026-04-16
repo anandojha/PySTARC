@@ -1,6 +1,7 @@
 <div align="center">
 
-```
+<pre align="center">
+
 ╭────────────────────────────────────────────────────────────────╮
 │                                                                │
 │                     ◈   P y S T A R C   ◈                      │
@@ -8,7 +9,8 @@
 │    Python Simulation Toolkit for Association Rate Constants    │
 │                                                                │
 ╰────────────────────────────────────────────────────────────────╯
-```
+
+</pre>
 
 GPU-accelerated rigid-body Brownian dynamics for computing bimolecular association rate constants (k<sub>on</sub>)
 
