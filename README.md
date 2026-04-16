@@ -1,14 +1,14 @@
 <div align="center">
 
-<pre>
-╭──────────────────────────────────────────────────────────────────╮
-│                                                                  │
-│               ◈    P  y  S  T  A  R  C    ◈                     │
-│                                                                  │
-│   <b>P</b>ython  <b>S</b>imulation  <b>T</b>oolkit  for  <b>A</b>ssociation  <b>R</b>ate  <b>C</b>onstants      │
-│                                                                  │
-╰──────────────────────────────────────────────────────────────────╯
-</pre>
+```
+╭────────────────────────────────────────────────────────────────╮
+│                                                                │
+│                     ◈   P y S T A R C   ◈                      │
+│                                                                │
+│    Python Simulation Toolkit for Association Rate Constants    │
+│                                                                │
+╰────────────────────────────────────────────────────────────────╯
+```
 
 GPU-accelerated rigid-body Brownian dynamics for computing bimolecular association rate constants (k<sub>on</sub>)
 
