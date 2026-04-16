@@ -1,10 +1,10 @@
 <div align="center">
 
-# ⚡ PySTARC
+# ··· PySTARC ···
 
 **Python Simulation Toolkit for Association Rate Constants**
 
-GPU-accelerated rigid-body Brownian dynamics for computing bimolecular k<sub>on</sub>
+GPU-accelerated rigid-body Brownian dynamics for computing bimolecular association rate constants (k<sub>on</sub>)
 
 <br>
 
