@@ -1,6 +1,10 @@
 <div align="center">
 
-# ··· PySTARC ···
+```
+╭──────────────────────────╮
+│   ◈  P y S T A R C  ◈   │
+╰──────────────────────────╯
+```
 
 **Python Simulation Toolkit for Association Rate Constants**
 
