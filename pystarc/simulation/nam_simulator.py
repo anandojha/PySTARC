@@ -87,6 +87,7 @@ class NAMParameters:
     n_trajectories: int = 1_000
     dt: float = 0.2  # ps  normal minimum time step
     dt_rxn: float = 0.05  # ps  near-reaction minimum time step
+    minimum_core_dt: float = 0.0  # ps floor on adaptive dt (0 = no floor; matches XML setting)
     max_steps: int = 1_000_000  # max_n_steps
     r_start: float = 100.0  # Å  b-sphere radius
     r_escape: float = 0.0  # Å  0 = auto (2 × r_start)

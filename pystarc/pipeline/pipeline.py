@@ -238,6 +238,7 @@ def run(cfg: PySTARCConfig):
         n_trajectories=cfg.n_trajectories,
         dt=getattr(cfg, "dt", 0.2),
         dt_rxn=0.05,  # ps
+        minimum_core_dt=getattr(cfg, "minimum_core_dt", 0.0),
         max_steps=cfg.max_steps,
         r_start=geom.r_start,
         r_escape=geom.r_escape,
