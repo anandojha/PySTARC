@@ -183,7 +183,7 @@ from pystarc.pipeline.geometry import AtomRecord as GeomAtomRecord
 from pystarc.pipeline.geometry import parse_pqr as geom_parse_pqr
 from pystarc.simulation.gpu_batch_simulator import GPUBatchResult
 from pystarc.forces.multipole_farfield import MultipoleExpansion
-from pystarc.structures.pqr_io import parse_pqr, write_pqr
+from pystarc.structures.pqr_io import PQRRecord, parse_pqr, parse_pqr_records, write_pqr
 from pystarc.pipeline.geometry import MoleculeGeometry
 from pystarc.pipeline.output_writer import write_all
 from pystarc.global_defs import constants as C
@@ -8442,3 +8442,127 @@ class TestWESimulatorIntegration:
         result = sim.run()
         assert result.flux_reaction >= 0
         assert len(result.iteration_fluxes) == 10
+
+
+class TestPqrFormatVariations:
+    """Regression tests for PQR format variations handled by the canonical
+    parser in pystarc.structures.pqr_io.parse_pqr_records.
+
+    These tests exist because we have hit each of these cases in real
+    files in the PySTARC corpus: HETATM small-molecule ligands (HSP90),
+    four-character Amber terminal residue names (thrombin: NTHR and
+    CGLU), and single-space collapsed spacing between charge and radius
+    (thrombin calcium ion). The tests assert parser behavior on the
+    minimal synthetic line that exercises each case so that future
+    edits to the parser cannot silently regress any of them.
+    """
+
+    @staticmethod
+    def _parse_single_line(line: str):
+        """Helper: write one line to a temp PQR and parse it."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".pqr", delete=False
+        ) as f:
+            f.write(line + "\n")
+            f.write("END\n")
+            f.flush()
+            recs = parse_pqr_records(f.name)
+        os.unlink(f.name)
+        return recs
+
+    def test_atom_record_parsed(self):
+        line = (
+            "ATOM      1  CA  ALA     1       1.000   2.000   3.000  "
+            "0.500  1.800"
+        )
+        recs = self._parse_single_line(line)
+        assert len(recs) == 1
+        r = recs[0]
+        assert r.record_type == "ATOM"
+        assert r.name == "CA"
+        assert r.resname == "ALA"
+        assert r.resid == 1
+        assert r.x == pytest.approx(1.0)
+        assert r.charge == pytest.approx(0.5)
+        assert r.radius == pytest.approx(1.8)
+
+    def test_hetatm_record_parsed(self):
+        line = (
+            "HETATM    1  C1x  UNK     1     33.864  30.183  35.037   "
+            "0.1639   1.7000"
+        )
+        recs = self._parse_single_line(line)
+        assert len(recs) == 1
+        assert recs[0].record_type == "HETATM"
+        assert recs[0].resname == "UNK"
+
+    def test_four_char_nterm_resname(self):
+        # Thrombin receptor: NTHR at cols 18-21 (right-extended 4-char)
+        line = (
+            "ATOM      1  N   NTHR    1      -2.787  73.833  11.760 "
+            "-0.3000 1.8500"
+        )
+        recs = self._parse_single_line(line)
+        assert len(recs) == 1
+        assert recs[0].resname == "NTHR", (
+            f"4-char N-terminal resname NTHR was truncated "
+            f"to {recs[0].resname!r}"
+        )
+
+    def test_four_char_cterm_resname(self):
+        # Thrombin receptor also carries CGLU as the C-terminus
+        line = (
+            "ATOM   1000  C   CGLU  295      10.000  20.000  30.000 "
+            " 0.3000 1.7000"
+        )
+        recs = self._parse_single_line(line)
+        assert len(recs) == 1
+        assert recs[0].resname == "CGLU", (
+            f"4-char C-terminal resname CGLU was truncated "
+            f"to {recs[0].resname!r}"
+        )
+
+    def test_collapsed_spacing_between_charge_and_radius(self):
+        # Thrombin calcium ligand: "2.0000 1.3670" with one space,
+        # not the two-space PDB padding. Must still parse both fields.
+        line = (
+            "HETATM    1  CAL CAL   344      -5.592  67.258 -23.982  "
+            "2.0000 1.3670"
+        )
+        recs = self._parse_single_line(line)
+        assert len(recs) == 1
+        assert recs[0].charge == pytest.approx(2.0)
+        assert recs[0].radius == pytest.approx(1.367)
+
+    def test_chain_column_detected_by_whitespace_fallback(self):
+        # Synthetic line with an explicit chain letter 'A' between
+        # resname and resid. Strict PDB parse should accept this too,
+        # but regardless the chain letter must round-trip through.
+        line = (
+            "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  "
+            "0.500  1.800"
+        )
+        recs = self._parse_single_line(line)
+        assert len(recs) == 1
+        assert recs[0].chain == "A"
+        assert recs[0].resid == 1
+        assert recs[0].resname == "ALA"
+
+    def test_trailing_element_captured(self):
+        # Standard AmberTools PQR with element symbol after radius
+        line = (
+            "ATOM      1  N   SER     1      50.038  51.662  14.644  "
+            "0.1849  1.5500       N"
+        )
+        recs = self._parse_single_line(line)
+        assert len(recs) == 1
+        assert recs[0].element == "N"
+
+    def test_missing_element_returns_empty_string(self):
+        line = (
+            "HETATM    1  C1x  UNK     1     33.864  30.183  35.037   "
+            "0.1639   1.7000"
+        )
+        recs = self._parse_single_line(line)
+        assert len(recs) == 1
+        assert recs[0].element == ""
