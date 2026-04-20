@@ -78,27 +78,17 @@ def _check_tool(name: str):
 
 def _read_pqr_atoms(pqr_path: Path):
     """Read PQR atoms, skipping GHO ghost atoms.
-    PQR format: ATOM serial name resname chain resseq x y z charge radius
+
+    Returns a list of (x, y, z, radius) tuples used by the APBS grid
+    sizing logic. Delegates parsing to the canonical PQR reader in
+    pystarc.structures.pqr_io.
     """
-    atoms = []
-    with open(pqr_path) as f:
-        for line in f:
-            if not (line.startswith("ATOM") or line.startswith("HETATM")):
-                continue
-            parts = line.split()
-            if len(parts) < 10:
-                continue
-            try:
-                name = parts[2].strip().upper()
-                if name == "GHO":
-                    continue
-                x, y, z = float(parts[5]), float(parts[6]), float(parts[7])
-                # parts[8] = charge, parts[9] = radius
-                r = float(parts[9])
-                atoms.append((x, y, z, r))
-            except (ValueError, IndexError):
-                continue
-    return atoms
+    from pystarc.structures.pqr_io import parse_pqr_records
+    return [
+        (r.x, r.y, r.z, r.radius)
+        for r in parse_pqr_records(pqr_path)
+        if r.name.strip().upper() != "GHO"
+    ]
 
 
 def _compute_grid_params(
