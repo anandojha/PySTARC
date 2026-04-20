@@ -221,27 +221,28 @@ class PQRAtom:
 
 
 def read_pqr(path: Path) -> List[PQRAtom]:
-    atoms = []
-    with open(path) as f:
-        for line in f:
-            if not (line.startswith("ATOM") or line.startswith("HETATM")):
-                continue
-            p = line.split()
-            atoms.append(
-                PQRAtom(
-                    serial=int(p[1]),
-                    name=p[2],
-                    resname=p[3],
-                    resid=int(p[4]),
-                    x=float(p[5]),
-                    y=float(p[6]),
-                    z=float(p[7]),
-                    charge=float(p[8]),
-                    radius=float(p[9]),
-                    record=line[:6].strip(),
-                )
-            )
-    return atoms
+    """Parse a PQR file into a list of PQRAtom.
+
+    Delegates to the canonical PQR parser in pystarc.structures.pqr_io
+    and reshapes the result into the local PQRAtom dataclass used by
+    the b-surface preparation pipeline.
+    """
+    from pystarc.structures.pqr_io import parse_pqr_records
+    return [
+        PQRAtom(
+            serial=r.serial,
+            name=r.name,
+            resname=r.resname,
+            resid=r.resid,
+            x=r.x,
+            y=r.y,
+            z=r.z,
+            charge=r.charge,
+            radius=r.radius,
+            record=r.record_type,
+        )
+        for r in parse_pqr_records(path)
+    ]
 
 
 def write_pqr(atoms: List[PQRAtom], path: Path):
