@@ -168,7 +168,14 @@ _SKIP_RESIDUES = {
 
 
 def _pqr_residue(line: str) -> str:
-    return line[17:20].strip().upper()
+    """Extract residue name from a single PQR line (cols 17-21 range).
+
+    Uses the same column window as the canonical PQR parser so that
+    4-character Amber residue names (NTHR, CLYS) are preserved whether
+    they extend left (col 17 non-space) or right (col 21 non-space)
+    of the standard 18-20 field.
+    """
+    return line[16:21].strip().upper()
 
 
 def split_pqr(
