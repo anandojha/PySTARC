@@ -81,8 +81,38 @@ class MoleculeGeometry:
 
 
 def parse_pqr(pqr_path: Path) -> List[AtomRecord]:
-    """Parse a PQR file and return list of AtomRecord."""
-    atoms = []
+    """Parse a PQR file and return list of AtomRecord.
+
+    Delegates to the canonical PQR parser in pystarc.structures.pqr_io,
+    which handles the full range of PQR format variations (ATOM/HETATM,
+    chain column present or absent, 4-char Amber resnames, collapsed
+    numeric spacing, trailing element column).
+
+    Legacy fallback: if the canonical parser rejects every line (for
+    example a minimal PQR with only nine fields per line, no radius
+    column), this function retries with a lenient whitespace parse
+    that defaults the missing radius to 1.5 Angstrom, preserving
+    prior geometry-module behavior.
+    """
+    from pystarc.structures.pqr_io import parse_pqr_records
+    records = parse_pqr_records(pqr_path)
+    if records:
+        return [
+            AtomRecord(
+                index=i,
+                name=r.name,
+                resname=r.resname,
+                resid=r.resid,
+                x=r.x,
+                y=r.y,
+                z=r.z,
+                charge=r.charge,
+                radius=r.radius,
+            )
+            for i, r in enumerate(records)
+        ]
+    # Lenient fallback for legacy PQRs missing the radius column.
+    atoms: List[AtomRecord] = []
     with open(pqr_path) as f:
         for line in f:
             if not (line.startswith("ATOM") or line.startswith("HETATM")):
