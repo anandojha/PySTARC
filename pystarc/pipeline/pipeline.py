@@ -25,7 +25,11 @@ from pystarc.pathways.reaction_interface import (
     ContactPair,
 )
 from pystarc.pipeline.make_pqr import build_complex, make_combined_pqr, split_pqr
-from pystarc.pipeline.geometry import compute_geometry, auto_detect_reactions
+from pystarc.pipeline.geometry import (
+    compute_geometry,
+    auto_detect_reactions,
+    _parse_rxns_xml_reaction_groups,
+)
 from pystarc.simulation.nam_simulator import NAMSimulator, NAMParameters
 from pystarc.simulation.gpu_batch_simulator import GPUBatchSimulator
 from pystarc.forces.multipole_farfield import MultipoleExpansion
@@ -215,30 +219,81 @@ def run(cfg: PySTARCConfig):
         f"ligand={geom.ligand.hydrodynamic_r:.3f} Å"
     )
     print(f"  D_rel  = {D_rel:.5f} Å²/ps")
-    # Build reaction pathway from detected criteria
+    # Build reaction pathway from detected criteria.
+    # When state_machine_reactions=True and a rxns_xml is provided, preserve
+    # per-reaction grouping and state labels from the XML file. Otherwise,
+    # fall back to the flattened-pairs path (all pairs in one stage).
     reactions = []
-    for stage_idx, stage_pairs in enumerate(rxn_stages):
-        pairs = []
-        for rp in stage_pairs:
-            pairs.append(ContactPair(rp.rec_index, rp.lig_index, rp.cutoff))
-        crit = ReactionCriteria(
-            name=f"stage_{stage_idx}",
-            pairs=pairs,
-            n_needed=rxn_n_needed,
-        )
-        reactions.append(
-            ReactionInterface(
-                name=f"stage_{stage_idx}",
-                criteria=crit,
+    _use_state_machine = (
+        getattr(cfg, "state_machine_reactions", False)
+        and bool(cfg.rxns_xml)
+    )
+    if _use_state_machine:
+        rxn_groups, first_state = _parse_rxns_xml_reaction_groups(cfg.rxns_xml)
+        if rxn_groups:
+            print(
+                f"  State-machine reactions: {len(rxn_groups)} reaction(s), "
+                f"first_state={first_state!r}"
             )
-        )
-    pathway_set = PathwaySet(reactions)
+            for rg in rxn_groups:
+                pairs = [
+                    ContactPair(rp.rec_index, rp.lig_index, rp.cutoff)
+                    for rp in rg.pairs
+                ]
+                crit = ReactionCriteria(
+                    name=rg.name or "reaction",
+                    pairs=pairs,
+                    n_needed=rg.n_needed,
+                    state_before=rg.state_before,
+                    state_after=rg.state_after,
+                )
+                reactions.append(
+                    ReactionInterface(
+                        name=rg.name or "reaction",
+                        criteria=crit,
+                        state_before=rg.state_before,
+                        state_after=rg.state_after,
+                    )
+                )
+                print(
+                    f"    {rg.name}: {rg.state_before} -> {rg.state_after}  "
+                    f"({len(pairs)} pair(s), n_needed={rg.n_needed})"
+                )
+        else:
+            print(
+                "  State-machine reactions requested but no reactions parsed; "
+                "falling back to the flattened-pairs path."
+            )
+            _use_state_machine = False
+    if not _use_state_machine:
+        for stage_idx, stage_pairs in enumerate(rxn_stages):
+            pairs = []
+            for rp in stage_pairs:
+                pairs.append(ContactPair(rp.rec_index, rp.lig_index, rp.cutoff))
+            crit = ReactionCriteria(
+                name=f"stage_{stage_idx}",
+                pairs=pairs,
+                n_needed=rxn_n_needed,
+            )
+            reactions.append(
+                ReactionInterface(
+                    name=f"stage_{stage_idx}",
+                    criteria=crit,
+                )
+            )
+    # When state-machine mode is active and rxns.xml provided a <first_state>
+    # tag, pass it through to PathwaySet so the simulator can initialize each
+    # trajectory's current_state correctly. The variable first_state is set in
+    # the state-machine branch above; in the flattened-pairs branch it is None.
+    pathway_set = PathwaySet(
+        reactions,
+        first_state=first_state if "first_state" in dir() else None,
+    )
     # NAM parameters
     params = NAMParameters(
         n_trajectories=cfg.n_trajectories,
         dt=getattr(cfg, "dt", 0.2),
-        dt_rxn=0.05,  # ps
-        minimum_core_dt=getattr(cfg, "minimum_core_dt", 0.0),
+        dt_rxn=getattr(cfg, "minimum_core_reaction_dt", 0.05),
         max_steps=cfg.max_steps,
         r_start=geom.r_start,
         r_escape=geom.r_escape,
@@ -247,6 +302,8 @@ def run(cfg: PySTARCConfig):
         hydrodynamic_interactions=getattr(cfg, "hydrodynamic_interactions", False),
         use_hard_sphere=True,
         verbose=True,
+        minimum_core_dt=getattr(cfg, "minimum_core_dt", 0.0),
+        minimum_core_reaction_dt=getattr(cfg, "minimum_core_reaction_dt", 0.0),
     )
     sim = NAMSimulator(mol_rec, mol_lig, mob, pathway_set, params, engine)
     if cfg.gpu and engine.backend == "cupy":

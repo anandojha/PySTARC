@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<pystarc>
+  <!-- System -->
+  <receptor_resname> </receptor_resname>
+  <ligand_resname> </ligand_resname>
+  <receptor_pqr> </receptor_pqr>
+  <ligand_pqr> </ligand_pqr>
+  <rxns_xml> </rxns_xml>
+  <state_machine_reactions> </state_machine_reactions>
+  <!-- Geometry -->
+  <bd_milestone_radius> </bd_milestone_radius>
+  <r_hydro_rec> </r_hydro_rec>
+  <r_hydro_lig> </r_hydro_lig>
+  <!-- Electrostatics -->
+  <debye_length> </debye_length>
+  <ion_concentration> </ion_concentration>
+  <ion_radius_pos> </ion_radius_pos>
+  <ion_radius_neg> </ion_radius_neg>
+  <pdie> </pdie>
+  <sdie> </sdie>
+  <srad> </srad>
+  <apbs_cglen> </apbs_cglen>
+  <apbs_fglen> </apbs_fglen>
+  <apbs_dime> </apbs_dime>
+  <apbs_coarse_dime> </apbs_coarse_dime>
+  <apbs_fine_dime> </apbs_fine_dime>
+  <gpu_force_batch> </gpu_force_batch>
+  <!-- Physics -->
+  <desolvation_alpha> </desolvation_alpha>
+  <hydrodynamic_interactions> </hydrodynamic_interactions>
+  <overlap_check> </overlap_check>
+  <multipole_fallback> </multipole_fallback>
+  <lj_forces> </lj_forces>
+  <!-- BD simulation -->
+  <n_trajectories> </n_trajectories>
+  <max_steps> </max_steps>
+  <dt> </dt>
+  <minimum_core_dt> </minimum_core_dt>
+  <minimum_core_reaction_dt> </minimum_core_reaction_dt>
+  <max_dt> </max_dt>
+  <temperature> </temperature>
+  <seed> </seed>
+  <!-- Checkpointing & convergence -->
+  <checkpoint_interval> </checkpoint_interval>
+  <convergence_interval> </convergence_interval>
+  <convergence_check> </convergence_check>
+  <convergence_tol> </convergence_tol>
+  <!-- Compute -->
+  <gpu> </gpu>
+  <n_threads> </n_threads>
+  <work_dir> </work_dir>
+  <!-- Outputs -->
+  <outputs>
+    <save_interval> </save_interval>
+  </outputs>
+</pystarc>

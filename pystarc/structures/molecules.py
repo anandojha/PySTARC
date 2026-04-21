@@ -210,6 +210,10 @@ class ReactionCriteria:
     name: str = "reaction"
     pairs: List[ContactPair] = field(default_factory=list)
     n_needed: int = -1  # -1 means all pairs (default: all pairs)
+    # State-machine labels (only used when state_machine_reactions=True)
+    # Default None -> flattened-reactions path
+    state_before: "Optional[str]" = None
+    state_after: "Optional[str]" = None
 
     def is_satisfied(self, mol1: Molecule, mol2: Molecule) -> bool:
         """

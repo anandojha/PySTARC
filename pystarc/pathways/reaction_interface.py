@@ -21,6 +21,10 @@ class ReactionInterface:
     name: str
     criteria: ReactionCriteria
     probability: float = 1.0  # reaction probability when contacts are met
+    # State-machine labels (only used when state_machine_reactions=True)
+    # Default None -> flattened-reactions path
+    state_before: "Optional[str]" = None
+    state_after: "Optional[str]" = None
 
     def check(self, mol1: Molecule, mol2: Molecule) -> bool:
         """Return True if this reaction has fired."""
@@ -44,8 +48,16 @@ class PathwaySet:
     Iterates through pathways in order, returns first match.
     """
 
-    def __init__(self, reactions: Optional[List[ReactionInterface]] = None):
+    def __init__(
+        self,
+        reactions: Optional[List[ReactionInterface]] = None,
+        first_state: Optional[str] = None,
+    ):
         self.reactions: List[ReactionInterface] = reactions or []
+        # Initial state label for trajectories in state-machine reaction mode.
+        # Carries the value parsed from <first_state> in rxns.xml. None when
+        # state-machine mode is not used; in that case the simulator ignores it.
+        self.first_state: Optional[str] = first_state
 
     def add(self, rxn: ReactionInterface) -> None:
         self.reactions.append(rxn)

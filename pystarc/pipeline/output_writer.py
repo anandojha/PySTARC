@@ -106,6 +106,11 @@ def write_all(
         }
         if k_on > 0:
             data["log10_k_on"] = math.log10(k_on)
+        # State-machine runs carry a per-reaction count list. Pass it through
+        # to results.json so downstream tools can read which reactions fired
+        # and how many times.
+        if "completed_reactions" in sim_data:
+            data["completed_reactions"] = sim_data["completed_reactions"]
         p = work_dir / "results.json"
         p.write_text(json.dumps(data, indent=2))
         written.append(("results.json", p))

@@ -476,3 +476,146 @@ def auto_detect_reactions(
         "GHO atoms are injected automatically during APBS preparation.\n"
         "This error should not occur in normal usage - please report it."
     )
+
+
+# Multi-reaction parser with state-machine labels.
+# Kept distinct from _parse_rxns_xml_criteria, which remains the flattened-pairs entry point.
+# This parser is only called when state_machine_reactions=True in the config.
+@dataclass
+class ReactionGroup:
+    """
+    One reaction with optional state-machine labels.
+    name         : reaction name from <n>...</n>
+    state_before : source state - trajectory must be in this state for reaction to fire
+    state_after  : destination state - trajectory enters this state after reaction fires
+    pairs        : list of ReactionPair (all pairs in this reaction's criterion)
+    n_needed     : min pairs that must fire simultaneously (-1 = all)
+    """
+
+    name: str
+    state_before: Optional[str]
+    state_after: Optional[str]
+    pairs: List[ReactionPair]
+    n_needed: int = -1
+
+
+def _parse_rxns_xml_reaction_groups(rxns_path):
+    """
+    Parse rxns XML preserving per-reaction grouping and state labels.
+    Returns (reaction_groups, first_state) where:
+      reaction_groups : List[ReactionGroup]
+      first_state     : Optional[str]   (value of <first_state>...</first_state>)
+    XML format:
+        <roottag>
+          <first_state>b_surface</first_state>
+          <reactions>
+            <reaction>
+              <n>name1</n>
+              <state_before>src</state_before>
+              <state_after>dst</state_after>
+              <criterion>
+                <n_needed>1</n_needed>
+                <pair>
+                  <atoms>rec_idx lig_idx</atoms>
+                  <distance>cutoff</distance>
+                </pair>
+              </criterion>
+            </reaction>
+            ...
+          </reactions>
+        </roottag>
+    Note: atom indices in the XML are 1-based; this parser converts to 0-based.
+    Reactions without state labels have state_before=state_after=None, in which
+    case the caller can synthesize defaults or fall back to the flattened-pairs path.
+    """
+    groups = []
+    first_state = None
+    try:
+        tree = ET.parse(str(rxns_path))
+        root = tree.getroot()
+        fs_node = root.find(".//first_state")
+        if fs_node is not None and fs_node.text:
+            first_state = fs_node.text.strip()
+        for reaction in root.iter("reaction"):
+            # Name from <n>...</n>
+            n_node = reaction.find("n")
+            rxn_name = (
+                n_node.text.strip() if (n_node is not None and n_node.text) else ""
+            )
+            # State labels
+            sb_node = reaction.find("state_before")
+            sa_node = reaction.find("state_after")
+            state_before = (
+                sb_node.text.strip()
+                if (sb_node is not None and sb_node.text)
+                else None
+            )
+            state_after = (
+                sa_node.text.strip()
+                if (sa_node is not None and sa_node.text)
+                else None
+            )
+            # Criterion (pair list + n_needed)
+            crit = reaction.find("criterion")
+            if crit is None:
+                continue
+            rxn_n_needed = -1
+            nn_node = crit.find("n_needed")
+            if nn_node is not None and nn_node.text:
+                try:
+                    rxn_n_needed = int(nn_node.text.strip())
+                except ValueError:
+                    pass
+            rxn_pairs = []
+            for pair_node in crit.findall("pair"):
+                # Format 1: <atom1>rec_idx ...</atom1> <atom2>lig_idx ...</atom2>
+                a1 = pair_node.find("atom1")
+                a2 = pair_node.find("atom2")
+                if a1 is not None and a2 is not None:
+                    try:
+                        p1 = a1.text.strip().split()
+                        p2 = a2.text.strip().split()
+                        rec_idx = int(p1[0]) - 1
+                        lig_idx = int(p2[0]) - 1
+                        cutoff = float(p1[2]) if len(p1) >= 3 else 5.0
+                        rxn_pairs.append(
+                            ReactionPair(
+                                rec_index=rec_idx,
+                                lig_index=lig_idx,
+                                cutoff=cutoff,
+                            )
+                        )
+                    except (ValueError, IndexError):
+                        continue
+                    continue
+                # Format 2: <atoms>rec_idx lig_idx</atoms> <distance>cutoff</distance>
+                atoms_node = pair_node.find("atoms")
+                distance_node = pair_node.find("distance")
+                if atoms_node is not None and distance_node is not None:
+                    try:
+                        idx = atoms_node.text.strip().split()
+                        rec_idx = int(idx[0]) - 1
+                        lig_idx = int(idx[1]) - 1
+                        cutoff = float(distance_node.text.strip())
+                        rxn_pairs.append(
+                            ReactionPair(
+                                rec_index=rec_idx,
+                                lig_index=lig_idx,
+                                cutoff=cutoff,
+                            )
+                        )
+                    except (ValueError, IndexError):
+                        continue
+            if rxn_pairs:
+                groups.append(
+                    ReactionGroup(
+                        name=rxn_name,
+                        state_before=state_before,
+                        state_after=state_after,
+                        pairs=rxn_pairs,
+                        n_needed=rxn_n_needed,
+                    )
+                )
+    except Exception as e:
+        print(f"  Warning: could not parse rxns XML {rxns_path}: {e}")
+    return groups, first_state

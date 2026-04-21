@@ -60,6 +60,11 @@ class PySTARCConfig:
     # Escape sphere: 2 × bd_milestone_radius
     bd_milestone_radius: float = 30.0  # Å - b-sphere start (>= 3×(r_rec+r_lig))
     bd_milestone_radius_inner: float = 0.0  # Å - inner milestone (0 = disabled)
+    # State-machine reactions: multi-reaction tracking per trajectory.
+    # False -> all reactions flattened; first distance match ends the trajectory.
+    # True  -> trajectory carries a state label; reactions fire only when the
+    #          trajectory is in the matching state_before and advance it to state_after.
+    state_machine_reactions: bool = False
     # Ghost atoms
     # 'auto'  -> detect GHO atoms from PQR automatically
     # or list of [rec_idx, lig_idx, cutoff_ang] triplets
@@ -94,6 +99,7 @@ class PySTARCConfig:
     r_hydro_rec: float = 0.0  # receptor hydro radius (0=compute from PQR)
     r_hydro_lig: float = 0.0  # ligand hydro radius   (0=compute from PQR)
     minimum_core_dt: float = 0.0  # minimum_core_dt (0=no floor)
+    minimum_core_reaction_dt: float = 0.0  # dt floor near reaction surface (0=no floor; SEEKR2 default 0.05)
     max_dt: float = 0.0  # max_dt ceiling (0=no cap)
     # Physics extensions
     overlap_check: bool = True  # prevent ligand entering receptor volume
@@ -190,6 +196,9 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
         bd_milestone_radius_inner=get(
             "bd_milestone_radius_inner", default=0.0, cast=float
         ),
+        state_machine_reactions=get(
+            "state_machine_reactions", default=False, cast=bool
+        ),
         ghost_atoms=get("ghost_atoms", default="auto", cast=str),
         rxns_xml=get("rxns_xml", default="", cast=str),
         receptor_pqr=get("receptor_pqr", default="", cast=str),
@@ -214,6 +223,7 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
         r_hydro_rec=get("r_hydro_rec", default=0.0, cast=float),
         r_hydro_lig=get("r_hydro_lig", default=0.0, cast=float),
         minimum_core_dt=get("minimum_core_dt", default=0.0, cast=float),
+        minimum_core_reaction_dt=get("minimum_core_reaction_dt", default=0.0, cast=float),
         max_dt=get("max_dt", default=0.0, cast=float),
         overlap_check=get("overlap_check", default=True, cast=bool),
         multipole_fallback=get("multipole_fallback", default=True, cast=bool),

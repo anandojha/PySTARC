@@ -143,6 +143,34 @@ def main():
         "confidence_level": 0.95,
         "log10_k_on": math.log10(k_on) if k_on > 0 else 0,
     }
+    # Aggregate per-reaction fire counts from sub-runs when state-machine
+    # mode was active. Each sub-run's results.json may carry a list of
+    # reaction entries with name / n_fired / state_before / state_after.
+    # Sum n_fired across sub-runs while preserving the reaction metadata.
+    per_rxn = {}
+    rxn_order = []
+    for r in runs:
+        for entry in r.get("completed_reactions", []):
+            name = entry.get("name")
+            if name is None:
+                continue
+            if name not in per_rxn:
+                per_rxn[name] = {
+                    "name": name,
+                    "n_fired": 0,
+                    "state_before": entry.get("state_before"),
+                    "state_after": entry.get("state_after"),
+                }
+                rxn_order.append(name)
+            per_rxn[name]["n_fired"] += int(entry.get("n_fired", 0))
+    if per_rxn:
+        results["completed_reactions"] = [per_rxn[n] for n in rxn_order]
+        print("\n  Per-reaction firing counts (summed across sub-runs):")
+        for entry in results["completed_reactions"]:
+            print(
+                f"    {entry['name']}: {entry['n_fired']:,} fires "
+                f"({entry['state_before']} -> {entry['state_after']})"
+            )
     _save_json(results, os.path.join(bd_sims, "results.json"))
 
     # Combine CSV files

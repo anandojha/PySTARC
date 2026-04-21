@@ -213,6 +213,109 @@ class GPUBatchSimulator:
         else:
             self._rec_gho_pos = None
             self._rxn_cutoffs_gpu = None
+        # State-machine reaction metadata.
+        # Populated only when at least one reaction in pathway_set carries a
+        # non-None state_before label. Otherwise all fields are empty / False
+        # and the simulator uses the flattened-pairs path.
+        # Each reaction has a source state (state_before) and a destination
+        # state (state_after). A reaction fires on a trajectory only when
+        # that trajectory is currently in the source state. Upon firing, the
+        # trajectory moves to the destination state.
+        # Each reaction is assumed to have exactly one pair; the per-reaction
+        # cutoff and GHO indices below pick pair[0] from each reaction's
+        # criterion.
+        self._sm_active = False
+        self._sm_rxn_names = []
+        self._sm_rxn_state_before = []
+        self._sm_rxn_state_after = []
+        self._sm_rxn_cutoffs = []
+        self._sm_rxn_gho_rec_idx = []
+        self._sm_rxn_gho_lig_idx = []
+        _sm_any_labels = any(
+            getattr(rxn, "state_before", None) is not None
+            for rxn in pathway_set.reactions
+        )
+        if _sm_any_labels and pathway_set.reactions:
+            for rxn in pathway_set.reactions:
+                if not rxn.criteria.pairs:
+                    continue
+                pair0 = rxn.criteria.pairs[0]
+                self._sm_rxn_names.append(rxn.name)
+                self._sm_rxn_state_before.append(
+                    getattr(rxn, "state_before", None)
+                )
+                self._sm_rxn_state_after.append(
+                    getattr(rxn, "state_after", None)
+                )
+                self._sm_rxn_cutoffs.append(float(pair0.distance_cutoff))
+                self._sm_rxn_gho_rec_idx.append(int(pair0.mol1_atom_index))
+                self._sm_rxn_gho_lig_idx.append(int(pair0.mol2_atom_index))
+            self._sm_active = len(self._sm_rxn_names) > 0
+        # Integer encoding of state labels.
+        # GPU kernels work with int arrays, not string labels. Each distinct
+        # state gets a stable integer index. first_state is always index 0 so
+        # every trajectory can be initialized with current_state = 0 at
+        # trajectory start.
+        # Terminal states are those that never appear as a state_before in
+        # any reaction. A trajectory entering a terminal state has no further
+        # reactions to fire and is marked reacted.
+        self._sm_state_to_idx = {}
+        self._sm_idx_to_state = []
+        self._sm_rxn_state_before_idx = []
+        self._sm_rxn_state_after_idx = []
+        self._sm_state_is_terminal = []
+        self._sm_first_state = None
+        if self._sm_active:
+            fs = getattr(pathway_set, "first_state", None)
+            if fs is None and self._sm_rxn_state_before:
+                fs = self._sm_rxn_state_before[0]
+            self._sm_first_state = fs
+            def _get_or_add_state(label):
+                if label is None:
+                    return -1
+                if label not in self._sm_state_to_idx:
+                    idx = len(self._sm_idx_to_state)
+                    self._sm_state_to_idx[label] = idx
+                    self._sm_idx_to_state.append(label)
+                return self._sm_state_to_idx[label]
+            if self._sm_first_state is not None:
+                _get_or_add_state(self._sm_first_state)
+            for sb, sa in zip(
+                self._sm_rxn_state_before, self._sm_rxn_state_after
+            ):
+                self._sm_rxn_state_before_idx.append(_get_or_add_state(sb))
+                self._sm_rxn_state_after_idx.append(_get_or_add_state(sa))
+            sources = set(self._sm_rxn_state_before_idx)
+            self._sm_state_is_terminal = [
+                (i not in sources) for i in range(len(self._sm_idx_to_state))
+            ]
+            # GPU-side per-reaction arrays consumed by the state-machine check.
+            rec_pos_full = mol1.positions_array()
+            self._sm_rec_gho_pos_gpu = cp.asarray(
+                rec_pos_full[self._sm_rxn_gho_rec_idx], dtype=cp.float64
+            )
+            self._sm_rxn_cutoffs_gpu = cp.asarray(
+                self._sm_rxn_cutoffs, dtype=cp.float64
+            )
+            self._sm_rxn_state_before_idx_gpu = cp.asarray(
+                self._sm_rxn_state_before_idx, dtype=cp.int32
+            )
+            self._sm_rxn_state_after_idx_gpu = cp.asarray(
+                self._sm_rxn_state_after_idx, dtype=cp.int32
+            )
+            self._sm_state_is_terminal_gpu = cp.asarray(
+                self._sm_state_is_terminal, dtype=cp.bool_
+            )
+            self._sm_lig_gho_indices_cached = cp.asarray(
+                self._sm_rxn_gho_lig_idx, dtype=cp.int64
+            )
+        else:
+            self._sm_rec_gho_pos_gpu = None
+            self._sm_rxn_cutoffs_gpu = None
+            self._sm_rxn_state_before_idx_gpu = None
+            self._sm_rxn_state_after_idx_gpu = None
+            self._sm_state_is_terminal_gpu = None
+            self._sm_lig_gho_indices_cached = None
 
     def _compute_return_prob(self) -> float:
         """
@@ -367,6 +470,13 @@ class GPUBatchSimulator:
         t0 = time.time()
         N = self.params.n_trajectories
         rng = np.random.default_rng(self.params.seed)
+        # Independent RNG stream for state-machine bridge sampling.
+        # Decoupling the bridge draws from the main rng keeps translation and
+        # rotation noise reproducible even when the number of reactions
+        # tracked changes. The bridge seed is derived from the main seed so
+        # full runs remain reproducible. The flattened-pairs path keeps using
+        # the main rng so its results match the established reference.
+        rng_bb = np.random.default_rng(int(self.params.seed) + 1)
         D_t = float(self.mob.relative_translational_diffusion())
         D_r = float(self.mob.relative_rotational_diffusion())
         dt = self.params.dt
@@ -409,6 +519,30 @@ class GPUBatchSimulator:
         n_escaped = 0
         n_maxsteps = 0
         total_steps = 0
+        # Per-trajectory state-machine tracking.
+        # _sm_current_state   : (N,) int32, current state index per trajectory,
+        #                       initialized to 0 (the first_state).
+        # _sm_rxn_fire_counts : (n_rxn,) int64, number of times each reaction
+        #                       has fired across all trajectories, accumulated
+        #                       on CPU to avoid GPU atomics.
+        # Allocated only when state-machine mode is active.
+        if self._sm_active:
+            self._sm_current_state = cp.zeros(N, dtype=cp.int32)
+            self._sm_rxn_fire_counts = np.zeros(
+                len(self._sm_rxn_names), dtype=np.int64
+            )
+            # Debug: separate counters for discrete vs bridge path fires.
+            self._sm_rxn_fire_counts_discrete = np.zeros(
+                len(self._sm_rxn_names), dtype=np.int64
+            )
+            self._sm_rxn_fire_counts_bridge = np.zeros(
+                len(self._sm_rxn_names), dtype=np.int64
+            )
+            # Debug: track which unique trajectories fired each reaction.
+            self._sm_rxn_fired_traj_sets = [set() for _ in self._sm_rxn_names]
+        else:
+            self._sm_current_state = None
+            self._sm_rxn_fire_counts = None
         _stall_done = 0  # for stall detection
         _resume_step = 0  # step offset if resuming from checkpoint
         # Resume from checkpoint if available
@@ -434,6 +568,9 @@ class GPUBatchSimulator:
                 )
                 # Offset RNG to avoid repeating the same random sequence
                 rng = np.random.default_rng(self.params.seed + _resume_step)
+                rng_bb = np.random.default_rng(
+                    int(self.params.seed) + 1 + _resume_step
+                )
             except Exception as e:
                 print(f" Checkpoint load failed: {e}. Starting fresh.")
         # Data collection arrays
@@ -492,6 +629,11 @@ class GPUBatchSimulator:
         _adt_has_force = abs(_adt_V0) > 1e-9
         # the reference minimum_core_dt: floor on adaptive dt
         _min_core_dt = float(getattr(self.params, "minimum_core_dt", 0.0))
+        # Reaction-surface dt floor. In the SEEKR2 standard config this is
+        # 0.05 ps (4x smaller than minimum_core_dt=0.2), allowing dt to shrink
+        # near the reaction surface while still bounding below. Matches the
+        # reference BD engine's minimum_core_reaction_dt semantics.
+        _min_core_rxn_dt = float(getattr(self.params, "minimum_core_reaction_dt", 0.0))
         # Pre-compute D_eff for Brownian bridge
         # Pair distances change due to translation AND rotation.
         # D_eff = D_trans + D_rot_rec * L_rec² + D_rot_lig * L_lig²
@@ -669,22 +811,64 @@ class GPUBatchSimulator:
                     f"  Force batch: {_force_batch:,} traj/batch "
                     f"({_n_force_batches} batches for {n_run:,} running)"
                 )
-            # Reaction check (only GHO atoms - small)
-            if self._rec_gho_pos is not None:
-                # Only compute GHO atom positions, not all ligand atoms
-                _gho_mol2 = self._mol2_pos0[self._lig_gho_indices]  # (n_gho, 3)
-                _gho_pos = cp.einsum("nij,kj->nki", R, _gho_mol2) + pos_run[:, None, :]
-                # Build mini pos_lig with only GHO atoms for reaction check
-                reacted = self._check_reactions_gpu_gho(_gho_pos)  # (N_run,) bool
-                del _gho_pos
+            # Reaction check (only GHO atoms - small).
+            # State-machine mode dispatches to a per-reaction check that
+            # respects trajectory state and fires only matching reactions;
+            # otherwise the flattened-pairs check is used.
+            if self._sm_active:
+                # State-aware reaction check: returns reaction index per
+                # trajectory, or -1 if no reaction fired this step.
+                current_state_run = self._sm_current_state[run_idx]
+                fired_rxn_idx = self._check_reactions_gpu_gho_state_machine(
+                    pos_run, q_run, current_state_run
+                )  # (N_run,) int32
+                reacted = fired_rxn_idx >= 0  # (N_run,) bool
+                still_running_mask = status[run_idx] == 0
+                # Trajectories that fired a reaction this step (still running).
+                fired_mask = reacted & still_running_mask
+                if bool(cp.any(fired_mask)):
+                    fired_global = run_idx[fired_mask]
+                    fired_rxn_idx_masked = fired_rxn_idx[fired_mask]
+                    # Update state: current_state[traj] = state_after of fired reaction.
+                    new_states = self._sm_rxn_state_after_idx_gpu[
+                        fired_rxn_idx_masked
+                    ]
+                    self._sm_current_state[fired_global] = new_states
+                    # Increment per-reaction fire counter on CPU.
+                    fired_rxn_idx_np = cp.asnumpy(fired_rxn_idx_masked)
+                    _fired_global_np = cp.asnumpy(fired_global)
+                    for _j, _rxn_i in enumerate(fired_rxn_idx_np):
+                        self._sm_rxn_fire_counts[int(_rxn_i)] += 1
+                        self._sm_rxn_fire_counts_discrete[int(_rxn_i)] += 1
+                        self._sm_rxn_fired_traj_sets[int(_rxn_i)].add(
+                            int(_fired_global_np[_j])
+                        )
+                    # Mark trajectories as reacted only if their new state is
+                    # terminal (no further reactions possible from that state).
+                    terminal_after = self._sm_state_is_terminal_gpu[new_states]
+                    newly_reacted = fired_global[terminal_after]
+                else:
+                    newly_reacted = cp.array([], dtype=run_idx.dtype)
+                if len(newly_reacted) > 0:
+                    status[newly_reacted] = 1
+                    n_reacted += int(len(newly_reacted))
             else:
-                reacted = cp.zeros(len(run_idx), dtype=cp.bool_)
-            # Mark newly reacted (only those still running)
-            still_running_mask = status[run_idx] == 0
-            newly_reacted = run_idx[reacted & still_running_mask]
-            if len(newly_reacted) > 0:
-                status[newly_reacted] = 1
-                n_reacted += int(len(newly_reacted))
+                # Flattened-pairs reaction check.
+                if self._rec_gho_pos is not None:
+                    # Only compute GHO atom positions, not all ligand atoms
+                    _gho_mol2 = self._mol2_pos0[self._lig_gho_indices]  # (n_gho, 3)
+                    _gho_pos = cp.einsum("nij,kj->nki", R, _gho_mol2) + pos_run[:, None, :]
+                    # Build mini pos_lig with only GHO atoms for reaction check
+                    reacted = self._check_reactions_gpu_gho(_gho_pos)  # (N_run,) bool
+                    del _gho_pos
+                else:
+                    reacted = cp.zeros(len(run_idx), dtype=cp.bool_)
+                # Mark newly reacted (only those still running)
+                still_running_mask = status[run_idx] == 0
+                newly_reacted = run_idx[reacted & still_running_mask]
+                if len(newly_reacted) > 0:
+                    status[newly_reacted] = 1
+                    n_reacted += int(len(newly_reacted))
                 # Record encounter snapshots
                 _nr_np = cp.asnumpy(newly_reacted)
                 _enc_traj.extend(_nr_np.tolist())
@@ -818,6 +1002,62 @@ class GPUBatchSimulator:
             dt_outer = cp.minimum(cp.minimum(_dt_force, dt_edge), dt_pair)
             dt_inner = cp.minimum(_dt_force, dt_pair)
             dt_arr = cp.where(in_outer, dt_outer, dt_inner)
+            # Reaction-surface timestep refinement for state-machine mode.
+            # Reference BD engines refine the timestep so that the diffusive
+            # step is much smaller than the distance to the reaction surface.
+            # The criterion is that 12 sigma should stay below the minimum
+            # reaction coordinate reachable from the current state, which
+            # rearranges to dt <= rxn_coord^2 / (288 * D). Trajectories that
+            # are already inside the surface or that have no reachable
+            # reactions from their current state use a large sentinel value
+            # so this term does not constrain them.
+            if (
+                self._sm_active
+                and _old_pair_dists is not None
+                and self._sm_rxn_state_before_idx_gpu is not None
+            ):
+                _sm_state_for_dt = self._sm_current_state[sr_idx]
+                _sm_reachable = (
+                    _sm_state_for_dt[:, None]
+                    == self._sm_rxn_state_before_idx_gpu[None, :]
+                )  # (N_sr, n_pairs)
+                _rxn_coord_per_pair = cp.maximum(
+                    _old_pair_dists - self._rxn_cutoffs_gpu[None, :],
+                    cp.zeros_like(_old_pair_dists),
+                )  # (N_sr, n_pairs)
+                _big = cp.asarray(1.0e30, dtype=cp.float64)
+                _rxn_coord_masked = cp.where(
+                    _sm_reachable, _rxn_coord_per_pair, _big
+                )
+                _rxn_coord_per_traj = cp.min(
+                    _rxn_coord_masked, axis=1
+                )  # (N_sr,)
+                # Reaction-surface timestep refinement. Activates only when
+                # the current diffusive width would approach the distance to
+                # the reaction surface (12 sigma > rxn_coord). Matches the
+                # adaptive criterion from the reference BD engine. When the
+                # trigger fires, dt is reduced toward rxn_coord^2/(288 D_t),
+                # but never below the configured reaction-surface floor
+                # (_min_core_rxn_dt; SEEKR2 uses 0.05 ps). Trajectories that
+                # are far from any reachable reaction surface are not slowed.
+                _sigma_now = cp.sqrt(2.0 * D_t * dt_arr)
+                _needs_refinement = (
+                    12.0 * _sigma_now > _rxn_coord_per_traj
+                )
+                _rxn_coord_sq = _rxn_coord_per_traj * _rxn_coord_per_traj
+                _dt_rxn_crit = _rxn_coord_sq / (288.0 * D_t)
+                if _min_core_rxn_dt > 0:
+                    _dt_rxn_floored = cp.maximum(
+                        _dt_rxn_crit,
+                        cp.asarray(_min_core_rxn_dt, dtype=cp.float64),
+                    )
+                else:
+                    _dt_rxn_floored = _dt_rxn_crit
+                dt_arr = cp.where(
+                    _needs_refinement,
+                    cp.minimum(dt_arr, _dt_rxn_floored),
+                    dt_arr,
+                )
             # Cap adaptive dt to prevent drift >> noise at large separations
             _max_dt = float(getattr(self.params, "max_dt", 0))
             if _max_dt > 0:
@@ -886,21 +1126,25 @@ class GPUBatchSimulator:
                     pos[sr_idx[_inside_idx]] = _old_pos_sr[_inside_idx]
                     q[sr_idx[_inside_idx]] = _old_q_sr[_inside_idx]
                     _n_overlap_rejected += int(_inside_idx.shape[0])
-            # Brownian bridge crossing check at reaction surface
-            # To catch reactions that discrete endpoint checks miss, PySTARC approximates
-            # this with the exact Brownian bridge crossing probability:
-            #   P(path crossed boundary | start x₀, end x₁, both > 0)
-            #       = exp(-x₀ × x₁ / (D × dt))
+            # Brownian bridge crossing check at reaction surface.
+            # To catch reactions that discrete endpoint checks miss, PySTARC
+            # approximates this with the exact Brownian bridge crossing
+            # probability:
+            #   P(path crossed boundary | start x0, end x1, both > 0)
+            #       = exp(-x0 * x1 / (D * dt))
             # where x = pair_distance - cutoff (height above reaction surface).
             # Exact for free diffusion, accurate when drift << noise.
-            # For each reaction pair, independently sample whether the continuous
-            # path crossed the reaction cutoff. If n_crossed >= n_needed, react.
+            # In state-machine mode, the bridge is checked per reaction with
+            # the trajectory's current state gating which reactions can fire.
+            # The pre-step distances stored in _old_pair_dists align with the
+            # per-reaction arrays because each state-machine reaction has
+            # exactly one pair, matching the flattened-pair layout used elsewhere.
             if (
                 _old_pair_dists is not None
                 and len(sr_idx) > 0
                 and self._rec_gho_pos is not None
             ):
-                # Compute GHO positions after step (small: N_sr × n_gho × 3)
+                # Compute GHO positions after the step (small: N_sr × n_gho × 3).
                 R_new = self._quats_to_rotmats(q[sr_idx])
                 _gho_mol2 = self._mol2_pos0[self._lig_gho_indices]
                 _lig_gho_new = (
@@ -910,49 +1154,102 @@ class GPUBatchSimulator:
                 _new_pair_dists = cp.linalg.norm(
                     _lig_gho_new - _rec_gho_bcast, axis=2
                 )  # (N_sr, n_pairs)
-                # x₀ = old distance above reaction cutoff
-                # x₁ = new distance above reaction cutoff
                 _cutoffs = self._rxn_cutoffs_gpu[None, :]  # (1, n_pairs)
-                _x0 = _old_pair_dists - _cutoffs  # (N_sr, n_pairs)
+                _x0 = _old_pair_dists - _cutoffs
                 _x1 = _new_pair_dists - _cutoffs
-                # Only apply to pairs where both endpoints are above cutoff
-                # (if either is below, the endpoint check already caught it)
                 _both_above = (_x0 > 0) & (_x1 > 0)
                 if cp.any(_both_above):
-                    # Crossing probability: exp(-x₀*x₁/(D_eff*dt))
-                    # D_eff includes translational + rotational diffusion
-                    # contribution to pair distance fluctuations.
                     if self._bb_D_eff is not None:
-                        _Deff = self._bb_D_eff[None, :]  # (1, n_pairs)
-                        _Ddt = _Deff * dt_arr[:, None]  # (N_sr, n_pairs)
+                        _Deff = self._bb_D_eff[None, :]
+                        _Ddt = _Deff * dt_arr[:, None]
                     else:
-                        _Ddt = D_t * dt_arr[:, None]  # (N_sr, n_pairs)
+                        _Ddt = D_t * dt_arr[:, None]
                     _Ddt = cp.maximum(_Ddt, cp.full_like(_Ddt, 1e-30))
                     _p_cross = cp.exp(-_x0 * _x1 / _Ddt)
                     _p_cross = cp.where(_both_above, _p_cross, cp.zeros_like(_p_cross))
-                    # Sample crossing for each pair
-                    _u_bb = cp.asarray(rng.random(_p_cross.shape), dtype=cp.float64)
-                    _crossed = _u_bb < _p_cross  # (N_sr, n_pairs) bool
-                    # Also count pairs already below cutoff (from new positions)
+                    # Use the independent rng_bb stream for state-machine mode so
+                    # bridge draws do not perturb the main rng used for noise.
+                    # Flattened-pairs mode keeps using the main rng to preserve
+                    # bit-identical reproducibility with prior runs.
+                    if self._sm_active:
+                        _u_bb = cp.asarray(
+                            rng_bb.random(_p_cross.shape), dtype=cp.float64
+                        )
+                    else:
+                        _u_bb = cp.asarray(
+                            rng.random(_p_cross.shape), dtype=cp.float64
+                        )
+                    _crossed = _u_bb < _p_cross  # (N_sr, n_pairs)
                     _below = _new_pair_dists < _cutoffs
-                    _total_fired = (_crossed | _below).sum(axis=1)  # (N_sr,)
-                    # React if total fired pairs >= n_needed
-                    _bb_reacted = _total_fired >= self._rxn_n_needed
-                    # Only mark trajectories still running
-                    if cp.any(_bb_reacted):
-                        _bb_global = sr_idx[_bb_reacted]
-                        _bb_new = _bb_global[status[_bb_global] == 0]
-                        if len(_bb_new) > 0:
-                            status[_bb_new] = 1
-                            n_reacted += int(len(_bb_new))
-                            # -- Record BB encounters --
-                            _bb_np = cp.asnumpy(_bb_new)
-                            _bb_triggered[_bb_np] = 1
-                            _enc_traj.extend(_bb_np.tolist())
-                            _enc_step.extend([step] * len(_bb_np))
-                            _enc_pos.append(cp.asnumpy(pos[_bb_new]))
-                            _enc_q.append(cp.asnumpy(q[_bb_new]))
-                            _enc_npairs.extend([self._rxn_n_needed] * len(_bb_np))
+                    _pair_fired = _crossed | _below  # (N_sr, n_pairs)
+                    if self._sm_active:
+                        # State-machine mode: gate each per-reaction firing on
+                        # the trajectory's current_state matching state_before,
+                        # then pick the lowest-index matching reaction per
+                        # trajectory. Fire it: update state, count it, and
+                        # terminate only if the destination is a terminal state.
+                        _sm_cur_state_sr = self._sm_current_state[sr_idx]
+                        _sm_state_ok = (
+                            _sm_cur_state_sr[:, None]
+                            == self._sm_rxn_state_before_idx_gpu[None, :]
+                        )
+                        _sm_fired_masked = _pair_fired & _sm_state_ok
+                        _sm_any_fire = _sm_fired_masked.any(axis=1)
+                        if bool(cp.any(_sm_any_fire)):
+                            _sm_fired_rxn_idx = cp.argmax(
+                                _sm_fired_masked, axis=1
+                            ).astype(cp.int32)
+                            # Keep only trajectories that both fired AND are
+                            # still running (status == 0).
+                            _still_running = status[sr_idx] == 0
+                            _sm_proceed = _sm_any_fire & _still_running
+                            if bool(cp.any(_sm_proceed)):
+                                _sm_bb_new = sr_idx[_sm_proceed]
+                                _sm_rxn_for_new = _sm_fired_rxn_idx[_sm_proceed]
+                                _new_states_bb = self._sm_rxn_state_after_idx_gpu[
+                                    _sm_rxn_for_new
+                                ]
+                                self._sm_current_state[_sm_bb_new] = _new_states_bb
+                                _sm_rxn_for_new_np = cp.asnumpy(_sm_rxn_for_new)
+                                _sm_bb_new_np = cp.asnumpy(_sm_bb_new)
+                                for _j, _rxn_i in enumerate(_sm_rxn_for_new_np):
+                                    self._sm_rxn_fire_counts[int(_rxn_i)] += 1
+                                    self._sm_rxn_fire_counts_bridge[int(_rxn_i)] += 1
+                                    self._sm_rxn_fired_traj_sets[int(_rxn_i)].add(
+                                        int(_sm_bb_new_np[_j])
+                                    )
+                                _terminal_after_bb = self._sm_state_is_terminal_gpu[
+                                    _new_states_bb
+                                ]
+                                _sm_bb_terminal = _sm_bb_new[_terminal_after_bb]
+                                if len(_sm_bb_terminal) > 0:
+                                    status[_sm_bb_terminal] = 1
+                                    n_reacted += int(len(_sm_bb_terminal))
+                                    _bb_np = cp.asnumpy(_sm_bb_terminal)
+                                    _bb_triggered[_bb_np] = 1
+                                    _enc_traj.extend(_bb_np.tolist())
+                                    _enc_step.extend([step] * len(_bb_np))
+                                    _enc_pos.append(cp.asnumpy(pos[_sm_bb_terminal]))
+                                    _enc_q.append(cp.asnumpy(q[_sm_bb_terminal]))
+                                    _enc_npairs.extend([1] * len(_bb_np))
+                    else:
+                        # Flattened mode: count how many pairs fired and react if
+                        # >= n_needed.
+                        _total_fired = _pair_fired.sum(axis=1)  # (N_sr,)
+                        _bb_reacted = _total_fired >= self._rxn_n_needed
+                        if cp.any(_bb_reacted):
+                            _bb_global = sr_idx[_bb_reacted]
+                            _bb_new = _bb_global[status[_bb_global] == 0]
+                            if len(_bb_new) > 0:
+                                status[_bb_new] = 1
+                                n_reacted += int(len(_bb_new))
+                                _bb_np = cp.asnumpy(_bb_new)
+                                _bb_triggered[_bb_np] = 1
+                                _enc_traj.extend(_bb_np.tolist())
+                                _enc_step.extend([step] * len(_bb_np))
+                                _enc_pos.append(cp.asnumpy(pos[_bb_new]))
+                                _enc_q.append(cp.asnumpy(q[_bb_new]))
+                                _enc_npairs.extend([self._rxn_n_needed] * len(_bb_np))
             n_steps[sr_idx] += 1
             total_steps += int(sr_mask.sum())
             # Per-step data collection
@@ -1258,6 +1555,29 @@ class GPUBatchSimulator:
             "trans_bins": _trans_bins,
             "trans_matrix": _trans_mat,
         }
+        # DEBUG: report fire-counter breakdown.
+        if self._sm_active:
+            print("  [DEBUG] Fire-counter breakdown:")
+            for i, name in enumerate(self._sm_rxn_names):
+                d = int(self._sm_rxn_fire_counts_discrete[i])
+                b = int(self._sm_rxn_fire_counts_bridge[i])
+                t = int(self._sm_rxn_fire_counts[i])
+                u = len(self._sm_rxn_fired_traj_sets[i])
+                print(f"    {name}: total={t}  discrete={d}  bridge={b}  unique_trajs={u}")
+        # Per-reaction firing counts for state-machine mode.
+        # Each entry records the reaction name, state transition, and how many
+        # trajectories fired that reaction. The list is omitted when state
+        # machine mode was not active.
+        if self._sm_active and self._sm_rxn_fire_counts is not None:
+            sim_data["completed_reactions"] = [
+                {
+                    "name": self._sm_rxn_names[i],
+                    "n_fired": int(self._sm_rxn_fire_counts[i]),
+                    "state_before": self._sm_rxn_state_before[i],
+                    "state_after": self._sm_rxn_state_after[i],
+                }
+                for i in range(len(self._sm_rxn_names))
+            ]
 
         return GPUBatchResult(
             n_trajectories=N,
@@ -1359,6 +1679,60 @@ class GPUBatchSimulator:
         n_satisfied = satisfied.sum(axis=1)  # (N_run,) int
         reacted = n_satisfied >= self._rxn_n_needed  # (N_run,) bool
         return reacted
+
+    def _check_reactions_gpu_gho_state_machine(
+        self, pos_run: "cp.ndarray", q_run: "cp.ndarray",
+        current_state_run: "cp.ndarray"
+    ) -> "cp.ndarray":
+        """
+        State-aware reaction check.
+
+        For each running trajectory, determines which reaction (if any) fires
+        this step. A reaction r fires on trajectory t if:
+          (1) current_state_run[t] == state_before_idx[r], AND
+          (2) GHO-GHO distance for reaction r's pair < cutoff[r].
+        If multiple reactions satisfy both conditions for the same trajectory,
+        the lowest-indexed reaction wins (reaction order in rxns.xml).
+
+        Parameters
+        ----------
+        pos_run            : (N_run, 3)   ligand centroid positions
+        q_run              : (N_run, 4)   ligand orientation quaternions
+        current_state_run  : (N_run,)     int32 current state per trajectory
+
+        Returns
+        -------
+        fired_rxn_idx : (N_run,) int32
+            Reaction index that fired, or -1 if no reaction fired.
+        """
+        N_run = pos_run.shape[0]
+        n_rxn = len(self._sm_rxn_names)
+        if n_rxn == 0 or N_run == 0:
+            return cp.full(N_run, -1, dtype=cp.int32)
+        # Gather ligand-frame GHO positions for each reaction: (n_rxn, 3).
+        lig_gho_local = self._mol2_pos0[self._sm_lig_gho_indices_cached]
+        # Rotation matrices from quaternions: (N_run, 3, 3).
+        R = self._quats_to_rotmats(q_run)
+        # Rotated + translated ligand GHO per reaction: (N_run, n_rxn, 3).
+        lig_gho_lab = (
+            cp.einsum("nij,kj->nki", R, lig_gho_local) + pos_run[:, None, :]
+        )
+        # Distance from each trajectory's per-reaction ligand GHO to the
+        # corresponding fixed receptor GHO: (N_run, n_rxn).
+        rec_gho = self._sm_rec_gho_pos_gpu[None, :, :]
+        dists = cp.linalg.norm(lig_gho_lab - rec_gho, axis=2)
+        # Gate on cutoff and state match.
+        cutoff_ok = dists < self._sm_rxn_cutoffs_gpu[None, :]
+        state_ok = (
+            current_state_run[:, None]
+            == self._sm_rxn_state_before_idx_gpu[None, :]
+        )
+        fire_mask = cutoff_ok & state_ok  # (N_run, n_rxn)
+        # Lowest-index reaction that fires per trajectory, or -1 if none.
+        any_fire = fire_mask.any(axis=1)
+        fired_rxn_idx = cp.argmax(fire_mask, axis=1).astype(cp.int32)
+        fired_rxn_idx = cp.where(any_fire, fired_rxn_idx, -1)
+        return fired_rxn_idx
 
     def _check_reactions_gpu_gho(self, gho_pos: "cp.ndarray") -> "cp.ndarray":
         """
