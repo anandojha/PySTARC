@@ -68,6 +68,29 @@ def _run(cmd: str, cwd: Path, step: str):
     return result
 
 
+def _is_valid_apbs_dime(d: int) -> bool:
+    """
+    Check whether d is a valid APBS multigrid dimension.
+
+    APBS multigrid solvers require dime - 1 to be expressible as
+    c * 2**(l+1) where c >= 1 is any positive integer and l >= 1 is
+    the number of multigrid levels (see apbs/src/generic/mgparm.c
+    function MGparm_check, line 267). This reduces to: dime must be
+    odd, dime >= 5, and (dime - 1) divisible by 4.
+
+    APBS recommends (but does not require) c * 2**5 + 1 when dime > 65
+    for best multigrid efficiency; if not satisfied APBS auto-adjusts
+    rather than failing. So this validator only enforces the hard rule.
+
+    Examples valid:   5, 9, 13, 17, 33, 65, 97, 129, 161, 193, 257,
+                      289, 321, 385, 449, 513, 577.
+    Examples invalid: 4, 100, 200, 256, 300, 400, 500.
+    """
+    if d < 5:
+        return False
+    return (d - 1) % 4 == 0
+
+
 def _check_tool(name: str):
     if not shutil.which(name):
         raise EnvironmentError(
@@ -103,12 +126,43 @@ def _compute_grid_params(
 ) -> Tuple[dict, dict]:
     """
     Compute two-level APBS mg-manual grid parameters.
-      Level 0 (coarse): dime=65, glen=128 -> spacing=2.0 Å
-      Level 1 (fine):   dime=161, glen=80  -> spacing=0.5 Å
-    PySTARC supports per-level dime via coarse_dime/fine_dime overrides.
-    If not set, both levels use the global 'dime' parameter.
+
+    Both levels use the global 'dime' parameter unless coarse_dime or
+    fine_dime overrides are passed.
+    - Level 0 (coarse): glen = 2 * fglen, bcfl=sdh
+    - Level 1 (fine):   glen from auto-formula or fglen_override, bcfl=map
+
+    Multigrid invariant: cglen > fglen strictly. APBS's bcfl=map step
+    (vpmg.c:bcfl_map) interpolates the coarse-level potential at every
+    fine-grid point; if any fine-grid point lies outside the coarse box,
+    APBS aborts with "fillcoChargeMap: fell off of potential map".
+
+    Design note: PySTARC uses a fixed 2-level focusing scheme, whereas
+    BrownDye2 uses adaptive multilevel focusing (number of levels chosen
+    by a boundary-potential criterion). At physiological ionic strength
+    (Debye length ~8 Å), the boundary potential at the coarse box edge
+    (~2x molecular extent) is essentially zero, so 2 levels is sufficient
+    and gives k_on values consistent with BD2. For very low ionic strength
+    or very highly charged complexes, this design may need revisiting.
+
+    APBS's VREDFRAC=0.25 (apbs/src/generic/vhal.h) defines the maximum
+    allowed grid spacing reduction per level. With same dime for both
+    levels, this means cglen/fglen must be in (1, 4]. The 2x choice sits
+    in the middle of this range and matches BrownDye2's per-level scaling.
+
     Returns: (coarse_params, fine_params)
     """
+    # APBS dime validation. APBS multigrid requires dime of form
+    # c * 2**(n+1) + 1; passing other values causes silent solver failures.
+    for d in (dime, coarse_dime, fine_dime):
+        if d > 0 and not _is_valid_apbs_dime(d):
+            raise ValueError(
+                f"Invalid APBS dime={d}. APBS multigrid requires dime to be "
+                f"odd, >= 5, with (dime - 1) divisible by 4 (i.e., of the form "
+                f"c * 2**(l+1) + 1 with c >= 1 a positive integer and l >= 1). "
+                f"Valid values: 5, 9, 13, 17, 33, 65, 97, 129, 161, 193, "
+                f"257, 289, 321, 385, 449, 513, 577."
+            )
     atoms = _read_pqr_atoms(pqr_path)
     if not atoms:
         raise ValueError(f"No non-GHO atoms in {pqr_path}")
@@ -116,10 +170,10 @@ def _compute_grid_params(
     radii = np.array([a[3] for a in atoms])
     gcent = coords.mean(axis=0).tolist()
     max_atom_radius = float(np.max(radii))
-    # Per-level dime (the reference uses different values for coarse vs fine)
+    # Per-level dime (overrides default to the global 'dime' parameter).
     _fine_dime = fine_dime if fine_dime > 0 else dime
     _coarse_dime = coarse_dime if coarse_dime > 0 else dime
-    # Level 1 (fine): covers molecular surface
+    # Level 1 (fine): covers molecular surface.
     if fglen_override > 0.0:
         fglen = fglen_override
     else:
@@ -128,11 +182,24 @@ def _compute_grid_params(
         fglen = (max_extent + 2.0 * (max_atom_radius + srad)) * 1.05
         fglen = max(fglen, 4.0 * (max_atom_radius + srad) * 1.025)
     fine_spacing = fglen / (_fine_dime - 1)
-    # Level 0 (coarse): covers wider region for boundary conditions
+    # Level 0 (coarse): covers wider region for boundary conditions.
+    # The 2x ratio satisfies APBS's multigrid invariant (cglen > fglen)
+    # and matches BrownDye2's per-level scaling. Same dime for both levels
+    # gives clean integer spacing ratio (coarse_spacing = 2 * fine_spacing)
+    # so bilinear interpolation in bcfl=map is well-conditioned.
     if cglen_override > 0.0:
         cglen = cglen_override
     else:
-        cglen = min(2.0 * fglen, float(_coarse_dime - 1))
+        cglen = 2.0 * fglen
+    # Multigrid invariant check. Catches both auto-formula bugs and
+    # user-supplied overrides that would crash APBS later in bcfl_map.
+    if cglen <= fglen:
+        raise ValueError(
+            f"Multigrid invariant violated: cglen={cglen} <= fglen={fglen}. "
+            f"APBS bcfl=map requires the coarse grid to strictly enclose "
+            f"the fine grid. Pass a larger cglen_override or use the auto "
+            f"formula (cglen=2*fglen)."
+        )
     coarse_spacing = cglen / (_coarse_dime - 1)
 
     coarse = {
@@ -206,6 +273,16 @@ def _write_apbs_input(
         f"  lpbe\n",
     ]
     if params["bcfl"] == "map" and prev_dx_name:
+        # bcfl=map requires the previous level's DX file to exist and be
+        # readable. APBS would otherwise crash mid-run with a less useful
+        # error. Failing early gives a clearer diagnostic.
+        prev_dx_path = work_dir / prev_dx_name
+        if not prev_dx_path.exists():
+            raise FileNotFoundError(
+                f"bcfl=map requires {prev_dx_path} to exist; the coarse "
+                f"APBS calculation must succeed before the fine one. "
+                f"Check the coarse APBS log for errors."
+            )
         lines += [
             f"  usemap pot 1\n",
             f"  bcfl map\n",

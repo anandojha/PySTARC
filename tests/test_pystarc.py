@@ -171,6 +171,8 @@ from pystarc.motion.adaptive_time_step import (
     max_time_step,
     reaction_time_step,
 )
+from pystarc.pipeline.run_apbs import _is_valid_apbs_dime, _compute_grid_params, _write_apbs_input
+from pystarc.structures.pqr_io import PQRRecord, parse_pqr, parse_pqr_records, write_pqr
 from pystarc.simulation.step_near_surface import _inv_erf, step_near_absorbing_surface
 from pystarc.simulation.we_simulator import WEParameters, WEResult, WETrajectory
 from pystarc.molsystem.system_state import Fate, SystemState, TrajectoryResult
@@ -183,7 +185,6 @@ from pystarc.pipeline.geometry import AtomRecord as GeomAtomRecord
 from pystarc.pipeline.geometry import parse_pqr as geom_parse_pqr
 from pystarc.simulation.gpu_batch_simulator import GPUBatchResult
 from pystarc.forces.multipole_farfield import MultipoleExpansion
-from pystarc.structures.pqr_io import PQRRecord, parse_pqr, parse_pqr_records, write_pqr
 from pystarc.pipeline.geometry import MoleculeGeometry
 from pystarc.pipeline.output_writer import write_all
 from pystarc.global_defs import constants as C
@@ -201,7 +202,6 @@ import math
 import json
 import csv
 import os
-
 
 class TestConstants:
     def test_temperature(self):
@@ -8566,3 +8566,195 @@ class TestPqrFormatVariations:
         recs = self._parse_single_line(line)
         assert len(recs) == 1
         assert recs[0].element == ""
+
+# Helpers
+def _make_pqr(tmp_path: Path, n_atoms: int = 5, spread: float = 10.0) -> Path:
+    """Create a minimal valid PQR file for unit testing."""
+    pqr_path = tmp_path / "test.pqr"
+    lines = []
+    for i in range(n_atoms):
+        x = (i - n_atoms / 2) * spread / n_atoms
+        y = 0.0
+        z = 0.0
+        q = 0.0
+        r = 1.5
+        lines.append(
+            f"ATOM  {i+1:5d}  C   ALA A{i+1:4d}    "
+            f"{x:8.3f}{y:8.3f}{z:8.3f}{q:8.4f}{r:7.4f}\n"
+        )
+    pqr_path.write_text("".join(lines))
+    return pqr_path
+
+# Dime validator
+def test_is_valid_apbs_dime_accepts_canonical_values():
+    """The standard APBS multigrid dimensions should all validate."""
+    valid = [5, 9, 13, 17, 33, 65, 97, 129, 161, 193, 257, 289, 321,
+             385, 449, 513, 577]
+    for d in valid:
+        assert _is_valid_apbs_dime(d), f"dime={d} should be valid"
+
+def test_is_valid_apbs_dime_rejects_non_canonical_values():
+    """Values not satisfying the multigrid form should be rejected."""
+    invalid = [0, 1, 2, 3, 4, 100, 128, 200, 256, 300, 400, 500]
+    for d in invalid:
+        assert not _is_valid_apbs_dime(d), f"dime={d} should be rejected"
+
+def test_compute_grid_params_rejects_invalid_dime(tmp_path):
+    """Passing an invalid dime should raise ValueError with a useful message."""
+    pqr = _make_pqr(tmp_path)
+    with pytest.raises(ValueError, match="Invalid APBS dime"):
+        _compute_grid_params(pqr, srad=1.5, debye_length=8.0, dime=300)
+
+def test_compute_grid_params_accepts_common_dimes(tmp_path):
+    """Common production dime values (257, 289, 321) must work."""
+    pqr = _make_pqr(tmp_path)
+    for d in (257, 289, 321):
+        coarse, fine = _compute_grid_params(
+            pqr, srad=1.5, debye_length=8.0, dime=d
+        )
+        assert coarse["dime"][0] == d
+        assert fine["dime"][0] == d
+
+# Multigrid invariant: coarse strictly encloses fine
+def test_auto_cglen_is_strictly_greater_than_fglen(tmp_path):
+    """For all reasonable fglen values, the auto cglen must enclose fglen."""
+    pqr = _make_pqr(tmp_path)
+    for fglen, dime in [(192.0, 257), (320.0, 289), (352.0, 321), (400.0, 321)]:
+        coarse, fine = _compute_grid_params(
+            pqr, srad=1.5, debye_length=8.0, dime=dime,
+            fglen_override=fglen,
+        )
+        cglen = coarse["glen"][0]
+        actual_fglen = fine["glen"][0]
+        assert cglen > actual_fglen, (
+            f"cglen={cglen} not strictly greater than fglen={actual_fglen}"
+        )
+        assert actual_fglen == fglen, "fglen_override should be honored"
+
+def test_auto_cglen_uses_2x_ratio(tmp_path):
+    """Documented behavior: auto cglen = 2 * fglen for clean spacing ratios."""
+    pqr = _make_pqr(tmp_path)
+    for fglen in (100.0, 200.0, 352.0, 500.0):
+        coarse, _ = _compute_grid_params(
+            pqr, srad=1.5, debye_length=8.0, dime=257,
+            fglen_override=fglen,
+        )
+        assert coarse["glen"][0] == 2.0 * fglen
+
+def test_compute_grid_params_rejects_too_small_cglen_override(tmp_path):
+    """User-supplied cglen <= fglen must be rejected at input time."""
+    pqr = _make_pqr(tmp_path)
+    with pytest.raises(ValueError, match="Multigrid invariant violated"):
+        _compute_grid_params(
+            pqr, srad=1.5, debye_length=8.0, dime=257,
+            fglen_override=300.0,
+            cglen_override=200.0,
+        )
+
+def test_compute_grid_params_accepts_valid_cglen_override(tmp_path):
+    """User-supplied cglen > fglen should be honored."""
+    pqr = _make_pqr(tmp_path)
+    coarse, fine = _compute_grid_params(
+        pqr, srad=1.5, debye_length=8.0, dime=257,
+        fglen_override=300.0,
+        cglen_override=600.0,
+    )
+    assert coarse["glen"][0] == 600.0
+    assert fine["glen"][0] == 300.0
+
+def test_auto_path_with_no_overrides_is_self_consistent(tmp_path):
+    """The fully-auto code path should produce coarse > fine for any molecule."""
+    pqr = _make_pqr(tmp_path, n_atoms=20, spread=80.0)
+    coarse, fine = _compute_grid_params(
+        pqr, srad=1.5, debye_length=8.0, dime=257
+    )
+    assert coarse["glen"][0] > fine["glen"][0]
+
+# bcfl=map requires the previous-level DX file
+def test_write_apbs_input_with_missing_prev_dx_raises(tmp_path):
+    """bcfl=map with a missing prev DX file should raise FileNotFoundError."""
+    pqr = _make_pqr(tmp_path)
+    fine_params = {
+        "spacing": 0.5,
+        "dime": [129, 129, 129],
+        "glen": [64.0, 64.0, 64.0],
+        "gcent": [0.0, 0.0, 0.0],
+        "label": "fine",
+        "bcfl": "map",
+    }
+    with pytest.raises(FileNotFoundError, match="bcfl=map requires"):
+        _write_apbs_input(
+            pqr_path=pqr,
+            out_dx_name="out.dx",
+            params=fine_params,
+            prev_dx_name="missing_coarse.dx",
+            work_dir=tmp_path,
+            inp_name="test.in",
+            is_born=False,
+            ion_conc=0.150,
+            dielectric_in=4.0,
+            dielectric_out=78.0,
+            srad=1.5,
+            temp=298.15,
+        )
+
+def test_write_apbs_input_with_existing_prev_dx_succeeds(tmp_path):
+    """bcfl=map with an existing prev DX file should write the input cleanly."""
+    pqr = _make_pqr(tmp_path)
+    coarse_dx = tmp_path / "coarse.dx"
+    coarse_dx.write_text("# fake DX file for testing\n")
+    fine_params = {
+        "spacing": 0.5,
+        "dime": [129, 129, 129],
+        "glen": [64.0, 64.0, 64.0],
+        "gcent": [0.0, 0.0, 0.0],
+        "label": "fine",
+        "bcfl": "map",
+    }
+    inp_path = _write_apbs_input(
+        pqr_path=pqr,
+        out_dx_name="out.dx",
+        params=fine_params,
+        prev_dx_name="coarse.dx",
+        work_dir=tmp_path,
+        inp_name="test.in",
+        is_born=False,
+        ion_conc=0.150,
+        dielectric_in=4.0,
+        dielectric_out=78.0,
+        srad=1.5,
+        temp=298.15,
+    )
+    assert inp_path.exists()
+    contents = inp_path.read_text()
+    assert "bcfl map" in contents
+    assert "usemap pot 1" in contents
+
+def test_write_apbs_input_with_bcfl_sdh_does_not_require_prev_dx(tmp_path):
+    """bcfl=sdh does not need a prev DX file and should work without one."""
+    pqr = _make_pqr(tmp_path)
+    coarse_params = {
+        "spacing": 1.0,
+        "dime": [129, 129, 129],
+        "glen": [128.0, 128.0, 128.0],
+        "gcent": [0.0, 0.0, 0.0],
+        "label": "coarse",
+        "bcfl": "sdh",
+    }
+    inp_path = _write_apbs_input(
+        pqr_path=pqr,
+        out_dx_name="out.dx",
+        params=coarse_params,
+        prev_dx_name=None,
+        work_dir=tmp_path,
+        inp_name="test.in",
+        is_born=False,
+        ion_conc=0.150,
+        dielectric_in=4.0,
+        dielectric_out=78.0,
+        srad=1.5,
+        temp=298.15,
+    )
+    assert inp_path.exists()
+    contents = inp_path.read_text()
+    assert "bcfl sdh" in contents
