@@ -12,7 +12,7 @@
 
 </pre>
 
-GPU-accelerated rigid-body Brownian dynamics for computing bimolecular association rate constants (k<sub>on</sub>)
+GPU-accelerated rigid-body and flexible chain Brownian dynamics for computing bimolecular association rate constants (k<sub>on</sub>)
 
 <br>
 
