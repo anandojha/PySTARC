@@ -253,11 +253,21 @@ class DXGrid:
         """
         pts = np.asarray(points, dtype=float)  # (N,3)
         idx = (pts - self.origin) * self._inv_dx  # (N,3) fractional
-        i0 = np.floor(idx[:, 0]).astype(int)
-        j0 = np.floor(idx[:, 1]).astype(int)
-        k0 = np.floor(idx[:, 2]).astype(int)
+        # Defensive NaN/inf handling. Upstream BD propagators can transiently
+        # produce non-finite chain positions when WCA forces are large;
+        # those positions correspond to non-physical states that the
+        # caller will reject on the next step. We pre-filter non-finite
+        # entries so the cast itself is clean (no RuntimeWarning spam in
+        # SLURM logs), and the valid mask below additionally catches
+        # out-of-bounds indices.
+        finite_mask = np.isfinite(idx).all(axis=1)
+        idx_safe = np.where(finite_mask[:, None], idx, 0.0)
+        with np.errstate(invalid="ignore"):
+            i0 = np.floor(idx_safe[:, 0]).astype(int)
+            j0 = np.floor(idx_safe[:, 1]).astype(int)
+            k0 = np.floor(idx_safe[:, 2]).astype(int)
         nx, ny, nz = self.data.shape
-        valid = (
+        valid = finite_mask & (
             (i0 >= 0)
             & (i0 < nx - 1)
             & (j0 >= 0)
@@ -265,9 +275,12 @@ class DXGrid:
             & (k0 >= 0)
             & (k0 < nz - 1)
         )
-        fx = idx[:, 0] - i0
-        fy = idx[:, 1] - j0
-        fz = idx[:, 2] - k0
+        # Use idx_safe (zero-padded at non-finite positions) so fx/fy/fz
+        # remain finite; non-finite entries are masked out below anyway
+        # via the `valid` mask, so their numeric value doesn't matter.
+        fx = idx_safe[:, 0] - i0
+        fy = idx_safe[:, 1] - j0
+        fz = idx_safe[:, 2] - k0
         out = np.zeros(len(pts))
         v = valid
         d = self.data

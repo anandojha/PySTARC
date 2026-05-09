@@ -113,6 +113,11 @@ def run(cfg: PySTARCConfig):
         ligand_pqr = W / "ligand.pqr"
         print("[3] PQR files ready (pre-computed).")
     else:
+        print("\n[1] Extracting ligand and receptor from PDB ...")
+        # extract() returns (receptor_pdb, ligand_pdb); only ligand_pdb is
+        # consumed downstream because build_complex below takes pdb_path=cfg.pdb
+        # directly. Receptor side is discarded.
+        _receptor_pdb, ligand_pdb = extract(cfg.pdb, cfg.ligand_resname, W)
         print("\n[2] Parameterizing ligand with AmberTools ...")
         mol2_path, frcmod_path, lib_path = parameterize(
             ligand_pdb=ligand_pdb,
@@ -224,9 +229,8 @@ def run(cfg: PySTARCConfig):
     # per-reaction grouping and state labels from the XML file. Otherwise,
     # fall back to the flattened-pairs path (all pairs in one stage).
     reactions = []
-    _use_state_machine = (
-        getattr(cfg, "state_machine_reactions", False)
-        and bool(cfg.rxns_xml)
+    _use_state_machine = getattr(cfg, "state_machine_reactions", False) and bool(
+        cfg.rxns_xml
     )
     if _use_state_machine:
         rxn_groups, first_state = _parse_rxns_xml_reaction_groups(cfg.rxns_xml)

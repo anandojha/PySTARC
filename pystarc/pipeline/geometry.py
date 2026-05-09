@@ -95,6 +95,7 @@ def parse_pqr(pqr_path: Path) -> List[AtomRecord]:
     prior geometry-module behavior.
     """
     from pystarc.structures.pqr_io import parse_pqr_records
+
     records = parse_pqr_records(pqr_path)
     if records:
         return [
@@ -546,14 +547,10 @@ def _parse_rxns_xml_reaction_groups(rxns_path):
             sb_node = reaction.find("state_before")
             sa_node = reaction.find("state_after")
             state_before = (
-                sb_node.text.strip()
-                if (sb_node is not None and sb_node.text)
-                else None
+                sb_node.text.strip() if (sb_node is not None and sb_node.text) else None
             )
             state_after = (
-                sa_node.text.strip()
-                if (sa_node is not None and sa_node.text)
-                else None
+                sa_node.text.strip() if (sa_node is not None and sa_node.text) else None
             )
             # Criterion (pair list + n_needed)
             crit = reaction.find("criterion")

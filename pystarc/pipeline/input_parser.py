@@ -36,6 +36,60 @@ class OutputConfig:
 
 
 @dataclass
+class ChainConfig:
+    """Chain BD-specific configuration.
+
+    When PySTARCConfig.chain is set (not None), run_pystarc.py
+    dispatches to the chain BD pipeline instead of the rigid-body
+    pipeline. Chain BD reuses common PySTARCConfig fields
+    (n_trajectories, seed, max_steps, dt, temperature, work_dir, gpu,
+    desolvation_alpha, bd_milestone_radius, convergence_*) and adds
+    chain-specific fields here. Rigid-body input.xml files (without
+    a <chain> block) keep working unchanged.
+    """
+
+    # Inputs
+    chain_json: str = ""  # path to chain.json (topology + initial positions)
+    reaction_pairs_json: str = (
+        ""  # path to reaction_pairs.json: list of [target_atom_idx, chain_atom_idx, distance_A]
+    )
+    target_grid_dx: str = ""  # path to electrostatic DX grid (or "" -> no field)
+    born_grid_dx: str = ""  # path to Born desolvation DX grid (or "" -> no Born)
+
+    # Geometry
+    r_escape: float = 0.0  # escape sphere radius (A); 0 -> 1.1 * bd_milestone_radius
+    reaction_n_needed: int = 3  # minimum contact pairs to satisfy for reaction
+
+    # Inner integration (internal-coordinate dynamics within each outer step)
+    dt_chain: float = 0.05  # inner internal-coordinate timestep (ps)
+    chain_steps_per_outer: int = 4  # number of inner steps per outer rigid-body step
+    n_equilibration_steps: int = (
+        0  # pre-equilibration steps for chain internal coords (0 = none)
+    )
+
+    # Diffusion mode
+    auto_diffusion: bool = False  # True -> RPY tensors from geometry; False -> scalar D
+    D_trans: float = 0.0  # translational D (A^2/ps); 0 -> default 0.1
+    D_rot: float = 0.0  # rotational D (rad^2/ps); 0 -> default 0.01
+
+    # Soft repulsion (WCA)
+    use_soft_repulsion: bool = False  # True -> WCA chain-target steering layer
+    soft_repulsion_eps: float = 1.0  # WCA epsilon (kBT)
+
+    # GB self-Born / generalized Born
+    use_self_born: bool = False  # True -> add chain-internal GB forces
+    gb_eps_in: float = 1.0  # interior dielectric (vacuum)
+    gb_eps_out: float = 78.5  # exterior dielectric (water at 300 K)
+    gb_obc_alpha: float = 1.0  # OBC2 set-II coefficient
+    gb_obc_beta: float = 0.8  # OBC2 set-II coefficient
+    gb_obc_gamma: float = 4.85  # OBC2 set-II coefficient
+    coffdrop_active: bool = False  # True -> diagonal-only GB (Path B with COFFDROP)
+
+    # Parallelism
+    n_workers: int = 1  # parallel workers for trajectory dispatch (1 = serial)
+
+
+@dataclass
 class PySTARCConfig:
     # System
     pdb: Path = None  # input PDB - optional when receptor_pqr+ligand_pqr provided
@@ -99,7 +153,9 @@ class PySTARCConfig:
     r_hydro_rec: float = 0.0  # receptor hydro radius (0=compute from PQR)
     r_hydro_lig: float = 0.0  # ligand hydro radius   (0=compute from PQR)
     minimum_core_dt: float = 0.0  # minimum_core_dt (0=no floor)
-    minimum_core_reaction_dt: float = 0.0  # dt floor near reaction surface (0=no floor; SEEKR2 default 0.05)
+    minimum_core_reaction_dt: float = (
+        0.0  # dt floor near reaction surface (0=no floor; SEEKR2 default 0.05)
+    )
     max_dt: float = 0.0  # max_dt ceiling (0=no cap)
     # Physics extensions
     overlap_check: bool = True  # prevent ligand entering receptor volume
@@ -112,6 +168,9 @@ class PySTARCConfig:
     convergence_tol: float = 0.05  # relative SE threshold (0.05 = 5%)
     # Outputs
     outputs: OutputConfig = None
+    # Chain BD configuration. When present (not None), the simulation
+    # runs in chain BD mode instead of rigid-body. See ChainConfig above.
+    chain: Optional[ChainConfig] = None
 
     def __post_init__(self):
         if self.outputs is None:
@@ -124,11 +183,69 @@ class PySTARCConfig:
 
     def validate(self):
         """Check required inputs exist and values are sane."""
-        has_pqrs = bool(self.receptor_pqr and self.ligand_pqr)
-        if not has_pqrs and self.pdb is None:
-            raise ValueError(
-                "Either <pdb> or both <receptor_pqr> and <ligand_pqr> must be specified"
-            )
+        if self.chain is not None:
+            # Chain BD mode: chain_json (topology) and receptor_pqr (target)
+            # are the required inputs. ligand_pqr is not used because the
+            # flexible chain plays the role of the ligand.
+            if not self.chain.chain_json:
+                raise ValueError("<chain><chain_json> is required in chain BD mode")
+            if not self.receptor_pqr:
+                raise ValueError(
+                    "<receptor_pqr> is required in chain BD mode (target structure)"
+                )
+            # Sanity-check chain BD numerics: bad values silently produce
+            # garbage results (e.g. dt_chain=0 -> zero noise -> static chain;
+            # gb_eps_in=0 -> divide-by-zero in OBC2 self-Born; negative
+            # diffusion -> NaN positions). Catch them at parse time.
+            cc = self.chain
+            if cc.dt_chain <= 0:
+                raise ValueError(f"chain.dt_chain must be > 0, got {cc.dt_chain}")
+            if cc.chain_steps_per_outer < 1:
+                raise ValueError(
+                    f"chain.chain_steps_per_outer must be >= 1, got "
+                    f"{cc.chain_steps_per_outer}"
+                )
+            if cc.n_equilibration_steps < 0:
+                raise ValueError(
+                    f"chain.n_equilibration_steps must be >= 0, got "
+                    f"{cc.n_equilibration_steps}"
+                )
+            if cc.D_trans < 0:
+                raise ValueError(f"chain.D_trans must be >= 0, got {cc.D_trans}")
+            if cc.D_rot < 0:
+                raise ValueError(f"chain.D_rot must be >= 0, got {cc.D_rot}")
+            if cc.r_escape < 0:
+                raise ValueError(
+                    f"chain.r_escape must be >= 0 (0 = default), got " f"{cc.r_escape}"
+                )
+            if cc.reaction_n_needed < 1:
+                raise ValueError(
+                    f"chain.reaction_n_needed must be >= 1, got "
+                    f"{cc.reaction_n_needed}"
+                )
+            if cc.soft_repulsion_eps < 0:
+                raise ValueError(
+                    f"chain.soft_repulsion_eps must be >= 0, got "
+                    f"{cc.soft_repulsion_eps}"
+                )
+            if cc.gb_eps_in <= 0:
+                raise ValueError(f"chain.gb_eps_in must be > 0, got {cc.gb_eps_in}")
+            if cc.gb_eps_out <= 0:
+                raise ValueError(f"chain.gb_eps_out must be > 0, got {cc.gb_eps_out}")
+            if cc.gb_eps_in > cc.gb_eps_out:
+                raise ValueError(
+                    f"chain.gb_eps_in ({cc.gb_eps_in}) must be <= "
+                    f"chain.gb_eps_out ({cc.gb_eps_out}); interior "
+                    f"dielectric is conventionally smaller than exterior."
+                )
+            if cc.n_workers < 1:
+                raise ValueError(f"chain.n_workers must be >= 1, got {cc.n_workers}")
+        else:
+            has_pqrs = bool(self.receptor_pqr and self.ligand_pqr)
+            if not has_pqrs and self.pdb is None:
+                raise ValueError(
+                    "Either <pdb> or both <receptor_pqr> and <ligand_pqr> must be specified"
+                )
         if self.pdb is not None and not Path(self.pdb).exists():
             raise FileNotFoundError(f"PDB not found: {self.pdb}")
         if self.n_trajectories < 1:
@@ -223,7 +340,9 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
         r_hydro_rec=get("r_hydro_rec", default=0.0, cast=float),
         r_hydro_lig=get("r_hydro_lig", default=0.0, cast=float),
         minimum_core_dt=get("minimum_core_dt", default=0.0, cast=float),
-        minimum_core_reaction_dt=get("minimum_core_reaction_dt", default=0.0, cast=float),
+        minimum_core_reaction_dt=get(
+            "minimum_core_reaction_dt", default=0.0, cast=float
+        ),
         max_dt=get("max_dt", default=0.0, cast=float),
         overlap_check=get("overlap_check", default=True, cast=bool),
         multipole_fallback=get("multipole_fallback", default=True, cast=bool),
@@ -263,6 +382,45 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
             pose_clusters=oget("pose_clusters", True, bool),
             save_interval=oget("save_interval", 10, int),
         )
+    # Parse <chain> block (chain BD mode). When present, dispatches the
+    # simulation to the chain BD pipeline. Optional and additive:
+    # rigid-body input.xml files keep cfg.chain = None unchanged.
+    chain_el = root.find("chain")
+    if chain_el is not None:
+
+        def cget(tag, default=None, cast=str):
+            el = chain_el.find(tag)
+            if el is None or el.text is None:
+                return default
+            text = el.text.strip()
+            if cast is bool:
+                return text.lower() in ("true", "1", "yes")
+            return cast(text)
+
+        cfg.chain = ChainConfig(
+            chain_json=cget("chain_json", default="", cast=str),
+            reaction_pairs_json=cget("reaction_pairs_json", default="", cast=str),
+            target_grid_dx=cget("target_grid_dx", default="", cast=str),
+            born_grid_dx=cget("born_grid_dx", default="", cast=str),
+            r_escape=cget("r_escape", default=0.0, cast=float),
+            reaction_n_needed=cget("reaction_n_needed", default=3, cast=int),
+            auto_diffusion=cget("auto_diffusion", default=False, cast=bool),
+            D_trans=cget("D_trans", default=0.0, cast=float),
+            D_rot=cget("D_rot", default=0.0, cast=float),
+            use_soft_repulsion=cget("use_soft_repulsion", default=False, cast=bool),
+            soft_repulsion_eps=cget("soft_repulsion_eps", default=1.0, cast=float),
+            use_self_born=cget("use_self_born", default=False, cast=bool),
+            gb_eps_in=cget("gb_eps_in", default=1.0, cast=float),
+            gb_eps_out=cget("gb_eps_out", default=78.5, cast=float),
+            gb_obc_alpha=cget("gb_obc_alpha", default=1.0, cast=float),
+            gb_obc_beta=cget("gb_obc_beta", default=0.8, cast=float),
+            gb_obc_gamma=cget("gb_obc_gamma", default=4.85, cast=float),
+            coffdrop_active=cget("coffdrop_active", default=False, cast=bool),
+            n_workers=cget("n_workers", default=1, cast=int),
+            dt_chain=cget("dt_chain", default=0.05, cast=float),
+            chain_steps_per_outer=cget("chain_steps_per_outer", default=4, cast=int),
+            n_equilibration_steps=cget("n_equilibration_steps", default=0, cast=int),
+        )
     return cfg.validate()
 
 
@@ -277,7 +435,7 @@ def write_template(path: str | Path = "pystarc_input.xml"):
 -->
 <pystarc_input>
 
-    <!-- -- System ---------------------------------------- -->
+    <!-- System -->
 
     <!-- Path to PDB file containing protein + ligand together -->
     <pdb>hostguest.pdb</pdb>
@@ -291,7 +449,7 @@ def write_template(path: str | Path = "pystarc_input.xml"):
     <!-- Directory where all output files will be written -->
     <work_dir>bd_sims/</work_dir>
 
-    <!-- -- Force field ------------------------------------ -->
+    <!-- Force field -->
 
     <!-- Protein force field: ff14SB, ff19SB, ff03 -->
     <protein_ff>ff14SB</protein_ff>
@@ -299,7 +457,7 @@ def write_template(path: str | Path = "pystarc_input.xml"):
     <!-- Ligand force field: gaff, gaff2 -->
     <ligand_ff>gaff</ligand_ff>
 
-    <!-- -- APBS electrostatics ---------------------------- -->
+    <!-- APBS electrostatics -->
 
     <!-- Fine grid spacing in Angstrom (default 0.5) -->
     <apbs_grid_spacing>0.5</apbs_grid_spacing>
@@ -307,7 +465,7 @@ def write_template(path: str | Path = "pystarc_input.xml"):
     <!-- Coarse grid spacing in Angstrom (default 2.0) -->
     <apbs_coarse_spacing>2.0</apbs_coarse_spacing>
 
-    <!-- -- BD simulation ---------------------------------- -->
+    <!-- BD simulation -->
 
     <!-- Number of BD trajectories -->
     <n_trajectories>10000</n_trajectories>
@@ -324,7 +482,7 @@ def write_template(path: str | Path = "pystarc_input.xml"):
     <!-- Confidence level for Wilson CI on k_on (0.95 = 95%) -->
     <confidence_interval>0.95</confidence_interval>
 
-    <!-- -- Ghost atoms ------------------------------------- -->
+    <!-- Ghost atoms -->
     <!--
     auto   = detect GHO atoms from PQR files automatically
              (looks for atoms with name GHO or radius=0)
@@ -337,6 +495,49 @@ def write_template(path: str | Path = "pystarc_input.xml"):
         </ghost_atoms>
     -->
     <ghost_atoms>auto</ghost_atoms>
+
+    <!-- Chain BD mode -->
+    <!--
+    When the <chain> block is present, the simulation runs as
+    flexible chain BD (e.g. peptide-protein association) instead
+    of rigid-body. The chain plays the role of the ligand;
+    receptor_pqr is the target structure, and chain_json provides
+    the chain topology and initial atom positions.
+
+    Required fields:
+      <chain_json>          path to chain JSON (topology + positions)
+
+    Recommended fields:
+      <reaction_pairs_json> path to reaction_pairs.json (list of
+                            [target_atom_idx, chain_atom_idx, dist_A])
+
+    Optional fields:
+      <target_grid_dx>      APBS electrostatic potential DX file
+      <born_grid_dx>        APBS Born desolvation DX file
+      <r_escape>            escape sphere radius (A); 0 = 2 * bd_milestone_radius
+      <reaction_n_needed>   minimum contact pairs to satisfy (default 3)
+      <auto_diffusion>      true = RPY tensors from chain geometry
+      <D_trans>             translational D used when auto_diffusion is false
+      <D_rot>               rotational D used when auto_diffusion is false
+      <use_soft_repulsion>  WCA chain-target steering layer
+      <soft_repulsion_eps>  WCA epsilon (kBT)
+      <n_workers>           parallel workers for trajectory dispatch
+
+    Example (uncomment to enable):
+
+    <chain>
+        <chain_json>chain.json</chain_json>
+        <reaction_pairs_json>reaction_pairs.json</reaction_pairs_json>
+        <target_grid_dx>apbs_output/target0.dx</target_grid_dx>
+        <born_grid_dx>apbs_output/target0_born.dx</born_grid_dx>
+        <r_escape>120.0</r_escape>
+        <reaction_n_needed>3</reaction_n_needed>
+        <auto_diffusion>true</auto_diffusion>
+        <use_soft_repulsion>false</use_soft_repulsion>
+        <soft_repulsion_eps>1.0</soft_repulsion_eps>
+        <n_workers>1</n_workers>
+    </chain>
+    -->
 
 </pystarc_input>
 """

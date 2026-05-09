@@ -114,62 +114,88 @@ def main():
         sys.stdout = _Tee(original_stdout, log_f)
         _wall_t0 = time.time()
         try:
-            result = run(cfg)
-            _wall_elapsed = time.time() - _wall_t0
-            # Write summary footer
-            _footer = [
-                "",
-                "=" * 64,
-                "  Run summary",
-                "=" * 64,
-                f"  Host           : {os.uname().nodename}",
-                f"  GPU            : {_gpu_name}",
-                f"  Trajectories   : {cfg.n_trajectories:,}",
-                f"  Reacted        : {result.n_reacted:,}",
-                f"  Escaped        : {result.n_escaped:,}",
-                f"  Max-steps      : {result.n_max_steps:,}",
-                f"  P_rxn          : {result.reaction_probability:.6f}",
-            ]
-            # Get k_on from results.json if available
-            rj_path = work_dir / "results.json"
-            if rj_path.exists():
-                rj = json.loads(rj_path.read_text())
-                _footer.append(f"  k_on           : {rj['k_on']:.4e} M-1 s-1")
-                _footer.append(
-                    f"  95% CI         : [{rj['k_on_low']:.4e}, {rj['k_on_high']:.4e}]"
-                )
-                # Formatted with error: (value ± error) × 10^n
-                _kon = rj["k_on"]
-                _kon_err = (rj["k_on_high"] - rj["k_on_low"]) / 2.0
-                if _kon > 0:
-                    _exp = int(math.floor(math.log10(_kon)))
-                    _man = _kon / 10**_exp
-                    _man_err = _kon_err / 10**_exp
+            if cfg.chain is not None:
+                # Chain BD mode: invoke chain BD orchestrator and print
+                # a minimal summary. Stage 2 will expand the chain output
+                # writer to produce convergence/k_on metrics matching the
+                # rigid-body footer below.
+                from pystarc.pipeline.chain_pipeline import run_chain
+
+                run_chain(cfg, input_xml_path=xml_path)
+                _wall_elapsed = time.time() - _wall_t0
+                _footer = [
+                    "",
+                    "=" * 64,
+                    "  Chain BD run summary",
+                    "=" * 64,
+                    f"  Host           : {os.uname().nodename}",
+                    f"  GPU            : {_gpu_name}",
+                    f"  Trajectories   : {cfg.n_trajectories:,}",
+                    f"  Total wall time: {_wall_elapsed:.1f} s",
+                    f"  Output dir     : {(Path(cfg.work_dir) / 'bd_1').resolve()}",
+                    f"  Finished       : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    "=" * 64,
+                ]
+                for line in _footer:
+                    print(line)
+            else:
+                # Rigid-body mode (the original PySTARC pipeline).
+                result = run(cfg)
+                _wall_elapsed = time.time() - _wall_t0
+                # Write summary footer
+                _footer = [
+                    "",
+                    "=" * 64,
+                    "  Run summary",
+                    "=" * 64,
+                    f"  Host           : {os.uname().nodename}",
+                    f"  GPU            : {_gpu_name}",
+                    f"  Trajectories   : {cfg.n_trajectories:,}",
+                    f"  Reacted        : {result.n_reacted:,}",
+                    f"  Escaped        : {result.n_escaped:,}",
+                    f"  Max-steps      : {result.n_max_steps:,}",
+                    f"  P_rxn          : {result.reaction_probability:.6f}",
+                ]
+                # Get k_on from results.json if available
+                rj_path = work_dir / "results.json"
+                if rj_path.exists():
+                    rj = json.loads(rj_path.read_text())
+                    _footer.append(f"  k_on           : {rj['k_on']:.4e} M-1 s-1")
                     _footer.append(
-                        f"  k_on (± error) : ({_man:.1f} ± {_man_err:.1f}) x 10^{_exp} M-1 s-1"
+                        f"  95% CI         : [{rj['k_on_low']:.4e}, {rj['k_on_high']:.4e}]"
                     )
-                _footer.append(f"  k_b            : {rj['k_b']:.4f} A3/ps")
-            _footer += [
-                f"  BD wall time   : {result.elapsed_sec:.1f} s",
-                f"  Total wall time: {_wall_elapsed:.1f} s",
-                f"  BD steps/sec   : {result.steps_per_sec:,.0f}",
-                f"  Finished       : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                "=" * 64,
-            ]
-            for line in _footer:
-                print(line)
-            # Convergence analysis
-            if cfg.convergence_check:
-                _k_b = rj.get("k_b", 0.0) if rj_path.exists() else 0.0
-                _conv = analyse_convergence(
-                    n_reacted=result.n_reacted,
-                    n_escaped=result.n_escaped,
-                    k_b=_k_b,
-                    tol=cfg.convergence_tol,
-                    work_dir=str(work_dir),
-                )
-                print_convergence(_conv)
-                save_convergence(_conv, work_dir=str(work_dir))
+                    # Formatted with error: (value ± error) × 10^n
+                    _kon = rj["k_on"]
+                    _kon_err = (rj["k_on_high"] - rj["k_on_low"]) / 2.0
+                    if _kon > 0:
+                        _exp = int(math.floor(math.log10(_kon)))
+                        _man = _kon / 10**_exp
+                        _man_err = _kon_err / 10**_exp
+                        _footer.append(
+                            f"  k_on (± error) : ({_man:.1f} ± {_man_err:.1f}) x 10^{_exp} M-1 s-1"
+                        )
+                    _footer.append(f"  k_b            : {rj['k_b']:.4f} A3/ps")
+                _footer += [
+                    f"  BD wall time   : {result.elapsed_sec:.1f} s",
+                    f"  Total wall time: {_wall_elapsed:.1f} s",
+                    f"  BD steps/sec   : {result.steps_per_sec:,.0f}",
+                    f"  Finished       : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    "=" * 64,
+                ]
+                for line in _footer:
+                    print(line)
+                # Convergence analysis
+                if cfg.convergence_check:
+                    _k_b = rj.get("k_b", 0.0) if rj_path.exists() else 0.0
+                    _conv = analyse_convergence(
+                        n_reacted=result.n_reacted,
+                        n_escaped=result.n_escaped,
+                        k_b=_k_b,
+                        tol=cfg.convergence_tol,
+                        work_dir=str(work_dir),
+                    )
+                    print_convergence(_conv)
+                    save_convergence(_conv, work_dir=str(work_dir))
         except Exception as e:
             sys.stdout._log_file.write(f"\nERROR: {e}\n")
             raise

@@ -38,7 +38,26 @@ try:
     from numba import njit as _njit
     import numba
 except ImportError:
-    _njit = None
+    # Defensive fallback: numba may be missing or version-incompatible.
+    # Without this stub, line `@_njit(cache=True, ...)` in the kernels
+    # below would crash with TypeError at module import. The stub
+    # decorator returns the function unchanged, letting the module load
+    # so callers can fall back to the pure-NumPy code path. The actual
+    # production environment has numba; this only matters in test
+    # sandboxes, partial installs, or fresh clusters where numba is not
+    # yet available.
+    def _njit(*args, **kwargs):
+        # Two call patterns to support:
+        #   1. @_njit  (no parens) -> args = (function,), return function
+        #   2. @_njit(cache=True, fastmath=True) -> return decorator
+        if len(args) == 1 and callable(args[0]) and not kwargs:
+            return args[0]
+
+        def _decorator(fn):
+            return fn
+
+        return _decorator
+
     numba = None
 try:
     import cupy as cp
@@ -55,6 +74,10 @@ def _detect_backend() -> str:
     except Exception:
         pass
     try:
+        # The import is the test; ImportError below means numba is
+        # unavailable and we fall through to the numpy fallback.
+        import numba  # noqa: F401
+
         return "numba"
     except ImportError:
         pass

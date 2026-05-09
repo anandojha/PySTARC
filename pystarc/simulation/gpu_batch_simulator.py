@@ -23,6 +23,7 @@ from __future__ import annotations
 from pystarc.simulation.nam_simulator import NAMParameters, SimulationResult
 from pystarc.molsystem.system_state import Fate, TrajectoryResult
 from pystarc.lib.numerical import romberg_integrate
+from pystarc.global_defs.constants import VACUUM_PERMITTIVITY_KBT
 from typing import List, Optional, Tuple, Dict
 from scipy.special import erf as scipy_erf
 from scipy.special import erf, erfc
@@ -236,17 +237,31 @@ class GPUBatchSimulator:
             for rxn in pathway_set.reactions
         )
         if _sm_any_labels and pathway_set.reactions:
+            # All-or-none validation: if any reaction labels a source state,
+            # every reaction must label state_before. Unlabeled reactions
+            # would silently fall to index -1 in _sm_rxn_state_before_idx
+            # and never fire on any trajectory, which looks like a missing
+            # pathway rather than a configuration error. Fail loudly here.
+            _sm_missing_before = [
+                rxn.name
+                for rxn in pathway_set.reactions
+                if getattr(rxn, "state_before", None) is None
+            ]
+            if _sm_missing_before:
+                raise ValueError(
+                    "State-machine reactions partially labeled: at least "
+                    "one reaction has state_before set, but these reactions "
+                    f"do not: {_sm_missing_before[:5]}"
+                    f"{' (and more)' if len(_sm_missing_before) > 5 else ''}"
+                    ". Either label every reaction with state_before or none."
+                )
             for rxn in pathway_set.reactions:
                 if not rxn.criteria.pairs:
                     continue
                 pair0 = rxn.criteria.pairs[0]
                 self._sm_rxn_names.append(rxn.name)
-                self._sm_rxn_state_before.append(
-                    getattr(rxn, "state_before", None)
-                )
-                self._sm_rxn_state_after.append(
-                    getattr(rxn, "state_after", None)
-                )
+                self._sm_rxn_state_before.append(getattr(rxn, "state_before", None))
+                self._sm_rxn_state_after.append(getattr(rxn, "state_after", None))
                 self._sm_rxn_cutoffs.append(float(pair0.distance_cutoff))
                 self._sm_rxn_gho_rec_idx.append(int(pair0.mol1_atom_index))
                 self._sm_rxn_gho_lig_idx.append(int(pair0.mol2_atom_index))
@@ -270,6 +285,7 @@ class GPUBatchSimulator:
             if fs is None and self._sm_rxn_state_before:
                 fs = self._sm_rxn_state_before[0]
             self._sm_first_state = fs
+
             def _get_or_add_state(label):
                 if label is None:
                     return -1
@@ -278,11 +294,10 @@ class GPUBatchSimulator:
                     self._sm_state_to_idx[label] = idx
                     self._sm_idx_to_state.append(label)
                 return self._sm_state_to_idx[label]
+
             if self._sm_first_state is not None:
                 _get_or_add_state(self._sm_first_state)
-            for sb, sa in zip(
-                self._sm_rxn_state_before, self._sm_rxn_state_after
-            ):
+            for sb, sa in zip(self._sm_rxn_state_before, self._sm_rxn_state_after):
                 self._sm_rxn_state_before_idx.append(_get_or_add_state(sb))
                 self._sm_rxn_state_after_idx.append(_get_or_add_state(sa))
             sources = set(self._sm_rxn_state_before_idx)
@@ -335,7 +350,8 @@ class GPUBatchSimulator:
         q_rec = float(self.mol1.total_charge())
         q_lig = float(self.mol2.total_charge())
         debye = getattr(self.engine, "_debye", 7.858)
-        eps0 = 0.000142
+        # Vacuum permittivity in kBT units; see constants.py.
+        eps0 = VACUUM_PERMITTIVITY_KBT
         sdie = 78.0
         eps = sdie * eps0
         D_t = float(self.mob.relative_translational_diffusion())
@@ -528,9 +544,7 @@ class GPUBatchSimulator:
         # Allocated only when state-machine mode is active.
         if self._sm_active:
             self._sm_current_state = cp.zeros(N, dtype=cp.int32)
-            self._sm_rxn_fire_counts = np.zeros(
-                len(self._sm_rxn_names), dtype=np.int64
-            )
+            self._sm_rxn_fire_counts = np.zeros(len(self._sm_rxn_names), dtype=np.int64)
             # Debug: separate counters for discrete vs bridge path fires.
             self._sm_rxn_fire_counts_discrete = np.zeros(
                 len(self._sm_rxn_names), dtype=np.int64
@@ -568,9 +582,7 @@ class GPUBatchSimulator:
                 )
                 # Offset RNG to avoid repeating the same random sequence
                 rng = np.random.default_rng(self.params.seed + _resume_step)
-                rng_bb = np.random.default_rng(
-                    int(self.params.seed) + 1 + _resume_step
-                )
+                rng_bb = np.random.default_rng(int(self.params.seed) + 1 + _resume_step)
             except Exception as e:
                 print(f" Checkpoint load failed: {e}. Starting fresh.")
         # Data collection arrays
@@ -620,7 +632,8 @@ class GPUBatchSimulator:
         _trans_mat = np.zeros((_trans_n, _trans_n), dtype=np.int64)
         # Pre-compute adaptive dt constants (avoids Python overhead per step)
         _adt_debye = float(getattr(self.engine, "_debye", 7.828))
-        _adt_eps = 78.0 * 0.000142
+        # 78.0 = ε_water (sdie); 0.000142 = ε_0 in kBT units (named).
+        _adt_eps = 78.0 * VACUUM_PERMITTIVITY_KBT
         _adt_V0 = (
             float(self.mol1.total_charge())
             * float(self.mol2.total_charge())
@@ -830,9 +843,7 @@ class GPUBatchSimulator:
                     fired_global = run_idx[fired_mask]
                     fired_rxn_idx_masked = fired_rxn_idx[fired_mask]
                     # Update state: current_state[traj] = state_after of fired reaction.
-                    new_states = self._sm_rxn_state_after_idx_gpu[
-                        fired_rxn_idx_masked
-                    ]
+                    new_states = self._sm_rxn_state_after_idx_gpu[fired_rxn_idx_masked]
                     self._sm_current_state[fired_global] = new_states
                     # Increment per-reaction fire counter on CPU.
                     fired_rxn_idx_np = cp.asnumpy(fired_rxn_idx_masked)
@@ -857,7 +868,9 @@ class GPUBatchSimulator:
                 if self._rec_gho_pos is not None:
                     # Only compute GHO atom positions, not all ligand atoms
                     _gho_mol2 = self._mol2_pos0[self._lig_gho_indices]  # (n_gho, 3)
-                    _gho_pos = cp.einsum("nij,kj->nki", R, _gho_mol2) + pos_run[:, None, :]
+                    _gho_pos = (
+                        cp.einsum("nij,kj->nki", R, _gho_mol2) + pos_run[:, None, :]
+                    )
                     # Build mini pos_lig with only GHO atoms for reaction check
                     reacted = self._check_reactions_gpu_gho(_gho_pos)  # (N_run,) bool
                     del _gho_pos
@@ -1026,12 +1039,8 @@ class GPUBatchSimulator:
                     cp.zeros_like(_old_pair_dists),
                 )  # (N_sr, n_pairs)
                 _big = cp.asarray(1.0e30, dtype=cp.float64)
-                _rxn_coord_masked = cp.where(
-                    _sm_reachable, _rxn_coord_per_pair, _big
-                )
-                _rxn_coord_per_traj = cp.min(
-                    _rxn_coord_masked, axis=1
-                )  # (N_sr,)
+                _rxn_coord_masked = cp.where(_sm_reachable, _rxn_coord_per_pair, _big)
+                _rxn_coord_per_traj = cp.min(_rxn_coord_masked, axis=1)  # (N_sr,)
                 # Reaction-surface timestep refinement. Activates only when
                 # the current diffusive width would approach the distance to
                 # the reaction surface (12 sigma > rxn_coord). Matches the
@@ -1041,9 +1050,7 @@ class GPUBatchSimulator:
                 # (_min_core_rxn_dt; SEEKR2 uses 0.05 ps). Trajectories that
                 # are far from any reachable reaction surface are not slowed.
                 _sigma_now = cp.sqrt(2.0 * D_t * dt_arr)
-                _needs_refinement = (
-                    12.0 * _sigma_now > _rxn_coord_per_traj
-                )
+                _needs_refinement = 12.0 * _sigma_now > _rxn_coord_per_traj
                 _rxn_coord_sq = _rxn_coord_per_traj * _rxn_coord_per_traj
                 _dt_rxn_crit = _rxn_coord_sq / (288.0 * D_t)
                 if _min_core_rxn_dt > 0:
@@ -1071,6 +1078,9 @@ class GPUBatchSimulator:
             # Use D_parallel isotropically (same for all 3 noise components).
             # not anisotropic radial/tangential split - that belongs in the
             # outer propagator loop where PySTARC employs with return_prob.
+            # Naming: D_par_arr is the translational D_parallel as a function
+            # of r (per-trajectory); D_r below is the rotational D scalar.
+            # The two are distinct - do not confuse the _arr suffix for a typo.
             if self._use_hi:
                 _r_sr = r_mag[sr_mask]
                 _rm1 = 1.0 / cp.maximum(_r_sr, cp.full_like(_r_sr, 0.01))
@@ -1078,16 +1088,16 @@ class GPUBatchSimulator:
                 _Di = (
                     -2.0 * _hi_Df * (2.0 * _rm1 - (4.0 / 3.0) * _hi_a2 * _rm3) / _hi_pi8
                 )
-                D_r_arr = _hi_Df * _hi_ainv + _Di
-                D_r_arr = cp.maximum(D_r_arr, cp.full_like(D_r_arr, 1e-6))
+                D_par_arr = _hi_Df * _hi_ainv + _Di
+                D_par_arr = cp.maximum(D_par_arr, cp.full_like(D_par_arr, 1e-6))
             else:
-                D_r_arr = cp.full(int(sr_mask.sum()), D_t, dtype=cp.float64)
+                D_par_arr = cp.full(int(sr_mask.sum()), D_t, dtype=cp.float64)
             # Translational update (Ermak-McCammon)
             noise_t = cp.asarray(
                 rng.standard_normal((int(sr_mask.sum()), 3)), dtype=cp.float64
             )
-            sigma_t = cp.sqrt(2.0 * D_r_arr * dt_arr)[:, None]
-            drift = D_r_arr[:, None] * dt_arr[:, None] * forces_gpu
+            sigma_t = cp.sqrt(2.0 * D_par_arr * dt_arr)[:, None]
+            drift = D_par_arr[:, None] * dt_arr[:, None] * forces_gpu
             # Save old positions for overlap rejection
             _old_pos_sr = pos[sr_idx].copy() if _use_overlap else None
             _old_q_sr = q[sr_idx].copy() if _use_overlap else None
@@ -1176,9 +1186,7 @@ class GPUBatchSimulator:
                             rng_bb.random(_p_cross.shape), dtype=cp.float64
                         )
                     else:
-                        _u_bb = cp.asarray(
-                            rng.random(_p_cross.shape), dtype=cp.float64
-                        )
+                        _u_bb = cp.asarray(rng.random(_p_cross.shape), dtype=cp.float64)
                     _crossed = _u_bb < _p_cross  # (N_sr, n_pairs)
                     _below = _new_pair_dists < _cutoffs
                     _pair_fired = _crossed | _below  # (N_sr, n_pairs)
@@ -1563,7 +1571,9 @@ class GPUBatchSimulator:
                 b = int(self._sm_rxn_fire_counts_bridge[i])
                 t = int(self._sm_rxn_fire_counts[i])
                 u = len(self._sm_rxn_fired_traj_sets[i])
-                print(f"    {name}: total={t}  discrete={d}  bridge={b}  unique_trajs={u}")
+                print(
+                    f"    {name}: total={t}  discrete={d}  bridge={b}  unique_trajs={u}"
+                )
         # Per-reaction firing counts for state-machine mode.
         # Each entry records the reaction name, state transition, and how many
         # trajectories fired that reaction. The list is omitted when state
@@ -1681,8 +1691,10 @@ class GPUBatchSimulator:
         return reacted
 
     def _check_reactions_gpu_gho_state_machine(
-        self, pos_run: "cp.ndarray", q_run: "cp.ndarray",
-        current_state_run: "cp.ndarray"
+        self,
+        pos_run: "cp.ndarray",
+        q_run: "cp.ndarray",
+        current_state_run: "cp.ndarray",
     ) -> "cp.ndarray":
         """
         State-aware reaction check.
@@ -1714,9 +1726,7 @@ class GPUBatchSimulator:
         # Rotation matrices from quaternions: (N_run, 3, 3).
         R = self._quats_to_rotmats(q_run)
         # Rotated + translated ligand GHO per reaction: (N_run, n_rxn, 3).
-        lig_gho_lab = (
-            cp.einsum("nij,kj->nki", R, lig_gho_local) + pos_run[:, None, :]
-        )
+        lig_gho_lab = cp.einsum("nij,kj->nki", R, lig_gho_local) + pos_run[:, None, :]
         # Distance from each trajectory's per-reaction ligand GHO to the
         # corresponding fixed receptor GHO: (N_run, n_rxn).
         rec_gho = self._sm_rec_gho_pos_gpu[None, :, :]
@@ -1724,8 +1734,7 @@ class GPUBatchSimulator:
         # Gate on cutoff and state match.
         cutoff_ok = dists < self._sm_rxn_cutoffs_gpu[None, :]
         state_ok = (
-            current_state_run[:, None]
-            == self._sm_rxn_state_before_idx_gpu[None, :]
+            current_state_run[:, None] == self._sm_rxn_state_before_idx_gpu[None, :]
         )
         fire_mask = cutoff_ok & state_ok  # (N_run, n_rxn)
         # Lowest-index reaction that fires per trajectory, or -1 if none.

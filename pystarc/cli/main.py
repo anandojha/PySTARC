@@ -3,8 +3,11 @@ Command-line interface for PySTARC.
 """
 
 from __future__ import annotations
+from pystarc.simulation.chain_simulator import ChainBDParameters, ChainBDSimulator
 from pystarc.simulation.nam_simulator import NAMSimulator, NAMParameters
+from pystarc.pipeline.chain_output_writer import write_chain_results
 from pystarc.hydrodynamics.rotne_prager import MobilityTensor
+from pystarc.structures.chain_io import load_chain_from_json
 from pystarc.xml_io.simulation_io import parse_reaction_xml
 from pystarc.forces.electrostatic.grid_force import DXGrid
 from pystarc.simulation.nam_simulator import zero_force
@@ -147,5 +150,233 @@ def main():
     cli()
 
 
+# chain_simulation
+@cli.command("chain_simulation")
+@click.option(
+    "--chain",
+    "chain_file",
+    required=True,
+    help="JSON file with chain topology and initial body positions",
+)
+@click.option("--target", required=True, help="PQR file for the rigid target molecule")
+@click.option("--rxn", required=True, help="Reaction XML file")
+@click.option(
+    "--dx", multiple=True, help="APBS .dx grid file(s) for the target's PB potential"
+)
+@click.option("--n", default=1000, show_default=True, help="Number of trajectories")
+@click.option(
+    "--dt", default=0.2, show_default=True, help="Outer rigid-body timestep (ps)"
+)
+@click.option(
+    "--dt-chain",
+    default=0.05,
+    show_default=True,
+    help="Inner internal-coordinate timestep (ps)",
+)
+@click.option(
+    "--chain-steps-per-outer",
+    default=4,
+    show_default=True,
+    help="Number of inner steps per outer step",
+)
+@click.option(
+    "--r-start",
+    default=100.0,
+    show_default=True,
+    help="b-sphere starting radius (Angstroms)",
+)
+@click.option(
+    "--r-escape", default=0.0, help="Escape radius (A); if 0, set to r_start * 1.1"
+)
+@click.option(
+    "--d-trans",
+    "d_trans",
+    default=None,
+    type=float,
+    help="Chain translational diffusion coefficient (A^2/ps). "
+    "Required unless --auto-diffusion is set.",
+)
+@click.option(
+    "--d-rot",
+    "d_rot",
+    default=None,
+    type=float,
+    help="Chain rotational diffusion coefficient (rad^2/ps). "
+    "Required unless --auto-diffusion is set.",
+)
+@click.option(
+    "--max-steps",
+    default=1_000_000,
+    show_default=True,
+    help="Hard cap on outer steps per trajectory",
+)
+@click.option(
+    "--threads",
+    "n_threads",
+    default=1,
+    show_default=True,
+    help="Number of parallel worker processes (1 = serial)",
+)
+@click.option("--seed", default=None, type=int, help="Random seed")
+@click.option("--verbose", is_flag=True, help="Print progress")
+@click.option(
+    "--output-dir",
+    "-o",
+    "output_dir",
+    default="chain_bd_results",
+    show_default=True,
+    help="Directory to write results.json and trajectories.csv. " "Created if missing.",
+)
+@click.option(
+    "--auto-diffusion",
+    "auto_diffusion",
+    is_flag=True,
+    default=False,
+    help="Compute the chain's translational and rotational diffusion "
+    "tensors automatically from its body geometry using full "
+    "Rotne-Prager hydrodynamics. When set, --d-trans and "
+    "--d-rot must NOT be supplied.",
+)
+def chain_simulation(
+    chain_file,
+    target,
+    rxn,
+    dx,
+    n,
+    dt,
+    dt_chain,
+    chain_steps_per_outer,
+    r_start,
+    r_escape,
+    d_trans,
+    d_rot,
+    max_steps,
+    n_threads,
+    seed,
+    verbose,
+    output_dir,
+    auto_diffusion,
+):
+    """Run a chain Brownian dynamics simulation against a rigid target.
+
+    Loads the flexible chain from a JSON file (atoms, bonds, angles,
+    torsions, initial body-frame positions) and the target from a PQR
+    file. The target's electrostatic environment can be supplied via
+    one or more APBS .dx grids; without them the chain experiences
+    only its internal bonded forces and pure diffusion.
+    """
+    # Validate the diffusion-coefficient mode before doing any work,
+    # so the user sees the error immediately rather than after IO.
+    if auto_diffusion:
+        if d_trans is not None or d_rot is not None:
+            raise click.UsageError(
+                "--auto-diffusion cannot be combined with --d-trans or --d-rot. "
+                "Either set --auto-diffusion (compute D from chain geometry) "
+                "or pass --d-trans and --d-rot explicitly."
+            )
+    else:
+        if d_trans is None or d_rot is None:
+            raise click.UsageError(
+                "Both --d-trans and --d-rot are required (unless --auto-diffusion "
+                "is set, which computes the diffusion tensors from chain geometry)."
+            )
+
+    click.echo("Loading inputs ...")
+    chain_template, body_positions = load_chain_from_json(chain_file)
+    click.echo(
+        f"  chain   : {chain_template.name} "
+        f"({len(chain_template.atoms)} atoms, "
+        f"{len(chain_template.bonds)} bonds, "
+        f"{len(chain_template.angles)} angles, "
+        f"{len(chain_template.torsions)} torsions)"
+    )
+
+    target_mol = parse_pqr(target)
+    click.echo(f"  target  : {target_mol}")
+
+    pathways = parse_reaction_xml(rxn)
+    click.echo(f"  reactions: {pathways}")
+
+    grids = []
+    for dx_file in dx:
+        g = DXGrid.from_file(dx_file)
+        grids.append(g)
+        click.echo(f"  loaded grid: {g}")
+    if len(grids) > 1:
+        click.echo("  warning: chain_simulation currently uses only the first DX grid")
+    target_grid = grids[0] if grids else None
+
+    params = ChainBDParameters(
+        n_trajectories=n,
+        dt=dt,
+        dt_chain=dt_chain,
+        chain_steps_per_outer=chain_steps_per_outer,
+        max_steps=max_steps,
+        r_start=r_start,
+        r_escape=r_escape,
+        seed=seed,
+        n_threads=n_threads,
+        verbose=verbose,
+    )
+    if auto_diffusion:
+        click.echo(
+            "  hydrodynamics: full Rotne-Prager (auto-computing D from "
+            "chain geometry)"
+        )
+        sim = ChainBDSimulator(
+            target=target_mol,
+            chain_template=chain_template,
+            chain_init_body_positions=body_positions,
+            params=params,
+            pathway_set=pathways,
+            target_grid=target_grid,
+            auto_diffusion=True,
+        )
+        click.echo(f"  D_trans diag (A^2/ps): {np.diag(sim.D_trans)}")
+        click.echo(f"  D_rot   diag (rad^2/ps): {np.diag(sim.D_rot)}")
+    else:
+        click.echo(
+            f"  hydrodynamics: scalar isotropic " f"(D_trans={d_trans}, D_rot={d_rot})"
+        )
+        sim = ChainBDSimulator(
+            target=target_mol,
+            chain_template=chain_template,
+            chain_init_body_positions=body_positions,
+            params=params,
+            pathway_set=pathways,
+            D_trans=d_trans,
+            D_rot=d_rot,
+            target_grid=target_grid,
+        )
+
+    click.echo(f"\nRunning {n} trajectories ...")
+    import time as _time
+
+    _t0 = _time.time()
+    results = sim.run()
+    _wall = _time.time() - _t0
+    click.echo(f"  done: {len(results)} trajectories in {_wall:.2f}s")
+    # Write summary + per-trajectory CSV.
+    output_path = Path(output_dir)
+    written = write_chain_results(
+        output_path,
+        sim,
+        results,
+        wall_time_sec=_wall,
+    )
+    click.echo(f"\nOutput files in {output_path}/:")
+    for name, _ in written:
+        click.echo(f"  {name}")
+
+    click.echo(f"\n{'-' * 50}")
+    click.echo("Results:")
+    click.echo(f"  Reacted : {sim.n_reacted}")
+    click.echo(f"  Escaped : {sim.n_escaped}")
+    if (sim.n_reacted + sim.n_escaped) > 0:
+        p_rxn = sim.n_reacted / (sim.n_reacted + sim.n_escaped)
+        click.echo(f"  P(rxn)  : {p_rxn:.4f}")
+    click.echo(f"{'-' * 50}")
+
+
 if __name__ == "__main__":
-    main()
+    cli()

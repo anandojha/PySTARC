@@ -6,7 +6,7 @@ from __future__ import annotations
 from pystarc.transforms.quaternion import Quaternion
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 
@@ -80,6 +80,21 @@ class TrajectoryResult:
     final_separation: float
     reaction_name: Optional[str] = None
     energy_at_reaction: float = 0.0
+    # Per-trajectory diagnostics. Chain BD populates these; rigid-body BD
+    # leaves them as None so existing rigid-body construction sites are
+    # unaffected.
+    encounter_pos: Optional[np.ndarray] = None  # (3,) COM at reaction
+    encounter_q: Optional[np.ndarray] = None  # (4,) orientation quat at reaction
+    near_miss_pos: Optional[np.ndarray] = None  # (3,) COM at closest approach
+    near_miss_dist: Optional[float] = None  # closest separation during trajectory
+    path_steps: Optional[np.ndarray] = None  # (n_snap,) step numbers of snapshots
+    path_com: Optional[np.ndarray] = None  # (n_snap, 3) COM positions
+    path_q: Optional[np.ndarray] = None  # (n_snap, 4) orientation quats
+    energy_steps: Optional[np.ndarray] = (
+        None  # (n_snap, 4): (total, elec, born, steric)
+    )
+    radial_trace: Optional[np.ndarray] = None  # (n_snap,) separation magnitudes
+    contact_counts: Optional[Dict[Tuple[int, int], int]] = None
 
     @property
     def reacted(self) -> bool:

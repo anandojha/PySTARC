@@ -4,7 +4,7 @@ PySTARC COFFDROP parameter file parser
 Reads the four COFFDROP data files:
 1. **coffdrop.xml**       - tabulated pair, bond-angle and dihedral potentials
                             (units: kcal/mol, distances in Å, angles in degrees)
-2. **mapping.xml**        - atom-to-bead mapping per residue
+2. **map.xml**        - atom-to-bead mapping per residue
 3. **connectivity.xml**   - bond definitions (residue pairs, bead names, orders,
                             equilibrium length)
 4. **charges.xml**        - partial charges on named beads per residue
@@ -16,7 +16,7 @@ Usage
     from pystarc.simulation.coffdrop_params import COFFDROPParams
     params = COFFDROPParams.load(
         ff_xml       = "coffdrop.xml",
-        mapping_xml  = "mapping.xml",
+        mapping_xml  = "map.xml",
         connectivity_xml = "connectivity.xml",
         charges_xml  = "charges.xml",
     )
@@ -36,6 +36,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 import numpy as np
 import math
+from scipy.interpolate import CubicSpline
 
 # Unit conversion
 # coffdrop.xml energies are in kcal/mol.
@@ -57,7 +58,7 @@ class BeadDef:
 
 @dataclass
 class ResidueDef:
-    """Per-residue bead definitions from mapping.xml."""
+    """Per-residue bead definitions from map.xml."""
 
     name: str
     beads: List[BeadDef] = field(default_factory=list)
@@ -159,29 +160,81 @@ class TabulatedPotential:
     def __post_init__(self):
         n = len(self.values)
         self._dx = (self.x_max - self.x_min) / (n - 1) if n > 1 else 1.0
+        # Build the cubic spline once at construction; subsequent value() and
+        # deriv() calls evaluate it. Use natural boundary conditions
+        # (second derivative = 0 at endpoints) to match BD2's Even_Spline
+        # semantics. Spline is only buildable when there are at least 4
+        # points; for shorter tables we fall back to linear interp.
+        if n >= 4:
+            xs = self.x_min + self._dx * np.arange(n)
+            self._spline = CubicSpline(xs, self.values, bc_type="natural")
+        else:
+            self._spline = None
 
     def value(self, x: float) -> float:
-        """Linear interpolation"""
-        n = len(self.values)
+        """Cubic-spline interpolation, clamped at the table boundaries."""
+        if x <= self.x_min:
+            return float(self.values[0])
+        if x >= self.x_max:
+            return float(self.values[-1])
+        if self._spline is not None:
+            return float(self._spline(x))
+        # Fallback linear interp for short tables.
         t = (x - self.x_min) / self._dx
         i = int(math.floor(t))
-        if i < 0:
-            return float(self.values[0])
-        if i >= n - 1:
-            return float(self.values[-1])
         frac = t - i
         return float(self.values[i] * (1.0 - frac) + self.values[i + 1] * frac)
 
     def deriv(self, x: float) -> float:
-        """First derivative - finite difference between adjacent grid points."""
-        n = len(self.values)
+        """First derivative of the spline, zero outside the table."""
+        if x <= self.x_min or x >= self.x_max:
+            return 0.0
+        if self._spline is not None:
+            return float(self._spline(x, 1))  # 1 -> first derivative
+        # Fallback for short tables.
         t = (x - self.x_min) / self._dx
         i = int(math.floor(t))
         if i < 0:
             i = 0
+        n = len(self.values)
         if i >= n - 1:
             i = n - 2
         return float((self.values[i + 1] - self.values[i]) / self._dx)
+
+    def deriv_array(self, xs: np.ndarray) -> np.ndarray:
+        """Vectorized first derivative: returns array of derivatives.
+
+        Zero outside table range. Same semantics as deriv() applied
+        elementwise, but exploits CubicSpline's array support to be
+        much faster than a Python loop over scalar deriv() calls.
+
+        Parameters
+        ----------
+        xs : np.ndarray, shape (N,)
+            Input x values.
+
+        Returns
+        -------
+        np.ndarray, shape (N,)
+            First derivative at each x, zero outside [x_min, x_max].
+        """
+        xs = np.asarray(xs)
+        out = np.zeros_like(xs, dtype=np.float64)
+        in_range = (xs > self.x_min) & (xs < self.x_max)
+        if not in_range.any():
+            return out
+        if self._spline is not None:
+            # CubicSpline supports array input directly.
+            out[in_range] = self._spline(xs[in_range], 1)
+            return out
+        # Fallback: linear differences (per-element, but vectorized index math).
+        n = len(self.values)
+        t = (xs - self.x_min) / self._dx
+        i_arr = np.floor(t).astype(np.int64)
+        i_arr = np.clip(i_arr, 0, n - 2)
+        diffs = (self.values[i_arr + 1] - self.values[i_arr]) / self._dx
+        out[in_range] = diffs[in_range]
+        return out
 
 
 # Force-field XML parser
@@ -378,7 +431,7 @@ class COFFDROPParams:
         Parameters
         ----------
         ff_xml           : path to coffdrop.xml (force-field tabulated potentials)
-        mapping_xml      : path to mapping.xml  (atom-to-bead mapping)
+        mapping_xml      : path to map.xml  (atom-to-bead mapping)
         connectivity_xml : path to connectivity.xml (bond definitions)
         charges_xml      : path to charges.xml (bead partial charges)
         """

@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<pystarc>
+  <!-- Shared rigid-body fields (used by chain BD pipeline) -->
+  <receptor_pqr>thrombin.pqr</receptor_pqr>
+  <bd_milestone_radius>50.0</bd_milestone_radius>
+  <n_trajectories>1000</n_trajectories>
+  <max_steps>1000000</max_steps>
+  <dt>0.2</dt>
+  <temperature>298.15</temperature>
+  <seed>1</seed>
+  <work_dir>bd_sims</work_dir>
+  <gpu>false</gpu>
+  <desolvation_alpha>0.07957747</desolvation_alpha>
+  <save_interval>10</save_interval>
+  <convergence_check>false</convergence_check>
+  <convergence_interval>10</convergence_interval>
+  <convergence_tol>0.05</convergence_tol>
+  <!-- Chain BD specific block -->
+  <chain>
+    <chain_json>chain.json</chain_json>
+    <reaction_pairs_json>reaction_pairs.json</reaction_pairs_json>
+    <target_grid_dx>apbs_output/thrombin1.dx</target_grid_dx>
+    <born_grid_dx>apbs_output/thrombin1_born.dx</born_grid_dx>
+    <r_escape>80.0</r_escape>
+    <reaction_n_needed>3</reaction_n_needed>
+    <auto_diffusion>true</auto_diffusion>
+    <D_trans>0.0</D_trans>
+    <D_rot>0.0</D_rot>
+    <use_soft_repulsion>true</use_soft_repulsion>
+    <soft_repulsion_eps>1.0</soft_repulsion_eps>
+    <n_workers>1</n_workers>
+    <dt_chain>0.025</dt_chain>
+    <chain_steps_per_outer>8</chain_steps_per_outer>
+    <n_equilibration_steps>0</n_equilibration_steps>
+  </chain>
+</pystarc>

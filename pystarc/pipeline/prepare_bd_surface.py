@@ -228,6 +228,7 @@ def read_pqr(path: Path) -> List[PQRAtom]:
     the b-surface preparation pipeline.
     """
     from pystarc.structures.pqr_io import parse_pqr_records
+
     return [
         PQRAtom(
             serial=r.serial,

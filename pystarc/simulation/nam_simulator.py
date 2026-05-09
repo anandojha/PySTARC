@@ -33,6 +33,10 @@ from pystarc.molsystem.system_state import Fate, TrajectoryResult
 from pystarc.motion.adaptive_time_step import AdaptiveTimeStep
 from pystarc.hydrodynamics.rotne_prager import MobilityTensor
 from pystarc.pathways.reaction_interface import PathwaySet
+from pystarc.simulation.chain_simulator import (
+    compute_pair_distances,
+    check_reaction_with_bridge,
+)
 from typing import Callable, Dict, List, Optional, Tuple
 from pystarc.structures.molecules import Molecule, Atom
 from dataclasses import dataclass
@@ -76,6 +80,19 @@ def zero_force(mol1: Molecule, mol2: Molecule):
 
 
 # Parameters
+def _mol2_positions(mol) -> np.ndarray:
+    """Extract (n_atoms, 3) array of positions from a Molecule.
+
+    Used by Brownian bridge code to pass mol2's current positions to
+    compute_pair_distances, which expects a flat positions array. Reads
+    Atom.x, .y, .z fields.
+    """
+    return np.array(
+        [[a.x, a.y, a.z] for a in mol.atoms],
+        dtype=float,
+    )
+
+
 @dataclass
 class NAMParameters:
     """
@@ -87,8 +104,12 @@ class NAMParameters:
     n_trajectories: int = 1_000
     dt: float = 0.2  # ps  normal minimum time step
     dt_rxn: float = 0.05  # ps  near-reaction minimum time step
-    minimum_core_dt: float = 0.0  # hard floor on adaptive dt away from reaction surface (0=no floor)
-    minimum_core_reaction_dt: float = 0.0  # hard floor on adaptive dt near reaction surface (0=no floor)
+    minimum_core_dt: float = (
+        0.0  # hard floor on adaptive dt away from reaction surface (0=no floor)
+    )
+    minimum_core_reaction_dt: float = (
+        0.0  # hard floor on adaptive dt near reaction surface (0=no floor)
+    )
     max_steps: int = 1_000_000  # max_n_steps
     r_start: float = 100.0  # Å  b-sphere radius
     r_escape: float = 0.0  # Å  0 = auto (2 × r_start)
@@ -96,6 +117,13 @@ class NAMParameters:
     n_threads: int = 1
     use_hard_sphere: bool = True  # reject steps with atom overlap (default)
     hydrodynamic_interactions: bool = False  # hydrodynamic interactions (Rotne-Prager)
+    # Brownian bridge for reaction detection: when True, in addition to
+    # the endpoint check, evaluate the path-crossing probability for
+    # every contact pair whose pre- and post-step distances are both
+    # above its cutoff. Catches reactions that occur between discrete
+    # BD steps. Default ON because it closes a method gap; with empty
+    # PathwaySet the bridge code path is trivially skipped.
+    use_brownian_bridge: bool = True
     verbose: bool = False
 
     def __post_init__(self):
@@ -124,6 +152,9 @@ def _run_trajectory_worker(args):
         traj_idx,
     ) = args
     rng = np.random.default_rng((params.seed or 0) + traj_idx)
+    # Independent rng_bb stream (offset 0xBB) so bridge sampling
+    # doesn't perturb the main rng across bridge_on/off comparisons.
+    rng_bb = np.random.default_rng((params.seed or 0) + traj_idx + 0xBB)
     # Private scratch molecule for this worker
     mol2_scratch = copy.copy(mol2)
     mol2_scratch.atoms = [copy.copy(a) for a in mol2.atoms]
@@ -133,6 +164,15 @@ def _run_trajectory_worker(args):
     v /= np.linalg.norm(v)
     pos = v * params.r_start
     ori = random_quaternion(rng)
+    # Brownian bridge state: pair distances at the previous iter's top,
+    # the dt used in the previous outer step, and D at that step's
+    # start. None on iter 0. Bridge code path runs only when the flag
+    # is True AND the pathway_set has reactions to track.
+    _has_reactions = pathway_set is not None and len(pathway_set.reactions) > 0
+    _bb_active = params.use_brownian_bridge and _has_reactions
+    prev_pair_dists = None
+    prev_dt_outer = 0.0
+    prev_D_eff_bb = 0.0
     for step in range(params.max_steps):
         # Place mol2 (vectorised: rotate pre-centred positions + translate)
         R = ori.to_rotation_matrix()
@@ -141,8 +181,37 @@ def _run_trajectory_worker(args):
             atom.x = float(p[0])
             atom.y = float(p[1])
             atom.z = float(p[2])
-        # Reaction check (GHO AND logic built into PathwaySet)
-        rxn = pathway_set.check_all(mol1, mol2_scratch, rng)
+        # Compute current pair distances if bridge is active.
+        if _bb_active:
+            cur_pair_dists = compute_pair_distances(
+                mol1,
+                _mol2_positions(mol2_scratch),
+                pathway_set,
+            )
+        else:
+            cur_pair_dists = None
+        # Reaction check: bridge-aware when we have prior state, else
+        # endpoint-only via pathway_set.check_all (GHO AND logic built in).
+        if (
+            _bb_active
+            and prev_pair_dists is not None
+            and cur_pair_dists is not None
+            and prev_dt_outer > 0.0
+            and prev_D_eff_bb > 0.0
+        ):
+            rxn = check_reaction_with_bridge(
+                mol1,
+                mol2_scratch,
+                pathway_set,
+                prev_pair_dists,
+                cur_pair_dists,
+                prev_D_eff_bb,
+                prev_dt_outer,
+                rng,
+                rng_bb=rng_bb,
+            )
+        else:
+            rxn = pathway_set.check_all(mol1, mol2_scratch, rng)
         if rxn is not None:
             return TrajectoryResult(
                 Fate.REACTED, step, step * params.dt, float(np.linalg.norm(pos)), rxn
@@ -231,6 +300,15 @@ def _run_trajectory_worker(args):
                 pos, ori = bd_step_wiener(
                     pos_old, ori_old, force_old, torque, D_t_old, D_r, dt, dW_t2, dW_r2
                 )
+        # Save bridge state for the next iteration.
+        # cur_pair_dists were captured before this step; dt is the
+        # local dt actually used (the simple two-value scheme has no
+        # backstep-driven dt change here). D from pos_old is the right
+        # bridge D over [pos_old -> pos].
+        if _bb_active:
+            prev_pair_dists = cur_pair_dists
+            prev_dt_outer = float(dt)
+            prev_D_eff_bb = float(mob.relative_translational_diffusion(pos_old))
     return TrajectoryResult(
         Fate.MAX_STEPS,
         params.max_steps,
@@ -263,6 +341,12 @@ class NAMSimulator:
         self.params = params
         self.force_fn = force_fn or zero_force
         self.rng = np.random.default_rng(params.seed)
+        # Independent RNG stream for Brownian bridge sampling (offset
+        # 0xBB). Keeps bridge sampling off the main rng so bridge_on
+        # vs bridge_off comparisons at the same seed produce identical
+        # trajectories (only bridge samples differ).
+        _bb_seed = (params.seed if params.seed is not None else 0) + 0xBB
+        self.rng_bb = np.random.default_rng(_bb_seed)
         # Pre-centre mol2 positions for fast placement (avoid copies per step)
         c0 = mol2.centroid()
         self._mol2_pos0 = mol2.positions_array() - c0
@@ -340,9 +424,50 @@ class NAMSimulator:
         r_h2 = self.mobility.radius2
         # Reset adaptive dt controller for this trajectory
         self._dt_ctrl.reset()
+        # Brownian bridge state: pair distances at the previous iter's
+        # top, the dt actually used in the previous outer step, and the
+        # diffusion at the previous step's start. None on iter 0.
+        # Bridge code path runs only when use_brownian_bridge=True AND
+        # the pathway_set has reactions to track.
+        _has_reactions = (
+            self.pathway_set is not None and len(self.pathway_set.reactions) > 0
+        )
+        _bb_active = self.params.use_brownian_bridge and _has_reactions
+        prev_pair_dists = None
+        prev_dt_outer = 0.0
+        prev_D_eff_bb = 0.0
         for step in range(self.params.max_steps):
             mol2 = self._place_mol2(pos, ori)
-            rxn = self.pathway_set.check_all(self.mol1, mol2, self.rng)
+            # Compute current pair distances if bridge is active.
+            if _bb_active:
+                cur_pair_dists = compute_pair_distances(
+                    self.mol1,
+                    _mol2_positions(mol2),
+                    self.pathway_set,
+                )
+            else:
+                cur_pair_dists = None
+            # Reaction check: bridge-aware when we have prior state.
+            if (
+                _bb_active
+                and prev_pair_dists is not None
+                and cur_pair_dists is not None
+                and prev_dt_outer > 0.0
+                and prev_D_eff_bb > 0.0
+            ):
+                rxn = check_reaction_with_bridge(
+                    self.mol1,
+                    mol2,
+                    self.pathway_set,
+                    prev_pair_dists,
+                    cur_pair_dists,
+                    prev_D_eff_bb,
+                    prev_dt_outer,
+                    self.rng,
+                    rng_bb=self.rng_bb,
+                )
+            else:
+                rxn = self.pathway_set.check_all(self.mol1, mol2, self.rng)
             if rxn is not None:
                 return TrajectoryResult(
                     Fate.REACTED,
@@ -431,6 +556,18 @@ class NAMSimulator:
                     pos, ori = bd_step_wiener(
                         pos_old, ori_old, force, torque, D_t_old, D_r, dt, dW_t2, dW_r2
                     )
+            # Save state for the next iteration's Brownian bridge check.
+            # cur_pair_dists were captured before this step; effective
+            # dt is whatever the dt controller actually applied (set every
+            # call to get_dt() and overwritten to hdt if backstep fired).
+            # D from the start of this step (at pos_old) is the right
+            # bridge D over the [pos_old -> pos] interval.
+            if _bb_active:
+                prev_pair_dists = cur_pair_dists
+                prev_dt_outer = float(self._dt_ctrl._last_dt or 0.0)
+                prev_D_eff_bb = float(
+                    self.mobility.relative_translational_diffusion(pos_old)
+                )
         return TrajectoryResult(
             Fate.MAX_STEPS,
             self.params.max_steps,
@@ -599,7 +736,11 @@ def _reaction_probability_ci(self, confidence: float = 0.95):
     z2n = z**2 / n
     denom = 1.0 + z2n
     ctr = (p + z2n / 2.0) / denom
-    mar = z * math.sqrt(max(p * (1 - p) / n + z2n / 4.0, 0.0)) / denom
+    # Wilson (1927) margin: z * sqrt(p(1-p)/n + z^2/(4 n^2)) / (1 + z^2/n).
+    # With z2n = z^2/n the second term inside sqrt is z2n/(4 n), not z2n/4
+    # (the latter overstates the margin by a factor of n; CIs were ~22x too
+    # wide for typical PySTARC inputs n=1000, p=1e-3).
+    mar = z * math.sqrt(max(p * (1 - p) / n + z2n / (4.0 * n), 0.0)) / denom
     return (max(0.0, ctr - mar), min(1.0, ctr + mar))
 
 

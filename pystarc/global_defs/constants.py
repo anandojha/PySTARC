@@ -39,10 +39,16 @@ KBT_KCAL: float = KB_KCAL * T_DEFAULT  # ~ 0.5922 kcal/mol
 E_CHARGE: float = 1.602176634e-19  # C
 # Dielectric permittivity of vacuum
 EPS0_SI: float = 8.8541878128e-12  # C² / (N·m²)
+# Vacuum permittivity in PySTARC's internal kBT units.
+# This is ε₀ expressed in e²/(kBT·Å), equivalent to 1/(4π × COULOMB_K)
+# where COULOMB_K ≈ 560.86 kBT·Å·e⁻² is Coulomb's constant in kBT
+# units. Used for in-vacuum and Debye-Huckel electrostatics throughout
+# the codebase (NAM simulator, GPU batch, multipole far-field).
+VACUUM_PERMITTIVITY_KBT: float = 0.000142  # e²/(kBT·Å)
 # Bjerrum length in water at 298 K (Å)
 # l_B = e² / (4π ε₀ ε_r k_B T)   ε_r = 78.54
-BJERRUM_LENGTH: float = 7.1846760153  # Å  - exact from vacuum_permittivity=0.000142
-# = 1/(4π × sdie × ε₀_reduced) = 1/(4π × 78 × 0.000142)
+# Equivalent to 1/(4π × EPS_WATER × VACUUM_PERMITTIVITY_KBT)
+BJERRUM_LENGTH: float = 7.1846760153  # Å
 # Dielectric constant of water
 EPS_WATER: float = 78.54
 # Avogadro's number
@@ -69,6 +75,7 @@ __all__ = [
     "KBT_KCAL",
     "E_CHARGE",
     "EPS0_SI",
+    "VACUUM_PERMITTIVITY_KBT",
     "BJERRUM_LENGTH",
     "EPS_WATER",
     "AVOGADRO",

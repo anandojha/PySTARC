@@ -43,10 +43,12 @@ from dataclasses import dataclass
 from typing import List, Optional
 from pathlib import Path
 
+
 # Public data type
 @dataclass
 class PQRRecord:
     """One parsed record from a PQR file."""
+
     record_type: str
     serial: int
     name: str
@@ -59,6 +61,7 @@ class PQRRecord:
     charge: float
     radius: float
     element: str = ""
+
 
 # Primary parser
 def parse_pqr_records(path: str | Path) -> List[PQRRecord]:
@@ -82,6 +85,7 @@ def parse_pqr_records(path: str | Path) -> List[PQRRecord]:
             if rec is not None:
                 records.append(rec)
     return records
+
 
 # Strict column parser (PDB spec)
 def _parse_strict(line: str, record_type: str) -> Optional[PQRRecord]:
@@ -119,6 +123,7 @@ def _parse_strict(line: str, record_type: str) -> Optional[PQRRecord]:
         )
     except (ValueError, IndexError):
         return None
+
 
 # Whitespace fallback parser
 def _parse_whitespace(line: str, record_type: str) -> Optional[PQRRecord]:
@@ -163,12 +168,14 @@ def _parse_whitespace(line: str, record_type: str) -> Optional[PQRRecord]:
     except (ValueError, IndexError):
         return None
 
+
 def _is_int(s: str) -> bool:
     try:
         int(s)
         return True
     except ValueError:
         return False
+
 
 # Backward-compatible API
 def parse_pqr(path: str | Path) -> Molecule:
@@ -195,6 +202,7 @@ def parse_pqr(path: str | Path) -> Molecule:
             )
         )
     return mol
+
 
 def write_pqr(mol: Molecule, path: str | Path) -> None:
     """Write a Molecule to a .pqr file."""

@@ -8,7 +8,6 @@ from pystarc.structures.molecules import Molecule, ReactionCriteria, ContactPair
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict
 import numpy as np
-import random
 
 
 @dataclass
@@ -26,13 +25,26 @@ class ReactionInterface:
     state_before: "Optional[str]" = None
     state_after: "Optional[str]" = None
 
-    def check(self, mol1: Molecule, mol2: Molecule) -> bool:
-        """Return True if this reaction has fired."""
+    def check(
+        self,
+        mol1: Molecule,
+        mol2: Molecule,
+        rng: "Optional[np.random.Generator]" = None,
+    ) -> bool:
+        """Return True if this reaction has fired.
+
+        rng: optional numpy Generator for the probability gate when
+        self.probability < 1.0. Pass an explicit rng for reproducibility;
+        when None, np.random.default_rng() is used for the single draw
+        (non-reproducible across runs but isolated from any global state).
+        """
         if not self.criteria.is_satisfied(mol1, mol2):
             return False
         if self.probability >= 1.0:
             return True
-        return random.random() < self.probability
+        if rng is None:
+            rng = np.random.default_rng()
+        return float(rng.random()) < self.probability
 
     def __repr__(self) -> str:
         return (
@@ -73,14 +85,14 @@ class PathwaySet:
                 prob = rxn.probability
                 if prob >= 1.0:
                     return rxn.name
-                if rng is not None:
-                    if rng.random() < prob:
-                        return rxn.name
-                else:
-                    import random
-
-                    if random.random() < prob:
-                        return rxn.name
+                # Use the supplied rng for reproducibility; fall back
+                # to a fresh default_rng when none is supplied. The fresh
+                # generator isolates the draw from any module-level global
+                # state, but is non-reproducible across runs unless the
+                # caller passes a seeded rng.
+                _rng = rng if rng is not None else np.random.default_rng()
+                if _rng.random() < prob:
+                    return rxn.name
         return None
 
     def __len__(self) -> int:

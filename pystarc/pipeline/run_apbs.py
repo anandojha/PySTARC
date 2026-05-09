@@ -107,6 +107,7 @@ def _read_pqr_atoms(pqr_path: Path):
     pystarc.structures.pqr_io.
     """
     from pystarc.structures.pqr_io import parse_pqr_records
+
     return [
         (r.x, r.y, r.z, r.radius)
         for r in parse_pqr_records(pqr_path)

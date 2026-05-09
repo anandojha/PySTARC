@@ -359,23 +359,26 @@ class WESimulator:
             if n == n_target:
                 new_trajs.extend(group)
             elif n > n_target:
-                # Split: clone the n - n_target extras, halving their weights
-                # Sort by weight descending so we split the heaviest first
+                # Merge excess: redistribute weight from the n - n_target
+                # lightest extras into random kept trajectories. Heaviest are
+                # kept (sorted descending) so the dominant weight survives.
+                # Total weight conserved (donor.weight += t.weight).
                 group.sort(key=lambda t: -t.weight)
                 keep = group[:n_target]
                 extra = group[n_target:]
                 for t in extra:
-                    # Redistribute its weight to a random kept trajectory
+                    # Transfer extra weight into a random kept trajectory
                     donor = keep[int(self.rng.integers(0, n_target))]
                     donor.weight += t.weight
                 new_trajs.extend(keep)
 
             else:
-                # Merge: combine pairs until we reach n_target
-                # Merge lightest pairs first
+                # Split (Huber-Kim): clone the lightest trajectory and halve
+                # its weight, repeating until the bin reaches n_target.
+                # Total weight conserved (clone gets w/2; original keeps w/2).
                 group.sort(key=lambda t: t.weight)
                 while len(group) < n_target:
-                    # Clone the lightest trajectory (split weight)
+                    # Clone the lightest trajectory (halve weight on both)
                     t = group[0]
                     clone = t.copy()
                     clone.weight = t.weight / 2.0

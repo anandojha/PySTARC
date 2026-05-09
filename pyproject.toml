@@ -36,10 +36,10 @@ notebook = [
 ]
 
 [project.scripts]
-pystarc       = "pystarc.cli.main:main"
+pystarc = "pystarc.cli.main:main"
 nam_simulation = "pystarc.cli.main:nam_simulation"
-bounding_box   = "pystarc.cli.main:bounding_box_cmd"
-pqr_to_xml     = "pystarc.cli.main:pqr_to_xml"
+bounding_box    = "pystarc.cli.main:bounding_box_cmd"
+pqr_to_xml      = "pystarc.cli.main:pqr_to_xml"
 
 [tool.setuptools.packages.find]
 where = ["."]
