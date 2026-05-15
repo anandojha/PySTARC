@@ -8937,113 +8937,6 @@ class TestTorsionForceBugRegression:
         ), f"F[2] = {F[2]} is zero; torsion gradient missing for atom k"
 
 
-class TestTorsionForceBugRegression:
-    """Newton's third law and momentum conservation for torsion forces.
-
-    A torsion potential V(phi) acts on four atoms (i, j, k, l) where the
-    dihedral angle phi is measured around the j-k bond. Translational
-    invariance of V means the four forces must sum to zero exactly:
-      F_i + F_j + F_k + F_l = 0
-    independent of geometry. If any of the four force terms is missing
-    or wrong, this fails.
-    """
-
-    def _make_torsion_chain(self):
-        """Four atoms in a non-planar, non-equilibrium dihedral geometry."""
-        atoms = [
-            ChainAtom(radius=2.0, charge=0.0, resname="A", resid=0),
-            ChainAtom(radius=2.0, charge=0.0, resname="B", resid=1),
-            ChainAtom(radius=2.0, charge=0.0, resname="C", resid=2),
-            ChainAtom(radius=2.0, charge=0.0, resname="D", resid=3),
-        ]
-        bonds = [
-            ChainBond(ChainAtomRef(0), ChainAtomRef(1), 3.8, 100.0),
-            ChainBond(ChainAtomRef(1), ChainAtomRef(2), 3.8, 100.0),
-            ChainBond(ChainAtomRef(2), ChainAtomRef(3), 3.8, 100.0),
-        ]
-        torsions = [
-            ChainTorsion(
-                ChainAtomRef(0),
-                ChainAtomRef(1),
-                ChainAtomRef(2),
-                ChainAtomRef(3),
-                phi0=0.7,
-                k_tor=10.0,
-                n=1,
-            )
-        ]
-        beads = [
-            ChainBead(
-                pos=np.array([0.0, 0.0, 0.0]),
-                force=np.zeros(3),
-                radius=2.0,
-                charge=0.0,
-                resname="A",
-                resid=0,
-            ),
-            ChainBead(
-                pos=np.array([3.8, 0.0, 0.0]),
-                force=np.zeros(3),
-                radius=2.0,
-                charge=0.0,
-                resname="B",
-                resid=1,
-            ),
-            ChainBead(
-                pos=np.array([5.0, 3.0, 0.0]),
-                force=np.zeros(3),
-                radius=2.0,
-                charge=0.0,
-                resname="C",
-                resid=2,
-            ),
-            ChainBead(
-                pos=np.array([7.0, 4.0, 2.0]),
-                force=np.zeros(3),
-                radius=2.0,
-                charge=0.0,
-                resname="D",
-                resid=3,
-            ),
-        ]
-        return FlexibleChain(
-            beads=beads, bonds=bonds, torsions=torsions, name="torsion_test"
-        )
-
-    def test_torsion_forces_sum_to_zero(self):
-        """Sum of the four torsion forces must be zero (momentum conservation)."""
-        import math
-
-        chain = self._make_torsion_chain()
-        evaluator = ChainForceEvaluator()
-        # Isolate torsion contribution by zeroing bond/angle params would
-        # require building a separate evaluator; instead, compute the full
-        # force and check the sum, since bond and angle forces also sum to
-        # zero by Newton's third law within each interaction.
-        F = evaluator.compute_forces(chain)
-        net = F.sum(axis=0)
-        # Net force on the whole chain must vanish for any closed system
-        # of internal forces. Tolerance is generous for numerical noise.
-        assert np.allclose(net, np.zeros(3), atol=1e-8), (
-            f"Net force {net} is non-zero; "
-            f"internal forces violate Newton's third law"
-        )
-
-    def test_torsion_middle_atoms_feel_force(self):
-        """Out-of-equilibrium dihedral must produce nonzero forces on
-        the central pair (atoms 1 and 2), not just the end atoms (0 and 3)."""
-        chain = self._make_torsion_chain()
-        evaluator = ChainForceEvaluator()
-        F = evaluator.compute_forces(chain)
-        # The torsion is out of equilibrium (phi != phi0), so the central
-        # atoms must experience torque-derived forces. If the torsion
-        # gradient is zeroing out F[1] and F[2], we'll see it here.
-        assert (
-            np.linalg.norm(F[1]) > 1e-6
-        ), f"F[1] = {F[1]} is zero; torsion gradient missing for atom j"
-        assert (
-            np.linalg.norm(F[2]) > 1e-6
-        ), f"F[2] = {F[2]} is zero; torsion gradient missing for atom k"
 
 
 class TestBondedForceEnergyConservation:
@@ -19812,3 +19705,523 @@ class TestChainBDSafetyGuards:
         charges = np.array([1.0, 1.0, -1.0])
         F_batch = grid.batch_force_on_charges(points, charges)
         assert np.all(np.isfinite(F_batch)), f"batch F not finite: {F_batch}"
+
+
+# =============================================================================
+# Audit-recommended additions
+# =============================================================================
+# Regression tests for named bugs, finite-difference verification for legacy
+# force kernels, and negative-XML coverage for chain block validation.
+#   TestMinimumCoreDtFloor              - regression: dt-floor silent zero
+#   TestRunChainSmoke                   - regression: chain_pipeline.run_chain
+#   TestPQRChainIdDialect               - regression: SEEKR2 PQR chain column
+#   TestLJForceFiniteDifference         - audit gap: FD-verify lj_pair_force
+#   TestDebyeHuckelForceFiniteDifference- audit gap: FD-verify dh force
+#   TestDXGridForceFiniteDifference     - audit gap: FD-verify grid gradient
+#   TestInputParserChainBlockNegative   - audit gap: 17 raises in input_parser
+# =============================================================================
+
+
+class TestMinimumCoreDtFloor:
+    """Regression: minimum_core_dt and minimum_core_reaction_dt must exist on
+    NAMParameters as real fields. The historic bug was that these fields were
+    absent and gpu_batch_simulator silently read 0.0 via getattr, eliminating
+    the adaptive-dt floor. The field-existence test below would have caught it.
+    """
+
+    def test_field_exists_on_nam_parameters(self):
+        from pystarc.simulation.nam_simulator import NAMParameters
+        p = NAMParameters()
+        assert hasattr(p, "minimum_core_dt"), (
+            "NAMParameters missing minimum_core_dt; getattr fallback would "
+            "silently return 0.0 and disable the adaptive-dt floor."
+        )
+        assert hasattr(p, "minimum_core_reaction_dt")
+
+    def test_default_is_zero(self):
+        from pystarc.simulation.nam_simulator import NAMParameters
+        p = NAMParameters()
+        assert p.minimum_core_dt == 0.0
+        assert p.minimum_core_reaction_dt == 0.0
+
+    def test_nonzero_floor_is_preserved(self):
+        from pystarc.simulation.nam_simulator import NAMParameters
+        p = NAMParameters(minimum_core_dt=0.123, minimum_core_reaction_dt=0.045)
+        assert p.minimum_core_dt == 0.123
+        assert p.minimum_core_reaction_dt == 0.045
+
+    def test_getattr_path_returns_stored_value_not_default(self):
+        # gpu_batch_simulator does getattr(self.params, "minimum_core_dt", 0.0).
+        # If the field is ever removed, this would silently return 0.0 instead
+        # of the user-set value. Pin the behaviour explicitly.
+        from pystarc.simulation.nam_simulator import NAMParameters
+        p = NAMParameters(minimum_core_dt=0.25, minimum_core_reaction_dt=0.075)
+        assert getattr(p, "minimum_core_dt", 999.0) == 0.25
+        assert getattr(p, "minimum_core_reaction_dt", 999.0) == 0.075
+
+    def test_pystarc_config_parses_floor_from_xml(self, tmp_path):
+        from pystarc.pipeline.input_parser import parse
+        xml = (
+            '<?xml version="1.0" ?>\n'
+            "<pystarc_input>\n"
+            "  <receptor_pqr>fake_rec.pqr</receptor_pqr>\n"
+            "  <ligand_pqr>fake_lig.pqr</ligand_pqr>\n"
+            "  <minimum_core_dt>0.123</minimum_core_dt>\n"
+            "  <minimum_core_reaction_dt>0.045</minimum_core_reaction_dt>\n"
+            f"  <work_dir>{tmp_path / 'wd'}</work_dir>\n"
+            "</pystarc_input>\n"
+        )
+        p = tmp_path / "in.xml"
+        p.write_text(xml)
+        cfg = parse(p)
+        assert cfg.minimum_core_dt == 0.123
+        assert cfg.minimum_core_reaction_dt == 0.045
+
+
+class TestRunChainSmoke:
+    """Regression: chain_pipeline.run_chain end-to-end. Catches the
+    cfg.chain.* vs cc.* slip-class of bug. Any test exercising run_chain
+    in full would catch it.
+    """
+
+    def test_run_chain_raises_when_chain_config_missing(self, tmp_path):
+        from pystarc.pipeline.chain_pipeline import run_chain
+        from pystarc.pipeline.input_parser import PySTARCConfig
+        cfg = PySTARCConfig(
+            receptor_pqr="fake.pqr", ligand_pqr="fake_lig.pqr",
+            n_trajectories=1, work_dir=tmp_path,
+        )
+        cfg.chain = None
+        with pytest.raises(ValueError, match="requires config.chain"):
+            run_chain(cfg)
+
+    def test_run_chain_minimal_end_to_end(self, tmp_path):
+        """Run a 3-atom chain BD trajectory end-to-end. Tiny so it runs fast.
+
+        Uses a non-collinear 3-atom chain because rigid-body rotational
+        resistance is singular for any perfectly collinear chain (zero
+        moment of inertia about the chain axis). 3 non-collinear atoms
+        are the minimum for a well-defined 3-DOF rigid rotor.
+        """
+        import json
+        from pathlib import Path
+        from pystarc.pipeline.chain_pipeline import run_chain
+        from pystarc.pipeline.input_parser import ChainConfig, PySTARCConfig
+
+        chain_json_data = {
+            "name": "trimer",
+            "atoms": [
+                {"radius": 2.0, "charge": 0.0, "resname": "A", "resid": 0,
+                 "position": [0.0, 0.0, 0.0]},
+                {"radius": 2.0, "charge": 0.0, "resname": "B", "resid": 1,
+                 "position": [3.8, 0.0, 0.0]},
+                {"radius": 2.0, "charge": 0.0, "resname": "C", "resid": 2,
+                 "position": [5.7, 3.0, 1.0]},
+            ],
+            "bonds": [
+                {"a": 0, "b": 1, "r0": 3.8,  "k_spring": 100.0},
+                {"a": 1, "b": 2, "r0": 3.69, "k_spring": 100.0},
+            ],
+            "angles": [], "torsions": [],
+        }
+        chain_json_path = tmp_path / "chain.json"
+        chain_json_path.write_text(json.dumps(chain_json_data))
+
+        # Two-atom receptor at ~10 A separation
+        pqr_text = (
+            "ATOM      1  CA  GLY     1       0.000   0.000   0.000  0.000  3.000\n"
+            "ATOM      2  CB  GLY     1       5.000   0.000   0.000  0.000  3.000\n"
+        )
+        receptor_pqr = tmp_path / "receptor.pqr"
+        receptor_pqr.write_text(pqr_text)
+
+        # Huge cutoff -> reaction fires immediately, sim ends fast
+        rxn_pairs_path = tmp_path / "rxn_pairs.json"
+        rxn_pairs_path.write_text(json.dumps([[0, 0, 1000.0]]))
+
+        cfg = PySTARCConfig(
+            receptor_pqr=str(receptor_pqr), n_trajectories=1, max_steps=5,
+            bd_milestone_radius=30.0, seed=42, work_dir=tmp_path / "out", dt=0.2,
+        )
+        cfg.chain = ChainConfig(
+            chain_json=str(chain_json_path),
+            reaction_pairs_json=str(rxn_pairs_path),
+            dt_chain=0.05, chain_steps_per_outer=4, reaction_n_needed=1,
+            n_workers=1, gb_eps_in=1.0, gb_eps_out=78.5, soft_repulsion_eps=1.0,
+            auto_diffusion=True,
+        )
+        work_dir = run_chain(cfg)
+        assert Path(work_dir).exists()
+        # Some output JSON must have been written
+        assert any(Path(work_dir).glob("*.json"))
+
+
+class TestPQRChainIdDialect:
+    """Regression: SEEKR2-produced PQRs include PDB chain-ID columns. parse_pqr
+    must handle both column-fixed and whitespace-separated formats.
+    """
+
+    def test_pqr_with_chain_id_column(self, tmp_path):
+        from pystarc.structures.pqr_io import parse_pqr
+        import math
+        pqr_text = (
+            "ATOM      1  CA  GLY A   1       0.000   0.000   0.000  0.500  2.000\n"
+            "ATOM      2  CB  GLY A   1       3.000   0.000   0.000 -0.500  2.000\n"
+        )
+        p = tmp_path / "with_chain.pqr"
+        p.write_text(pqr_text)
+        mol = parse_pqr(p)
+        assert len(mol.atoms) == 2
+        a0, a1 = mol.atoms[0], mol.atoms[1]
+        assert math.isclose(a0.x, 0.0, abs_tol=1e-6)
+        assert math.isclose(a1.x, 3.0, abs_tol=1e-6)
+        assert math.isclose(a0.charge, 0.5, abs_tol=1e-6)
+        assert math.isclose(a1.charge, -0.5, abs_tol=1e-6)
+        assert math.isclose(a0.radius, 2.0, abs_tol=1e-6)
+
+    def test_pqr_without_chain_id_still_parses(self, tmp_path):
+        from pystarc.structures.pqr_io import parse_pqr
+        pqr_text = (
+            "ATOM      1  CA  GLY     1       0.000   0.000   0.000  0.500  2.000\n"
+            "ATOM      2  CB  GLY     1       3.000   0.000   0.000 -0.500  2.000\n"
+        )
+        p = tmp_path / "no_chain.pqr"
+        p.write_text(pqr_text)
+        mol = parse_pqr(p)
+        assert len(mol.atoms) == 2
+
+    def test_multi_chain_pqr_round_trip(self, tmp_path):
+        from pystarc.structures.pqr_io import parse_pqr, write_pqr
+        import math
+        pqr_text = (
+            "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  0.100  2.000\n"
+            "ATOM      2  CA  ALA A   2       3.800   0.000   0.000  0.100  2.000\n"
+            "ATOM      3  CA  GLY B   1      10.000   0.000   0.000 -0.100  2.000\n"
+            "ATOM      4  CA  GLY B   2      13.800   0.000   0.000 -0.100  2.000\n"
+        )
+        p_in = tmp_path / "multi.pqr"
+        p_in.write_text(pqr_text)
+        mol = parse_pqr(p_in)
+        assert len(mol.atoms) == 4
+        p_out = tmp_path / "round.pqr"
+        write_pqr(mol, p_out)
+        mol2 = parse_pqr(p_out)
+        assert len(mol2.atoms) == 4
+        for orig, rt in zip(mol.atoms, mol2.atoms):
+            assert math.isclose(orig.x, rt.x, abs_tol=1e-3)
+            assert math.isclose(orig.y, rt.y, abs_tol=1e-3)
+            assert math.isclose(orig.z, rt.z, abs_tol=1e-3)
+            assert math.isclose(orig.charge, rt.charge, abs_tol=1e-4)
+            assert math.isclose(orig.radius, rt.radius, abs_tol=1e-4)
+
+
+class TestLJForceFiniteDifference:
+    """Audit gap: legacy force kernels lacked FD verification that the new
+    chain GB code has. Verify lj_pair_force = -dV/dr by central difference.
+    """
+
+    @pytest.mark.parametrize("r_over_sigma", [0.9, 1.0, 1.1, 1.5, 2.0])
+    def test_lj_force_matches_finite_difference(self, r_over_sigma):
+        import numpy as np
+        from pystarc.forces.lj import lj_pair_force
+        sigma, eps = 3.0, 0.5
+        r = r_over_sigma * sigma
+        a = np.array([0.0, 0.0, 0.0])
+        b = np.array([r, 0.0, 0.0])
+        F, _ = lj_pair_force(a, b, eps, sigma, use_wca=False)
+        F_along = F[0]
+        h = 1e-5
+        _, V_plus = lj_pair_force(a, np.array([r + h, 0.0, 0.0]), eps, sigma, use_wca=False)
+        _, V_minus = lj_pair_force(a, np.array([r - h, 0.0, 0.0]), eps, sigma, use_wca=False)
+        dV_dr = (V_plus - V_minus) / (2 * h)
+        # Force on a along +x = -dV/dr
+        np.testing.assert_allclose(F_along, -dV_dr, rtol=1e-4, atol=1e-6)
+
+    def test_wca_force_zero_outside_cutoff(self):
+        import numpy as np
+        from pystarc.forces.lj import lj_pair_force
+        sigma = 3.0
+        r_cut = 2.0 ** (1.0 / 6.0) * sigma
+        a = np.array([0.0, 0.0, 0.0])
+        b = np.array([r_cut + 0.5, 0.0, 0.0])
+        F, V = lj_pair_force(a, b, 1.0, sigma, use_wca=True)
+        np.testing.assert_array_equal(F, np.zeros(3))
+        assert V == 0.0
+
+    @pytest.mark.parametrize("r_over_sigma", [0.85, 0.95, 1.0, 1.1])
+    def test_wca_force_matches_finite_difference_inside_cutoff(self, r_over_sigma):
+        import numpy as np
+        from pystarc.forces.lj import lj_pair_force
+        sigma, eps = 3.0, 1.0
+        r = r_over_sigma * sigma
+        a = np.array([0.0, 0.0, 0.0])
+        b = np.array([r, 0.0, 0.0])
+        F, _ = lj_pair_force(a, b, eps, sigma, use_wca=True)
+        F_along = F[0]
+        h = 1e-5
+        _, V_plus = lj_pair_force(a, np.array([r + h, 0.0, 0.0]), eps, sigma, use_wca=True)
+        _, V_minus = lj_pair_force(a, np.array([r - h, 0.0, 0.0]), eps, sigma, use_wca=True)
+        dV_dr = (V_plus - V_minus) / (2 * h)
+        np.testing.assert_allclose(F_along, -dV_dr, rtol=1e-3, atol=1e-5)
+
+
+class TestDebyeHuckelForceFiniteDifference:
+    """Audit gap: debye_huckel_force lacked FD verification against
+    debye_huckel_energy. Confirm F = -dV/dr along the inter-charge axis.
+    """
+
+    @pytest.mark.parametrize("q1,q2,r,lam", [
+        (+1.0, +1.0, 5.0, 7.86),
+        (+1.0, -1.0, 5.0, 7.86),
+        (-2.0, +1.0, 8.0, 7.86),
+        (+1.0, +1.0, 3.0, 4.0),
+        (+1.0, +1.0, 15.0, 10.0),
+    ])
+    def test_dh_force_matches_finite_difference(self, q1, q2, r, lam):
+        import numpy as np
+        from pystarc.forces.electrostatic.grid_force import (
+            debye_huckel_energy, debye_huckel_force,
+        )
+        r_vec = np.array([r, 0.0, 0.0])
+        F = debye_huckel_force(q1, q2, r_vec, debye_length=lam)
+        F_along = F[0]
+        h = 1e-5
+        V_plus = debye_huckel_energy(q1, q2, r + h, debye_length=lam)
+        V_minus = debye_huckel_energy(q1, q2, r - h, debye_length=lam)
+        dV_dr = (V_plus - V_minus) / (2 * h)
+        np.testing.assert_allclose(F_along, -dV_dr, rtol=1e-3, atol=1e-8)
+
+    def test_dh_force_zero_at_zero_separation(self):
+        import numpy as np
+        from pystarc.forces.electrostatic.grid_force import debye_huckel_force
+        F = debye_huckel_force(1.0, 1.0, np.array([0.0, 0.0, 0.0]))
+        np.testing.assert_array_equal(F, np.zeros(3))
+
+    def test_dh_force_repulsive_for_like_charges(self):
+        import numpy as np
+        from pystarc.forces.electrostatic.grid_force import debye_huckel_force
+        F = debye_huckel_force(1.0, 1.0, np.array([5.0, 0.0, 0.0]))
+        assert F[0] > 0
+
+    def test_dh_force_attractive_for_opposite_charges(self):
+        import numpy as np
+        from pystarc.forces.electrostatic.grid_force import debye_huckel_force
+        F = debye_huckel_force(1.0, -1.0, np.array([5.0, 0.0, 0.0]))
+        assert F[0] < 0
+
+
+class TestDXGridForceFiniteDifference:
+    """Audit gap: DXGrid.gradient and force_on_charge lacked FD checks against
+    a known analytic potential. Use synthetic linear-ramp and quadratic grids.
+    """
+
+    @staticmethod
+    def _make_linear_grid(a, b, c, n=21, spacing=1.0):
+        """V(x,y,z) = a*x + b*y + c*z so gradient = (a,b,c) everywhere."""
+        import numpy as np
+        from pystarc.forces.electrostatic.grid_force import DXGrid
+        origin = np.array([-(n // 2) * spacing] * 3, dtype=float)
+        delta = np.eye(3) * spacing
+        coords = origin[0] + np.arange(n) * spacing
+        X, Y, Z = np.meshgrid(coords, coords, coords, indexing="ij")
+        data = a * X + b * Y + c * Z
+        return DXGrid(origin, delta, data)
+
+    @pytest.mark.parametrize("a,b,c", [
+        (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0), (0.5, -0.7, 1.3),
+    ])
+    def test_gradient_of_linear_grid_is_constant(self, a, b, c):
+        import numpy as np
+        grid = self._make_linear_grid(a, b, c)
+        for pt in [
+            np.array([0.0, 0.0, 0.0]),
+            np.array([2.0, -1.0, 3.0]),
+            np.array([-3.5, 2.7, -1.2]),
+        ]:
+            g = grid.gradient(pt)
+            np.testing.assert_allclose(g, [a, b, c], atol=1e-6)
+
+    def test_force_on_charge_is_minus_q_gradient(self):
+        import numpy as np
+        grid = self._make_linear_grid(0.5, -0.7, 1.3)
+        pt = np.array([1.0, 1.0, 1.0])
+        F_pos = grid.force_on_charge(pt, +1.0)
+        F_neg = grid.force_on_charge(pt, -1.0)
+        np.testing.assert_allclose(F_pos, [-0.5, 0.7, -1.3], atol=1e-6)
+        np.testing.assert_allclose(F_neg, [0.5, -0.7, 1.3], atol=1e-6)
+        g = grid.gradient(pt)
+        np.testing.assert_allclose(F_pos, -1.0 * g, atol=1e-12)
+        np.testing.assert_allclose(F_neg, +1.0 * g, atol=1e-12)
+
+    def test_gradient_matches_fd_of_interpolate_on_quadratic(self):
+        """Quadratic V(x,y,z) = 0.5*(x^2+y^2+z^2) -> gradient = (x,y,z).
+        FD of trilinear-interpolated V matches analytic gradient at interior
+        points. Tolerance set by interpolation error on coarse grid.
+        """
+        import numpy as np
+        from pystarc.forces.electrostatic.grid_force import DXGrid
+        n, spacing = 41, 0.5
+        origin = np.array([-(n // 2) * spacing] * 3, dtype=float)
+        delta = np.eye(3) * spacing
+        coords = origin[0] + np.arange(n) * spacing
+        X, Y, Z = np.meshgrid(coords, coords, coords, indexing="ij")
+        data = 0.5 * (X * X + Y * Y + Z * Z)
+        grid = DXGrid(origin, delta, data)
+        pt = np.array([1.2, -0.7, 0.4])
+        g = grid.gradient(pt)
+        h = spacing
+        def V(p):
+            return grid.interpolate(p)
+        gx_fd = (V(pt + np.array([h, 0, 0])) - V(pt - np.array([h, 0, 0]))) / (2 * h)
+        gy_fd = (V(pt + np.array([0, h, 0])) - V(pt - np.array([0, h, 0]))) / (2 * h)
+        gz_fd = (V(pt + np.array([0, 0, h])) - V(pt - np.array([0, 0, h]))) / (2 * h)
+        np.testing.assert_allclose([gx_fd, gy_fd, gz_fd], g, atol=0.5)
+
+
+class TestInputParserChainBlockNegative:
+    """Audit gap: input_parser.py has 17 raises but most lacked negative tests.
+    Cover each <chain>-block validation raise with a malformed-XML test.
+    """
+
+    @staticmethod
+    def _write_chain_xml(tmp_path, chain_inner, **outer_overrides):
+        outer = {
+            "receptor_pqr": "fake_rec.pqr",
+            "work_dir": str(tmp_path / "wd"),
+            "n_trajectories": "1",
+        }
+        outer.update(outer_overrides)
+        outer_xml = "\n".join(
+            f"  <{k}>{v}</{k}>" for k, v in outer.items() if v is not None
+        )
+        xml = (
+            '<?xml version="1.0" ?>\n'
+            "<pystarc_input>\n"
+            + outer_xml + "\n"
+            "  <chain>\n"
+            + chain_inner + "\n"
+            "  </chain>\n"
+            "</pystarc_input>\n"
+        )
+        p = tmp_path / "in.xml"
+        p.write_text(xml)
+        return p
+
+    def test_missing_chain_json_raises(self, tmp_path):
+        from pystarc.pipeline.input_parser import parse
+        xml_path = self._write_chain_xml(
+            tmp_path,
+            "    <reaction_pairs_json>fake.json</reaction_pairs_json>",
+        )
+        with pytest.raises(ValueError, match="chain_json"):
+            parse(xml_path)
+
+    def test_missing_receptor_pqr_raises(self, tmp_path):
+        from pystarc.pipeline.input_parser import parse
+        xml_path = self._write_chain_xml(
+            tmp_path,
+            "    <chain_json>fake_chain.json</chain_json>\n"
+            "    <reaction_pairs_json>fake.json</reaction_pairs_json>",
+            receptor_pqr=None,
+        )
+        with pytest.raises(ValueError, match="receptor_pqr"):
+            parse(xml_path)
+
+    @pytest.mark.parametrize("tag,bad_value,err_match", [
+        ("dt_chain",             "0.0", "dt_chain"),
+        ("dt_chain",            "-0.1", "dt_chain"),
+        ("chain_steps_per_outer", "0",  "chain_steps_per_outer"),
+        ("n_equilibration_steps","-1",  "n_equilibration_steps"),
+        ("D_trans",             "-1.0", "D_trans"),
+        ("D_rot",               "-0.5", "D_rot"),
+        ("r_escape",            "-1.0", "r_escape"),
+        ("reaction_n_needed",      "0", "reaction_n_needed"),
+        ("soft_repulsion_eps",  "-0.1", "soft_repulsion_eps"),
+        ("gb_eps_in",            "0.0", "gb_eps_in"),
+        ("gb_eps_in",           "-1.0", "gb_eps_in"),
+        ("gb_eps_out",           "0.0", "gb_eps_out"),
+        ("n_workers",              "0", "n_workers"),
+    ])
+    def test_chain_numeric_validation_raises(self, tmp_path, tag, bad_value, err_match):
+        from pystarc.pipeline.input_parser import parse
+        chain_inner = (
+            "    <chain_json>fake_chain.json</chain_json>\n"
+            "    <reaction_pairs_json>fake.json</reaction_pairs_json>\n"
+            f"    <{tag}>{bad_value}</{tag}>"
+        )
+        xml_path = self._write_chain_xml(tmp_path, chain_inner)
+        with pytest.raises(ValueError, match=err_match):
+            parse(xml_path)
+
+    def test_gb_eps_in_greater_than_eps_out_raises(self, tmp_path):
+        from pystarc.pipeline.input_parser import parse
+        chain_inner = (
+            "    <chain_json>fake_chain.json</chain_json>\n"
+            "    <reaction_pairs_json>fake.json</reaction_pairs_json>\n"
+            "    <gb_eps_in>80.0</gb_eps_in>\n"
+            "    <gb_eps_out>78.5</gb_eps_out>"
+        )
+        xml_path = self._write_chain_xml(tmp_path, chain_inner)
+        with pytest.raises(ValueError, match="gb_eps_in"):
+            parse(xml_path)
+
+    def test_valid_chain_xml_parses(self, tmp_path):
+        from pystarc.pipeline.input_parser import parse
+        chain_inner = (
+            "    <chain_json>fake_chain.json</chain_json>\n"
+            "    <reaction_pairs_json>fake.json</reaction_pairs_json>\n"
+            "    <dt_chain>0.05</dt_chain>\n"
+            "    <gb_eps_in>1.0</gb_eps_in>\n"
+            "    <gb_eps_out>78.5</gb_eps_out>"
+        )
+        xml_path = self._write_chain_xml(tmp_path, chain_inner)
+        cfg = parse(xml_path)
+        assert cfg.chain is not None
+        assert cfg.chain.dt_chain == 0.05
+
+
+class TestBoundedHardSphereSafeguardPresent:
+    """Regression: the bounded hard-sphere rejection safeguard must remain
+    in chain_simulator.py. The dynamic firing is exercised by the existing
+    TestChainBDSimulator* tests (which produce ~30 RuntimeWarnings in any
+    normal suite run from naturally-wedging trajectories); this test guards
+    against the safeguard CODE being silently refactored away. If this test
+    fails, the safeguard has been removed or renamed and behavioural review
+    is required before the change is merged.
+    """
+
+    def test_safeguard_code_present_in_chain_simulator(self):
+        import inspect
+        from pystarc.simulation import chain_simulator
+
+        src = inspect.getsource(chain_simulator)
+        # The three signatures of a working safeguard:
+        assert "MAX_HS_ATTEMPTS" in src, (
+            "MAX_HS_ATTEMPTS constant missing; bounded retry may have been "
+            "removed from chain_simulator"
+        )
+        assert "hard-sphere overlap rejection exceeded" in src, (
+            "diagnostic warning string missing; safeguard may have been "
+            "silenced silently rather than at filterwarnings level"
+        )
+        assert "RuntimeWarning" in src, (
+            "RuntimeWarning emission missing; safeguard may have been "
+            "downgraded to a silent accept"
+        )
+
+    def test_max_hs_attempts_is_bounded(self):
+        # The actual bound value: defends against an accidental change to
+        # an unbounded retry (which on GPU would stall the batch) or a
+        # zero-attempt no-op (which would defeat the safeguard).
+        import inspect
+        import re
+        from pystarc.simulation import chain_simulator
+
+        src = inspect.getsource(chain_simulator)
+        m = re.search(r"MAX_HS_ATTEMPTS\s*=\s*(\d+)", src)
+        assert m is not None, "MAX_HS_ATTEMPTS not assigned an integer"
+        n = int(m.group(1))
+        assert 1 <= n <= 10, (
+            f"MAX_HS_ATTEMPTS = {n} is outside the sensible bounded range "
+            f"[1, 10]; review whether this is intentional"
+        )

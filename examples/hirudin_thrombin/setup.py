@@ -83,7 +83,7 @@ candidates = []
 for i in range(10):
     prefix = os.path.join(script_dir, *[".."] * i) if i > 0 else script_dir
     candidates.append(os.path.join(prefix, "pystarc"))
-    candidates.append(os.path.join(prefix, "PySTARC_v2", "pystarc"))
+    candidates.append(os.path.join(prefix, "PySTARC", "pystarc"))
 for candidate in candidates:
     if os.path.isdir(candidate) and os.path.isdir(os.path.join(candidate, "coffdrop_data")):
         PYSTARC_DIR = os.path.abspath(candidate)
