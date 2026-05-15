@@ -49,7 +49,7 @@ echo "ambertools and apbs installed"
 # 5. GPU + pip dependencies
 echo ""
 echo "[5/7] Installing pip dependencies (cupy, matplotlib, pdb2pqr)."
-"$ENV_PY" -m pip install cupy-cuda12x matplotlib pdb2pqr
+"$ENV_PY" -m pip install cupy-cuda12x matplotlib pdb2pqr pytest-cov
 echo "pip dependencies installed"
 # 6. Install PySTARC
 echo ""
