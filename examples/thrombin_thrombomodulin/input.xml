@@ -27,7 +27,7 @@
   <!-- Physics -->
   <desolvation_alpha>0.07957747</desolvation_alpha>
   <hydrodynamic_interactions>true</hydrodynamic_interactions>
-  <overlap_check>true</overlap_check>
+  <overlap_check>false</overlap_check>
   <multipole_fallback>true</multipole_fallback>
   <lj_forces>false</lj_forces>
   <!-- BD simulation -->
