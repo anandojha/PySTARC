@@ -12,99 +12,101 @@ import re
 
 #######################################################################################################################
 # User settings
-PDB = "complex.pdb"  # Bound-state PDB (may contain water/ions)
-PRMTOP = "complex.prmtop"  # AMBER topology file
-LIGAND_RESNAME = "BEN"  # Ligand residue name in PDB
+PDB                     = "complex.pdb"           # Bound-state PDB (may contain water/ions)
+PRMTOP                  = "complex.prmtop"        # AMBER topology file
+LIGAND_RESNAME          = "BEN"                   # Ligand residue name in PDB
 EXCLUDED = {"WAT", "Cl-"}  # Residues to strip (water, ions)
 CONTACT_CUTOFF = 6.0  # Max distance (A) to find contacts in bound state
 BUFFER = 3.0  # Added to crystal distance for reaction cutoff
 N_NEEDED = 4  # Pairs that must be satisfied simultaneously
 N_PAIRS = 10  # Max number of contact pairs to use
-CONTACT_MODE = "polar"  # all=any heavy, polar=N/O/S both, nonpolar=C both, any_polar=N/O/S either, receptor_polar=N/O/S rec only
-RECEPTOR_RESNAME = "TRP"  # Receptor residue name for XML
-RECEPTOR_PQR = "receptor.pqr"  # Output receptor PQR filename
-LIGAND_PQR = "ligand.pqr"  # Output ligand PQR filename
-RXNS_XML = "rxns.xml"  # Output reaction criterion filename
-BD_MILESTONE_RADIUS = "45.0000"  # b-surface start radius (A)
-R_HYDRO_REC = "22.5000"  # Receptor hydrodynamic radius (0=auto)
-R_HYDRO_LIG = "5.0000"  # Ligand hydrodynamic radius (0=auto)
-DEBYE_LENGTH = "7.85751"  # Debye screening length (A)
-ION_CONCENTRATION = "0.15"  # Salt concentration (M)
-ION_RADIUS_POS = "0.95"  # Cation radius - Na+ Pauling (A)
-ION_RADIUS_NEG = "1.81"  # Anion radius - Cl- Pauling (A)
-PDIE = "4.0"  # Protein dielectric constant
-SDIE = "78.0"  # Solvent dielectric constant
-SRAD = "1.4"  # Solvent probe radius (A)
-APBS_CGLEN = "0"  # APBS coarse grid length (0=auto)
-APBS_FGLEN = "96"  # APBS fine grid length (A)
-APBS_DIME = "257"  # APBS grid points per dimension
-APBS_COARSE_DIME = "0"  # APBS coarse grid dime (0=auto)
-APBS_FINE_DIME = "0"  # APBS fine grid dime (0=auto)
-GPU_FORCE_BATCH = "1000"  # GPU force batch size (0=auto)
-DESOLVATION_ALPHA = "0.0795775"  # Desolvation coupling constant
-HYDRODYNAMIC_INTERACTIONS = "true"  # Include HI corrections
-OVERLAP_CHECK = "true"  # Reject overlapping configurations
-MULTIPOLE_FALLBACK = "true"  # Yukawa fallback outside grid
-LJ_FORCES = "false"  # Lennard-Jones short-range forces
-N_TRAJECTORIES = "100000"  # Number of BD trajectories
-MAX_STEPS = "1000000"  # Max steps per trajectory
-DT = "0.2"  # Base timestep (ps)
-MINIMUM_CORE_DT = "0.2"  # Minimum timestep near core (ps)
-MAX_DT = "0"  # Max timestep ceiling (0=no cap, use for protein-protein)
-TEMPERATURE = "298.15"  # Temperature (K)
-SEED = "1"  # Random seed (any integer)
-CHECKPOINT_INTERVAL = "0"  # Checkpoint frequency (0=off)
-CONVERGENCE_INTERVAL = "10"  # Convergence print interval (%)
-CONVERGENCE_CHECK = "true"  # Enable convergence checking
-CONVERGENCE_TOL = "0.05"  # Convergence tolerance
-GPU = "true"  # Use GPU acceleration
-N_THREADS = "32"  # CPU threads for APBS/IO
-WORK_DIR = "bd_sims"  # Output directory
-SAVE_INTERVAL = "10"  # Output save interval (%)
+CONTACT_MODE            = "polar"                 # all=any heavy, polar=N/O/S both, nonpolar=C both, any_polar=N/O/S either, receptor_polar=N/O/S rec only
+RECEPTOR_RESNAME        = "TRP"                   # Receptor residue name for XML
+RECEPTOR_PQR            = "receptor.pqr"          # Output receptor PQR filename
+LIGAND_PQR              = "ligand.pqr"            # Output ligand PQR filename
+RXNS_XML                = "rxns.xml"              # Output reaction criterion filename
+BD_MILESTONE_RADIUS     = "45.0000"               # b-surface start radius (A)
+R_HYDRO_REC             = "22.5000"               # Receptor hydrodynamic radius (0=auto)
+R_HYDRO_LIG             = "5.0000"                # Ligand hydrodynamic radius (0=auto)
+DEBYE_LENGTH            = "7.85751"               # Debye screening length (A)
+ION_CONCENTRATION       = "0.15"                  # Salt concentration (M)
+ION_RADIUS_POS          = "0.95"                  # Cation radius - Na+ Pauling (A)
+ION_RADIUS_NEG          = "1.81"                  # Anion radius - Cl- Pauling (A)
+PDIE                    = "4.0"                   # Protein dielectric constant
+SDIE                    = "78.0"                  # Solvent dielectric constant
+SRAD                    = "1.4"                   # Solvent probe radius (A)
+APBS_CGLEN              = "0"                     # APBS coarse grid length (0=auto)
+APBS_FGLEN              = "96"                    # APBS fine grid length (A)
+APBS_DIME               = "257"                   # APBS grid points per dimension
+APBS_COARSE_DIME        = "0"                     # APBS coarse grid dime (0=auto)
+APBS_FINE_DIME          = "0"                     # APBS fine grid dime (0=auto)
+GPU_FORCE_BATCH         = "1000"                  # GPU force batch size (0=auto)
+DESOLVATION_ALPHA       = "0.0795775"             # Desolvation coupling constant
+HYDRODYNAMIC_INTERACTIONS= "true"                  # Include HI corrections
+OVERLAP_CHECK           = "true"                  # Reject overlapping configurations
+MULTIPOLE_FALLBACK      = "true"                  # Yukawa fallback outside grid
+LJ_FORCES               = "false"                 # Lennard-Jones short-range forces
+ENABLE_BORN2_TORQUE     = "false"                 # BORN2 reciprocal torque (~3% of total; ~50x slower for proteins)
+N_TRAJECTORIES          = "100000"                # Number of BD trajectories
+MAX_STEPS               = "1000000"               # Max steps per trajectory
+DT                      = "0.2"                   # Base timestep (ps)
+MINIMUM_CORE_DT         = "0.2"                   # Minimum timestep near core (ps)
+MAX_DT                  = "0"                     # Max timestep ceiling (0=no cap, use for protein-protein)
+TEMPERATURE             = "298.15"                # Temperature (K)
+SEED                    = "1"                     # Random seed (any integer)
+CHECKPOINT_INTERVAL     = "0"                     # Checkpoint frequency (0=off)
+CONVERGENCE_INTERVAL    = "10"                    # Convergence print interval (%)
+CONVERGENCE_CHECK       = "true"                  # Enable convergence checking
+CONVERGENCE_TOL         = "0.05"                  # Convergence tolerance
+GPU                     = "true"                  # Use GPU acceleration
+N_THREADS               = "32"                    # CPU threads for APBS/IO
+WORK_DIR                = "bd_sims"               # Output directory
+SAVE_INTERVAL           = "10"                    # Output save interval (%)
 #######################################################################################################################
 
 PARAMS = {
-    "receptor_resname": RECEPTOR_RESNAME,
-    "ligand_resname": LIGAND_RESNAME,
-    "receptor_pqr": RECEPTOR_PQR,
-    "ligand_pqr": LIGAND_PQR,
-    "rxns_xml": RXNS_XML,
-    "bd_milestone_radius": BD_MILESTONE_RADIUS,
-    "r_hydro_rec": R_HYDRO_REC,
-    "r_hydro_lig": R_HYDRO_LIG,
-    "debye_length": DEBYE_LENGTH,
-    "ion_concentration": ION_CONCENTRATION,
-    "ion_radius_pos": ION_RADIUS_POS,
-    "ion_radius_neg": ION_RADIUS_NEG,
-    "pdie": PDIE,
-    "sdie": SDIE,
-    "srad": SRAD,
-    "apbs_cglen": APBS_CGLEN,
-    "apbs_fglen": APBS_FGLEN,
-    "apbs_dime": APBS_DIME,
-    "apbs_coarse_dime": APBS_COARSE_DIME,
-    "apbs_fine_dime": APBS_FINE_DIME,
-    "gpu_force_batch": GPU_FORCE_BATCH,
-    "desolvation_alpha": DESOLVATION_ALPHA,
-    "hydrodynamic_interactions": HYDRODYNAMIC_INTERACTIONS,
-    "overlap_check": OVERLAP_CHECK,
-    "multipole_fallback": MULTIPOLE_FALLBACK,
-    "lj_forces": LJ_FORCES,
-    "n_trajectories": N_TRAJECTORIES,
-    "max_steps": MAX_STEPS,
-    "dt": DT,
-    "minimum_core_dt": MINIMUM_CORE_DT,
-    "max_dt": MAX_DT,
-    "temperature": TEMPERATURE,
-    "seed": SEED,
-    "checkpoint_interval": CHECKPOINT_INTERVAL,
-    "convergence_interval": CONVERGENCE_INTERVAL,
-    "convergence_check": CONVERGENCE_CHECK,
-    "convergence_tol": CONVERGENCE_TOL,
-    "gpu": GPU,
-    "n_threads": N_THREADS,
-    "work_dir": WORK_DIR,
-    "save_interval": SAVE_INTERVAL,
+    'receptor_resname':          RECEPTOR_RESNAME,
+    'ligand_resname':            LIGAND_RESNAME,
+    'receptor_pqr':              RECEPTOR_PQR,
+    'ligand_pqr':                LIGAND_PQR,
+    'rxns_xml':                  RXNS_XML,
+    'bd_milestone_radius':       BD_MILESTONE_RADIUS,
+    'r_hydro_rec':               R_HYDRO_REC,
+    'r_hydro_lig':               R_HYDRO_LIG,
+    'debye_length':              DEBYE_LENGTH,
+    'ion_concentration':         ION_CONCENTRATION,
+    'ion_radius_pos':            ION_RADIUS_POS,
+    'ion_radius_neg':            ION_RADIUS_NEG,
+    'pdie':                      PDIE,
+    'sdie':                      SDIE,
+    'srad':                      SRAD,
+    'apbs_cglen':                APBS_CGLEN,
+    'apbs_fglen':                APBS_FGLEN,
+    'apbs_dime':                 APBS_DIME,
+    'apbs_coarse_dime':          APBS_COARSE_DIME,
+    'apbs_fine_dime':            APBS_FINE_DIME,
+    'gpu_force_batch':           GPU_FORCE_BATCH,
+    'desolvation_alpha':         DESOLVATION_ALPHA,
+    'hydrodynamic_interactions': HYDRODYNAMIC_INTERACTIONS,
+    'overlap_check':             OVERLAP_CHECK,
+    'multipole_fallback':        MULTIPOLE_FALLBACK,
+    'lj_forces':                 LJ_FORCES,
+    'enable_born2_torque':       ENABLE_BORN2_TORQUE,
+    'n_trajectories':            N_TRAJECTORIES,
+    'max_steps':                 MAX_STEPS,
+    'dt':                        DT,
+    'minimum_core_dt':           MINIMUM_CORE_DT,
+    'max_dt':                    MAX_DT,
+    'temperature':               TEMPERATURE,
+    'seed':                      SEED,
+    'checkpoint_interval':       CHECKPOINT_INTERVAL,
+    'convergence_interval':      CONVERGENCE_INTERVAL,
+    'convergence_check':         CONVERGENCE_CHECK,
+    'convergence_tol':           CONVERGENCE_TOL,
+    'gpu':                       GPU,
+    'n_threads':                 N_THREADS,
+    'work_dir':                  WORK_DIR,
+    'save_interval':             SAVE_INTERVAL,
 }
 
 #  Contact filter

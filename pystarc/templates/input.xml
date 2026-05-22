@@ -30,6 +30,7 @@
   <overlap_check> </overlap_check>
   <multipole_fallback> </multipole_fallback>
   <lj_forces> </lj_forces>
+  <enable_born2_torque> </enable_born2_torque>
   <!-- BD simulation -->
   <n_trajectories> </n_trajectories>
   <max_steps> </max_steps>

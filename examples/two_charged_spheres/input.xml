@@ -51,4 +51,5 @@
   <outputs>
     <save_interval>10</save_interval>
   </outputs>
+  <enable_born2_torque>false</enable_born2_torque>
 </pystarc>

@@ -153,6 +153,7 @@ class GPUBatchForceEngine:
         rec_radii=None,
         lig_radii=None,
         use_lj=False,
+        enable_born2_torque=False,
     ):
         if not _CUPY:
             raise RuntimeError(
@@ -254,6 +255,7 @@ class GPUBatchForceEngine:
             )
         # LJ (WCA repulsive) forces using PQR radii
         self._use_lj = use_lj
+        self._enable_born2_torque = enable_born2_torque
         self._rec_radii_gpu = None
         self._lig_radii_gpu = None
         if use_lj and rec_radii is not None and lig_radii is not None:
@@ -682,7 +684,8 @@ class GPUBatchForceEngine:
         # Evaluates lig Born grid at rec atom positions -> force on rec.
         # Newton's 3rd law: force on lig = -force on rec.
         if (
-            self._lig_born_grids_gpu
+            self._enable_born2_torque
+            and self._lig_born_grids_gpu
             and self._rec_pos_gpu is not None
             and R_matrices is not None
             and centroids is not None

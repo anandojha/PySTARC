@@ -343,6 +343,7 @@ def run(cfg: PySTARCConfig):
             rec_radii=mol_rec.radii_array() if cfg.lj_forces else None,
             lig_radii=mol_lig.radii_array() if cfg.lj_forces else None,
             use_lj=cfg.lj_forces,
+            enable_born2_torque=cfg.enable_born2_torque,
         )
         gpu_sim = GPUBatchSimulator(
             mol_rec, mol_lig, mob, pathway_set, params, batch_engine

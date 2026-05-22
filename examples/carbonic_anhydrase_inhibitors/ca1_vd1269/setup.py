@@ -65,6 +65,7 @@ HYDRODYNAMIC_INTERACTIONS = "true"                # Include HI corrections
 OVERLAP_CHECK           = "true"                  # Reject overlapping configurations
 MULTIPOLE_FALLBACK      = "true"                  # Yukawa fallback outside grid
 LJ_FORCES               = "false"                 # Lennard-Jones short-range forces
+ENABLE_BORN2_TORQUE     = "false"                 # BORN2 reciprocal torque (~3% of total; ~50x slower for proteins)
 N_TRAJECTORIES          = "100000"                # Number of BD trajectories
 MAX_STEPS               = "10000000"              # Max steps per trajectory
 DT                      = "0.2"                   # Base timestep (ps)
@@ -108,6 +109,7 @@ PARAMS = {
     'overlap_check':             OVERLAP_CHECK,
     'multipole_fallback':        MULTIPOLE_FALLBACK,
     'lj_forces':                 LJ_FORCES,
+    'enable_born2_torque':       ENABLE_BORN2_TORQUE,
     'n_trajectories':            N_TRAJECTORIES,
     'max_steps':                 MAX_STEPS,
     'dt':                        DT,
