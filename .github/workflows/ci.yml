@@ -32,7 +32,7 @@ jobs:
       - name: Install pip dependencies
         run: |
           pip install matplotlib pdb2pqr pytest pytest-cov
-          pip install dist/pystarc-1.1.0-py3-none-any.whl --force-reinstall
+          pip install .
 
       - name: Run tests with coverage
         run: |

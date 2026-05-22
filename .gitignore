@@ -16,3 +16,6 @@ FETCH_HEAD
 
 # BD output directories with variant naming (preserved diagnostic runs)
 bd_sims_*/
+
+# Build artifacts (CI builds from source, not from committed wheel)
+dist/
