@@ -31,8 +31,8 @@ jobs:
 
       - name: Install pip dependencies
         run: |
-          pip install matplotlib pdb2pqr pytest pytest-cov
-          pip install .
+          python -m pip install matplotlib pdb2pqr pytest pytest-cov
+          python -m pip install .
 
       - name: Run tests with coverage
         run: |
