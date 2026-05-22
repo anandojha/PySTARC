@@ -153,7 +153,7 @@ class GPUBatchForceEngine:
         rec_radii=None,
         lig_radii=None,
         use_lj=False,
-        enable_born2_torque=False,
+        enable_born2_torque=True,
     ):
         if not _CUPY:
             raise RuntimeError(

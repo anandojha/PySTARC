@@ -161,7 +161,7 @@ class PySTARCConfig:
     overlap_check: bool = True  # prevent ligand entering receptor volume
     multipole_fallback: bool = True  # dipole+quadrupole far-field (beyond APBS grid)
     lj_forces: bool = False  # WCA repulsive forces from PQR radii (for tight contact)
-    enable_born2_torque: bool = False  # BORN2 reciprocal torque (lig Born on rec atoms; ~3% of total torque, ~50x slower for proteins)
+    enable_born2_torque: bool = True  # BORN2 reciprocal torque (lig Born on rec atoms; ~3% of total torque, ~50x slower for proteins)
     # Checkpointing & convergence
     checkpoint_interval: int = 0  # save checkpoint every N completed traj (0=disabled)
     convergence_interval: int = 10  # print live k_on every N% completion
