@@ -76,13 +76,17 @@ def main():
     k_on = CONV * k_b * P
     SE = math.sqrt(P * (1 - P) / N) if 0 < P < 1 else 0
     RSE = SE / P if P > 0 else float("inf")
-    # Wilson 95% CI
+    # Wilson 95% CI (audit fix 2026-05-21: N=0 guard + sqrt non-negativity)
     z = 1.96
-    denom = 1 + z**2 / N
-    centre = (P + z**2 / (2 * N)) / denom
-    spread = z * math.sqrt(P * (1 - P) / N + z**2 / (4 * N**2)) / denom
-    P_lo = max(0, centre - spread)
-    P_hi = min(1, centre + spread)
+    if N == 0:
+        P_lo, P_hi = 0.0, 1.0
+    else:
+        denom = 1 + z**2 / N
+        centre = (P + z**2 / (2 * N)) / denom
+        sqrt_arg = max(P * (1 - P) / N + z**2 / (4 * N**2), 0.0)
+        spread = z * math.sqrt(sqrt_arg) / denom
+        P_lo = max(0, centre - spread)
+        P_hi = min(1, centre + spread)
     k_lo = CONV * k_b * P_lo
     k_hi = CONV * k_b * P_hi
     wall_time = sum(r.get("wall_time_sec", 0) for r in runs)

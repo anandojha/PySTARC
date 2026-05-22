@@ -59,11 +59,17 @@ class AtomRecord:
 
     @property
     def is_ghost(self) -> bool:
+        # Audit fix 2026-05-21: removed dead trailing clause
+        # 'abs(self.charge) < 1e-9 and self.radius < 1e-6'.
+        # Python precedence parses it as (charge AND radius), and because
+        # 'radius < 1e-6' is already clause 2, the AND clause could never
+        # fire independently. Probable original intent: a charge-only fallback
+        # that would need to be 'or abs(self.charge) < 1e-9' to actually work,
+        # which is a behavior change (would flag any uncharged atom as ghost)
+        # and needs physics validation before reinstating.
         return (
             self.name.strip().upper() == "GHO"
             or self.radius < 1e-6
-            or abs(self.charge) < 1e-9
-            and self.radius < 1e-6
         )
 
 

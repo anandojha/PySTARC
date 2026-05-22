@@ -20,6 +20,7 @@ This saturates the GPU: N_traj x N_atoms threads per kernel launch.
 """
 
 from __future__ import annotations
+from pystarc.simulation.diffusional_rotation import diffusional_rotation
 from pystarc.simulation.nam_simulator import NAMParameters, SimulationResult
 from pystarc.molsystem.system_state import Fate, TrajectoryResult
 from pystarc.lib.numerical import romberg_integrate
@@ -175,6 +176,17 @@ class GPUBatchSimulator:
         )  # (N_lig, 3)
         self._charges = cp.asarray(mol2.charges_array(), dtype=cp.float64)  # (N_lig,)
         self._N_lig = len(mol2.atoms)
+        # vdW radii on GPU for the atom-pair overlap check. Loaded
+        # unconditionally so overlap_check=true works without lj_forces=true.
+        # Ghost atoms have radius 0, which gives them a threshold of
+        # 0.75 * r_other and is safe (they're at the molecular centre, far
+        # from atoms of the partner at typical BD distances).
+        self._mol1_radii_overlap = cp.asarray(
+            mol1.radii_array(), dtype=cp.float64
+        )  # (N_rec,)
+        self._mol2_radii_overlap = cp.asarray(
+            mol2.radii_array(), dtype=cp.float64
+        )  # (N_lig,)
         # Outer propagator (LMZ) parameters - computed once before run()
         self._return_prob = 0.0  # set in run(): P(return to b | at trigger_r)
         self._k_b = (
@@ -354,17 +366,63 @@ class GPUBatchSimulator:
         eps0 = VACUUM_PERMITTIVITY_KBT
         sdie = 78.0
         eps = sdie * eps0
+        fpe = 4.0 * math.pi * eps
         D_t = float(self.mob.relative_translational_diffusion())
         # kT scaling: V(r) is in kBT_298 units. At T≠298.15K,
         # Boltzmann factor is exp(V/kT_scale) where kT_scale = T/298.15.
         _kT_scale = getattr(self.params, "_kT_scale", 1.0)
-        if abs(q_rec * q_lig) < 1e-9:
-            # Pure diffusion fallback
+        # Multipole consistency: BD trajectories integrate the full multipole
+        # field of the receptor, so the k_b Smoluchowski integral must use the
+        # orientation-averaged PMF, not monopole-only U(r). Leading angular
+        # averages of dipole and traceless quadrupole vanish; corrections enter
+        # at the second cumulant:
+        #   V_pmf(r) = V_0(r) - <(V - <V>)^2>_Omega / (2 kBT)
+        #   <V_dip^2>_Omega  = q_lig^2 * |p_rec|^2 / 3       * g_1(r)^2
+        #   <V_quad^2>_Omega = q_lig^2 * (2/15) Tr(Q_rec^2)  * g_2(r)^2
+        # g_1, g_2 are the Yukawa radial factors used in _yukawa_forces_gpu.
+        # For typical biological systems at b-sphere the correction is small,
+        # but it closes the NAM decomposition loop now that the trajectories
+        # see the full multipole (with transverse component) past the grid.
+        _mp_dip_gpu = getattr(self.engine, "_mp_dipole_gpu", None)
+        _mp_quad_gpu = getattr(self.engine, "_mp_quad_gpu", None)
+        if _mp_dip_gpu is not None and _mp_quad_gpu is not None:
+            _p_rec = cp.asnumpy(_mp_dip_gpu).astype(float)
+            _Q_rec = cp.asnumpy(_mp_quad_gpu).astype(float)
+            _p_sq = float(np.dot(_p_rec, _p_rec))
+            # Tr(Q^2) for symmetric Q is the elementwise sum of squares.
+            _Tr_Q_sq = float(np.sum(_Q_rec * _Q_rec))
+        else:
+            _p_sq = 0.0
+            _Tr_Q_sq = 0.0
+        _has_multipole_force = (
+            abs(q_lig) > 1e-9 and (_p_sq > 1e-18 or _Tr_Q_sq > 1e-18)
+        )
+        # Stash for the diagnostic print in run().
+        self._kb_multipole_active = bool(_has_multipole_force)
+        self._kb_mp_p_sq = _p_sq
+        self._kb_mp_Tr_Q_sq = _Tr_Q_sq
+        if abs(q_rec * q_lig) < 1e-9 and not _has_multipole_force:
+            # Pure diffusion fallback (no monopole and no multipole steering).
             self._k_b = 4.0 * math.pi * D_t * b
             return b / q_out  # P_return = k_b(b)/k_b(q) for free diffusion
 
         def U(r):
-            return q_rec * q_lig / (4.0 * math.pi * eps * r) * math.exp(-r / debye)
+            # Monopole-monopole Yukawa (always present, possibly zero).
+            V0 = q_rec * q_lig * math.exp(-r / debye) / (fpe * r)
+            if not _has_multipole_force:
+                return V0
+            # Second-cumulant PMF correction. In kBT_298 units; the
+            # 1/_kT_scale absorbs kBT in the cumulant divisor so the final
+            # integrand exp(V/kT_T) is Boltzmann-weighted correctly at the
+            # actual run temperature.
+            e_rl = math.exp(-r / debye)
+            g1 = e_rl * (1.0 + r / debye) / (fpe * r * r)
+            g2 = e_rl * (
+                1.0 + r / debye + r * r / (3.0 * debye * debye)
+            ) / (fpe * r * r * r)
+            V1_sq = (q_lig * q_lig) * (_p_sq / 3.0) * g1 * g1
+            V2_sq = (q_lig * q_lig) * (2.0 / 15.0) * _Tr_Q_sq * g2 * g2
+            return V0 - 0.5 * (V1_sq + V2_sq) / _kT_scale
 
         # With HI: D_parallel(r) = dpre*(ainv - 3/r + 2*a2/r³)
         # Without: D_parallel(r) = dpre*ainv = D_t (constant)
@@ -516,9 +574,19 @@ class GPUBatchSimulator:
         # When r > trigger_r: snap to b with P_return, else escape.
         trigger_r = self._qb_factor * r_b  # kept for reference only
         self._return_prob = self._compute_return_prob()
+        _mp_active = bool(getattr(self, "_kb_multipole_active", False))
+        if _mp_active:
+            _p_mag = math.sqrt(getattr(self, "_kb_mp_p_sq", 0.0))
+            _q_mag = math.sqrt(getattr(self, "_kb_mp_Tr_Q_sq", 0.0))
+            _mp_tag = (
+                f"  [multipole PMF: |p|={_p_mag:.3f} e·Å, "
+                f"sqrt(TrQ²)={_q_mag:.3f} e·Å²]"
+            )
+        else:
+            _mp_tag = ""
         print(
             f"  Outer propagator (LMZ): return_prob={self._return_prob:.4f}"
-            f"  (applied at r_esc={r_esc:.1f}Å)  k_b={self._k_b:.4f} Å³/ps"
+            f"  (applied at r_esc={r_esc:.1f}Å)  k_b={self._k_b:.4f} Å³/ps{_mp_tag}"
         )
         # Initialise all trajectories on GPU
         # Random start positions on b-sphere
@@ -780,17 +848,24 @@ class GPUBatchSimulator:
             _ckpt_dir = Path(getattr(self.params, "_work_dir", "bd_sims"))
             _ckpt_dir.mkdir(parents=True, exist_ok=True)
         _last_ckpt_done = 0
-        # Overlap check setup
+        # Overlap check setup — atom-pair vdW (not centroid-vs-rec-atom).
+        # Per-pair threshold OVERLAP_VDW_FRACTION × (r_vdw_lig + r_vdw_rec)
+        # catches genuine inter-atomic penetration while allowing H-bonds
+        # and salt bridges that occur in real binding poses. 0.5 puts the
+        # threshold at ~1.7 Å heavy-heavy and ~1.4 Å H-X, well below
+        # H-bond donor-acceptor distance (~1.9 Å) but above genuine atom-
+        # in-atom interpenetration. Earlier 0.75 over-rejected binding
+        # poses (k_on dropped 100x for trypsin-benzamidine, 2026-05-21).
         _use_overlap = getattr(self.params, "_overlap_check", True)
         _rec_pos_overlap = None
         _n_overlap_rejected = 0
-        _overlap_threshold = 1.5
+        _OVERLAP_VDW_FRACTION = 0.5
         if _use_overlap:
             rec_pos_np = self.mol1.positions_array()  # (N_rec, 3)
             _rec_pos_overlap = cp.asarray(rec_pos_np, dtype=cp.float64)
             print(
-                f"  Overlap check: enabled (threshold={_overlap_threshold} Å, "
-                f"{len(rec_pos_np)} receptor atoms)"
+                f"  Overlap check: atom-pair vdW × {_OVERLAP_VDW_FRACTION:.2f}  "
+                f"({self._N_lig} lig × {len(rec_pos_np)} rec atoms)"
             )
         # Main BD loop
         for step in range(_resume_step, self.params.max_steps):
@@ -905,13 +980,62 @@ class GPUBatchSimulator:
                             pos[new_ret], axis=1, keepdims=True
                         )
                         pos[new_ret] = dirs * r_b
-                        # rot = diffusional_rotation(t * Drot) where
-                        # t is accumulated time in outer propagator. For large t
-                        # (trajectory diffused to r_escape and back), this is
-                        # effectively a random rotation.
-                        q[new_ret] = self._random_quaternions_gpu(
-                            int(len(new_ret)), rng
+                        # Diffusional rotation over estimated outer-region
+                        # time. The snap propagator does not track per-
+                        # trajectory elapsed outer time; estimate via the
+                        # free-diffusion radial timescale
+                        #   t_outer ~ (r_esc^2 - r_b^2) / (6 D_t).
+                        # tau = t_outer * D_r feeds the CPU
+                        # diffusional_rotation helper, which handles all
+                        # regimes (small -> Gaussian step, intermediate ->
+                        # recursive split, tau >= 4 -> uniform fallback).
+                        # Fix #6 (real GPU outer propagator) will replace
+                        # this with per-trajectory sampled t_outer.
+                        n_ret = int(len(new_ret))
+                        t_outer_est = max(
+                            0.0, (r_esc * r_esc - r_b * r_b) / (6.0 * D_t)
                         )
+                        tau_return = t_outer_est * D_r
+                        if tau_return > 0.0:
+                            q_esc_np = cp.asnumpy(q[new_ret])
+                            dq_np = np.empty_like(q_esc_np)
+                            for _i in range(n_ret):
+                                dq_np[_i] = diffusional_rotation(
+                                    rng, tau_return
+                                )
+                            # Hamilton product q_new = dq * q_escape
+                            # (w,x,y,z); applies dq from the left.
+                            w1 = dq_np[:, 0]
+                            x1 = dq_np[:, 1]
+                            y1 = dq_np[:, 2]
+                            z1 = dq_np[:, 3]
+                            w2 = q_esc_np[:, 0]
+                            x2 = q_esc_np[:, 1]
+                            y2 = q_esc_np[:, 2]
+                            z2 = q_esc_np[:, 3]
+                            q_new_np = np.stack(
+                                [
+                                    w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+                                    w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+                                    w1 * y2 + y1 * w2 + z1 * x2 - x1 * z2,
+                                    w1 * z2 + z1 * w2 + x1 * y2 - y1 * x2,
+                                ],
+                                axis=1,
+                            )
+                            q_new_np /= np.linalg.norm(
+                                q_new_np, axis=1, keepdims=True
+                            )
+                            q[new_ret] = cp.asarray(q_new_np)
+                        # else: tau_return == 0 (degenerate); leave q
+                        # unchanged.
+                        if not getattr(self, "_diff_rot_logged", False):
+                            print(
+                                f"  Return rotation: "
+                                f"t_outer_est={t_outer_est:.1f} ps, "
+                                f"D_r={D_r:.4e} rad^2/ps, "
+                                f"tau={tau_return:.3f}"
+                            )
+                            self._diff_rot_logged = True
                         # Track returns
                         _ret_np = cp.asnumpy(new_ret)
                         _n_returns[_ret_np] += 1
@@ -1109,28 +1233,61 @@ class GPUBatchSimulator:
             sigma_r = cp.sqrt(2.0 * D_r * dt_arr)[:, None]
             omega = D_r * dt_arr[:, None] * torques_gpu + sigma_r * noise_r
             q[sr_idx] = self._apply_rotation_gpu(q[sr_idx], omega)
-            # Overlap check (elastic wall)
-            # If ligand centroid penetrated the receptor volume, reject step.
-            # Check: min distance from ligand centroid to any receptor atom.
-            # Chunked to limit GPU memory: (chunk, N_rec, 3) per batch.
+            # Overlap check (elastic wall) — atom-pair vdW.
+            # Compute lab-frame ligand atom positions from updated centroid +
+            # quaternion, then test every (lig_atom, rec_atom) pair against
+            # OVERLAP_VDW_FRACTION × (r_vdw_lig + r_vdw_rec). Chunked over
+            # ligand atoms to bound GPU memory: per-chunk allocation is the
+            # (N_sr, lig_chunk, N_rec, 3) diff tensor (~24 bytes/element)
+            # plus dist² and threshold² scratch (~17 bytes/element), total
+            # ~41 bytes per element.
             if _use_overlap and _rec_pos_overlap is not None:
-                new_pos_sr = pos[sr_idx]  # (N_sr, 3)
-                N_sr_ov = new_pos_sr.shape[0]
+                _new_R_sr = self._quats_to_rotmats(q[sr_idx])  # (N_sr, 3, 3)
+                _new_lig_atoms = (
+                    cp.einsum("nij,kj->nki", _new_R_sr, self._mol2_pos0)
+                    + pos[sr_idx][:, None, :]
+                )  # (N_sr, N_lig, 3)
+                N_sr_ov = _new_lig_atoms.shape[0]
+                N_lig_ov = _new_lig_atoms.shape[1]
                 N_rec_ov = _rec_pos_overlap.shape[0]
-                # Chunk size: limit to ~500 MB
-                _ov_chunk = max(1, int(500 * 1024 * 1024 / (N_rec_ov * 3 * 8)))
-                _ov_chunk = min(_ov_chunk, N_sr_ov)
+                # Two-level chunking (trajectories, then lig atoms) so that
+                # even at production scale (N_sr ~ 1e6) the inner allocation
+                # stays bounded. The original code chunked only over lig
+                # atoms with a 500 MB budget; for large N_sr the per-iter
+                # allocation can reach ~200 GB even with lig_chunk=1.
+                _max_bytes_ov = 2 * 1024 * 1024 * 1024  # 2 GB
+                _bytes_per_traj_per_lig = N_rec_ov * 41
+                _sr_chunk = max(
+                    1, int(_max_bytes_ov / max(1, _bytes_per_traj_per_lig))
+                )
+                _sr_chunk = min(_sr_chunk, N_sr_ov)
                 _inside_all = cp.zeros(N_sr_ov, dtype=cp.bool_)
-                for _ov_c0 in range(0, N_sr_ov, _ov_chunk):
-                    _ov_c1 = min(_ov_c0 + _ov_chunk, N_sr_ov)
-                    _diff = (
-                        new_pos_sr[_ov_c0:_ov_c1, None, :]
-                        - _rec_pos_overlap[None, :, :]
+                for _it0 in range(0, N_sr_ov, _sr_chunk):
+                    _it1 = min(_it0 + _sr_chunk, N_sr_ov)
+                    _n_sr = _it1 - _it0
+                    _lig_chunk = max(
+                        1, int(_max_bytes_ov / max(1, _n_sr * N_rec_ov * 41))
                     )
-                    _dists = cp.linalg.norm(_diff, axis=2)
-                    _min_dists = _dists.min(axis=1)
-                    _inside_all[_ov_c0:_ov_c1] = _min_dists < _overlap_threshold
-                    del _diff, _dists, _min_dists
+                    _lig_chunk = min(_lig_chunk, N_lig_ov)
+                    for _ic0 in range(0, N_lig_ov, _lig_chunk):
+                        _ic1 = min(_ic0 + _lig_chunk, N_lig_ov)
+                        _diff = (
+                            _new_lig_atoms[_it0:_it1, _ic0:_ic1, None, :]
+                            - _rec_pos_overlap[None, None, :, :]
+                        )  # (sr_chunk, nc, N_rec, 3)
+                        _dist_sq = (_diff * _diff).sum(axis=-1)
+                        _r_l = self._mol2_radii_overlap[_ic0:_ic1]
+                        _thresh = _OVERLAP_VDW_FRACTION * (
+                            _r_l[:, None] + self._mol1_radii_overlap[None, :]
+                        )  # (nc, N_rec)
+                        _thresh_sq = _thresh * _thresh
+                        _overlap_chunk = (
+                            _dist_sq < _thresh_sq[None, :, :]
+                        ).any(axis=(1, 2))
+                        _inside_all[_it0:_it1] = (
+                            _inside_all[_it0:_it1] | _overlap_chunk
+                        )
+                        del _diff, _dist_sq, _overlap_chunk
                 if cp.any(_inside_all):
                     _inside_idx = cp.where(_inside_all)[0]
                     pos[sr_idx[_inside_idx]] = _old_pos_sr[_inside_idx]

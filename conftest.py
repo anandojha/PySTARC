@@ -25,7 +25,19 @@ def pytest_sessionfinish(session, exitstatus):
     runtime_targets = {"bd_sims", "chain_bd_results"}
     skip_path_parts = {".git", "build", "dist", "pystarc.egg-info", ".github"}
 
-    bases = {_PROJECT_ROOT.resolve(), Path.cwd().resolve()}
+    # Safety: only walk inside the project root. Without this guard,
+    # invoking pytest from outside the project (e.g. cd ~ && pytest tests/)
+    # would walk the user's home tree and rmtree any directory named
+    # 'bd_sims' or 'chain_bd_results' it encountered, regardless of owner.
+    project_root = _PROJECT_ROOT.resolve()
+    bases = {project_root}
+    cwd = Path.cwd().resolve()
+    try:
+        cwd.relative_to(project_root)
+        bases.add(cwd)
+    except ValueError:
+        # cwd is outside the project; don't walk it.
+        pass
     for base in bases:
         if not base.is_dir():
             continue

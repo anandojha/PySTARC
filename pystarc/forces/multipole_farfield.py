@@ -60,6 +60,8 @@ except ImportError:
     cp = None
 import math
 
+from pystarc.global_defs.constants import VACUUM_PERMITTIVITY_KBT
+
 
 class MultipoleExpansion:
     """Precomputed multipole moments for a molecule."""
@@ -84,7 +86,7 @@ class MultipoleExpansion:
             Solvent dielectric constant.
         """
         self.debye = debye_length
-        eps0 = 0.000142  # e²/(kBT·Å)
+        eps0 = VACUUM_PERMITTIVITY_KBT  # e²/(kBT·Å)
         self.eps = sdie * eps0
         self.four_pi_eps = 4.0 * math.pi * self.eps
         # Monopole: Q_total

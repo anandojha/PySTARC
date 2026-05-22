@@ -13,3 +13,6 @@ slurm-*.out
 summary.txt
 FETCH_HEAD
 .coverage
+
+# BD output directories with variant naming (preserved diagnostic runs)
+bd_sims_*/

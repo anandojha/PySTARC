@@ -42,10 +42,10 @@ APBS_FINE_DIME          = "0"                     # APBS fine grid dime (0=auto)
 GPU_FORCE_BATCH         = "1000"                  # GPU force batch size (0=auto)
 DESOLVATION_ALPHA       = "0.0795775"             # Desolvation coupling constant
 HYDRODYNAMIC_INTERACTIONS = "true"                # Include HI corrections
-OVERLAP_CHECK           = "true"                  # Reject overlapping configurations
+OVERLAP_CHECK           = "false"                  # Reject overlapping configurations
 MULTIPOLE_FALLBACK      = "true"                  # Yukawa fallback outside grid
 LJ_FORCES               = "false"                 # Lennard-Jones short-range forces
-N_TRAJECTORIES          = "10000000"              # Number of BD trajectories
+N_TRAJECTORIES          = "200000"              # Number of BD trajectories
 MAX_STEPS               = "1000000"               # Max steps per trajectory
 DT                      = "0.2"                   # Base timestep (ps)
 MINIMUM_CORE_DT         = "0.2"                   # Minimum timestep near core (ps)

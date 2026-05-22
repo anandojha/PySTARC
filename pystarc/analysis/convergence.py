@@ -93,13 +93,18 @@ def analyse_convergence(
         SE = 0.0
         relative_SE = 0.0
     SE_kon = conv_factor * k_b * SE
-    # Wilson 95% CI
+    # Wilson 95% CI (audit fix 2026-05-21: N=0 guard + sqrt non-negativity)
     z = 1.96
-    denom = 1 + z**2 / N
-    centre = (P + z**2 / (2 * N)) / denom
-    spread = z * math.sqrt(P * (1 - P) / N + z**2 / (4 * N**2)) / denom
-    wilson_lo = max(0.0, centre - spread)
-    wilson_hi = min(1.0, centre + spread)
+    if N == 0:
+        wilson_lo, wilson_hi = 0.0, 1.0
+    else:
+        denom = 1 + z**2 / N
+        centre = (P + z**2 / (2 * N)) / denom
+        # max(..., 0.0) guards FP roundoff at the P=0 or P=1 boundary.
+        sqrt_arg = max(P * (1 - P) / N + z**2 / (4 * N**2), 0.0)
+        spread = z * math.sqrt(sqrt_arg) / denom
+        wilson_lo = max(0.0, centre - spread)
+        wilson_hi = min(1.0, centre + spread)
     wilson_lo_kon = conv_factor * k_b * wilson_lo
     wilson_hi_kon = conv_factor * k_b * wilson_hi
     # Convergence verdict

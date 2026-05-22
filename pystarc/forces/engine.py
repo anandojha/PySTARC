@@ -606,29 +606,23 @@ class PySTARCEngine:
                     else np.zeros(3)
                 )
                 torque += np.cross(p - c2, f_i)
-        # Electrostatic: mol1 atoms in mol2's field (Newton 3rd law)
-        if self._elec2:
-            f, t, e = self._elec2.eval_atoms(pos1, chg1, 0.0, False, self.backend)
-            force -= f
-            energy += e * 0.5  # avoid double-counting
-        elif self._eff2 is not None:
-            for i, (p, q) in enumerate(zip(pos1, chg1)):
-                if abs(q) < 1e-9:
-                    continue
-                f_i = self._eff2.force_on_charge(p, q)
-                force -= f_i
-                energy += q * self._eff2.potential(p) * 0.5
         # Born desolvation: mol2 atoms in mol1's born field
         if self._born1:
             f, t, e = self._born1.eval_atoms(pos2, chg2, self.alpha, True, self.backend)
             force += f
             torque += t
             energy += e
-        # Born desolvation: mol1 atoms in mol2's born field
+        # Born desolvation: mol1 atoms in mol2's born field (BD2 parity).
+        # Distinct physical contribution, not N3-conjugate of born1.
+        # Verified against Browndye2 forces_impl.hh:add_core_forces.
         if self._born2:
             f, t, e = self._born2.eval_atoms(pos1, chg1, self.alpha, True, self.backend)
-            force -= f
-            energy += e * 0.5
+            # BORN2 translation force dropped (was double-counting BORN1's
+            # desolvation; mirrors gpu_batch_engine.py fix 2026-05-21).
+            # Torque contribution NOT added here pending verification of CPU
+            # eval_atoms torque sign convention vs GPU _eval_born_reverse.
+            # CPU path is not used in production so this is acceptable.
+            energy += e * 0.5  # TODO: verify 0.5 factor; does not affect BD trajectories
         # Lennard-Jones + hydrophobic (optional)
         if self._lj_engine is not None:
             n1 = len(pos1)

@@ -313,6 +313,12 @@ class OuterPropagator:
                 Fr0 = self._radial_force(r)
                 D0 = self._D_parallel(r)
                 survives, new_x, delta_t = step_near_absorbing_surface(rng, x, -Fr0, D0)
+                # Accumulate elapsed time from the Lamm-Schulten step (audit fix
+                # 2026-05-21). Mirrors the b-sphere branch above; without this,
+                # trajectories near the q-sphere have under-accumulated time and
+                # outer-sphere rotation is under-applied. do_when_near_q overwrites
+                # t with LARGE in the not-survives branch, so this is safe.
+                t += delta_t
                 do_when_near_q(survives, r, new_x)
             else:
                 # middle region: analytical drift + diffusion step

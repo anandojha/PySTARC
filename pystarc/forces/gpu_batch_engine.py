@@ -52,6 +52,8 @@ from pathlib import Path
 import numpy as np
 import math
 
+from pystarc.global_defs.constants import VACUUM_PERMITTIVITY_KBT
+
 try:
     import cupy as cp
 
@@ -81,7 +83,7 @@ void batch_force_kernel(
     int traj = blockIdx.x * blockDim.x + threadIdx.x;
     int atom  = blockIdx.y * blockDim.y + threadIdx.y;
     if (traj >= N_traj || atom >= N_atoms) return;
-    double q = charges[atom];
+    double q = charges[traj * N_atoms + atom];
     int out_idx = traj * N_atoms + atom;
     atom_forces[out_idx*3+0] = 0;
     atom_forces[out_idx*3+1] = 0;
@@ -164,7 +166,7 @@ class GPUBatchForceEngine:
         self._sdie = sdie
         # V_factor = Q_rec / (4*pi*eps_s)  where eps_s = sdie * vacuum_permittivity
         # vacuum_permittivity in the reference units: 0.000142 e^2/(kBT*A)
-        eps_s = sdie * 0.000142
+        eps_s = sdie * VACUUM_PERMITTIVITY_KBT
         self._V_factor = receptor_charge / (4.0 * math.pi * eps_s) if eps_s > 0 else 0.0
         self._has_yukawa = abs(receptor_charge) > 1e-9 and debye_length > 0
         # Multipole expansion (dipole + quadrupole) for far-field
@@ -183,21 +185,41 @@ class GPUBatchForceEngine:
         # The coarse electrostatic grid exists only to provide Dirichlet
         # boundary conditions for the fine grid's APBS solve (bcfl map).
         # At runtime: fine grid for atoms inside, Chebyshev/Yukawa for outside.
-        if self._has_yukawa and len(self._elec_grids_gpu) > 1:
-            finest = self._elec_grids_gpu[0]  # sorted finest-first
-            fine_extent = float(max(abs(finest["lo"][0]), abs(finest["hi"][0])))
-            print(
-                f"  Elec: using fine grid only (±{fine_extent:.0f}Å) + Yukawa far-field "
-                f"(dropping {len(self._elec_grids_gpu)-1} coarse grid(s) - BC only)"
+        # Retain all APBS grids at runtime. _eval_batch's `assigned` mask
+        # ensures each atom is processed by exactly one grid (the finest
+        # containing it). Atoms outside all grids fall through to the
+        # Yukawa fallback. The previous code dropped every grid but the
+        # finest under the assumption that coarse grids existed only as
+        # APBS boundary conditions — but the coarse APBS field is more
+        # accurate than truncated multipole extrapolation in the
+        # intermediate range, and matches BD2 runtime behavior.
+        if len(self._elec_grids_gpu) > 1:
+            _fine = self._elec_grids_gpu[0]
+            _coarse = self._elec_grids_gpu[-1]
+            _fine_ext = float(max(abs(_fine["lo"][0]), abs(_fine["hi"][0])))
+            _coarse_ext = float(
+                max(abs(_coarse["lo"][0]), abs(_coarse["hi"][0]))
             )
-            self._elec_grids_gpu = [finest]
+            print(
+                f"  Elec: {len(self._elec_grids_gpu)} grids retained "
+                f"(fine ±{_fine_ext:.0f}Å -> coarse ±{_coarse_ext:.0f}Å)"
+                + ("  + Yukawa far-field" if self._has_yukawa else "")
+            )
+        # DIAGNOSTIC: revert Born coarse retention. Coarse Born grid at
+        # b-sphere distance produces ~60x larger outward force than ELEC,
+        # killing trajectory approach. Until we figure out whether the
+        # coarse APBS Born grid is physical or an artifact, drop it and
+        # use fine-only (= pre-fix-#8 behavior for Born).
         if len(self._born_grids_gpu) > 1:
-            finest_born = self._born_grids_gpu[0]
-            print(
-                f"  Born: using finest grid only "
-                f"(dropping {len(self._born_grids_gpu)-1} coarse grid(s))"
+            _finest_born = self._born_grids_gpu[0]
+            _fineb_ext = float(
+                max(abs(_finest_born["lo"][0]), abs(_finest_born["hi"][0]))
             )
-            self._born_grids_gpu = [finest_born]
+            print(
+                f"  Born: using finest grid only (±{_fineb_ext:.0f}Å) "
+                f"[DIAGNOSTIC: coarse grid dropped to test fix #8 hypothesis]"
+            )
+            self._born_grids_gpu = [_finest_born]
         # core_desolvation_force_on_1(state0, state1)  -> rec Born on lig
         # core_desolvation_force_on_1(state1, state0)  -> lig Born on rec
         # Direction 2 needs ligand Born grids + receptor atom positions
@@ -207,8 +229,10 @@ class GPUBatchForceEngine:
         if lig_born_grids and rec_positions is not None and rec_charges is not None:
             self._lig_born_grids_gpu = self._upload_grids(lig_born_grids)
             # Keep only finest lig Born grid (auto-sized to ligand extent)
-            if len(self._lig_born_grids_gpu) > 1:
-                self._lig_born_grids_gpu = [self._lig_born_grids_gpu[0]]
+            # Lig Born grids: retain all (same logic as rec-side above).
+            # _eval_batch's `assigned` mask makes finest-first assignment
+            # correct for multi-grid; coarse lig Born grids give receptor
+            # atoms in the intermediate range a proper APBS field.
             self._rec_pos_gpu = cp.asarray(
                 rec_positions, dtype=cp.float64
             )  # (N_rec, 3)
@@ -293,20 +317,32 @@ class GPUBatchForceEngine:
         grids_gpu,
         alpha: float,
         is_born: bool,
+        centroids=None,  # (N_traj, 3) reference point for torque accumulation
     ):
         """
-        Evaluate forces for all trajectories against grids.
+        Evaluate forces, torques, and energies for all trajectories.
         Finest-grid-first assignment. Yukawa fallback for unassigned atoms.
+        Torque is computed about each trajectory's centroid; when centroids
+        is None, torques are returned as zeros (matches legacy callers).
         """
         N_traj, N_atoms, _ = positions_gpu.shape
         total_forces = cp.zeros((N_traj, 3), dtype=cp.float64)
+        total_torques = cp.zeros((N_traj, 3), dtype=cp.float64)
         total_energies = cp.zeros((N_traj,), dtype=cp.float64)
+        # Lever arms about each trajectory's centroid for torque accumulation.
+        if centroids is not None:
+            lever_arms = positions_gpu - centroids[:, None, :]
+        else:
+            lever_arms = None
         if not grids_gpu:
             if not is_born and self._has_yukawa:
-                yf, ye = self._yukawa_forces_gpu(positions_gpu, charges_gpu)
+                yf, yt, ye = self._yukawa_forces_gpu(
+                    positions_gpu, charges_gpu, centroids=centroids
+                )
                 total_forces += yf
+                total_torques += yt
                 total_energies += ye
-            return total_forces, total_energies
+            return total_forces, total_torques, total_energies
         assigned = cp.zeros((N_traj, N_atoms), dtype=cp.bool_)
         for g in grids_gpu:
             nx, ny, nz = g["nx"], g["ny"], g["nz"]
@@ -353,16 +389,21 @@ class GPUBatchForceEngine:
             )
             total_forces += atom_forces.sum(axis=1)
             total_energies += atom_energies.sum(axis=1)
+            # Per-atom torque about each trajectory's centroid; lever × force.
+            if lever_arms is not None:
+                atom_torques = cp.cross(lever_arms, atom_forces, axis=2)
+                total_torques += atom_torques.sum(axis=1)
         # Yukawa far-field fallback for atoms outside all grids
         # (electrostatic only - Born decays too fast to matter)
         if not is_born and self._has_yukawa:
             not_assigned = ~assigned
             n_not = int(cp.sum(not_assigned))
             if n_not > 0:
-                yf, ye = self._yukawa_forces_gpu(
-                    positions_gpu, charges_gpu, mask=not_assigned
+                yf, yt, ye = self._yukawa_forces_gpu(
+                    positions_gpu, charges_gpu, mask=not_assigned, centroids=centroids
                 )
                 total_forces += yf
+                total_torques += yt
                 total_energies += ye
                 if self._call_count < 3:
                     print(
@@ -388,9 +429,9 @@ class GPUBatchForceEngine:
                 f"max={float(f_mag.max()):.8f} "
                 f"min={float(f_mag.min()):.8f} kBT/Å"
             )
-        return total_forces, total_energies
+        return total_forces, total_torques, total_energies
 
-    def _yukawa_forces_gpu(self, positions_gpu, charges_gpu, mask=None):
+    def _yukawa_forces_gpu(self, positions_gpu, charges_gpu, mask=None, centroids=None):
         """
         Analytical screened Coulomb force from receptor charge distribution.
         When multipole_expansion is set: monopole + dipole + quadrupole.
@@ -457,8 +498,28 @@ class GPUBatchForceEngine:
                     )
                 )
                 dphi_dr += dphi_quad_dr
-        # grad(phi) = d(phi)/dr * r_hat
+        # grad(phi) = d(phi)/dr * r_hat + transverse from non-spherical terms.
+        # The radial part is exact for monopole (spherically symmetric V).
+        # For dipole, V_dip = (p·r̂)/(4πε r²)·(1+r/λ)·exp(-r/λ) carries angular
+        # dependence through (p·r̂); ∇V_dip therefore has a transverse component
+        # proportional to (p - (p·r̂)r̂) that the radial-only formula drops.
+        # Including it is essential for orientational steering by the
+        # ligand-receptor dipole interaction beyond the fine APBS grid.
         grad_phi = dphi_dr[:, :, None] * r_hat
+        if (
+            self._multipole is not None
+            and float(cp.linalg.norm(self._mp_dipole_gpu)) > 1e-9
+        ):
+            p_gpu_t = self._mp_dipole_gpu
+            fpe_t = self._mp_four_pi_eps
+            lam_t = debye
+            g_f = (1.0 + safe_r / lam_t) * exp_term  # (N_traj, N_atoms)
+            transverse_factor = g_f / (fpe_t * safe_r**3)
+            p_dot_r_t = cp.sum(r_hat * p_gpu_t[None, None, :], axis=2)
+            p_perp = (
+                p_gpu_t[None, None, :] - p_dot_r_t[:, :, None] * r_hat
+            )  # (N_traj, N_atoms, 3)
+            grad_phi = grad_phi + transverse_factor[:, :, None] * p_perp
         # F_i = -q_i * grad(phi)
         q_3d = charges_gpu[None, :, None]
         atom_forces = -q_3d * grad_phi
@@ -469,16 +530,26 @@ class GPUBatchForceEngine:
             atom_energies = atom_energies * mask.astype(cp.float64)
         forces = atom_forces.sum(axis=1)
         energies = atom_energies.sum(axis=1)
-        return forces, energies
+        # Torque about each trajectory's centroid: sum_i lever_i × F_i.
+        if centroids is not None:
+            lever_arms = positions_gpu - centroids[:, None, :]
+            atom_torques = cp.cross(lever_arms, atom_forces, axis=2)
+            torques = atom_torques.sum(axis=1)
+        else:
+            torques = cp.zeros((N_traj, 3), dtype=cp.float64)
+        return forces, torques, energies
 
     def _wca_forces_gpu(self, lig_positions, centroids):
         """
-        WCA (purely repulsive LJ) forces using PQR radii.
+        WCA (purely repulsive LJ) forces using PQR radii, with per-atom
+        torque about each trajectory's centroid.
 
         Only activates for trajectories where centroid is close to receptor.
         sigma_ij = rec_radius_i + lig_radius_j (Lorentz combining rule).
         WCA cutoff: r < 2^(1/6) × sigma_ij (only repulsive part).
         Processed in chunks to limit GPU memory.
+
+        Returns (force, torque) each shaped (N_traj, 3).
         """
         N_traj = lig_positions.shape[0]
         N_lig = lig_positions.shape[1]
@@ -489,8 +560,9 @@ class GPUBatchForceEngine:
         active = r_cen < self._lj_activation
         n_active = int(active.sum())
         lj_forces = cp.zeros((N_traj, 3), dtype=cp.float64)
+        lj_torques = cp.zeros((N_traj, 3), dtype=cp.float64)
         if n_active == 0:
-            return lj_forces
+            return lj_forces, lj_torques
         active_idx = cp.where(active)[0]
         # Process in chunks to limit memory: (chunk × N_lig × N_rec × 3)
         CHUNK = max(1, min(50, int(2e9 / (N_lig * N_rec * 8 * 3))))
@@ -523,10 +595,15 @@ class GPUBatchForceEngine:
             f_vec = (
                 f_mag[:, :, :, None] * diff / r[:, :, :, None]
             )  # (nc, N_lig, N_rec, 3)
-            # Sum over rec atoms and lig atoms -> net force per trajectory
-            net_f = f_vec.sum(axis=(1, 2))  # (nc, 3)
-            lj_forces[idx] = net_f
-        return lj_forces
+            # Per-lig-atom force (summed over rec atoms): (nc, N_lig, 3)
+            f_per_lig = f_vec.sum(axis=2)
+            # Net force per trajectory: sum over lig atoms
+            lj_forces[idx] = f_per_lig.sum(axis=1)
+            # Per-atom torque about lig centroid: cross(r - c, f_per_lig)
+            lever = lp - centroids[idx][:, None, :]  # (nc, N_lig, 3)
+            atom_torques = cp.cross(lever, f_per_lig, axis=2)  # (nc, N_lig, 3)
+            lj_torques[idx] = atom_torques.sum(axis=1)
+        return lj_forces, lj_torques
 
     def __call__(self, lig_positions, lig_charges, R_matrices=None, centroids=None):
         """
@@ -545,6 +622,7 @@ class GPUBatchForceEngine:
         """
         N_traj, N_atoms, _ = lig_positions.shape
         forces = cp.zeros((N_traj, 3), dtype=cp.float64)
+        torques = cp.zeros((N_traj, 3), dtype=cp.float64)
         energies = cp.zeros((N_traj,), dtype=cp.float64)
         if self._call_count < 3:
             r_mag = cp.linalg.norm(lig_positions[:, 0, :], axis=1)  # centroid r
@@ -555,28 +633,51 @@ class GPUBatchForceEngine:
             )
         # Electrostatic force on ligand from receptor field
         if self._elec_grids_gpu:
-            f, e = self._eval_batch(
-                lig_positions, lig_charges, self._elec_grids_gpu, 0.0, False
+            f, t, e = self._eval_batch(
+                lig_positions,
+                lig_charges,
+                self._elec_grids_gpu,
+                0.0,
+                False,
+                centroids=centroids,
             )
             forces += f
+            torques += t
             energies += e
             if self._call_count < 3:
                 fm = float(cp.linalg.norm(f, axis=1).mean())
-                print(f"    [COMPONENT] ELEC:   |F|_mean={fm:.6e} kBT/Å")
+                tm = float(cp.linalg.norm(t, axis=1).mean())
+                print(
+                    f"    [COMPONENT] ELEC:   |F|_mean={fm:.6e} kBT/Å  "
+                    f"|T|_mean={tm:.6e} kBT"
+                )
         elif self._has_yukawa:
-            f, e = self._yukawa_forces_gpu(lig_positions, lig_charges)
+            f, t, e = self._yukawa_forces_gpu(
+                lig_positions, lig_charges, centroids=centroids
+            )
             forces += f
+            torques += t
             energies += e
         # Born desolvation direction 1: rec Born grid on lig atoms
         if self._born_grids_gpu:
-            f, e = self._eval_batch(
-                lig_positions, lig_charges, self._born_grids_gpu, self.alpha, True
+            f, t, e = self._eval_batch(
+                lig_positions,
+                lig_charges,
+                self._born_grids_gpu,
+                self.alpha,
+                True,
+                centroids=centroids,
             )
             forces += f
+            torques += t
             energies += e
             if self._call_count < 3:
                 fm = float(cp.linalg.norm(f, axis=1).mean())
-                print(f"    [COMPONENT] BORN1:  |F|_mean={fm:.6e} kBT/Å")
+                tm = float(cp.linalg.norm(t, axis=1).mean())
+                print(
+                    f"    [COMPONENT] BORN1:  |F|_mean={fm:.6e} kBT/Å  "
+                    f"|T|_mean={tm:.6e} kBT"
+                )
         # Born desolvation direction 2: lig Born grid on rec atoms
         # Evaluates lig Born grid at rec atom positions -> force on rec.
         # Newton's 3rd law: force on lig = -force on rec.
@@ -587,20 +688,35 @@ class GPUBatchForceEngine:
             and centroids is not None
             and self.alpha > 1e-12
         ):
-            f2 = self._eval_born_reverse(R_matrices, centroids, N_traj)
+            f2, t2 = self._eval_born_reverse(R_matrices, centroids, N_traj)
+            # BORN2 translation is dropped: BORN1 already captures the
+            # ligand's desolvation force; the Newton's-3rd reciprocal
+            # from rec atoms in the ligand Born grid double-counts and
+            # builds a spurious barrier at r ~ 22-30 Å. BD2 takes only
+            # the torque contribution (b_torque11) from this path.
+            f2 = cp.zeros_like(f2)
             forces += f2
+            torques += t2
             if self._call_count < 3:
                 fm = float(cp.linalg.norm(f2, axis=1).mean())
+                tm = float(cp.linalg.norm(t2, axis=1).mean())
                 print(
-                    f"    [COMPONENT] BORN2:  |F|_mean={fm:.6e} kBT/Å  - lig Born on {self._rec_pos_gpu.shape[0]} rec atoms"
+                    f"    [COMPONENT] BORN2:  |F|_mean={fm:.6e} kBT/Å  "
+                    f"|T|_mean={tm:.6e} kBT  "
+                    f"- lig Born on {self._rec_pos_gpu.shape[0]} rec atoms"
                 )
-        # Torque placeholder
-        mask = cp.abs(lig_charges) > 1e-9
-        torques = cp.zeros((N_traj, 3), dtype=cp.float64)
         # LJ (WCA repulsive) forces - only when atoms are very close
         if self._use_lj and self._rec_radii_gpu is not None:
-            lj_f = self._wca_forces_gpu(lig_positions, centroids)
+            lj_f, lj_t = self._wca_forces_gpu(lig_positions, centroids)
             forces += lj_f
+            torques += lj_t
+            if self._call_count < 3:
+                fm = float(cp.linalg.norm(lj_f, axis=1).mean())
+                tm = float(cp.linalg.norm(lj_t, axis=1).mean())
+                print(
+                    f"    [COMPONENT] WCA:    |F|_mean={fm:.6e} kBT/Å  "
+                    f"|T|_mean={tm:.6e} kBT"
+                )
         self._call_count += 1
         return forces, torques, energies
 
@@ -609,20 +725,26 @@ class GPUBatchForceEngine:
         Born direction 2: evaluate lig Born grid at rec atom positions.
         For each trajectory:
           1. Transform rec atoms into lig frame: R^T @ (rec_pos - centroid)
-          2. Evaluate lig Born grid -> per-atom force in lig frame
+          2. Evaluate lig Born grid -> per-atom force on rec atoms in lig frame
           3. Rotate back to lab frame: R @ F_lig
-          4. Sum over rec atoms -> total force on rec
-          5. Negate -> force on lig (Newton's 3rd)
+          4. Newton's 3rd: force on lig = -force on rec
+          5. Torque on lig about its centre = -torque on rec about same point
+             (matches BD2 add_core_forces b_torque11 contribution).
         Chunked by trajectory to limit GPU memory (N_rec can be large).
+        Returns
+        -------
+        result_f : (N_traj, 3) net force on ligand from direction 2
+        result_t : (N_traj, 3) net torque on ligand from direction 2
         """
         N_rec = self._rec_pos_gpu.shape[0]
-        result = cp.zeros((N_traj, 3), dtype=cp.float64)
+        result_f = cp.zeros((N_traj, 3), dtype=cp.float64)
+        result_t = cp.zeros((N_traj, 3), dtype=cp.float64)
         # Get ligand Born grid extent - skip if no rec atoms can reach it
         if self._lig_born_grids_gpu:
             g = self._lig_born_grids_gpu[0]
             lig_grid_radius = float(max(abs(g["lo"][0]), abs(g["hi"][0])))
         else:
-            return result
+            return result_f, result_t
         # Chunk size: limit to ~500 MB for the (chunk, N_rec, 3) array
         max_bytes = 500 * 1024 * 1024
         chunk_size = max(1, int(max_bytes / (N_rec * 3 * 8)))
@@ -642,16 +764,26 @@ class GPUBatchForceEngine:
             # Transform to lig frame: R^T @ rec_pos_rel
             R_T = cp.swapaxes(R_matrices[c0:c1], 1, 2)
             rec_in_lig = cp.einsum("nij,nkj->nki", R_T, rec_pos_rel)
-            # Evaluate lig Born grid at rec positions in lig frame
-            f_lig, e_lig = self._eval_batch(
+            # Evaluate lig Born grid at rec positions in lig frame.
+            # zero_centroids puts the torque reference at the origin of the
+            # ligand frame (the ligand's centre). _eval_batch then returns
+            # sum_j r_j_lig × f_j_lig = torque on RECEPTOR atoms about the
+            # ligand's centre, expressed in the ligand frame.
+            zero_centroids = cp.zeros((nc, 3), dtype=cp.float64)
+            f_lig, t_lig, e_lig = self._eval_batch(
                 rec_in_lig,
                 self._rec_charges_gpu,
                 self._lig_born_grids_gpu,
                 self.alpha,
                 True,
+                centroids=zero_centroids,
             )
-            # Rotate back to lab frame: R @ f_lig
+            # Force: rotate to lab frame, negate (N3 -> force on lig).
             f_lab = cp.einsum("nij,nj->ni", R_matrices[c0:c1], f_lig)
-            # Newton's 3rd: force on lig = -force on rec
-            result[c0:c1] = -f_lab
-        return result
+            result_f[c0:c1] = -f_lab
+            # Torque on ligand about its centre = -torque on receptor about
+            # same point (Newton 3rd holds for torques about a shared point).
+            # Rotate the lig-frame torque to lab frame, then negate.
+            t_lab = cp.einsum("nij,nj->ni", R_matrices[c0:c1], t_lig)
+            result_t[c0:c1] = -t_lab
+        return result_f, result_t
