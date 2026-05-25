@@ -41,7 +41,7 @@ RXNS_XML                = "rxns.xml"              # Output reaction criterion fi
 # tleap residues: Thr199->196, Glu106->103
 RXN_TARGETS_REC         = [(196, 'OG1', 'THR'), (103, 'OE1', 'GLU')]
 RXN_TARGETS_LIG_NAMES   = ['N3', 'N']             # Sulfonamide N and amide N in ligand PQR
-RXN_CUTOFF              = 5.0                     # Reaction distance cutoff (A)
+RXN_CUTOFF              = 3.5                     # Reaction distance cutoff (A)
 N_NEEDED                = 2                       # Pairs that must be satisfied simultaneously
 # Simulation parameters
 BD_MILESTONE_RADIUS     = "60.0"                  # b-surface start radius (A)

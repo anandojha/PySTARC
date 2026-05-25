@@ -27,11 +27,12 @@
   <!-- Physics -->
   <desolvation_alpha>0.0795775</desolvation_alpha>
   <hydrodynamic_interactions>true</hydrodynamic_interactions>
-  <overlap_check>true</overlap_check>
+  <overlap_check>false</overlap_check>
   <multipole_fallback>true</multipole_fallback>
   <lj_forces>false</lj_forces>
+  <enable_born2_torque>false</enable_born2_torque>
   <!-- BD simulation -->
-  <n_trajectories>100000</n_trajectories>
+  <n_trajectories>5000000</n_trajectories>
   <max_steps>10000000</max_steps>
   <dt>0.2</dt>
   <minimum_core_dt>0.2</minimum_core_dt>

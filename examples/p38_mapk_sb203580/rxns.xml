@@ -11,7 +11,7 @@
           <molecule0> rec rec </molecule0>
           <molecule1> lig lig </molecule1>
         </molecules>
-        <n_needed> 2 </n_needed>
+        <n_needed> 3 </n_needed>
         <pair><atoms> 1738 10 </atoms><distance> 7.0 </distance></pair>
         <pair><atoms> 786 18 </atoms><distance> 7.0 </distance></pair>
         <pair><atoms> 1687 27 </atoms><distance> 7.0 </distance></pair>

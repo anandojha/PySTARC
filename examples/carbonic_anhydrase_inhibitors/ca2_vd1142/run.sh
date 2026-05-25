@@ -1,20 +1,17 @@
 #!/bin/bash
-# Run carbonic anhydrase BD simulation.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PYSTARC_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 RUNNER="$PYSTARC_ROOT/run_pystarc.py"
 
-echo "PySTARC $(basename $SCRIPT_DIR) simulation"
-echo "  PySTARC root: $PYSTARC_ROOT"
-echo ""
 cd "$SCRIPT_DIR"
+
 # Clean previous outputs
 rm -rf bd_sims
-echo "  Cleaned previous outputs"
-# Run BD
-echo "  Running BD simulation ..."
-python "$RUNNER" input.xml
-if [ $? -ne 0 ]; then
-    echo "  Error: BD simulation failed"
-    exit 1
-fi
+rm -f input.xml rxns.xml receptor.pqr ligand.pqr receptor.pdb ligand.pdb
+rm -f protein.prmtop protein.rst7 ligand.prmtop ligand.rst7 *.cache *.out
+
+# Step 1: Generate input files
+python setup.py || { echo "setup.py failed"; exit 1; }
+
+# Step 2: Run BD
+python "$RUNNER" input.xml || { echo "BD failed"; exit 1; }

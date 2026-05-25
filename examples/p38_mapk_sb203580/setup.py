@@ -41,7 +41,7 @@ RXNS_XML                = "rxns.xml"              # Output reaction criterion fi
 RXN_TARGETS_REC         = [(106, 'N', 'MET'), (50, 'NZ', 'LYS'), (102, 'O', 'VAL'), (103, 'N', 'THR')]
 RXN_TARGETS_LIG         = [('NB1',), ('NC3',), ('FD3',), ('FD3',)]
 RXN_CUTOFFS             = [7.0, 7.0, 7.0, 7.0]    # Per-pair cutoffs (A)
-N_NEEDED                = 2                       # Pairs that must be satisfied simultaneously
+N_NEEDED                = 3                       # Pairs that must be satisfied simultaneously
 # Simulation parameters
 BD_MILESTONE_RADIUS     = "60.0"                  # b-surface start radius (A)
 R_HYDRO_REC             = "0"                     # Receptor hydrodynamic radius (0=auto)

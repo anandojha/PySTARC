@@ -18,7 +18,7 @@ LIGAND_RESNAME          = "BEN"                   # Ligand residue name in PDB
 EXCLUDED = {"WAT", "Cl-"}  # Residues to strip (water, ions)
 CONTACT_CUTOFF = 6.0  # Max distance (A) to find contacts in bound state
 BUFFER = 3.0  # Added to crystal distance for reaction cutoff
-N_NEEDED = 4  # Pairs that must be satisfied simultaneously
+N_NEEDED = 6  # Pairs that must be satisfied simultaneously
 N_PAIRS = 10  # Max number of contact pairs to use
 CONTACT_MODE            = "polar"                 # all=any heavy, polar=N/O/S both, nonpolar=C both, any_polar=N/O/S either, receptor_polar=N/O/S rec only
 RECEPTOR_RESNAME        = "TRP"                   # Receptor residue name for XML

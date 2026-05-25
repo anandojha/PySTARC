@@ -12,8 +12,8 @@
           <molecule1> lig lig </molecule1>
         </molecules>
         <n_needed> 2 </n_needed>
-        <pair><atoms> 3009 20 </atoms><distance> 5.0 </distance></pair>
-        <pair><atoms> 1593 8 </atoms><distance> 5.0 </distance></pair>
+        <pair><atoms> 3009 20 </atoms><distance> 3.5 </distance></pair>
+        <pair><atoms> 1593 8 </atoms><distance> 3.5 </distance></pair>
       </criterion>
     </reaction>
   </reactions>

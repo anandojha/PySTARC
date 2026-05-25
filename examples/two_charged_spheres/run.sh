@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run two charged spheres BD simulation, verify against analytical solution, and run convergence test.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PYSTARC_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PYSTARC_ROOT="/mnt/ceph/users/aojha/PySTARC"
 RUNNER="$PYSTARC_ROOT/run_pystarc.py"
 
 echo "PySTARC two charged spheres (analytical validation)"
