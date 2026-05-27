@@ -143,8 +143,8 @@ def run_chain(
         print(f"Loading Born grid {cc.born_grid_dx} ...")
         born_grid = DXGrid.from_file(cc.born_grid_dx)
 
-    # Resolve r_escape sentinel: 0 means 1.1 * r_start.
-    r_escape = cc.r_escape if cc.r_escape > 0.0 else (config.bd_milestone_radius * 1.1)
+    # Resolve r_escape sentinel: 0 means 2.0 * r_start (LMZ convention; matches rigid pipeline).
+    r_escape = cc.r_escape if cc.r_escape > 0.0 else (config.bd_milestone_radius * 2.0)
 
     # Validate diffusion mode.
     if cc.auto_diffusion and (cc.D_trans > 0.0 or cc.D_rot > 0.0):

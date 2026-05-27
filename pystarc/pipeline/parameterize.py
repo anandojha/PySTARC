@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Tuple
 import subprocess
+import shlex
 import shutil
 import os
 
@@ -18,7 +19,7 @@ import os
 def _run(cmd: str, cwd: Path, step: str):
     """Run a shell command, raise on failure with clear message."""
     print(f"    $ {cmd}")
-    result = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
+    result = subprocess.run(shlex.split(cmd), shell=False, cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(
             f"Step '{step}' failed (exit {result.returncode}):\n"

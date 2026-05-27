@@ -213,7 +213,7 @@ def write_pqr(mol: Molecule, path: str | Path) -> None:
             name = a.name if a.name else "X"
             resname = a.residue_name if a.residue_name else "UNK"
             fh.write(
-                f"ATOM  {i+1:5d}  {name:<4s} {resname:<4s} "
+                f"ATOM  {i+1:5d} {name:<4s} {resname:<4s} "
                 f"{a.residue_index:4d}    "
                 f"{a.x:8.3f}{a.y:8.3f}{a.z:8.3f}  "
                 f"{a.charge:7.4f} {a.radius:6.4f}\n"

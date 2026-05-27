@@ -525,7 +525,6 @@ class PySTARCEngine:
         born_mol1: List[DXGrid] = None,
         born_mol2: List[DXGrid] = None,
         eff_charges_mol1: "EffectiveCharges" = None,
-        eff_charges_mol2: "EffectiveCharges" = None,
         debye_length: float = 7.858,
         desolvation_alpha: float = 0.07957747,
         lj_params: "Optional[LJParams]" = None,
@@ -539,7 +538,6 @@ class PySTARCEngine:
         self._born2 = _GridStack(born_mol2 or [])
         # Effective charges - long-range fallback when outside all grids
         self._eff1 = eff_charges_mol1
-        self._eff2 = eff_charges_mol2
         self._debye = debye_length
         # LJ and hydrophobic forces (optional)
         self._lj_engine = None
@@ -593,18 +591,19 @@ class PySTARCEngine:
             torque += t
             energy += e
         elif self._eff1 is not None:
-            # Long-range fallback: effective charges when outside all DX grids
+            # Long-range fallback: effective charges when outside all DX grids.
+            # Centroid c2 is loop-invariant (depends only on pos2/chg2); hoisted.
+            c2 = (
+                pos2[np.abs(chg2) > 1e-9].mean(axis=0)
+                if np.any(np.abs(chg2) > 1e-9)
+                else np.zeros(3)
+            )
             for i, (p, q) in enumerate(zip(pos2, chg2)):
                 if abs(q) < 1e-9:
                     continue
                 f_i = self._eff1.force_on_charge(p, q)
                 force += f_i
                 energy += q * self._eff1.potential(p)
-                c2 = (
-                    pos2[np.abs(chg2) > 1e-9].mean(axis=0)
-                    if np.any(np.abs(chg2) > 1e-9)
-                    else np.zeros(3)
-                )
                 torque += np.cross(p - c2, f_i)
         # Born desolvation: mol2 atoms in mol1's born field
         if self._born1:
@@ -617,12 +616,11 @@ class PySTARCEngine:
         # Verified against Browndye2 forces_impl.hh:add_core_forces.
         if self._born2:
             f, t, e = self._born2.eval_atoms(pos1, chg1, self.alpha, True, self.backend)
-            # BORN2 translation force dropped (was double-counting BORN1's
-            # desolvation; mirrors gpu_batch_engine.py fix 2026-05-21).
-            # Torque contribution NOT added here pending verification of CPU
-            # eval_atoms torque sign convention vs GPU _eval_born_reverse.
-            # CPU path is not used in production so this is acceptable.
-            energy += e * 0.5  # TODO: verify 0.5 factor; does not affect BD trajectories
+            # BD2 parity: matches BORN1 block above and GPU path. Fixes
+            # audit C1 (CPU/GPU disagreement) and C2 (unjustified *0.5).
+            force += f
+            torque += t
+            energy += e
         # Lennard-Jones + hydrophobic (optional)
         if self._lj_engine is not None:
             n1 = len(pos1)
@@ -684,14 +682,12 @@ def load_dx_directory(
         return grids
 
     eff1 = load_effective_charges(d, mol1_prefix, debye_length)
-    eff2 = load_effective_charges(d, mol2_prefix, debye_length)
     return PySTARCEngine(
         elec_mol1=_load_dx(mol1_prefix, ".dx"),
         elec_mol2=_load_dx(mol2_prefix, ".dx"),
         born_mol1=_load_dx(mol1_prefix, "_born.dx"),
         born_mol2=_load_dx(mol2_prefix, "_born.dx"),
         eff_charges_mol1=eff1,
-        eff_charges_mol2=eff2,
         debye_length=debye_length,
         desolvation_alpha=desolvation_alpha,
     )

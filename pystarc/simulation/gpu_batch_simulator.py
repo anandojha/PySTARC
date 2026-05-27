@@ -33,6 +33,7 @@ import scipy.stats as stats
 from pathlib import Path
 import numpy as np
 import math
+import warnings
 import copy
 import time
 
@@ -472,7 +473,16 @@ class GPUBatchSimulator:
                 b, q_rec, q_lig, eps, debye, D_t
             )
             return float(max(0.0, min(1.0, rp)))
-        except Exception:
+        except Exception as e:
+            warnings.warn(
+                f"Romberg integration of return_prob failed "
+                f"({type(e).__name__}: {e}); falling back to Smoluchowski "
+                "rate and 5% cover zone. May indicate a numerical pathology "
+                "(singular integrand, extreme Debye length, near-zero charge "
+                "product).",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             self._k_b = 4.0 * math.pi * D_t * b
             self._bradius_cover = b * 1.05  # fallback: 5% above b
             return b / q_out

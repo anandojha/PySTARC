@@ -5349,11 +5349,14 @@ class TestConvergenceAnalysis:
         assert result["k_on"] == 0.0
 
     def test_all_reacted(self):
+        # P=1 means every trajectory reacted; with no escape statistics the
+        # convergence verdict is undefined at the boundary. Audit fix B4:
+        # converged must be False when P is at either 0 or 1.
         result = analyse_convergence(n_reacted=1000, n_escaped=0, k_b=35.0)
         assert result["P_rxn"] == 1.0
         assert result["SE"] == 0.0
         assert result["relative_SE"] == 0.0
-        assert result["converged"] is True
+        assert result["converged"] is False
 
     def test_no_trajectories(self):
         result = analyse_convergence(n_reacted=0, n_escaped=0, k_b=35.0)

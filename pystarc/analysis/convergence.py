@@ -108,7 +108,7 @@ def analyse_convergence(
     wilson_lo_kon = conv_factor * k_b * wilson_lo
     wilson_hi_kon = conv_factor * k_b * wilson_hi
     # Convergence verdict
-    converged = relative_SE < tol if P > 0 else False
+    converged = (0 < P < 1) and (relative_SE < tol)
     # N needed for target tolerances
     targets = {}
     if 0 < P < 1:

@@ -118,7 +118,6 @@ def parse_ghost_atoms_from_input(
     This is the manual override format used when bd_top is not available.
     The ghost atom position is taken as the centroid of the molecule,
     offset by the specified distance in the +z direction as a placeholder.
-    For correct GHO positions, use inject_gho_from_rxns_xml() instead.
     """
     atoms = []
     for line in ghost_atoms_text.strip().splitlines():
@@ -173,39 +172,6 @@ def gho_criterion_distance(
     return float(np.linalg.norm(p2 - p1))
 
 
-# Auto-injection from rxns XML
-def inject_gho_from_rxns_xml(
-    rxns_xml_path: str,
-    mol1_hydro_cen: np.ndarray,
-    mol2_hydro_cen: np.ndarray,
-) -> Tuple[List[GHOAtom], List[GHOAtom]]:
-    """
-    Parse a rxns XML and return GHO atoms for mol1 and mol2.
-    Parameters
-    ----------
-    rxns_xml_path  : path to rxns_bd_redo.xml or similar
-    mol1_hydro_cen : (3,) hydrodynamic centre of molecule 1 (receptor)
-    mol2_hydro_cen : (3,) hydrodynamic centre of molecule 2 (ligand)
-
-    Returns
-    -------
-    (gho_atoms_mol1, gho_atoms_mol2)
-    """
-    dummies = parse_rxns_xml(rxns_xml_path)
-    # For now return all dummies; caller assigns mol1/mol2 by index
-    mol1_ghos: List[GHOAtom] = []
-    mol2_ghos: List[GHOAtom] = []
-    for dm in dummies:
-        # Assign based on name convention: group0 = receptor, group1 = ligand
-        for atom in dm.atoms:
-            # Adjust for hydrodynamic centre offset
-            atom_adjusted = GHOAtom(
-                atom_index=atom.atom_index,
-                pos_rel=atom.pos_rel - mol1_hydro_cen,  # receptor default
-            )
-        # If we cannot determine assignment from XML, return all under mol1
-        mol1_ghos.extend(dm.atoms)
-    return mol1_ghos, mol2_ghos
 
 
 def inject_gho_from_manual(

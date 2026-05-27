@@ -12,10 +12,11 @@ This is the Lamm-Schulten (1981) method implemented for both the
 b-sphere (inner boundary) and q-sphere (outer boundary).
 
 The survival probability is:
-    P_sur = 0.5 * ( exp(b*x0) * (erf((x0+bt)/2t^0.5) - 1)
-                  + erf((x0-bt)/2t^0.5) + 1 )
-where b = -F (force pointing away from boundary), tau = x0^2/D,
-t = sqrt(tau).
+    P_sur = 0.5 * ( exp(b*x0) * (erf((x0+bt)/2*sqrt(tau)) - 1)
+                  + erf((x0-bt)/2*sqrt(tau)) + 1 )
+where b = -F (force pointing away from boundary), tau = x0^2 (units of
+Length^2, NOT time). The elapsed time, when needed, is tau/D.
+This convention matches BrownDye2 (step_near_absorbing_surface.hh L37-38).
 """
 
 from __future__ import annotations
@@ -53,7 +54,11 @@ def step_near_absorbing_surface(
     time     : elapsed time (ps)
     """
     b = -F  # b = -F by convention
-    tau = x0 * x0 / D  # characteristic time
+    # tau has units of Length^2 (matches BD2 convention; the elapsed time
+    # is tau/D). Earlier versions used tau = x0*x0/D which conflated tau
+    # with the Time-typed quantity and produced dimensionally inconsistent
+    # erf arguments and a returned time off by a factor of D.
+    tau = x0 * x0  # Length^2 (Angstrom^2)
     st = math.sqrt(tau)
     st2 = 2.0 * st
     bt = b * tau

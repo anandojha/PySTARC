@@ -16,12 +16,13 @@ from __future__ import annotations
 from typing import Tuple, List
 from pathlib import Path
 import subprocess
+import shlex
 import shutil
 
 
 def _run(cmd: str, cwd: Path, step: str):
     print(f"    $ {cmd}")
-    result = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
+    result = subprocess.run(shlex.split(cmd), shell=False, cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
         # tleap writes errors to leap.log, not stderr - read it
         leap_log = ""

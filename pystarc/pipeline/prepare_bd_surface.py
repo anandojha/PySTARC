@@ -30,6 +30,7 @@ from itertools import groupby
 from pathlib import Path
 import numpy as np
 import subprocess
+import shlex
 import shutil
 import math
 import sys
@@ -305,7 +306,7 @@ def pqr_to_xml(atoms: List[PQRAtom], path: Path):
     """
     lines = ["<roottag>\n"]
     # Group atoms by residue
-    for resid, group in groupby(atoms, key=lambda a: a.resid):
+    for resid, group in groupby(sorted(atoms, key=lambda a: a.resid), key=lambda a: a.resid):
         group = list(group)
         resname = group[0].resname
         lines.append(f"  <residue>\n")
@@ -601,7 +602,7 @@ def write_input_xml(
 # Main pipeline
 def run_cmd(cmd: str, cwd: Path = None, step: str = "") -> str:
     """Run a shell command, raise RuntimeError on failure."""
-    result = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
+    result = subprocess.run(shlex.split(cmd), shell=False, cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(
             f"Step '{step}' failed:\n  cmd: {cmd}\n"

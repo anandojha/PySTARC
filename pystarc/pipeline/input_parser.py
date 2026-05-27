@@ -57,7 +57,7 @@ class ChainConfig:
     born_grid_dx: str = ""  # path to Born desolvation DX grid (or "" -> no Born)
 
     # Geometry
-    r_escape: float = 0.0  # escape sphere radius (A); 0 -> 1.1 * bd_milestone_radius
+    r_escape: float = 0.0  # escape sphere radius (A); 0 -> 2.0 * bd_milestone_radius
     reaction_n_needed: int = 3  # minimum contact pairs to satisfy for reaction
 
     # Inner integration (internal-coordinate dynamics within each outer step)

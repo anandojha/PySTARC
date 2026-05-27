@@ -692,12 +692,14 @@ class GPUBatchForceEngine:
             and self.alpha > 1e-12
         ):
             f2, t2 = self._eval_born_reverse(R_matrices, centroids, N_traj)
-            # BORN2 translation is dropped: BORN1 already captures the
-            # ligand's desolvation force; the Newton's-3rd reciprocal
-            # from rec atoms in the ligand Born grid double-counts and
-            # builds a spurious barrier at r ~ 22-30 Å. BD2 takes only
-            # the torque contribution (b_torque11) from this path.
-            f2 = cp.zeros_like(f2)
+            # BD2 parity: sum both BORN1 (added above) and the Newton-3rd
+            # reciprocal of BORN2 into the ligand net force. Matches BD2
+            # forces_impl.hh add_core_forces (~L998-1005) which sums
+            # b_force10 + b_force11 into force1.
+            # Previously f2 was zeroed as a workaround for an apparent
+            # spurious barrier at r~22-30 A; restored for BD2 parity.
+            # If the barrier reappears in benchmarks, investigate the
+            # ligand Born grid construction (see diagnostic at L209-223).
             forces += f2
             torques += t2
             if self._call_count < 3:
