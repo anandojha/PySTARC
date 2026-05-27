@@ -89,19 +89,15 @@ def lj_pair_force(
         F_r = factor * eps * (12*(sig/r)^12 - 6*(sig/r)^6) / r^2
     Returns
     -------
-    (force_on_a, energy)   force_on_a is (3,) in direction (b - a).
-
-    .. warning::
-        FIXME (audit C7): the sign convention here is physically WRONG
-        at the repulsive part of the curve (r < sigma). The code returns
-        force on `a` in direction (b - a), giving an *attractive* force
-        at short range when physics requires repulsive (a - b). The
-        magnitude is correct; only the sign is flipped.
-
-        Verified production path is the GPU WCA implementation at
-        ``pystarc.forces.gpu_batch_engine._wca_forces_gpu``. Do NOT
-        enable ``LJForceEngine`` for production BD runs without first
-        fixing this sign and verifying against a hand-computed dimer.
+    (force_on_a, energy)
+        force_on_a is (3,) the force on atom `a` due to atom `b`,
+        following standard physics convention F_a = -grad_a V(|b-a|).
+        At r < sigma the force is in direction (a - b)/r (repulsive,
+        away from b); at sigma < r < ~2*sigma it is along (b - a)/r
+        (attractive, toward the LJ minimum). Audit C7 fixed an earlier
+        inverted sign; the magnitude was correct, only the direction
+        was wrong. Verified by hand-computed dimer test in
+        ``tests/test_pystarc.py::test_lj_force_direction_*``.
     """
     dpos = pos_b - pos_a
     r2 = float(np.dot(dpos, dpos))
@@ -120,7 +116,9 @@ def lj_pair_force(
     energy = factor * epsilon * (sr12 - sr6)
     # F = -dV/dr * r_hat, magnitude = eps*(12*sr12 - 6*sr6)/r^2
     f_mag = factor * epsilon * (12.0 * sr12 - 6.0 * sr6) / r2
-    force_a = f_mag * dpos  # force on a in direction a->b
+    # F_a = -grad_a V(|b-a|) = V'(r) * (b - a)/r.
+    # V'(r) = -f_mag * r, so F_a = -f_mag * dpos. Audit C7 fix.
+    force_a = -f_mag * dpos
     return force_a, energy
 
 
@@ -163,12 +161,6 @@ class LJForceEngine:
     Usage:
         engine = LJForceEngine(lj_params, hydrophobic_params)
         total_force, total_energy = engine.compute(mol1, mol2)
-
-    .. warning::
-        FIXME (audit C7): the underlying ``lj_pair_force`` has a wrong
-        sign convention at the repulsive part of the LJ curve. Do NOT
-        use this engine in production BD runs. Production code uses the
-        GPU WCA path at ``gpu_batch_engine._wca_forces_gpu``.
     """
 
     def __init__(

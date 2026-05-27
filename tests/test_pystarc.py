@@ -3737,15 +3737,17 @@ class TestLJForces:
         pos_a = np.array([0.0, 0.0, 0.0])
         pos_b = np.array([1.0, 0.0, 0.0])
         f, e = lj_pair_force(pos_a, pos_b, epsilon=1.0, sigma=2.0)
-        # r=1 < sigma=2 -> repulsive -> force points a->b (positive x)
-        assert f[0] > 0
+        # r=1 < sigma=2 -> repulsive -> force on a points AWAY from b
+        # (in -x direction here). Updated post-audit-C7 sign convention.
+        assert f[0] < 0
 
     def test_lj_pair_attractive_at_large_r(self):  # noqa
         pos_a = np.array([0.0, 0.0, 0.0])
         pos_b = np.array([3.0, 0.0, 0.0])
         f, e = lj_pair_force(pos_a, pos_b, epsilon=1.0, sigma=2.0)
-        # r=3 > sigma=2 -> attractive -> force on a points TOWARD b (negative x)
-        assert f[0] < 0
+        # r=3 > sigma=2 -> attractive -> force on a points TOWARD b
+        # (in +x direction here). Updated post-audit-C7 sign convention.
+        assert f[0] > 0
 
     def test_lj_energy_minimum_at_sigma(self):
         pos_a = np.array([0.0, 0.0, 0.0])
@@ -19919,8 +19921,10 @@ class TestPQRChainIdDialect:
 
 
 class TestLJForceFiniteDifference:
-    """Audit gap: legacy force kernels lacked FD verification that the new
-    chain GB code has. Verify lj_pair_force = -dV/dr by central difference.
+    """FD verification of lj_pair_force against the LJ potential.
+    With a at origin and b at (r, 0, 0): F_a_x = +dV/dr, because
+    d|b-a|/d(a_x) = -1 and F_a = -grad_a V. Audit C7 fixed an
+    earlier inverted sign in the function (and in the test).
     """
 
     @pytest.mark.parametrize("r_over_sigma", [0.9, 1.0, 1.1, 1.5, 2.0])
@@ -19937,8 +19941,35 @@ class TestLJForceFiniteDifference:
         _, V_plus = lj_pair_force(a, np.array([r + h, 0.0, 0.0]), eps, sigma, use_wca=False)
         _, V_minus = lj_pair_force(a, np.array([r - h, 0.0, 0.0]), eps, sigma, use_wca=False)
         dV_dr = (V_plus - V_minus) / (2 * h)
-        # Force on a along +x = -dV/dr
-        np.testing.assert_allclose(F_along, -dV_dr, rtol=1e-4, atol=1e-6)
+        # Force on a along +x = +dV/dr (audit C7 sign convention)
+        np.testing.assert_allclose(F_along, dV_dr, rtol=1e-4, atol=1e-6)
+
+    def test_lj_force_direction_at_short_range_repulsive(self):
+        """Audit C7 pin: at r < sigma, force on a must point AWAY from b.
+        With a at origin and b at +x, this means F_a[0] < 0.
+        Prior to the fix, the function returned F_a in +x (attractive)
+        at short range, which is physically wrong."""
+        import numpy as np
+        from pystarc.forces.lj import lj_pair_force
+        sigma, eps = 3.0, 1.0
+        a = np.array([0.0, 0.0, 0.0])
+        b = np.array([0.5 * sigma, 0.0, 0.0])  # deep in repulsive zone
+        F, V = lj_pair_force(a, b, eps, sigma, use_wca=False)
+        assert F[0] < 0, f"force on a at r<sigma must point in -x (away from b); got F[0]={F[0]}"
+        assert V > 0, f"potential at r<sigma must be repulsive (V>0); got V={V}"
+
+    def test_lj_force_direction_at_long_range_attractive(self):
+        """Past the LJ minimum (sigma < r), force on a should point
+        TOWARD b. With a at origin and b at +x, F_a[0] > 0."""
+        import numpy as np
+        from pystarc.forces.lj import lj_pair_force
+        sigma, eps = 3.0, 1.0
+        a = np.array([0.0, 0.0, 0.0])
+        r = 1.3 * sigma  # past 2^(1/6)*sigma, well in the attractive tail
+        b = np.array([r, 0.0, 0.0])
+        F, V = lj_pair_force(a, b, eps, sigma, use_wca=False)
+        assert F[0] > 0, f"force on a in attractive zone must point in +x (toward b); got F[0]={F[0]}"
+        assert V < 0, f"potential past LJ minimum must be attractive (V<0); got V={V}"
 
     def test_wca_force_zero_outside_cutoff(self):
         import numpy as np
@@ -19965,7 +19996,8 @@ class TestLJForceFiniteDifference:
         _, V_plus = lj_pair_force(a, np.array([r + h, 0.0, 0.0]), eps, sigma, use_wca=True)
         _, V_minus = lj_pair_force(a, np.array([r - h, 0.0, 0.0]), eps, sigma, use_wca=True)
         dV_dr = (V_plus - V_minus) / (2 * h)
-        np.testing.assert_allclose(F_along, -dV_dr, rtol=1e-3, atol=1e-5)
+        # Audit C7 sign convention
+        np.testing.assert_allclose(F_along, dV_dr, rtol=1e-3, atol=1e-5)
 
 
 class TestDebyeHuckelForceFiniteDifference:
