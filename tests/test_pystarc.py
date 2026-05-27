@@ -20228,3 +20228,37 @@ class TestBoundedHardSphereSafeguardPresent:
             f"MAX_HS_ATTEMPTS = {n} is outside the sensible bounded range "
             f"[1, 10]; review whether this is intentional"
         )
+
+
+def test_prepare_bd_surface_pqr_roundtrip_4char_names():
+    """B5 regression: prepare_bd_surface.write_pqr must preserve 4-char Amber
+    atom names through round-trip via read_pqr (which delegates to the
+    strict-column parser in pystarc.structures.pqr_io)."""
+    import tempfile, os
+    from pystarc.pipeline.prepare_bd_surface import PQRAtom, write_pqr, read_pqr
+
+    atoms_in = [
+        PQRAtom(serial=1, name="1HG2", resname="ARG", resid=1,
+                x=-12.345, y=6.789, z=2.500,
+                charge=0.1234, radius=1.487, record="HETATM"),
+        PQRAtom(serial=2, name="CA", resname="ARG", resid=1,
+                x=10.001, y=20.002, z=30.003,
+                charge=-0.5678, radius=2.000, record="HETATM"),
+        PQRAtom(serial=3, name="2HD1", resname="LEU", resid=2,
+                x=0.123, y=-99.876, z=55.555,
+                charge=0.0, radius=1.0, record="HETATM"),
+    ]
+
+    with tempfile.NamedTemporaryFile(suffix=".pqr", delete=False, mode="w") as f:
+        tmp = f.name
+    try:
+        write_pqr(atoms_in, tmp)
+        atoms_out = read_pqr(tmp)
+        assert len(atoms_in) == len(atoms_out)
+        for a1, a2 in zip(atoms_in, atoms_out):
+            assert a1.name == a2.name, f"name corrupted: {a1.name!r} -> {a2.name!r}"
+            for coord in ("x", "y", "z"):
+                v1, v2 = getattr(a1, coord), getattr(a2, coord)
+                assert abs(v1 - v2) < 1e-9, f"{coord} drift: {v1} -> {v2}"
+    finally:
+        os.unlink(tmp)

@@ -662,7 +662,12 @@ class GPUBatchSimulator:
                 rng = np.random.default_rng(self.params.seed + _resume_step)
                 rng_bb = np.random.default_rng(int(self.params.seed) + 1 + _resume_step)
             except Exception as e:
-                print(f" Checkpoint load failed: {e}. Starting fresh.")
+                warnings.warn(
+                    f"Checkpoint load failed ({type(e).__name__}: {e}); "
+                    "starting fresh.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
         # Data collection arrays
         # Per-trajectory tracking (always collected - lightweight)
         _output_cfg = getattr(self.params, "_output_cfg", None)

@@ -215,7 +215,7 @@ class PQRAtom:
         # Always use HETATM for non-standard residues
         # Prevents parser failures
         return (
-            f"HETATM{self.serial:5d}  {self.name:<4s} {self.resname:<4s}"
+            f"HETATM{self.serial:5d} {self.name:<4s} {self.resname:<4s}"
             f"{self.resid:5d}    {self.x:8.3f}{self.y:8.3f}{self.z:8.3f}"
             f"  {self.charge:7.4f}  {self.radius:6.4f}\n"
         )

@@ -89,7 +89,19 @@ def lj_pair_force(
         F_r = factor * eps * (12*(sig/r)^12 - 6*(sig/r)^6) / r^2
     Returns
     -------
-    (force_on_a, energy)   force_on_a is (3,) pointing a -> b direction
+    (force_on_a, energy)   force_on_a is (3,) in direction (b - a).
+
+    .. warning::
+        FIXME (audit C7): the sign convention here is physically WRONG
+        at the repulsive part of the curve (r < sigma). The code returns
+        force on `a` in direction (b - a), giving an *attractive* force
+        at short range when physics requires repulsive (a - b). The
+        magnitude is correct; only the sign is flipped.
+
+        Verified production path is the GPU WCA implementation at
+        ``pystarc.forces.gpu_batch_engine._wca_forces_gpu``. Do NOT
+        enable ``LJForceEngine`` for production BD runs without first
+        fixing this sign and verifying against a hand-computed dimer.
     """
     dpos = pos_b - pos_a
     r2 = float(np.dot(dpos, dpos))
@@ -151,6 +163,12 @@ class LJForceEngine:
     Usage:
         engine = LJForceEngine(lj_params, hydrophobic_params)
         total_force, total_energy = engine.compute(mol1, mol2)
+
+    .. warning::
+        FIXME (audit C7): the underlying ``lj_pair_force`` has a wrong
+        sign convention at the repulsive part of the LJ curve. Do NOT
+        use this engine in production BD runs. Production code uses the
+        GPU WCA path at ``gpu_batch_engine._wca_forces_gpu``.
     """
 
     def __init__(

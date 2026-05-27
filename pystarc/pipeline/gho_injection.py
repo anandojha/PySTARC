@@ -1,18 +1,19 @@
 """
-PySTARC GHO ghost atom auto-injection
-=====================================
+PySTARC GHO ghost atom utilities
+================================
 
-Finds all `<dummy>` atom entries with their pre-computed positions relative to the
-molecular centre, and inject them into the simulation XML so that the
-BD simulator can evaluate the GHO-based reaction criterion.
+Provides the GHO (ghost atom / dummy atom) infrastructure PySTARC uses to
+evaluate distance-based reaction criteria. Without this, PySTARC falls back
+to a centroid distance criterion which gives wrong k_on values.
 
-Without this, PySTARC falls back to a centroid distance criterion which gives
-completely wrong k_on values.
-
-This module:
-1. Parses `<dummy>` entries from a the reference implementation rxns XML file
-2. Attaches dummy (GHO) atoms to the appropriate molecule
-3. Makes GHO atom positions available to the reaction criterion evaluator
+This module provides:
+- ``parse_rxns_xml`` / ``parse_ghost_atoms_from_input``: parsers for
+  reactions-XML and input-XML ghost atom specifications.
+- ``inject_gho_from_manual``: manual ghost atom injection when
+  pre-computed positions are not available from the reactions XML.
+- ``gho_world_position`` / ``gho_criterion_distance``: geometry helpers
+  used to evaluate the GHO reaction criterion at runtime.
+- ``GHOReactionCriterion``: the runtime reaction-criterion class.
 """
 
 from __future__ import annotations
