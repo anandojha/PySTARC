@@ -20294,3 +20294,31 @@ def test_prepare_bd_surface_pqr_roundtrip_4char_names():
                 assert abs(v1 - v2) < 1e-9, f"{coord} drift: {v1} -> {v2}"
     finally:
         os.unlink(tmp)
+
+
+
+def test_hydrophobic_attractive_force_direction():
+    """C7b regression: hydrophobic SASA force with default (negative) beta
+    must be attractive -- force on a points TOWARD b. With a at origin
+    and b at +x in the contact range (a < r+radius < b), F_a[0] > 0
+    and the integrated energy is negative."""
+    import numpy as np
+    from pystarc.forces.lj import hydrophobic_sasa_force, HydrophobicParams
+    hp = HydrophobicParams()  # default beta = -0.025 -> fac < 0
+    r_vec = np.array([1.0, 0.0, 0.0])  # unit vector a -> b
+    # r + radius_self = 3.0 + 0.5 = 3.5, which is in [hp.a=3.1, hp.b=4.35]
+    f, e = hydrophobic_sasa_force(3.0, r_vec, 0.5, 0.5, 10.0, 10.0, hp)
+    assert f[0] > 0, f"attractive hydrophobic must point a->b (+x); got F[0]={f[0]}"
+    assert e < 0, f"attractive interaction must give negative energy; got e={e}"
+
+
+def test_hydrophobic_repulsive_force_direction():
+    """C7b regression: with positive beta the SASA interaction is
+    repulsive -- F on a points AWAY from b (-x direction)."""
+    import numpy as np
+    from pystarc.forces.lj import hydrophobic_sasa_force, HydrophobicParams
+    hp = HydrophobicParams(beta=+0.025)  # flip sign -> repulsive
+    r_vec = np.array([1.0, 0.0, 0.0])
+    f, e = hydrophobic_sasa_force(3.0, r_vec, 0.5, 0.5, 10.0, 10.0, hp)
+    assert f[0] < 0, f"repulsive hydrophobic must point b->a (-x); got F[0]={f[0]}"
+    assert e > 0, f"repulsive interaction must give positive energy; got e={e}"

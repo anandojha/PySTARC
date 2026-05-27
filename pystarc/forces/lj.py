@@ -144,8 +144,10 @@ def hydrophobic_sasa_force(
         return 0.0
 
     f_scalar = sasa_contrib(radius_a, sasa_b) + sasa_contrib(radius_b, sasa_a)
-    # Force acts along the intermolecular axis
-    force_a = f_scalar * r_vec
+    # Same sign convention as lj_pair_force: F_a = -grad_a V.
+    # With fac < 0 (attractive default), f_scalar < 0, so force_a = -f_scalar * r_vec
+    # is in +r_vec direction (toward b) -- attractive. Audit C7b fix.
+    force_a = -f_scalar * r_vec
     # Approximate energy (trapezoid integral of force over contact range)
     energy = f_scalar * (hp.b - hp.a) * 0.5
     return force_a, energy
