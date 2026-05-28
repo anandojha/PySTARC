@@ -402,7 +402,7 @@ class WESimulator:
         self.weight_escaped = 0.0
         self.iteration_fluxes = []
         trajs = self._init_ensemble()
-        total_time_ps = 0.0
+        self.total_time_ps = 0.0
         for iteration in range(self.params.n_iterations):
             new_trajs: List[WETrajectory] = []
             iter_flux = 0.0
@@ -437,7 +437,10 @@ class WESimulator:
                 else:
                     new_trajs.append(current)
             self.iteration_fluxes.append(iter_flux)
-            total_time_ps += self.params.dt
+            # Each iteration advances simulation time by
+            # steps_per_iteration * dt (one BD step of dt per inner
+            # _step_traj call, inner loop runs steps_per_iteration times).
+            self.total_time_ps += self.params.dt * self.params.steps_per_iteration
             # Resample to maintain n_per_bin per bin
             trajs = self._resample(new_trajs)
             if (
@@ -452,8 +455,8 @@ class WESimulator:
                     f"bins_occupied={n_bins_occupied}/{self.params.n_bins}"
                 )
         # Compute flux (probability per unit time)
-        flux_rxn = self.weight_reacted / total_time_ps if total_time_ps > 0 else 0.0
-        flux_esc = self.weight_escaped / total_time_ps if total_time_ps > 0 else 0.0
+        flux_rxn = self.weight_reacted / self.total_time_ps if self.total_time_ps > 0 else 0.0
+        flux_esc = self.weight_escaped / self.total_time_ps if self.total_time_ps > 0 else 0.0
         return WEResult(
             n_iterations=self.params.n_iterations,
             n_per_bin=self.params.n_per_bin,

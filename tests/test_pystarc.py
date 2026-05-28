@@ -7794,6 +7794,34 @@ class TestWESimulatorConstruction:
         assert sim.params.r_start == 50.0
         assert len(sim._bins) == 6
 
+    def test_we_total_time_scales_with_steps_per_iteration(self):
+        """Regression: WE simulation time must accumulate
+        (steps_per_iteration * dt) per outer iteration, not just dt.
+        _step_traj performs one BD step of duration dt; the inner loop
+        runs it up to steps_per_iteration times per outer iteration.
+        A prior bug accumulated only dt per outer iteration, inflating
+        the reported flux (and hence k_on) by the steps_per_iteration
+        factor."""
+        import math
+        mol1, mol2 = self._make_simple_molecules()
+        mob = MobilityTensor.from_radii(10.0, 5.0)
+        criteria = ReactionCriteria(
+            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
+        )
+        rxn = ReactionInterface(name="rxn", criteria=criteria)
+        ps = PathwaySet(reactions=[rxn])
+        params = WEParameters(
+            n_per_bin=2, n_bins=5, n_iterations=3, r_start=50.0,
+            steps_per_iteration=4, dt=0.2, seed=42,
+        )
+        from pystarc.simulation.we_simulator import WESimulator
+        sim = WESimulator(mol1, mol2, mob, ps, params)
+        sim.run()
+        # Expected: 3 iters * 4 steps/iter * 0.2 ps/step = 2.4 ps
+        expected = 3 * 4 * 0.2
+        assert math.isclose(sim.total_time_ps, expected, abs_tol=1e-9), \
+            f"total_time_ps={sim.total_time_ps}, expected={expected} ps"
+
     def test_we_bin_of_interior(self):
         mol1, mol2 = self._make_simple_molecules()
         mob = MobilityTensor.from_radii(10.0, 5.0)
