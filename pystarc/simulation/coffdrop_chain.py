@@ -2752,7 +2752,7 @@ _ONE_LETTER_TO_THREE = {
 
 def chain_from_sequence(
     sequence: str,
-    coffdrop_dir: str = "pystarc/coffdrop_data",
+    coffdrop_dir: Optional[str] = None,
     name: Optional[str] = None,
     sidechains: bool = True,
     k_spring: float = 100.0,
@@ -2767,9 +2767,10 @@ def chain_from_sequence(
     sequence : str
         Either single-letter codes ("ARWGL") or 3-letter codes
         ("ALA-ARG-TRP-GLY-LEU" or "ALA ARG TRP GLY LEU").
-    coffdrop_dir : str
+    coffdrop_dir : str, optional
         Path to directory containing coffdrop.xml, map.xml,
-        connectivity.xml, charges.xml. Default: pystarc/coffdrop_data.
+        connectivity.xml, charges.xml. If None (default), uses the
+        data directory bundled with the pystarc package.
     name : str, optional
         Optional chain name; auto-generated from sequence if not given.
     sidechains : bool
@@ -2800,8 +2801,15 @@ def chain_from_sequence(
     from pathlib import Path as _Path
     from pystarc.simulation.coffdrop_params import COFFDROPParams
 
-    # Load params
+    # Resolve coffdrop_dir: default to data bundled with the pystarc package
+    if coffdrop_dir is None:
+        coffdrop_dir = str(_Path(__file__).parent.parent / "coffdrop_data")
     p = _Path(coffdrop_dir)
+    if not p.is_dir():
+        raise FileNotFoundError(
+            f"COFFDROP data directory not found: {coffdrop_dir}. "
+            "Pass coffdrop_dir explicitly or check pystarc installation."
+        )
     params = COFFDROPParams.load(
         ff_xml=str(p / "coffdrop.xml"),
         mapping_xml=str(p / "map.xml"),
@@ -2948,7 +2956,7 @@ def place_relaxed_geometry(chain: "ChainCommon") -> np.ndarray:
 def chain_from_pdb(
     pdb_path: str,
     chain_id: Optional[str] = None,
-    coffdrop_dir: str = "pystarc/coffdrop_data",
+    coffdrop_dir: Optional[str] = None,
     name: Optional[str] = None,
     sidechains: bool = True,
     k_spring: float = 100.0,

@@ -20350,3 +20350,27 @@ def test_hydrophobic_repulsive_force_direction():
     f, e = hydrophobic_sasa_force(3.0, r_vec, 0.5, 0.5, 10.0, 10.0, hp)
     assert f[0] < 0, f"repulsive hydrophobic must point b->a (-x); got F[0]={f[0]}"
     assert e > 0, f"repulsive interaction must give positive energy; got e={e}"
+
+
+# ============================================================
+# Regression tests: #4a (commit "fix coffdrop_dir relative-path default")
+# coffdrop_dir default must resolve regardless of cwd, and bad coffdrop_dir
+# must give a clear error rather than a cryptic XML parse failure.
+# Before fix: default was the relative string "pystarc/coffdrop_data",
+# which only worked when cwd was the PySTARC root.
+# ============================================================
+
+def test_chain_from_sequence_default_works_outside_pystarc_tree(tmp_path, monkeypatch):
+    """chain_from_sequence with default coffdrop_dir works from arbitrary cwd."""
+    from pystarc.simulation.coffdrop_chain import chain_from_sequence
+    monkeypatch.chdir(tmp_path)
+    chain = chain_from_sequence("ALA")
+    assert chain.n_atoms > 0
+
+
+def test_chain_from_sequence_bad_coffdrop_dir_raises_clear_error():
+    """Bad coffdrop_dir gives clear FileNotFoundError, not cryptic XML error."""
+    import pytest
+    from pystarc.simulation.coffdrop_chain import chain_from_sequence
+    with pytest.raises(FileNotFoundError, match="COFFDROP data directory not found"):
+        chain_from_sequence("ALA", coffdrop_dir="/nonexistent/path")
