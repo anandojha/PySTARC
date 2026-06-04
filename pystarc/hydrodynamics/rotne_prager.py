@@ -31,6 +31,7 @@ from __future__ import annotations
 from pystarc.global_defs.constants import ETA_WATER, KB_SI, T_DEFAULT, ANG_TO_M, PS_TO_S
 import numpy as np
 import math
+import warnings
 
 
 def stokes_translational_diffusion(
@@ -464,6 +465,58 @@ def _translation_only_mobility(positions, radii):
     return M_tt
 
 
+
+def _build_robust_solver(M):
+    """Build a callable solver(v) for M @ x = v, robust to near-singular M.
+
+    Tries strategies in order:
+      1. Cholesky on M (cheap; requires symmetric positive definite)
+      2. Cholesky on M + eps*I with progressive jitter (handles near-singular)
+      3. Symmetric eigendecomposition with eigenvalue clipping (handles indefinite)
+
+    Returns
+    -------
+    (solver, was_regularized, info)
+        solver : callable(v) -> approximate M^{-1} v
+        was_regularized : bool; True if any fallback strategy was used
+        info : str describing the strategy actually applied
+    """
+    n = M.shape[0]
+    trace_avg = float(np.trace(M)) / max(n, 1)
+
+    # 1. Plain Cholesky
+    try:
+        L = np.linalg.cholesky(M)
+        def solver_chol(v, L=L):
+            y = np.linalg.solve(L, v)
+            return np.linalg.solve(L.T, y)
+        return solver_chol, False, "cholesky"
+    except np.linalg.LinAlgError:
+        pass
+
+    # 2. Regularized Cholesky with progressive jitter
+    for eps_factor in (1e-12, 1e-9, 1e-6):
+        eps = eps_factor * max(abs(trace_avg), 1.0)
+        try:
+            L_jit = np.linalg.cholesky(M + eps * np.eye(n))
+            def solver_jit(v, L=L_jit):
+                y = np.linalg.solve(L, v)
+                return np.linalg.solve(L.T, y)
+            return solver_jit, True, f"cholesky+jitter(eps={eps:.3e})"
+        except np.linalg.LinAlgError:
+            continue
+
+    # 3. Symmetric eigendecomposition with eigenvalue clipping
+    eigvals, eigvecs = np.linalg.eigh(M)
+    floor = max(float(abs(eigvals).max()), 1.0) * 1e-10
+    eigvals_clipped = np.maximum(eigvals, floor)
+    eigvals_inv = 1.0 / eigvals_clipped
+    def solver_eig(v, Q=eigvecs, di=eigvals_inv):
+        return Q @ (di * (Q.T @ v))
+    info = f"eigendecomp(min_eig={float(eigvals.min()):.3e}, clipped_to={floor:.3e})"
+    return solver_eig, True, info
+
+
 def chain_rigid_body_resistance(positions, radii):
     """Compute the chain's rigid-body resistance matrices and hydrodynamic
     center, given the bead positions and radii.
@@ -514,18 +567,22 @@ def chain_rigid_body_resistance(positions, radii):
     hc = _hydrodynamic_center(positions, radii)
     M_tt = _translation_only_mobility(positions, radii)
 
-    # Cholesky factor of M_tt. M_tt is symmetric positive definite by
-    # construction (it is the translation block of an RPY mobility tensor
-    # with non-overlapping or properly regularized overlapping spheres).
-    # If a user supplies pathological geometry (e.g. coincident beads),
-    # this will raise; let numpy's error message surface.
-    L = np.linalg.cholesky(M_tt)
-
-    def solve(v):
-        """Solve M_tt @ F = v using the precomputed Cholesky factor."""
-        # M_tt = L L^T, so F = L^-T (L^-1 v).
-        y = np.linalg.solve(L, v)
-        return np.linalg.solve(L.T, y)
+    # Solve M_tt @ F = v. RPY mobility is SPD for non-overlapping beads,
+    # but coarse-grained chains derived from PDBs can have near-coincident
+    # beads (e.g. CA fallback for disordered sidechains), making M_tt
+    # ill-conditioned or indefinite. _build_robust_solver falls back
+    # through regularized Cholesky -> symmetric eigendecomposition rather
+    # than raising LinAlgError on the user.
+    solve, _was_regularized, _solver_info = _build_robust_solver(M_tt)
+    if _was_regularized:
+        warnings.warn(
+            f"chain_rigid_body_resistance: RPY mobility matrix M_tt required "
+            f"regularization ({_solver_info}); typically caused by "
+            f"near-coincident beads. Check chain bead distances against "
+            f"bead radii.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     # A matrix: prescribe uniform translation v_i = e_k for every bead.
     A = np.zeros((3, 3))

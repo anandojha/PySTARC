@@ -20463,3 +20463,59 @@ def test_pdb_to_bead_positions_bad_fallback_raises():
     chain = chain_from_pdb(pdb, chain_id="D", name="barstar")
     with pytest.raises(ValueError, match="fallback must be one of"):
         pdb_to_bead_positions(chain, pdb, chain_id="D", fallback="bogus")
+
+
+# ============================================================
+# Regression tests: #2 (commit "regularize RPY Cholesky in chain_rigid_body_resistance")
+# RPY mobility Cholesky used to raise LinAlgError on the 230-bead barstar
+# chain (numerical conditioning at scale). Now falls back through
+# regularized Cholesky and symmetric eigendecomposition with a warning,
+# rather than killing the chain BD setup pipeline.
+# ============================================================
+
+def test_build_robust_solver_spd_uses_plain_cholesky():
+    """Well-conditioned SPD matrix uses Cholesky, no regularization."""
+    import numpy as np
+    from pystarc.hydrodynamics.rotne_prager import _build_robust_solver
+    M = np.array([[2.0, 0.5, 0.0], [0.5, 2.0, 0.5], [0.0, 0.5, 2.0]])
+    solver, was_reg, info = _build_robust_solver(M)
+    assert not was_reg
+    assert info == "cholesky"
+    v = np.array([1.0, 2.0, 3.0])
+    x = solver(v)
+    assert np.allclose(M @ x, v)
+
+
+def test_build_robust_solver_indefinite_falls_back_to_eigendecomp():
+    """A truly indefinite matrix (negative eigenvalue) falls through to
+    eigendecomposition with eigenvalue clipping."""
+    import numpy as np
+    from pystarc.hydrodynamics.rotne_prager import _build_robust_solver
+    # Diagonal matrix with one negative eigenvalue: Cholesky always fails,
+    # jitter 1e-6 < |neg_eig| so cannot recover; eigendecomp must take over.
+    M = np.diag([1.0, -0.5, 1.0])
+    solver, was_reg, info = _build_robust_solver(M)
+    assert was_reg
+    assert "eigendecomp" in info
+    v = np.array([1.0, 1.0, 1.0])
+    x = solver(v)
+    assert np.isfinite(x).all()
+
+
+def test_chain_rigid_body_resistance_handles_barstar_230_bead():
+    """Regression: 230-bead barstar chain used to raise LinAlgError on M_tt
+    Cholesky. Now completes without error (potentially with regularization)."""
+    import json, os, numpy as np
+    chain_json = "/mnt/home/aojha/ceph/PySTARC_simulations_/barnase_barstar_chainbd/chain.json"
+    if not os.path.exists(chain_json):
+        import pytest
+        pytest.skip(f"barstar chain.json fixture not at {chain_json}")
+    from pystarc.hydrodynamics.rotne_prager import chain_rigid_body_resistance
+    with open(chain_json) as f:
+        data = json.load(f)
+    positions = np.array([a["position"] for a in data["atoms"]])
+    radii = np.array([a["radius"] for a in data["atoms"]])
+    A, C, hc = chain_rigid_body_resistance(positions, radii)
+    assert np.isfinite(A).all()
+    assert np.isfinite(C).all()
+    assert np.isfinite(hc).all()
