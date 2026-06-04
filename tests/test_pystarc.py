@@ -20374,3 +20374,92 @@ def test_chain_from_sequence_bad_coffdrop_dir_raises_clear_error():
     from pystarc.simulation.coffdrop_chain import chain_from_sequence
     with pytest.raises(FileNotFoundError, match="COFFDROP data directory not found"):
         chain_from_sequence("ALA", coffdrop_dir="/nonexistent/path")
+
+
+# ============================================================
+# Regression tests: #4b (commit "add pdb_to_bead_positions helper")
+# Encapsulates COFFDROP centroid mapping + CB->CA fallback + TLEAP
+# variant handling so chain BD setup.py scripts don't have to
+# hand-code 80 lines of fragile logic.
+# ============================================================
+
+def test_resname_match_tleap_variants():
+    """_resname_match_tleap treats TLEAP-renamed pairs as equivalent."""
+    from pystarc.structures.chain_io import _resname_match_tleap
+    assert _resname_match_tleap("HIS", "HIE")
+    assert _resname_match_tleap("HIE", "HID")
+    assert _resname_match_tleap("HIP", "HIS")
+    assert _resname_match_tleap("CYS", "CYX")
+    assert _resname_match_tleap("ASP", "ASH")
+    assert _resname_match_tleap("GLU", "GLH")
+    assert _resname_match_tleap("LYS", "LYN")
+    assert _resname_match_tleap("ALA", "ALA")
+    assert not _resname_match_tleap("ALA", "GLY")
+    assert not _resname_match_tleap("HIS", "ALA")
+    assert not _resname_match_tleap("HIS", "CYX")
+
+
+def test_parse_coffdrop_map_simple_known_entries():
+    """_parse_coffdrop_map_simple reproduces known COFFDROP bead definitions."""
+    from pathlib import Path
+    import pystarc
+    from pystarc.structures.chain_io import _parse_coffdrop_map_simple
+    map_path = Path(pystarc.__file__).parent / "coffdrop_data" / "map.xml"
+    mapping = _parse_coffdrop_map_simple(map_path)
+    assert "LYS" in mapping
+    assert mapping["LYS"]["CA"] == ["CA"]
+    assert mapping["LYS"]["CB"] == ["CB", "CG", "CD"]
+    assert mapping["LYS"]["NG"] == ["CE", "NZ"]
+    assert mapping["GLU"]["OG"] == ["CD", "OE1", "OE2"]
+    assert mapping["ASN"]["CG"] == ["CG", "OD1", "ND2"]
+    assert mapping["ILE"]["CG"] == ["CD1"]
+
+
+def test_pdb_to_bead_positions_on_1brs_chain_d():
+    """barstar chain (1BRS chain D) reproduces our manual setup.py output."""
+    import os
+    import numpy as np
+    pdb = "/mnt/home/aojha/ceph/PySTARC_simulations_/barnase_barstar_chainbd/1BRS.pdb"
+    if not os.path.exists(pdb):
+        import pytest
+        pytest.skip(f"1BRS.pdb fixture not at {pdb}")
+    from pystarc.simulation.coffdrop_chain import chain_from_pdb
+    from pystarc.structures.chain_io import pdb_to_bead_positions
+    chain = chain_from_pdb(pdb, chain_id="D", name="barstar")
+    pos = pdb_to_bead_positions(chain, pdb, chain_id="D")
+    assert pos.shape == (chain.n_atoms, 3)
+    assert np.isfinite(pos).all()
+    # Bounding box reproduces earlier manual mapping
+    assert 24.0 < pos[:, 0].min() < 25.0 and 51.0 < pos[:, 0].max() < 53.0
+    assert 17.0 < pos[:, 1].min() < 18.0 and 50.0 < pos[:, 1].max() < 52.0
+    assert -15.0 < pos[:, 2].min() < -13.0 and 16.0 < pos[:, 2].max() < 18.0
+
+
+def test_pdb_to_bead_positions_strict_mode_raises_on_disorder():
+    """fallback='strict' raises on the disordered GLN61 sidechain in 1BRS chain D."""
+    import os
+    pdb = "/mnt/home/aojha/ceph/PySTARC_simulations_/barnase_barstar_chainbd/1BRS.pdb"
+    if not os.path.exists(pdb):
+        import pytest
+        pytest.skip(f"1BRS.pdb fixture not at {pdb}")
+    import pytest
+    from pystarc.simulation.coffdrop_chain import chain_from_pdb
+    from pystarc.structures.chain_io import pdb_to_bead_positions
+    chain = chain_from_pdb(pdb, chain_id="D", name="barstar")
+    with pytest.raises(RuntimeError, match="fallback=strict"):
+        pdb_to_bead_positions(chain, pdb, chain_id="D", fallback="strict")
+
+
+def test_pdb_to_bead_positions_bad_fallback_raises():
+    """Bad fallback value raises ValueError immediately."""
+    import os
+    pdb = "/mnt/home/aojha/ceph/PySTARC_simulations_/barnase_barstar_chainbd/1BRS.pdb"
+    if not os.path.exists(pdb):
+        import pytest
+        pytest.skip(f"1BRS.pdb fixture not at {pdb}")
+    import pytest
+    from pystarc.simulation.coffdrop_chain import chain_from_pdb
+    from pystarc.structures.chain_io import pdb_to_bead_positions
+    chain = chain_from_pdb(pdb, chain_id="D", name="barstar")
+    with pytest.raises(ValueError, match="fallback must be one of"):
+        pdb_to_bead_positions(chain, pdb, chain_id="D", fallback="bogus")
