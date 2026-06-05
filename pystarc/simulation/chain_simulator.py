@@ -781,6 +781,18 @@ def chain_internal_bd_step(
     drifts = mobilities[:, None] * forces * dt
     sigmas = np.sqrt(2.0 * kT * mobilities * dt)
     noise = sigmas[:, None] * rng.standard_normal((n_atoms, 3))
+    # Defensive per-atom drift clamp: prevent any single atom from
+    # taking an unphysical displacement caused by near-singular intra-
+    # chain WCA forces when chain atoms get too close. A typical inner
+    # step displaces atoms <0.1 A; >MAX_INNER_DRIFT_A indicates a near-
+    # singular force kick. Rescale the offending atom's drift to the
+    # cap, preserving direction. Noise is unaffected.
+    MAX_INNER_DRIFT_A = 5.0
+    drift_mags = np.linalg.norm(drifts, axis=1)
+    overshoot = drift_mags > MAX_INNER_DRIFT_A
+    if overshoot.any():
+        scale = MAX_INNER_DRIFT_A / drift_mags[overshoot]
+        drifts[overshoot] = drifts[overshoot] * scale[:, None]
     pos += drifts + noise
     # Re-center at origin: keeps the body frame consistent with
     # place_chain (which assumes body positions are CoM-centered).
@@ -918,6 +930,15 @@ def chain_outer_bd_step(
             dW_t,
             dW_r,
         )
+    # Defensive clamp: reject unphysical displacements caused by
+    # near-singular WCA forces at overlapping configurations. Normal
+    # BD steps with D~0.02 A^2/ps and dt~0.2 ps displace <1 A. A step
+    # >MAX_OUTER_DISP_A indicates an overlap-driven force kick; stay
+    # put rather than propagate divergent dynamics. The next BD step
+    # samples new noise and may escape the overlap.
+    MAX_OUTER_DISP_A = 5.0
+    if np.linalg.norm(new_pos - pos) > MAX_OUTER_DISP_A:
+        return pos, ori
     return new_pos, new_ori
 
 
@@ -988,6 +1009,15 @@ def chain_outer_bd_step_wiener(
             dW_t,
             dW_r,
         )
+    # Defensive clamp: reject unphysical displacements caused by
+    # near-singular WCA forces at overlapping configurations. Normal
+    # BD steps with D~0.02 A^2/ps and dt~0.2 ps displace <1 A. A step
+    # >MAX_OUTER_DISP_A indicates an overlap-driven force kick; stay
+    # put rather than propagate divergent dynamics. The next BD step
+    # samples new noise and may escape the overlap.
+    MAX_OUTER_DISP_A = 5.0
+    if np.linalg.norm(new_pos - pos) > MAX_OUTER_DISP_A:
+        return pos, ori
     return new_pos, new_ori
 
 
@@ -1237,14 +1267,21 @@ class ChainBDSimulator:
             chain_br = float(np.max(atom_dists + atom_radii))
             # Resolve effective scalar D for chain. If D_trans is a 3x3
             # tensor (auto_diffusion), use trace/3 as effective scalar.
+            # In auto_diffusion mode the constructor args D_trans/D_rot
+            # are None, but the real anisotropic tensors are stored on
+            # self.D_trans / self.D_rot (set at construction). Use those
+            # so the OuterPropagator gets the true rigid-body D instead
+            # of the 1e-6 placeholder, which otherwise stalls the outer
+            # propagation by ~1e4-1e5x and prevents trajectories from
+            # ever reaching contact or escape.
             if D_trans is None:
-                D_trans_eff = 0.0  # auto_diffusion case, use isotropic later
+                D_trans_eff = float(np.trace(np.asarray(self.D_trans)) / 3.0)
             elif np.ndim(D_trans) == 0:
                 D_trans_eff = float(D_trans)
             else:
                 D_trans_eff = float(np.trace(np.asarray(D_trans)) / 3.0)
             if D_rot is None:
-                D_rot_eff = 0.0
+                D_rot_eff = float(np.trace(np.asarray(self.D_rot)) / 3.0)
             elif np.ndim(D_rot) == 0:
                 D_rot_eff = float(D_rot)
             else:
@@ -1875,6 +1912,18 @@ class ChainBDSimulator:
         if self.params.verbose:
             print(f"  Parallel: {n_workers} workers, {n} trajectories")
         args = [(self, i) for i in range(n)]
+        # Use imap (vs. map) so results come back as completed, enabling
+        # incremental progress reporting. imap preserves submission order
+        # so self._record() sees results in the same order as pool.map().
+        report_every = max(1, n // 20)  # progress every 5%
         with mp.Pool(n_workers) as pool:
-            for result in pool.map(_run_chain_trajectory_worker, args):
+            for i, result in enumerate(
+                pool.imap(_run_chain_trajectory_worker, args), 1
+            ):
                 self._record(result)
+                if self.params.verbose and (i % report_every == 0 or i == n):
+                    print(
+                        f"  Progress: {i}/{n} trajectories "
+                        f"({100*i/n:.0f}%)",
+                        flush=True,
+                    )

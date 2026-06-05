@@ -292,6 +292,18 @@ class OuterPropagator:
 
         while not (reached_b or reached_q):
             r = float(np.linalg.norm(pos))
+            # Universal start-of-iteration clamp: previous iteration's
+            # branch may have produced unphysical pos. The near-b LS
+            # branch in particular can return new_x >> 0, making
+            # new_r = bradius + new_x huge (traj 5's 666 phenotype).
+            # Clipping here means the next branch dispatch sees a
+            # physical r and final_separation is interpretable.
+            if r > self.qradius:
+                pos = pos * (self.qradius / r)
+                r = self.qradius
+            elif r < self.bradius:
+                pos = pos * (self.bradius / r)
+                r = self.bradius
             if r <= self.bradius:
                 pos = (self.bradius / r) * pos
                 reached_b = True
@@ -385,6 +397,20 @@ class OuterPropagator:
                     pos += (sDtdt * rng.standard_normal()) * up
                 else:
                     pos += sDrdt * rng.standard_normal(3)
+                # Defensive clamp: prevent middle-region overshoot past the
+                # q-sphere (or below the b-sphere) when Fr0 is large. Without
+                # this, drift = Dr*Fr0*dt can be enormous, taking pos from
+                # ~55 A to several hundred A in one step. The next iteration
+                # detects r >= qradius and terminates as escape, but with
+                # pos still at the overshoot magnitude (final_separation
+                # ~666 instead of the q-sphere 80 A). Clipping back to the
+                # boundary keeps the propagator's escape/return logic
+                # physical and final_separation interpretable.
+                r_after = float(np.linalg.norm(pos))
+                if r_after > self.qradius:
+                    pos = pos * (self.qradius / r_after)
+                elif r_after < self.bradius:
+                    pos = pos * (self.bradius / r_after)
         # update orientation if we returned to b-sphere
         if reached_b:
             # diffusional rotation over elapsed time t

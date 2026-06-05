@@ -74,6 +74,73 @@ def _build_pathway_set(
     return PathwaySet([rxn])
 
 
+def _ensure_chain_apbs_grids(config: PySTARCConfig) -> None:
+    """If target_grid_dx or born_grid_dx are specified in the chain config
+    but missing on disk, run APBS to generate them using parameters from
+    the top-level PySTARCConfig.
+
+    Mirrors pystarc.pipeline.pipeline.run() step 4 (run_apbs_both) for the
+    rigid-body path. For chain BD we only have a single target molecule
+    (the chain itself is built from sequence, no PQR for it), so we call
+    the single-molecule run_apbs.
+
+    Convention: target_grid_dx is expected to follow the
+    "{work_dir}/{mol_name}1.dx" pattern produced by run_apbs (the "1" is
+    the fine-grid suffix). mol_name is derived by stripping trailing
+    digits from the filename stem.
+    """
+    if config.chain is None:
+        return
+    cc = config.chain
+    if not cc.target_grid_dx:
+        return
+
+    target_dx = Path(cc.target_grid_dx)
+    born_dx = Path(cc.born_grid_dx) if cc.born_grid_dx else None
+
+    if target_dx.exists() and (born_dx is None or born_dx.exists()):
+        return
+
+    apbs_work_dir = target_dx.parent
+    apbs_work_dir.mkdir(parents=True, exist_ok=True)
+    stem = target_dx.stem
+    mol_name = stem.rstrip("0123456789")
+    if not mol_name:
+        raise ValueError(
+            f"Cannot derive APBS mol_name from {target_dx.name}; "
+            f"expected '{{mol_name}}1.dx' pattern (e.g. 'thrombin1.dx')"
+        )
+
+    src_pqr = Path(config.receptor_pqr)
+    if not src_pqr.exists():
+        raise FileNotFoundError(
+            f"receptor_pqr not found: {src_pqr} (needed for APBS)"
+        )
+    dst_pqr = apbs_work_dir / src_pqr.name
+    shutil.copy(str(src_pqr), str(dst_pqr))
+
+    print(f"APBS DX grids missing; generating in {apbs_work_dir}/ ...")
+    from pystarc.pipeline.run_apbs import run_apbs
+    run_apbs(
+        pqr_path=src_pqr,
+        mol_name=mol_name,
+        work_dir=apbs_work_dir,
+        ion_conc=config.ion_concentration,
+        debye_length=config.debye_length,
+        dielectric_in=config.pdie,
+        dielectric_out=config.sdie,
+        srad=config.srad,
+        temp=config.temperature,
+        ion_radius_pos=getattr(config, "ion_radius_pos", 0.95),
+        ion_radius_neg=getattr(config, "ion_radius_neg", 1.81),
+        cglen_override=getattr(config, "apbs_cglen", 0.0),
+        fglen_override=getattr(config, "apbs_fglen", 0.0),
+        dime=getattr(config, "apbs_dime", 129),
+        coarse_dime=getattr(config, "apbs_coarse_dime", 0),
+        fine_dime=getattr(config, "apbs_fine_dime", 0),
+    )
+
+
 def run_chain(
     config: PySTARCConfig,
     input_xml_path: Optional[Path] = None,
@@ -132,6 +199,10 @@ def run_chain(
         f"  reactions: {len(reaction_pairs)} contact pairs "
         f"(n_needed={cc.reaction_n_needed})"
     )
+
+    # If grids are specified but missing on disk, generate them via APBS.
+    # Mirrors rigid-body pipeline.run() step 4.
+    _ensure_chain_apbs_grids(config)
 
     # Load APBS grids if specified.
     target_grid = None
