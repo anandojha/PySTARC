@@ -58,7 +58,7 @@ PySTARC computes bimolecular association rate constants (k<sub>on</sub>) via rig
 
 ### GPU-native performance
 
-- **Batch trajectory propagation** - All trajectories advance simultaneously as GPU arrays for positions, quaternions, and status flags. A single RTX 6000 Ada sustains ~400,000 steps/sec for a 2-atom system and ~28,000 steps/sec for barnase-barstar (10 million trajectories in 50 minutes).
+- **Batch trajectory propagation** - All trajectories advance simultaneously as GPU arrays for positions, quaternions, and status flags. A single RTX 6000 Ada sustains ~400,000 steps/sec for a small (2-atom) system, scaling to millions of trajectories per run.
 - **Automatic multi-GPU scaling** - Split simulations across GPUs with shared APBS grids and pooled result combining via `combine_data.py`.
 - **Memory-safe Born force chunking** - Reverse-direction Born desolvation is batched to fit within GPU memory, enabling use with large receptors.
 
@@ -80,7 +80,7 @@ PySTARC computes bimolecular association rate constants (k<sub>on</sub>) via rig
 - **14 structured output files** - Trajectories, encounters, near-misses, first-passage times, radial density, angular occupancy maps, pose clusters, milestone flux, transition matrices, commitment probabilities, and energetics.
 - **Live progress** - k<sub>on</sub> and P<sub>rxn</sub> printed at configurable intervals with running Wilson CI.
 - **Checkpointing** - Automatic save and resume for long production runs.
-- **1,027 unit tests** - CodeFactor grade A, pip-installable via `pip install pystarc`.
+- **1,719 unit tests** - CodeFactor grade A, pip-installable via `pip install pystarc`.
 ## Installation
 
 **GPU (Linux / HPC):**
@@ -90,6 +90,9 @@ git clone https://github.com/anandojha/PySTARC.git
 cd PySTARC
 bash install_PySTARC.sh
 ```
+
+> Note: `install_PySTARC.sh` installs all free dependencies but does NOT install the OpenEye Toolkits, which are commercial and license-gated. The inhibitor examples (`hsp90_inhibitors/`, `ttk_inhibitors/`) require OpenEye for ligand charge assignment and will not run without it. Other examples (two_charged_spheres, trypsin_benzamidine, etc.) do not need OpenEye.
+
 
 **Mac / CPU:**
 
@@ -128,9 +131,10 @@ examples/
 ├── trypsin_benzamidine/              Protein-ligand (charged ligand, surface pocket)
 ├── beta_cyclodextrin_guests/         Host-guest (7 neutral guests, same receptor)
 ├── thrombin_thrombomodulin/          Protein-protein (electrostatically steered)
-├── barnase_barstar/                  Protein-protein (WT + R59A mutant)
 ├── p38_mapk_sb203580/                Protein-ligand (neutral kinase inhibitor)
 ├── carbonic_anhydrase_inhibitors/    Protein-ligand (7 sulfonamides, 3 CA isozymes)
+├── hsp90_inhibitors/                 Protein-ligand (6 HSP90 inhibitors)
+├── ttk_inhibitors/                   Protein-ligand (8 TTK/MPS1 kinase inhibitors)
 └── trypsin_benzamidine_multi_GPUs/   Cluster SLURM demo (single-GPU and multi-GPU)
 ```
 
@@ -166,6 +170,7 @@ Reduce `n_trajectories_per_batch` in `input.xml`, lower the APBS grid dimension 
 - APBS
 - RDKit (for ligand setup from SMILES)
 - OpenBabel (for mol2 conversion)
+- OpenEye Toolkits (oechem, oequacpac) - REQUIRED for the inhibitor examples (hsp90, ttk); used for AM1-BCC ligand charges. Commercial software, requires a separate license (OE_LICENSE). Not installed by install_PySTARC.sh.
 - NumPy, SciPy, Click
 - Matplotlib, pdb2pqr (for setup scripts)
 - CuPy (GPU) or NumPy (CPU fallback)
