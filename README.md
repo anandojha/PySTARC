@@ -91,13 +91,7 @@ cd PySTARC
 bash install_PySTARC.sh
 ```
 
-> **OpenEye (optional, needed only for the inhibitor examples).** The `hsp90_inhibitors/` and `ttk_inhibitors/` examples assign AM1-BCC ligand charges with the OpenEye Toolkits. `install_PySTARC.sh` does not install them. If you need those examples, install OpenEye separately:
->
-> ```bash
-> conda install -c openeye openeye-toolkits
-> ```
->
-> The OpenEye Toolkits require a valid license (set via the `OE_LICENSE` environment variable); academic licensing may be available — see https://www.eyesopen.com or contact support@eyesopen.com for current terms. All other examples (two_charged_spheres, trypsin_benzamidine, beta_cyclodextrin_guests, thrombin_thrombomodulin, p38_mapk_sb203580, carbonic_anhydrase_inhibitors) run without OpenEye.
+**OpenEye license required.** The `hsp90_inhibitors/` and `ttk_inhibitors/` examples need the OpenEye Toolkits (`conda install -c openeye openeye-toolkits`), which require a valid license (`OE_LICENSE`). A free academic license is available from OpenEye — see https://www.eyesopen.com. Other examples do not need OpenEye.
 
 
 **Mac / CPU:**
