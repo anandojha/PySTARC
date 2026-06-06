@@ -8006,11 +8006,11 @@ class TestNAMSimulatorRun:
         assert 0.0 <= result.reaction_probability <= 1.0
 
     def test_nam_different_seeds(self):
-        mol1, mol2, mob, ps, params = self._make_setup(n_traj=50)
+        mol1, mol2, mob, ps, params = self._make_setup(n_traj=200)
         sim1 = NAMSimulator(mol1, mol2, mob, ps, params, zero_force)
         r1 = sim1.run()
         params2 = NAMParameters(
-            n_trajectories=50,
+            n_trajectories=200,
             dt=0.2,
             r_start=20.0,
             max_steps=50,
