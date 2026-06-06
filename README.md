@@ -91,7 +91,13 @@ cd PySTARC
 bash install_PySTARC.sh
 ```
 
-> Note: `install_PySTARC.sh` installs all free dependencies but does NOT install the OpenEye Toolkits, which are commercial and license-gated. The inhibitor examples (`hsp90_inhibitors/`, `ttk_inhibitors/`) require OpenEye for ligand charge assignment and will not run without it. Other examples (two_charged_spheres, trypsin_benzamidine, etc.) do not need OpenEye.
+> **OpenEye (optional, needed only for the inhibitor examples).** The `hsp90_inhibitors/` and `ttk_inhibitors/` examples assign AM1-BCC ligand charges with the OpenEye Toolkits. `install_PySTARC.sh` does not install them. If you need those examples, install OpenEye separately:
+>
+> ```bash
+> conda install -c openeye openeye-toolkits
+> ```
+>
+> The OpenEye Toolkits require a valid license (set via the `OE_LICENSE` environment variable); academic licensing may be available — see https://www.eyesopen.com or contact support@eyesopen.com for current terms. All other examples (two_charged_spheres, trypsin_benzamidine, beta_cyclodextrin_guests, thrombin_thrombomodulin, p38_mapk_sb203580, carbonic_anhydrase_inhibitors) run without OpenEye.
 
 
 **Mac / CPU:**
@@ -170,7 +176,7 @@ Reduce `n_trajectories_per_batch` in `input.xml`, lower the APBS grid dimension 
 - APBS
 - RDKit (for ligand setup from SMILES)
 - OpenBabel (for mol2 conversion)
-- OpenEye Toolkits (oechem, oequacpac) - REQUIRED for the inhibitor examples (hsp90, ttk); used for AM1-BCC ligand charges. Commercial software, requires a separate license (OE_LICENSE). Not installed by install_PySTARC.sh.
+- OpenEye Toolkits (oechem, oequacpac) - required only for the inhibitor examples (hsp90, ttk); used for AM1-BCC ligand charges. Installable via `conda install -c openeye openeye-toolkits`; requires a valid license (OE_LICENSE), academic licensing may be available.
 - NumPy, SciPy, Click
 - Matplotlib, pdb2pqr (for setup scripts)
 - CuPy (GPU) or NumPy (CPU fallback)
