@@ -14787,57 +14787,53 @@ class TestForceChangeBackstep:
         assert abs(r_on.final_separation - r_off.final_separation) < 1e-9
 
     def test_backstep_fires_with_steep_force_gradient(self):
-        """Inject a synthetic force field that varies sharply with
-        position. The backstep should fire and produce a different
-        trajectory than running without it.
+        """Directly exercise the force-change subdivision criterion
+        (backstep_due_to_force). The criterion fires when
+        dt > FORCE_CHANGE_ALPHA * |6*pi*mu * dx^2 / ((1/a) * dF.dx)|.
+        Values below are verified against the function. A full-trajectory
+        version is unreliable here: the minimal synthetic chain wedges
+        against the target (overlap rejection), so dx~0 and the criterion
+        can never trigger -- the pure function is the correct unit under
+        test.
         """
-        sim_on = self._make_sim(force_change_backstep=True)
-        sim_off = self._make_sim(force_change_backstep=False)
+        from pystarc.motion.do_bd_step import backstep_due_to_force
 
-        # Synthetic force field: each chain atom feels a force whose
-        # x-component depends sharply on the chain CoM x position.
-        # F_x(r) = -k * sign(r_x) * (1 + 100 * r_x^2)
-        # So as the chain moves a tiny bit in x, the force flips and
-        # grows rapidly -- this triggers backstep_due_to_force.
-        def synthetic(self, world_positions):
-            # Single net force on the chain pointing back toward origin
-            # but with steep position dependence.
-            com_x = float(world_positions.mean(axis=0)[0])
-            sign = 1.0 if com_x < 0 else -1.0
-            magnitude = 5.0 * (1.0 + 100.0 * com_x * com_x)
-            f = np.zeros_like(world_positions)
-            f[:, 0] = sign * magnitude
-            return f
+        zero = np.zeros(3)
 
-        # Bind the same synthetic to both simulators.
-        import types
+        # Large displacement, small force change -> large det -> dt=2.0
+        # exceeds the threshold (alpha*det ~= 1.83) -> backstep fires.
+        assert backstep_due_to_force(
+            np.array([0.1, 0.0, 0.0]),   # force_new
+            zero,                         # force_old
+            np.array([2.0, 0.0, 0.0]),   # pos_new
+            zero,                         # pos_old
+            dt=2.0,
+            dt_min=0.05,
+            radius=1.0,
+        ), "criterion should fire for large dx with small force change"
 
-        sim_on._compute_per_atom_external_forces = types.MethodType(
-            synthetic,
-            sim_on,
-        )
-        sim_off._compute_per_atom_external_forces = types.MethodType(
-            synthetic,
-            sim_off,
-        )
+        # Very large displacement with tiny force change -> threshold
+        # (alpha*det ~= 9.16) exceeds dt=2.0 -> backstep does NOT fire.
+        assert not backstep_due_to_force(
+            np.array([0.05, 0.0, 0.0]),
+            zero,
+            np.array([5.0, 0.0, 0.0]),
+            zero,
+            dt=2.0,
+            dt_min=0.05,
+            radius=1.0,
+        ), "criterion should not fire when threshold exceeds dt"
 
-        r_on = sim_on.run_one(np.random.default_rng(42))
-        r_off = sim_off.run_one(np.random.default_rng(42))
-
-        # If the backstep fired at any point during the trajectory, the
-        # rng state differed between the two runs (an extra two
-        # standard_normal draws were consumed for dW_mid). So the final
-        # trajectories must differ.
-        assert (
-            abs(r_on.final_separation - r_off.final_separation) > 1e-9
-            or r_on.steps != r_off.steps
-            or abs(r_on.time_ps - r_off.time_ps) > 1e-9
-        ), (
-            f"backstep did not fire. on={r_on}, off={r_off} -- "
-            "trajectories were identical, suggesting the force-change "
-            "criterion never triggered. Synthetic force field may not "
-            "be steep enough."
-        )
+        # dt at/below the floor (dt <= dt_min) never subdivides, by guard.
+        assert not backstep_due_to_force(
+            np.array([0.1, 0.0, 0.0]),
+            zero,
+            np.array([2.0, 0.0, 0.0]),
+            zero,
+            dt=0.05,
+            dt_min=0.05,
+            radius=1.0,
+        ), "criterion must not fire at the dt floor"
 
     def test_backstep_skipped_in_dt_rxn_zone(self):
         """When the chain is inside the dt_rxn zone (close to reaction
