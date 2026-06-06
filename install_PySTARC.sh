@@ -46,6 +46,8 @@ echo ""
 echo "[4/7] Installing conda dependencies (ambertools, apbs)"
 conda install -c conda-forge ambertools apbs rdkit openbabel -y
 echo "ambertools and apbs installed"
+# OpenEye Toolkits: needed for hsp90/ttk examples (AM1-BCC charges). Needs OE_LICENSE to run.
+conda install -c openeye openeye-toolkits -y || echo "  WARNING: OpenEye install failed; inhibitor examples will not run."
 # 5. GPU + pip dependencies
 echo ""
 echo "[5/7] Installing pip dependencies (cupy, matplotlib, pdb2pqr)."
@@ -77,6 +79,7 @@ which tleap    >/dev/null 2>&1 && echo "tleap"    || echo "tleap not found"
 which apbs     >/dev/null 2>&1 && echo "apbs"     || echo "apbs not found"
 which obabel   >/dev/null 2>&1 && echo "obabel"   || echo "obabel not found"
 "$ENV_PY" -c "from rdkit import Chem; print(f'RDKit {Chem.rdBase.rdkitVersion}')" 2>/dev/null || echo "RDKit not available"
+"$ENV_PY" -c "from openeye import oechem; print('OpenEye', oechem.OEChemGetRelease())" 2>/dev/null || echo "OpenEye not available (hsp90/ttk only; check OE_LICENSE)"
 # Run tests
 echo ""
 echo "Running tests."
