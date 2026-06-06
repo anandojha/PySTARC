@@ -91,7 +91,7 @@ cd PySTARC
 bash install_PySTARC.sh
 ```
 
-**OpenEye license required.** The `hsp90_inhibitors/` and `ttk_inhibitors/` examples need the OpenEye Toolkits (`conda install -c openeye openeye-toolkits`), which require a valid license (`OE_LICENSE`). A free academic license is available from OpenEye — see https://www.eyesopen.com. Other examples do not need OpenEye.
+**OpenEye license required.** The `hsp90_inhibitors/` and `ttk_inhibitors/` examples need the OpenEye Toolkits, which require a valid license. A free academic license is available from OpenEye (see https://www.eyesopen.com for details). Other examples do not need OpenEye.
 
 
 **Mac / CPU:**
