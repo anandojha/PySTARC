@@ -181,7 +181,7 @@ print("=" * 70)
 print("PySTARC chain BD setup: barnase-barstar (WT)")
 print("=" * 70)
 
-for f in [SOURCE_PDB, RECEPTOR_PQR, TARGET_GRID_DX, BORN_GRID_DX]:
+for f in [SOURCE_PDB, RECEPTOR_PQR]:
     if not os.path.exists(f):
         sys.exit(f"ERROR: prerequisite file missing: {f}")
     sz = os.path.getsize(f)
