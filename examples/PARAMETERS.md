@@ -279,7 +279,7 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 **Key physics.** All ligands are neutral, so PySTARC reports the diffusion-limited encounter rate with no electrostatic enhancement. The systematic over-prediction grows for the slowest experimental binders (e.g. system 70), consistent with rigid-body BD being unable to model the non-diffusional gating that sets the experimental rate for slow binders.
 
-**Reference.** Experimental k<sub>on</sub> values derived from Kokh et al. (2018) *[full citation to confirm]*; on-disk values used above.
+**Reference.** Experimental k<sub>on</sub> values are from the SPR measurements of Kokh et al. (2018), *J. Chem. Theory Comput.* 14(7), 3859–3869 (SI Table 5).
 
 ---
 
