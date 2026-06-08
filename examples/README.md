@@ -1,6 +1,6 @@
 # PySTARC examples
 
-Nine validation examples of increasing complexity:
+Ten validation examples of increasing complexity:
 
 | Example                               | System                                   | Type                       |
 |---------------------------------------|------------------------------------------|----------------------------|
@@ -8,6 +8,7 @@ Nine validation examples of increasing complexity:
 | `trypsin_benzamidine/`                | Trypsin-benzamidine                      | Protein-ligand             |
 | `beta_cyclodextrin_guests/`           | 7 BCD host-guest complexes               | Host-guest                 |
 | `thrombin_thrombomodulin/`            | Thrombin-thrombomodulin                  | Protein-protein            |
+| `barnase_barstar_chainbd/`            | Barnase-barstar (flexible chain)         | Chain BD / protein-protein |
 | `p38_mapk_sb203580/`                  | p38 MAPK / SB203580                      | Protein-ligand             |
 | `carbonic_anhydrase_inhibitors/`      | 7 CA sulfonamide inhibitors (3 isozymes) | Protein-ligand             |
 | `hsp90_inhibitors/`                   | 6 HSP90 inhibitors                       | Protein-ligand             |
@@ -71,6 +72,8 @@ examples/
 │   ├── input.xml                       Simulation parameters
 │   ├── bb_effect.py                    Brownian bridge diagnostic script
 │   └── run.sh                          Run simulation + BB diagnostic
+│
+├── barnase_barstar_chainbd/            Flexible chain BD (protein-protein, under active validation)
 │
 ├── p38_mapk_sb203580/                  Protein-ligand (neutral kinase inhibitor)
 │   ├── README.md

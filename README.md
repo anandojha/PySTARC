@@ -132,6 +132,7 @@ examples/
 ├── trypsin_benzamidine/              Protein-ligand (charged ligand, surface pocket)
 ├── beta_cyclodextrin_guests/         Host-guest (7 neutral guests, same receptor)
 ├── thrombin_thrombomodulin/          Protein-protein (electrostatically steered)
+├── barnase_barstar_chainbd/          Flexible chain BD (protein-protein, under active validation)
 ├── p38_mapk_sb203580/                Protein-ligand (neutral kinase inhibitor)
 ├── carbonic_anhydrase_inhibitors/    Protein-ligand (7 sulfonamides, 3 CA isozymes)
 ├── hsp90_inhibitors/                 Protein-ligand (6 HSP90 inhibitors)
