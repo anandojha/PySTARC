@@ -54,7 +54,7 @@ DESOLVATION_ALPHA         = "0.07957747"
 
 N_TRAJECTORIES            = "100"
 MAX_STEPS                 = "150000"
-REACTION_N_NEEDED         = "1"
+REACTION_N_NEEDED         = "3"
 N_WORKERS                 = "96"
 WORK_DIR                  = "bd_sims"
 
