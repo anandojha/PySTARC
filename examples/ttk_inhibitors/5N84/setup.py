@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
-"""
-PySTARC setup script for TTK kinase / Mps-BAY2b protein-ligand benchmark.
 
-PDB: 5N84 (Wengner et al. 2016)
-  TTK / MPS1 kinase domain (chain A) + Mps-BAY2b (type I inhibitor)
-
-Experimental k_on: 2.60e6 M^-1 s^-1 (Uitdehaag et al., 2017)
-
-For the TTK-Mps-BAY2b protein-ligand complex, the receptor is the protein
-(ATOM records, chain A from residue 516) and the ligand is the
-small molecule Mps-BAY2b (HETATM records, residue 8Q5).
-
-The ligand is parameterized with OpenEye (AM1-BCC) + antechamber (GAFF2 atom types).
-"""
 import urllib.request
 import numpy as np
 import subprocess

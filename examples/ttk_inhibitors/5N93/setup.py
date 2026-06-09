@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
-"""
-PySTARC setup script for TTK kinase / TC-Mps1-12 protein-ligand benchmark.
 
-PDB: 5N93 (Caldarelli et al. 2011)
-  TTK / MPS1 kinase domain (chain A) + TC-Mps1-12 (type I inhibitor)
-  Contains phosphorylated residue(s); handled via phosaa14SB force field.
-
-Experimental k_on: 2.16e7 M^-1 s^-1 (Uitdehaag et al., 2017)
-
-For the TTK-TC-Mps1-12 protein-ligand complex, the receptor is the protein
-(ATOM + phospho HETATM records, chain A from residue 516) and the
-ligand is the small molecule TC-Mps1-12 (HETATM records, residue 8QE).
-
-The ligand is parameterized with OpenEye (AM1-BCC) + antechamber (GAFF2 atom types).
-"""
 import urllib.request
 import numpy as np
 import subprocess

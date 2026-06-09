@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
-"""
-PySTARC setup script for TTK kinase / Mps1-IN-1 protein-ligand benchmark.
 
-PDB: 3GFW (Kwiatkowski et al. 2010)
-  TTK / MPS1 kinase domain (chain A) + Mps1-IN-1 (type I inhibitor)
-
-Experimental k_on: 3.79e5 M^-1 s^-1 (Uitdehaag et al., 2017)
-
-For the TTK-Mps1-IN-1 protein-ligand complex, the receptor is the protein
-(ATOM records, chain A from residue 515) and the ligand is the
-small molecule Mps1-IN-1 (HETATM records, residue S22).
-
-The ligand is parameterized with OpenEye (AM1-BCC) + antechamber (GAFF2 atom types).
-"""
 import urllib.request
 import numpy as np
 import subprocess

@@ -1,20 +1,4 @@
 #!/usr/bin/env python3
-"""
-PySTARC setup script for CA XIII / acetazolamide (AZM) protein-ligand benchmark.
-
-PDB: 3CZV (Baranauskiene & Matulis, 2012)
-  Human carbonic anhydrase XIII (chain A, 258 residues) + acetazolamide
-
-Experimental intrinsic k_on: 2.7 x 10^6 M^-1 s^-1 (Linkuviene et al., J. Med. Chem. 2018)
-  Observed k_on at pH 7.0: 2.7 x 10^6 M^-1 s^-1 (SPR)
-  BD models the deprotonated (binding-competent) sulfonamide, so the intrinsic
-  rate is the correct comparison target.
-
-Receptor: CA XIII chain A (residues 4-261) + Zn2+ (HETATM)
-Ligand: acetazolamide deprotonated (NH-SO2R, net charge = -1)
-  Generated from SMILES via rdkit -> SDF -> obabel mol2 -> antechamber
-  (antechamber cannot handle thiadiazole ring directly from PDB)
-"""
 
 import numpy as np
 import subprocess

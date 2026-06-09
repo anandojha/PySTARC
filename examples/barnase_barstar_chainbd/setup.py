@@ -1,47 +1,24 @@
 #!/usr/bin/env python3
-"""
-PySTARC chain BD setup for barnase-barstar (WT).
 
-System: 1BRS bound complex (Buckle, Schreiber & Fersht 1994).
-  Barnase (108 aa, 1BRS chain A) = rigid target.
-  Barstar (89 aa, 1BRS chain D)  = COFFDROP flexible chain.
-
-Asymmetric flexible BD. Current PySTARC chain BD module supports only
-one chain + one rigid target. Frembgen-Kesner & Elcock 2010
-(Biophys J 99:L75-L77) used two flexible chains, which this setup
-does NOT replicate. Treating only barstar as flexible is the closest
-feasible approximation in PySTARC chain BD today.
-
-Target experimental k_on (Schreiber & Fersht 1996, 50 mM ionic strength):
-    2.86e8 M^-1 s^-1
-"""
-
+import numpy as np
 import json
 import os
 import sys
-import numpy as np
 
-# ============================================================
 # User settings
-# ============================================================
-
-
 SOURCE_PDB                = "1BRS.pdb"
 RECEPTOR_CHAIN_ID         = "A"
 LIGAND_CHAIN_ID           = "D"
 RECEPTOR_PQR              = "barnase.pqr"
 TARGET_GRID_DX            = "apbs_output/barnase1.dx"
 BORN_GRID_DX              = "apbs_output/barnase1_born.dx"
-
 CHAIN_JSON                = "chain.json"
 REACTION_PAIRS_JSON       = "reaction_pairs.json"
 INPUT_XML                 = "input.xml"
 CHAIN_NAME                = "barstar"
-
 INTERFACE_CUTOFF_A        = 5.0
 REACTION_DISTANCE_A       = 7.0
 MIN_REACTION_PAIRS        = 5
-
 TEMPERATURE               = "298.15"
 SEED                      = "1"
 BD_MILESTONE_RADIUS       = "80.0"
@@ -51,18 +28,14 @@ CHAIN_STEPS_PER_OUTER     = "8"
 N_EQUILIBRATION_STEPS     = "0"
 R_ESCAPE                  = "160.0"
 DESOLVATION_ALPHA         = "0.07957747"
-
 N_TRAJECTORIES            = "100"
 MAX_STEPS                 = "150000"
 REACTION_N_NEEDED         = "3"
 N_WORKERS                 = "96"
 WORK_DIR                  = "bd_sims"
-
 PYSTARC_DIR               = "/mnt/home/aojha/ceph/PySTARC"
 
-# ============================================================
 # Helpers
-# ============================================================
 
 def parse_pdb_chain(pdb_path, chain_id, heavy_only=True):
     atoms = []
@@ -88,7 +61,6 @@ def parse_pdb_chain(pdb_path, chain_id, heavy_only=True):
             })
     return atoms
 
-
 def parse_pqr(pqr_path):
     atoms = []
     with open(pqr_path) as f:
@@ -111,7 +83,6 @@ def parse_pqr(pqr_path):
             })
     return atoms
 
-
 def build_sequence_position_index(atoms):
     residues = []
     last_resid = None
@@ -129,7 +100,6 @@ def build_sequence_position_index(atoms):
         residues[-1]["atoms"].append(a)
     return residues
 
-
 TLEAP_VARIANT_GROUPS = [
     {"HIS", "HIE", "HID", "HIP"},
     {"CYS", "CYX", "CYM"},
@@ -137,7 +107,6 @@ TLEAP_VARIANT_GROUPS = [
     {"GLU", "GLH"},
     {"LYS", "LYN"},
 ]
-
 
 def resname_match(r1, r2):
     if r1 == r2:
@@ -153,7 +122,6 @@ def find_atom_in_residue(residue, atom_name):
         if a["atom_name"] == atom_name:
             return a
     return None
-
 
 
 def parse_coffdrop_map(map_xml_path):
@@ -173,9 +141,7 @@ def parse_coffdrop_map(map_xml_path):
     return mapping
 
 
-# ============================================================
 # Step 1: parse sources, verify consistency
-# ============================================================
 
 print("=" * 70)
 print("PySTARC chain BD setup: barnase-barstar (WT)")
@@ -220,9 +186,7 @@ if mismatches:
 offset = barnase_residues_1brs[0]['resid_native'] - barnase_residues_pqr[0]['resid_native']
 print(f"  OK  108 residues match. Numbering offset (1BRS - pqr) = {offset}")
 
-# ============================================================
 # Step 2: build chain from barstar
-# ============================================================
 
 print("\nBuilding COFFDROP chain from barstar (1BRS chain D)...")
 sys.path.insert(0, PYSTARC_DIR)
@@ -251,9 +215,7 @@ if len(unique_resids_in_chain) != len(barstar_residues_1brs):
     sys.exit(f"ERROR: chain residue count ({len(unique_resids_in_chain)}) != "
              f"barstar 1BRS residue count ({len(barstar_residues_1brs)})")
 
-# ============================================================
 # Step 3: derive body-frame positions from 1BRS chain D
-# ============================================================
 
 print("\nDeriving body-frame positions via COFFDROP centroid mapping...")
 coffdrop_map_xml = os.path.join(PYSTARC_DIR, "pystarc", "coffdrop_data", "map.xml")
@@ -331,9 +293,7 @@ print(f"  Position range: "
 save_chain_to_json(chain, body_positions, CHAIN_JSON)
 print(f"  Wrote {CHAIN_JSON}")
 
-# ============================================================
 # Step 4: native interface contacts -> reaction_pairs.json
-# ============================================================
 
 print(f"\nFinding native interface contacts (cutoff {INTERFACE_CUTOFF_A:.1f} A)...")
 chain_a_xyz = np.array([a["xyz"] for a in barnase_1brs])
@@ -404,9 +364,7 @@ with open(REACTION_PAIRS_JSON, "w") as f:
     json.dump(reaction_pairs_list, f, indent=2)
 print(f"  Wrote {REACTION_PAIRS_JSON} ({len(pairs)} pairs, n_needed={REACTION_N_NEEDED})")
 
-# ============================================================
 # Step 5: write input.xml
-# ============================================================
 
 input_xml = f"""<?xml version="1.0"?>
 <pystarc>

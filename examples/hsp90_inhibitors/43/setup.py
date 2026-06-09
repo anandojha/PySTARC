@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-'''PySTARC setup for HSP90-inhibitor (43) - PDB-based, OpenEye+GAFF.'''
-import os, shutil, subprocess, sys, re
+
 import numpy as np
+import subprocess
+import shutil
+import sys
+import re
+import os 
 
 SOURCE_PDB = "complex.pdb"
-
 RECEPTOR_PQR = "receptor.pqr"
 LIGAND_PQR   = "ligand.pqr"
 RXNS_XML     = "rxns.xml"

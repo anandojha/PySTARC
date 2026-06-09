@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
-"""
-PySTARC setup script for TTK kinase / NMS-P715 protein-ligand benchmark.
 
-PDB: 2X9E (Kusakabe et al. 2015)
-  TTK / MPS1 kinase domain (chain A) + NMS-P715 (type I inhibitor)
-
-Experimental k_on: 6.41e5 M^-1 s^-1 (Uitdehaag et al., 2017)
-
-For the TTK-NMS-P715 protein-ligand complex, the receptor is the protein
-(ATOM records, chain A from residue 515) and the ligand is the
-small molecule NMS-P715 (HETATM records, residue SVE).
-
-The ligand is parameterized with OpenEye (AM1-BCC) + antechamber (GAFF2 atom types).
-"""
 import urllib.request
 import numpy as np
 import subprocess

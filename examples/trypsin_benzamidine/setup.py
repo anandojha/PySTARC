@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""
-PySTARC setup script.
-"""
 
 import numpy as np
 import subprocess

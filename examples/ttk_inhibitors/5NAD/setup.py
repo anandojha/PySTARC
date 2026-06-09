@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
-"""
-PySTARC setup script for TTK kinase / BAY 1217389 protein-ligand benchmark.
 
-PDB: 5NAD (Siemeister et al. 2019)
-  TTK / MPS1 kinase domain (chain A) + BAY 1217389 (type I inhibitor)
-  Contains phosphorylated residue(s); handled via phosaa14SB force field.
-
-Experimental k_on: 3.79e5 M^-1 s^-1 (Uitdehaag et al., 2017)
-
-For the TTK-BAY 1217389 protein-ligand complex, the receptor is the protein
-(ATOM + phospho HETATM records, chain A from residue 516) and the
-ligand is the small molecule BAY 1217389 (HETATM records, residue 8RH).
-
-The ligand is parameterized with OpenEye (AM1-BCC) + antechamber (GAFF2 atom types).
-"""
 import urllib.request
 import numpy as np
 import subprocess

@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
-"""
-PySTARC setup script for p38 MAPK / SB203580 protein-ligand benchmark.
 
-PDB: 1A9U (Wang et al., 1998)
-  p38 MAPK alpha (chain A, DFG-in conformation) + SB203580 (type I inhibitor)
-
-Experimental k_on: 1.5 × 10^7 M^-1 s^-1 (Miao et al., 2018)
-Browndye BD:       6.6 × 10^7 M^-1 s^-1 (Huang, Biophys J, 2021)
-
-For the p38-SB203580 protein-ligand complex, the receptor is the protein
-(ATOM records, residues 4-354, skipping His-tag) and the ligand is the
-small molecule SB203580 (HETATM records, residue SB2).
-
-The ligand is parameterized with antechamber (GAFF2 + AM1-BCC charges).
-"""
 import urllib.request
 import numpy as np
 import subprocess

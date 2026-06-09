@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
-"""
-PySTARC setup script for TTK kinase / MPI-0479605 protein-ligand benchmark.
 
-PDB: 5N7V (Kwiatkowski PDB)
-  TTK / MPS1 kinase domain (chain A) + MPI-0479605 (type I inhibitor)
-  Contains phosphorylated residue(s); handled via phosaa14SB force field.
-
-Experimental k_on: 1.96e6 M^-1 s^-1 (Uitdehaag et al., 2017)
-
-For the TTK-MPI-0479605 protein-ligand complex, the receptor is the protein
-(ATOM + phospho HETATM records, chain A from residue 516) and the
-ligand is the small molecule MPI-0479605 (HETATM records, residue 8PT).
-
-The ligand is parameterized with OpenEye (AM1-BCC) + antechamber (GAFF2 atom types).
-"""
 import urllib.request
 import numpy as np
 import subprocess

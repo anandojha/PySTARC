@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
-"""
-PySTARC setup script for TTK kinase / Reversine protein-ligand benchmark.
 
-PDB: 5LJJ (Hiruma et al., 2016)
-  TTK / MPS1 kinase domain (chain A) + Reversine (type I inhibitor)
-
-Experimental k_on: 2.08 x 10^6 M^-1 s^-1 (Uitdehaag et al., 2017)
-SEEKR2 metaD k_on: 2.8 x 10^6 M^-1 s^-1 (Votapka et al., JPCL 2024)
-
-For the TTK-Reversine protein-ligand complex, the receptor is the protein
-(ATOM records, residues 515-795) and the ligand is the
-small molecule Reversine (HETATM records, residue AD5).
-
-The ligand is parameterized with antechamber (GAFF2 + AM1-BCC charges).
-"""
 import urllib.request
 import numpy as np
 import subprocess
