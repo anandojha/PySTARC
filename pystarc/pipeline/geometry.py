@@ -40,6 +40,7 @@ from typing import List, Optional, Tuple
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
+import warnings
 import numpy as np
 
 
@@ -131,6 +132,17 @@ def parse_pqr(pqr_path: Path) -> List[AtomRecord]:
             if len(parts) < 9:
                 continue
             try:
+                if len(parts) > 9:
+                    radius = float(parts[9])
+                else:
+                    radius = 1.5
+                    warnings.warn(
+                        f"PQR line in {pqr_path} has no radius column; "
+                        f"defaulting radius to 1.5 A for atom {parts[2]!r}. "
+                        f"A wrong radius biases the hydrodynamic radius and "
+                        f"hence D_trans and k_on.",
+                        stacklevel=2,
+                    )
                 atoms.append(
                     AtomRecord(
                         index=len(atoms),
@@ -141,7 +153,7 @@ def parse_pqr(pqr_path: Path) -> List[AtomRecord]:
                         y=float(parts[6]),
                         z=float(parts[7]),
                         charge=float(parts[8]),
-                        radius=float(parts[9]) if len(parts) > 9 else 1.5,
+                        radius=radius,
                     )
                 )
             except (ValueError, IndexError):
@@ -242,7 +254,14 @@ def analyse_molecule(
                     print(f"    r_hydro cached: {cache_path.name}")
                 except Exception as e:
                     print(f"    r_hydro cache write failed: {e}")
-            except Exception:
+            except Exception as e:
+                warnings.warn(
+                    f"Monte Carlo hydrodynamic radius failed for {pqr_path} "
+                    f"({type(e).__name__}: {e}); falling back to the geometric "
+                    f"max_radius={max_radius:.3f} A. This fallback can bias "
+                    f"D_trans and hence k_on.",
+                    stacklevel=2,
+                )
                 r_h = max_radius
     else:
         r_h = max_radius  # geometric approximation
@@ -365,6 +384,7 @@ def _parse_rxns_xml_criteria(rxns_path):
     """
     pairs = []
     n_needed = -1  # a value of -1 means all pairs, which is the reference default
+    declared_n_needed = []  # the explicit n_needed of each reaction, in order
     try:
         tree = ET.parse(str(rxns_path))
         root = tree.getroot()
@@ -372,13 +392,23 @@ def _parse_rxns_xml_criteria(rxns_path):
             crit = reaction.find("criterion")
             if crit is None:
                 continue
-            # Read n_needed if it is present.
+            # Read n_needed for this reaction. It is scoped to the reaction and
+            # defaults to -1 so that a reaction without an explicit n_needed does
+            # not inherit the value parsed from a previous reaction. The previous
+            # code shared a single n_needed across reactions, which mis-parsed
+            # multi-reaction files. Single-reaction files are unaffected.
+            rxn_n_needed = -1
             nn_node = crit.find("n_needed")
             if nn_node is not None:
                 try:
-                    n_needed = int(nn_node.text.strip())
+                    rxn_n_needed = int(nn_node.text.strip())
+                    declared_n_needed.append(rxn_n_needed)
                 except ValueError:
                     pass
+            # The flattened path merges all pairs into a single criterion and can
+            # carry only one n_needed. Use this reaction's value, which for a
+            # single-reaction file reproduces the prior behavior exactly.
+            n_needed = rxn_n_needed
             for pair_node in crit.findall("pair"):
                 # First format: an <atom1> element with the receptor index,
                 # charge, and cutoff, and an <atom2> element with the ligand index.
@@ -422,6 +452,18 @@ def _parse_rxns_xml_criteria(rxns_path):
                         continue
     except Exception as e:
         print(f"  Warning: could not parse rxns XML {rxns_path}: {e}")
+    # The flattened path returns a single n_needed for all merged pairs. If the
+    # file declares more than one distinct n_needed across reactions, that
+    # information cannot be represented here and the per-reaction parser
+    # (_parse_rxns_xml_reaction_groups) should be used instead.
+    if len(set(declared_n_needed)) > 1:
+        warnings.warn(
+            f"rxns XML {rxns_path} declares differing n_needed values "
+            f"{declared_n_needed} across reactions. The flattened criteria "
+            f"path keeps only the last reaction's value ({n_needed}); use the "
+            f"state-machine reaction parser to preserve per-reaction n_needed.",
+            stacklevel=2,
+        )
     return pairs, n_needed
 
 
@@ -446,12 +488,11 @@ def auto_detect_reactions(
     # First priority: the rxns XML file.
     if rxns_xml and rxns_xml.strip():
         rxns_path = Path(rxns_xml.strip())
-        # If the path is relative, try resolving it against the PDB parent
-        # directory.
-        if not rxns_path.is_absolute() and not rxns_path.exists():
-            # Try the path relative to the current working directory, which is
-            # already the common case.
-            pass
+        # A relative rxns_xml path is interpreted relative to the current
+        # working directory, which Path already does. Resolution against the PDB
+        # parent directory is intentionally not implemented, so a relative path
+        # that does not exist relative to the working directory is reported as
+        # not found below.
         if rxns_path.exists():
             pairs, n_needed = _parse_rxns_xml_criteria(rxns_path)
             if pairs:
