@@ -433,17 +433,28 @@ class WESimulator:
         for iteration in range(self.params.n_iterations):
             new_trajs: List[WETrajectory] = []
             iter_flux = 0.0
+            iter_time_ps = 0.0
             for traj in trajs:
                 # Advance each trajectory for steps_per_iteration steps before
                 # resampling, which gives the trajectories time to cross bin
                 # boundaries.
                 current = traj
                 final_outcome = "ongoing"
+                time_at_start = current.time_ps
                 for _ in range(self.params.steps_per_iteration):
                     current, outcome = self._step_traj(current)
                     if outcome != "ongoing":
                         final_outcome = outcome
                         break
+                # The time genuinely simulated for this trajectory during the
+                # iteration is the change in its own maintained clock, summing
+                # the real per-step time taken. Trajectories that reach a
+                # reacted or escaped outcome stop early, and steps taken near a
+                # reaction boundary use the smaller adaptive time step, so this
+                # difference may be shorter than steps_per_iteration × dt. The
+                # ensemble advances by the longest such span, the genuine
+                # elapsed time of the iteration.
+                iter_time_ps = max(iter_time_ps, current.time_ps - time_at_start)
                 if final_outcome == "reacted":
                     self.weight_reacted += current.weight
                     iter_flux += current.weight
@@ -465,11 +476,12 @@ class WESimulator:
                 else:
                     new_trajs.append(current)
             self.iteration_fluxes.append(iter_flux)
-            # Each iteration advances the simulation time by
-            # steps_per_iteration × dt, since every inner _step_traj call takes
-            # one BD step of length dt and the inner loop runs
-            # steps_per_iteration times.
-            self.total_time_ps += self.params.dt * self.params.steps_per_iteration
+            # Advance the ensemble clock by the time genuinely simulated during
+            # the iteration, taken from the trajectories' own maintained clocks.
+            # This accumulates the real per-step time actually taken, which
+            # reflects early termination at a reacted or escaped outcome and the
+            # smaller adaptive time step used near a reaction boundary.
+            self.total_time_ps += iter_time_ps
             # Resample so that each bin again holds n_per_bin trajectories.
             trajs = self._resample(new_trajs)
             if (
