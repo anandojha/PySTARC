@@ -92,6 +92,13 @@ def _ensure_chain_apbs_grids(config: PySTARCConfig) -> None:
         return
     cc = config.chain
     if not cc.target_grid_dx:
+        if cc.born_grid_dx:
+            raise ValueError(
+                "<chain><born_grid_dx> requires <chain><target_grid_dx> to be "
+                "set as well; the APBS run that produces the Born grid is keyed "
+                "off the target grid path. Set target_grid_dx alongside "
+                "born_grid_dx."
+            )
         return
 
     target_dx = Path(cc.target_grid_dx)
@@ -245,11 +252,11 @@ def run_chain(
         debye_length=config.debye_length,
     )
 
-    # Resolve the scalar diffusion coefficients when auto_diffusion is off. Pass
-    # None to the simulator for any value left unspecified so that it applies
-    # its own defaults.
-    d_trans = cc.D_trans if cc.D_trans > 0.0 else None
-    d_rot = cc.D_rot if cc.D_rot > 0.0 else None
+    # Resolve the scalar diffusion coefficients when auto_diffusion is off. A
+    # value of 0 means use the default, 0.1 Å²/ps for D_trans and 0.01 rad²/ps
+    # for D_rot.
+    d_trans = cc.D_trans if cc.D_trans > 0.0 else 0.1
+    d_rot = cc.D_rot if cc.D_rot > 0.0 else 0.01
 
     # Construct the simulator. Automatic diffusion and explicit D are mutually
     # exclusive.
@@ -288,6 +295,7 @@ def run_chain(
         sim=sim,
         results=results,
         wall_time_sec=wall_time_sec,
+        outputs=config.outputs,
     )
     print(f"Wrote {len(written)} output files to {work_dir}:")
     for name, path in written:
