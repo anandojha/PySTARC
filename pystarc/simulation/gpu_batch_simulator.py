@@ -73,11 +73,10 @@ class GPUBatchResult:
     def reaction_probability_ci(self, confidence: float = 0.95):
         n = self.n_completed
         if n == 0:
-            # No completed trajectories, so the reaction probability is
-            # undefined. Make this case explicit rather than silently returning
-            # a fully uninformative interval, since it usually signals that the
-            # simulation produced no usable data (for example every trajectory
-            # hit the max-steps limit). The returned values are unchanged.
+            # With no completed trajectories (no reaction and no escape) the
+            # reaction probability is undefined. This usually means the run
+            # produced no usable data, for example when every trajectory hit the
+            # max-steps limit before reacting or escaping.
             warnings.warn(
                 "reaction_probability_ci: no completed trajectories "
                 "(n_reacted + n_escaped == 0); the reaction probability is "
@@ -110,10 +109,9 @@ class GPUBatchResult:
             k_D = 4.0 * math.pi * D_rel * self.r_start
             beta = self.r_start / self.r_escape
             denom = 1.0 - P * (1.0 - beta)
-            # The denominator can approach zero for P near 1 and beta near 0,
-            # which would produce a divide-by-zero or a nonsensically large
-            # rate. Guard the degenerate case with a clear error. The healthy
-            # path (denom well away from zero) is byte-identical to before.
+            # The denominator 1 - P*(1 - beta) approaches zero for P near 1 and
+            # beta near 0, where the recollision-corrected rate diverges. Reject
+            # that ill-defined regime instead of reporting a divergent rate.
             if abs(denom) < 1e-12:
                 raise ValueError(
                     "Smoluchowski rate denominator (1 - P*(1 - beta)) is "
@@ -139,8 +137,7 @@ class GPUBatchResult:
             k_D = 4.0 * math.pi * D_rel * self.r_start
             beta = self.r_start / self.r_escape
             denom = 1 - P * (1 - beta)
-            # Same degenerate-denominator guard as rate_constant. The healthy
-            # path is byte-identical to before.
+            # Reject the same ill-defined denominator regime as rate_constant.
             if abs(denom) < 1e-12:
                 raise ValueError(
                     "Smoluchowski rate-CI denominator (1 - P*(1 - beta)) is "
@@ -1441,10 +1438,10 @@ class GPUBatchSimulator:
                     _Ddt = cp.maximum(_Ddt, cp.full_like(_Ddt, 1e-30))
                     _p_cross = cp.exp(-_x0 * _x1 / _Ddt)
                     _p_cross = cp.where(_both_above, _p_cross, cp.zeros_like(_p_cross))
-                    # Use the independent rng_bb stream in state-machine mode so
-                    # that bridge draws do not perturb the main rng used for the
-                    # noise. Flattened-pairs mode keeps using the main rng to
-                    # preserve bit-identical reproducibility with prior runs.
+                    # In state-machine mode the bridge crossing test draws from
+                    # the independent rng_bb stream so it does not perturb the
+                    # main rng that generates the displacement noise. The
+                    # flattened-pairs path draws from the main rng.
                     if self._sm_active:
                         _u_bb = cp.asarray(
                             rng_bb.random(_p_cross.shape), dtype=cp.float64

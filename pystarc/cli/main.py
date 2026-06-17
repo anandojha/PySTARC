@@ -69,9 +69,8 @@ def nam_simulation(mol1, mol2, rxn, n, dt, r_start, dx, seed, verbose, output):
             force = np.zeros(3)
             torque = np.zeros(3)
             energy = 0.0
-            # The centroid of mol_2 does not change during this call, so it is
-            # computed once here rather than once per atom. This is a pure
-            # performance hoist and does not change the numerical result.
+            # Centroid of molecule 2, the reference point about which the
+            # torque on each atom is taken.
             centroid = mol_2.centroid()
             for grid in grids:
                 for atom in mol_2.atoms:

@@ -463,10 +463,8 @@ def satisfy_constraints_newton(
     if not common.length_constraints and not common.coplanar_constraints:
         return 0
     n_atoms = state.n_atoms
-    # Initialize new_violation so the final RuntimeError below references a
-    # bound name even when max_iter == 0 and the loop body never runs. On the
-    # healthy path (max_iter > 0) this is overwritten inside the loop before
-    # the final RuntimeError can be reached, so behavior is unchanged.
+    # Initialize new_violation so the final RuntimeError still references a
+    # bound name when max_iter == 0 and the loop never runs.
     new_violation = float("nan")
     for it in range(max_iter):
         phi = compute_constraint_violations(state)

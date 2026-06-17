@@ -707,11 +707,9 @@ def chain_diffusion_tensors(positions, radii, kT=1.0, viscosity=None):
     if viscosity is None:
         viscosity = WATER_VISCOSITY
 
-    # Validate the bead count before the heavy resistance computation. The
-    # downstream chain_rigid_body_resistance call would otherwise process
-    # empty input first and leak a RuntimeWarning from divide-by-zero before
-    # this guard could raise. The error and its condition are unchanged for
-    # N >= 1.
+    # Require at least one bead before computing the resistance tensors. An
+    # empty set of positions would otherwise reach chain_rigid_body_resistance
+    # and divide by zero.
     n = len(positions)
     if n < 1:
         raise ValueError("at least one bead required")
