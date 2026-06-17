@@ -1,18 +1,17 @@
 <div align="center">
 
-<pre align="center">
-
-╭────────────────────────────────────────────────────────────────╮
-│                                                                │
-│                     ◈   P y S T A R C   ◈                      │
-│                                                                │
-│    Python Simulation Toolkit for Association Rate Constants    │
-│                                                                │
-╰────────────────────────────────────────────────────────────────╯
-
+<pre>
+██████╗ ██╗   ██╗███████╗████████╗ █████╗ ██████╗  ██████╗
+██╔══██╗╚██╗ ██╔╝██╔════╝╚══██╔══╝██╔══██╗██╔══██╗██╔════╝
+██████╔╝ ╚████╔╝ ███████╗   ██║   ███████║██████╔╝██║     
+██╔═══╝   ╚██╔╝  ╚════██║   ██║   ██╔══██║██╔══██╗██║     
+██║        ██║   ███████║   ██║   ██║  ██║██║  ██║╚██████╗
+╚═╝        ╚═╝   ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝
 </pre>
 
-GPU-accelerated rigid-body and flexible chain Brownian dynamics for computing bimolecular association rate constants (k<sub>on</sub>)
+### Python Simulation Toolkit for Association Rate Constants
+
+GPU-accelerated rigid-body and flexible chain Brownian dynamics for bimolecular association rate constants (k<sub>on</sub>)
 
 <br>
 
@@ -29,7 +28,6 @@ GPU-accelerated rigid-body and flexible chain Brownian dynamics for computing bi
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Dependabot](https://img.shields.io/badge/dependabot-enabled-blue.svg?logo=dependabot)](https://github.com/anandojha/PySTARC/network/updates)
-[![Lines of Code](https://img.shields.io/badge/lines_of_code-56k-blue)](https://github.com/anandojha/PySTARC)
 
 </div>
 
@@ -37,7 +35,8 @@ GPU-accelerated rigid-body and flexible chain Brownian dynamics for computing bi
 
 ## Table of Contents
 
-- [What is PySTARC?](#what-is-pystarc)
+- [Overview](#overview)
+- [Method](#method)
 - [Features](#features)
 - [Installation](#installation)
 - [Testing](#testing)
@@ -50,37 +49,44 @@ GPU-accelerated rigid-body and flexible chain Brownian dynamics for computing bi
 
 ---
 
-## What is PySTARC?
+## Overview
 
-PySTARC computes bimolecular association rate constants (k<sub>on</sub>) via rigid-body Brownian dynamics, implementing the Northrup-Allison-McCammon framework with modern numerics and GPU acceleration. The target use cases are drug-discovery kinetics, protein-protein association, and any diffusion-controlled encounter problem where experimental rates are needed at scale. PySTARC runs all trajectories simultaneously on GPUs via CuPy, with a complete physical model through APBS electrostatics, Rotne-Prager-Yamakawa hydrodynamics, Born desolvation, Brownian bridge reaction capture, and adaptive timestepping. Setup is automated end-to-end, so going from a PDB to a converged k<sub>on</sub> takes a single `setup.py` followed by a single `run.sh`.
+PySTARC computes bimolecular association rate constants (k<sub>on</sub>) from rigid-body Brownian dynamics. It implements the Northrup-Allison-McCammon (NAM) formalism, in which the rate is written as the diffusion-limited rate of arrival at an outer b-surface multiplied by the probability that, having arrived, the pair reaches the reactive contact configuration before escaping. Trajectories are propagated in parallel on a GPU through CuPy, with a NumPy fallback on machines without a GPU.
+
+Typical applications are protein-ligand and protein-protein association and other diffusion-controlled encounter problems for which a second-order rate constant is required.
+
+## Method
+
+The force model combines APBS-derived electrostatic grids near the receptor with a screened-Coulomb (Yukawa) multipole far field outside the grid, Rotne-Prager-Yamakawa hydrodynamic coupling, and a Born desolvation term. Reaction capture uses the closed-form Brownian-bridge crossing probability rather than a per-step distance test, so a reaction that occurs between two recorded positions is detected without reducing the timestep. The translational and rotational diffusion constants are obtained from a Monte Carlo estimate of the hydrodynamic radius. Setup from a PDB and topology to a runnable input is scripted, so a calculation is one setup step followed by one run.
 
 ## Features
 
-### GPU-native performance
+### Performance
 
-- **Batch trajectory propagation** - All trajectories advance simultaneously as GPU arrays for positions, quaternions, and status flags. A single RTX 6000 Ada sustains ~400,000 steps/sec for a small (2-atom) system, scaling to millions of trajectories per run.
-- **Automatic multi-GPU scaling** - Split simulations across GPUs with shared APBS grids and pooled result combining via `combine_data.py`.
-- **Memory-safe Born force chunking** - Reverse-direction Born desolvation is batched to fit within GPU memory, enabling use with large receptors.
+- **Batch trajectory propagation.** All trajectories advance together as GPU arrays of positions, quaternions, and status flags. A single RTX 6000 Ada sustains about 400,000 steps per second for a two-atom system and scales to millions of trajectories per run.
+- **Multi-GPU runs.** A simulation can be split across GPUs that share APBS grids, with results pooled by `combine_data.py`.
+- **Memory-bounded Born forces.** Reverse-direction Born desolvation is evaluated in chunks that fit in GPU memory, so large receptors remain tractable.
 
-### Model and algorithms
+### Physical model and algorithms
 
-- **Exact Brownian bridge reaction detection** - Closed-form crossing probability `P = exp(-x₀·x₁/D_eff·Δt)` captures mid-step reactions at constant cost per step with no bias, no retry loops, and no minimum-timestep floors.
-- **Three-term Yukawa multipole far-field** - Monopole, dipole, and quadrupole analytical expansion for atoms outside the APBS grid. The dipole term is critical for electrically neutral molecules such as β-cyclodextrin (Q = 0) where the monopole contribution vanishes.
-- **Zuk et al. (2014) RPY hydrodynamics** - Exact three-regime Rotne-Prager-Yamakawa formula covering far-field, partial overlap, and full enclosure. Accurate at close approach for protein-protein complexes where hydrodynamic radii overlap.
-- **Hansen Monte Carlo hydrodynamic radius** - Full voxelised solvent-excluded surface with Kirkwood double-sum over 10⁶ surface point pairs. Accurate to within 1% against analytical reference.
-- **Bidirectional Born desolvation** - Computes Born forces in both directions, receptor at ligand positions and ligand at receptor positions, with Newton's third law for the reverse. Captures mutual desolvation as both molecules approach.
-- **Wilson score confidence interval** - Valid for any P<sub>rxn</sub> and any N ≥ 1, including the low-P<sub>rxn</sub> regime typical of tight reaction criteria where normal-approximation intervals break down.
-- **Configurable adaptive timestep** - User-controlled `max_dt` ceiling on the adaptive timestep. Prevents trajectory overshoot past the b-surface in protein-protein systems where unchecked timestep growth produces ballistic steps.
-- **Exact quaternion rotation** - Direct quaternion composition for rotational diffusion. No interpolation error at any rotation magnitude.
+- **Brownian-bridge reaction detection.** The crossing probability P = exp(-x₀·x₁ / (D_eff·Δt)) detects a reaction occurring between two recorded positions in closed form, at constant cost per step.
+- **Three-term Yukawa multipole far field.** Monopole, dipole, and quadrupole terms describe the receptor potential for atoms outside the APBS grid. The dipole and quadrupole terms govern electrically neutral molecules such as β-cyclodextrin (Q = 0), where the monopole vanishes.
+- **Rotne-Prager-Yamakawa hydrodynamics.** The Zuk et al. (2014) formulation covers the far-field, partial-overlap, and full-enclosure regimes, and remains valid at close approach where hydrodynamic radii overlap.
+- **Monte Carlo hydrodynamic radius.** A voxelised solvent-excluded surface with a Kirkwood double sum over surface point pairs reproduces the analytical reference to within about one percent.
+- **Bidirectional Born desolvation.** Born forces are computed for the receptor in the ligand field and for the ligand in the receptor field, with the reverse term obtained from Newton's third law, so mutual desolvation is captured as the molecules approach.
+- **Wilson score confidence interval.** The interval on P<sub>rxn</sub> is valid for any reaction probability and any N ≥ 1, including the small-P<sub>rxn</sub> regime where the normal approximation fails.
+- **Adaptive timestep with a ceiling.** A user-set `max_dt` bounds the adaptive step and prevents overshoot of the b-surface in protein-protein systems.
+- **Quaternion rotational diffusion.** Orientation is updated by direct quaternion composition, with no interpolation error at any rotation magnitude.
 
 ### Automation and reproducibility
 
-- **End-to-end setup** - `setup.py` takes a PDB and topology and produces PQR files, APBS grids, reaction criteria, and `input.xml` in one command. Includes automated reaction-criterion construction from crystal-structure contacts with configurable polar or all-heavy-atom modes.
-- **Convergence diagnostics** - Relative SE, Wilson 95% CI, cumulative convergence curve, first-half to second-half split test, and N-needed estimates for target precision.
-- **14 structured output files** - Trajectories, encounters, near-misses, first-passage times, radial density, angular occupancy maps, pose clusters, milestone flux, transition matrices, commitment probabilities, and energetics.
-- **Live progress** - k<sub>on</sub> and P<sub>rxn</sub> printed at configurable intervals with running Wilson CI.
-- **Checkpointing** - Automatic save and resume for long production runs.
-- **1,719 unit tests** - CodeFactor grade A, pip-installable via `pip install pystarc`.
+- **Scripted setup.** `setup.py` converts a PDB and topology into PQR files, APBS grids, reaction criteria, and `input.xml`, and constructs reaction criteria from crystal-structure contacts in either a polar or an all-heavy-atom mode.
+- **Convergence diagnostics.** Relative standard error, the Wilson 95% interval, a cumulative convergence curve, a first-half versus second-half split test, and an estimate of the N required for a target precision.
+- **Structured output.** Trajectories, encounters, near misses, first-passage times, radial densities, angular occupancy maps, pose clusters, milestone fluxes, transition matrices, commitment probabilities, and energetics are written to separate files.
+- **Live progress.** k<sub>on</sub> and P<sub>rxn</sub> are reported at a configurable interval with a running Wilson interval.
+- **Checkpointing.** Long runs save and resume automatically.
+- **Continuous integration.** The test suite runs with coverage reporting on every commit, and the package installs from PyPI with `pip install pystarc`.
+
 ## Installation
 
 **GPU (Linux / HPC):**
@@ -91,8 +97,7 @@ cd PySTARC
 bash install_PySTARC.sh
 ```
 
-**OpenEye license required.** The `hsp90_inhibitors/` and `ttk_inhibitors/` examples need the OpenEye Toolkits, which require a valid license. A free academic license is available from OpenEye (see https://www.eyesopen.com for details). Other examples do not need OpenEye.
-
+The `hsp90_inhibitors/` and `ttk_inhibitors/` examples use the OpenEye Toolkits for AM1-BCC ligand charges, which require a valid license (a free academic license is available from OpenEye, https://www.eyesopen.com). The other examples do not need OpenEye.
 
 **Mac / CPU:**
 
@@ -124,7 +129,7 @@ bash run.sh
 
 ## Examples
 
-See [`examples/`](examples/) for complete setup instructions and [`examples/PARAMETERS.md`](examples/PARAMETERS.md) for the parameter selection guide.
+See [`examples/`](examples/) for setup instructions and [`examples/PARAMETERS.md`](examples/PARAMETERS.md) for the parameter selection guide.
 
 ```
 examples/
@@ -143,38 +148,38 @@ examples/
 ## FAQ
 
 **Do I need a GPU to run PySTARC?**
-No. PySTARC will fall back to NumPy on CPU if CuPy is unavailable, but single-GPU runs are typically 50 to 200 times faster than CPU for protein-scale systems. For production use, a CUDA 12+ GPU is strongly recommended.
+No. PySTARC falls back to NumPy on CPU when CuPy is unavailable. Single-GPU runs are roughly 50 to 200 times faster than CPU for protein-scale systems, so a CUDA 12+ GPU is recommended for production.
 
 **Which GPU hardware is supported?**
-Any NVIDIA GPU with CUDA 12+ and sufficient memory (≥16 GB recommended for protein-protein complexes with fine APBS grids). PySTARC is tested on RTX 6000 Ada, A100, H100, and Quadro RTX 5000.
+Any NVIDIA GPU with CUDA 12+ and sufficient memory (16 GB or more is recommended for protein-protein complexes with fine APBS grids). PySTARC has been run on RTX 6000 Ada, A100, H100, and Quadro RTX 5000.
 
 **How long does a typical simulation take?**
-With a single RTX 6000 Ada:
+On a single RTX 6000 Ada:
 - Small systems (≤50 atoms, 1M trajectories): under 20 minutes
 - Protein-ligand (≤5000 atoms, 10M trajectories): 2 to 4 hours
 - Protein-protein (≤10000 atoms, 5M trajectories): 6 to 12 hours
 
-Multi-GPU runs scale linearly across 2 to 8 GPUs on one node.
+Multi-GPU runs scale approximately linearly across 2 to 8 GPUs on one node.
 
-**My simulation hangs at APBS grid generation. What's wrong?**
-Usually an issue with the PQR file charges or grid dimensions exceeding GPU memory. Check that `receptor.pqr` and `ligand.pqr` have correct AMBER partial charges and that the APBS `dime` value is compatible with available GPU memory. Reduce `fine_grid_length` or `dime` if needed.
+**My simulation hangs at APBS grid generation.**
+This is usually a problem with the PQR charges or with grid dimensions exceeding GPU memory. Check that `receptor.pqr` and `ligand.pqr` carry correct AMBER partial charges, and reduce `fine_grid_length` or `dime` if the grid is too large.
 
 **How do I choose the b-surface radius and reaction criterion?**
-See [`examples/PARAMETERS.md`](examples/PARAMETERS.md) for a detailed parameter selection guide covering all benchmark complexes, including b-surface sizing, reaction criterion construction, and adaptive timestep cap selection.
+See [`examples/PARAMETERS.md`](examples/PARAMETERS.md), which covers b-surface sizing, reaction-criterion construction, and adaptive timestep selection for each benchmark complex.
 
-**I get a CUDA out-of-memory error. What should I do?**
-Reduce `n_trajectories_per_batch` in `input.xml`, lower the APBS grid dimension (`dime`), or use a smaller `fine_grid_length`. GPU memory scales with both trajectory count and grid size.
+**I get a CUDA out-of-memory error.**
+Reduce `n_trajectories_per_batch` in `input.xml`, lower the APBS grid dimension (`dime`), or use a smaller `fine_grid_length`. GPU memory scales with both the trajectory count and the grid size.
 
 ## Requirements
 
 - Python 3.11+
 - AmberTools (tleap, cpptraj, ambpdb)
 - APBS
-- RDKit (for ligand setup from SMILES)
-- OpenBabel (for mol2 conversion)
-- OpenEye Toolkits (oechem, oequacpac) - required only for the inhibitor examples (hsp90, ttk); used for AM1-BCC ligand charges. Installable via `conda install -c openeye openeye-toolkits`; requires a valid license (OE_LICENSE), academic licensing may be available.
+- RDKit (ligand setup from SMILES)
+- OpenBabel (mol2 conversion)
+- OpenEye Toolkits (oechem, oequacpac), required only for the inhibitor examples (hsp90, ttk) for AM1-BCC ligand charges. Installable with `conda install -c openeye openeye-toolkits`; requires a valid license (OE_LICENSE).
 - NumPy, SciPy, Click
-- Matplotlib, pdb2pqr (for setup scripts)
+- Matplotlib, pdb2pqr (setup scripts)
 - CuPy (GPU) or NumPy (CPU fallback)
 - NVIDIA GPU with CUDA 12+ (recommended)
 
@@ -186,4 +191,4 @@ MIT
 
 When using PySTARC, please cite:
 
-> Ojha, A. A. et al. PySTARC: GPU-accelerated Brownian dynamics for bimolecular association rate constants (2026).
+> Ojha et al. PySTARC: GPU-accelerated Brownian dynamics for bimolecular association rate constants (2026).
