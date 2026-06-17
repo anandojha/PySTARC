@@ -137,7 +137,16 @@ def parse_simulation_xml(path: str | Path) -> Dict:
 
     def getf(tag: str, default: float = 0.0) -> float:
         v = get(tag)
-        return float(v) if v else default
+        # Treat a missing tag, an empty value, and the literal string "None"
+        # (which is what str(None) produces when a None default is written out
+        # and read back) as the default, matching geti. Without this guard a
+        # round-tripped None reaches float("None") and raises ValueError.
+        if not v or v == "None":
+            return default
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return default
 
     def geti(tag: str, default: int = 0) -> int:
         v = get(tag)
