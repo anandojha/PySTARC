@@ -58,9 +58,16 @@ AtomRef = Union[ChainAtomRef, CoreAtomRef]
 
 
 def _chain_idx(ref: "AtomRef") -> int:
-    """Index into the chain's atom array. Raises for core references."""
+    """Index into the chain's atom array. Raises for core references.
+
+    A ChainAtomRef resolves to its atom_idx field. A bare integer is already
+    an index into the chain's atom array and is returned unchanged, which lets
+    the same resolution path serve callers that hold either form.
+    """
     if isinstance(ref, ChainAtomRef):
         return ref.atom_idx
+    if isinstance(ref, (int, np.integer)):
+        return int(ref)
     raise NotImplementedError(
         "CoreAtomRef in chain-only force path; chain-core coupling not yet wired"
     )
@@ -214,14 +221,14 @@ def compute_constraint_violations(state: "ChainState") -> np.ndarray:
     n_cop = len(common.coplanar_constraints)
     phi = np.zeros(n_len + n_cop, dtype=float)
     for ic, c in enumerate(common.length_constraints):
-        ra = pos[c.a]
-        rb = pos[c.b]
+        ra = pos[_chain_idx(c.a)]
+        rb = pos[_chain_idx(c.b)]
         phi[ic] = float(np.linalg.norm(ra - rb)) - c.length
     for ic, c in enumerate(common.coplanar_constraints):
-        ra = pos[c.a]
-        rb = pos[c.b]
-        rc = pos[c.c]
-        rd = pos[c.d]
+        ra = pos[_chain_idx(c.a)]
+        rb = pos[_chain_idx(c.b)]
+        rc = pos[_chain_idx(c.c)]
+        rd = pos[_chain_idx(c.d)]
         centroid = (rb + rc + rd) / 3.0
         d2 = rc - rb
         d3 = rd - rb
@@ -281,8 +288,10 @@ def satisfy_constraints(
         max_violation = 0.0
         # Length constraints: split correction symmetrically along bond axis.
         for c in common.length_constraints:
-            ra = pos[c.a]
-            rb = pos[c.b]
+            ia = _chain_idx(c.a)
+            ib = _chain_idx(c.b)
+            ra = pos[ia]
+            rb = pos[ib]
             d = rb - ra
             r = float(np.linalg.norm(d))
             if r < 1e-12:
@@ -295,14 +304,15 @@ def satisfy_constraints(
                 max_violation = abs(violation)
             d_hat = d / r
             half = 0.5 * violation
-            pos[c.a] = ra + half * d_hat
-            pos[c.b] = rb - half * d_hat
+            pos[ia] = ra + half * d_hat
+            pos[ib] = rb - half * d_hat
         # Coplanar constraints: shift only atom a onto the plane.
         for c in common.coplanar_constraints:
-            ra = pos[c.a]
-            rb = pos[c.b]
-            rc = pos[c.c]
-            rd = pos[c.d]
+            ia = _chain_idx(c.a)
+            ra = pos[ia]
+            rb = pos[_chain_idx(c.b)]
+            rc = pos[_chain_idx(c.c)]
+            rd = pos[_chain_idx(c.d)]
             centroid = (rb + rc + rd) / 3.0
             d2 = rc - rb
             d3 = rd - rb
@@ -314,7 +324,7 @@ def satisfy_constraints(
             phi = float(np.dot(ra - centroid, n_hat))
             if abs(phi) > max_violation:
                 max_violation = abs(phi)
-            pos[c.a] = ra - phi * n_hat
+            pos[ia] = ra - phi * n_hat
         if max_violation < tol:
             return it + 1
     raise RuntimeError(
@@ -348,22 +358,25 @@ def _build_constraint_jacobian(state: "ChainState") -> np.ndarray:
     J = np.zeros((n_len + n_cop, 3 * n_atoms), dtype=float)
     # Length-constraint rows: analytic.
     for ic, c in enumerate(common.length_constraints):
-        ra = pos[c.a]
-        rb = pos[c.b]
+        ia = _chain_idx(c.a)
+        ib = _chain_idx(c.b)
+        ra = pos[ia]
+        rb = pos[ib]
         d = ra - rb
         r = float(np.linalg.norm(d))
         if r < 1e-12:
             continue
         d_hat = d / r
-        J[ic, 3 * c.a : 3 * c.a + 3] = d_hat
-        J[ic, 3 * c.b : 3 * c.b + 3] = -d_hat
+        J[ic, 3 * ia : 3 * ia + 3] = d_hat
+        J[ic, 3 * ib : 3 * ib + 3] = -d_hat
     # Coplanar-constraint rows: analytic for atom a, FD for atoms b, c, d.
     for ic, c in enumerate(common.coplanar_constraints):
         row_idx = n_len + ic
-        ra = pos[c.a]
-        rb = pos[c.b]
-        rc = pos[c.c]
-        rd = pos[c.d]
+        ia = _chain_idx(c.a)
+        ra = pos[ia]
+        rb = pos[_chain_idx(c.b)]
+        rc = pos[_chain_idx(c.c)]
+        rd = pos[_chain_idx(c.d)]
         centroid = (rb + rc + rd) / 3.0
         d2 = rc - rb
         d3 = rd - rb
@@ -374,14 +387,14 @@ def _build_constraint_jacobian(state: "ChainState") -> np.ndarray:
         n_hat = perp / perp_norm
         # dc/dr_a = n_hat (the in-plane reference moves linearly with a's
         # projection along n_hat).
-        J[row_idx, 3 * c.a : 3 * c.a + 3] = n_hat
+        J[row_idx, 3 * ia : 3 * ia + 3] = n_hat
         # FD for the three plane-defining atoms. Perturb each component of
         # r_b, r_c, r_d in turn and recompute the scalar constraint.
         eps = 1e-6
         for plane_atom_idx, plane_field in [
-            (c.b, "b"),
-            (c.c, "c"),
-            (c.d, "d"),
+            (_chain_idx(c.b), "b"),
+            (_chain_idx(c.c), "c"),
+            (_chain_idx(c.d), "d"),
         ]:
             for k in range(3):
                 pos[plane_atom_idx, k] += eps
@@ -397,10 +410,10 @@ def _build_constraint_jacobian(state: "ChainState") -> np.ndarray:
 def _coplanar_violation(state: "ChainState", c: "CoplanarConstraint") -> float:
     """Signed perpendicular distance of atom a from the plane of b, c, d."""
     pos = state.positions
-    ra = pos[c.a]
-    rb = pos[c.b]
-    rc = pos[c.c]
-    rd = pos[c.d]
+    ra = pos[_chain_idx(c.a)]
+    rb = pos[_chain_idx(c.b)]
+    rc = pos[_chain_idx(c.c)]
+    rd = pos[_chain_idx(c.d)]
     centroid = (rb + rc + rd) / 3.0
     d2 = rc - rb
     d3 = rd - rb
@@ -1407,8 +1420,8 @@ class ChainBDPropagator:
             wdpos = sqrt(2 kT mob) × dW
 
         where mob is the bead mobility and dW is a standard Wiener increment.
-        force_evaluator is an optional external evaluator, for example a
-        COFFDROPForceEvaluator. If it is None, the internal harmonic
+        force_evaluator is an optional external object exposing a
+        compute_forces(chain) method. If it is None, the internal harmonic
         ChainForceEvaluator is used.
         """
         if chain.frozen:
@@ -1504,205 +1517,6 @@ def build_linear_chain(
     return FlexibleChain(beads=beads, bonds=bonds, name="chain")
 
 
-# COFFDROP tabulated force evaluator
-
-
-class COFFDROPForceEvaluator:
-    """Force evaluator using the tabulated COFFDROP potentials.
-
-    The potentials are loaded from the four XML data files coffdrop.xml,
-    map.xml, connectivity.xml, and charges.xml. This evaluator replaces
-    ChainForceEvaluator when COFFDROP parameter files are available.
-
-    A typical use loads the parameters and builds the evaluator:
-
-        from pystarc.simulation.coffdrop_params import COFFDROPParams
-        from pystarc.simulation.coffdrop_chain import COFFDROPForceEvaluator
-        params = COFFDROPParams.load(
-            ff_xml='coffdrop.xml', mapping_xml='map.xml',
-            connectivity_xml='connectivity.xml', charges_xml='charges.xml')
-        evaluator = COFFDROPForceEvaluator(params)
-        F = evaluator.compute_forces(chain)
-    """
-
-    def __init__(self, params):
-        """params is a loaded COFFDROPParams parameter set."""
-        self.params = params
-
-    def compute_forces(self, chain: "FlexibleChain") -> np.ndarray:
-        """Compute all forces on the chain beads using COFFDROP potentials.
-
-        Returns an (n_beads, 3) force array in kBT/Å. The force has four
-        contributions: the non-bonded pair potentials from the <pairs> block
-        of coffdrop.xml, the bond-angle potentials from the <bond_angles>
-        block, the dihedral potentials from the <dihedral_angles> block, and a
-        Debye-Hückel electrostatic term for charged beads.
-        """
-        n = chain.n_beads
-        F = np.zeros((n, 3))
-        # Build the exclusion set so that 1-2 bonded pairs are skipped in the
-        # non-bonded evaluation.
-        excluded = set()
-        for bond in chain.bonds:
-            excluded.add(
-                (
-                    min(bond.a.atom_idx, bond.b.atom_idx),
-                    max(bond.a.atom_idx, bond.b.atom_idx),
-                )
-            )
-        # Non-bonded pair forces, skipping the bonded pairs.
-        for i in range(n):
-            for j in range(i + 1, n):
-                if (i, j) in excluded:
-                    continue
-                f_ij = self._pair_force_vec(chain, i, j)
-                F[i] += f_ij
-                F[j] -= f_ij
-        # Bond-angle forces over triplets of consecutive bonded beads i-j-k.
-        bonded_next = {}  # maps i to j when (i, j) is a bond
-        for bond in chain.bonds:
-            bonded_next[bond.a.atom_idx] = bond.b.atom_idx
-        for i in range(n - 2):
-            if i in bonded_next and bonded_next[i] == i + 1:
-                if i + 1 in bonded_next and bonded_next[i + 1] == i + 2:
-                    f_i, f_j, f_k = self._angle_forces(chain, i, i + 1, i + 2)
-                    F[i] += f_i
-                    F[i + 1] += f_j
-                    F[i + 2] += f_k
-        # Dihedral forces over quadruplets.
-        for i in range(n - 3):
-            f_i, f_j, f_k, f_l = self._dihedral_forces(chain, i, i + 1, i + 2, i + 3)
-            F[i] += f_i
-            F[i + 1] += f_j
-            F[i + 2] += f_k
-            F[i + 3] += f_l
-        return F
-
-    def _pair_force_vec(self, chain: "FlexibleChain", i: int, j: int) -> np.ndarray:
-        """Vector force on bead i from bead j via the COFFDROP pair potential."""
-        bi = chain.beads[i]
-        bj = chain.beads[j]
-        dr = bi.pos - bj.pos
-        r = float(np.linalg.norm(dr))
-        if r < 1e-10:
-            return np.zeros(3)
-        dVdr = self.params.pair_force(
-            bi.resname, self._bead_type(bi), bj.resname, self._bead_type(bj), r
-        )
-        # F_i = -dV/dr × rhat, so the force on i points away from j when the
-        # interaction is repulsive.
-        return -dVdr * (dr / r)
-
-    def _angle_forces(
-        self, chain: "FlexibleChain", i: int, j: int, k: int
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Forces from the bond-angle potential on beads i-j-k.
-
-        Returns the forces on atoms (i, j, k).
-        """
-        bi, bj, bk = chain.beads[i], chain.beads[j], chain.beads[k]
-        r_ij = bi.pos - bj.pos
-        r_kj = bk.pos - bj.pos
-        norm_ij = float(np.linalg.norm(r_ij))
-        norm_kj = float(np.linalg.norm(r_kj))
-        if norm_ij < 1e-10 or norm_kj < 1e-10:
-            return np.zeros(3), np.zeros(3), np.zeros(3)
-        cos_theta = float(np.dot(r_ij, r_kj)) / (norm_ij * norm_kj)
-        cos_theta = max(-1.0, min(1.0, cos_theta))
-        theta_deg = math.acos(cos_theta) * 180.0 / math.pi
-        dVdth = self.params.angle_force(
-            (bi.resname, bj.resname, bk.resname),
-            (self._bead_type(bi), self._bead_type(bj), self._bead_type(bk)),
-            self._angle_orders(chain, i, j, k),
-            theta_deg,
-        )  # kBT/deg
-        if abs(math.sin(theta_deg * math.pi / 180.0)) < 1e-10:
-            return np.zeros(3), np.zeros(3), np.zeros(3)
-        # Chain rule: dV/dr = dV/dθ * dθ/dr
-        dth_deg_to_rad = math.pi / 180.0
-        dVdth_rad = dVdth / dth_deg_to_rad  # kBT/rad
-        u_ij = r_ij / norm_ij
-        u_kj = r_kj / norm_kj
-        sin_th = math.sqrt(max(1.0 - cos_theta**2, 1e-30))
-        df_i = (cos_theta * u_ij - u_kj) / (norm_ij * sin_th)
-        df_k = (cos_theta * u_kj - u_ij) / (norm_kj * sin_th)
-        df_j = -(df_i + df_k)
-        fi = -dVdth_rad * df_i
-        fj = -dVdth_rad * df_j
-        fk = -dVdth_rad * df_k
-        return fi, fj, fk
-
-    def _dihedral_forces(
-        self, chain: "FlexibleChain", i: int, j: int, k: int, l: int
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Forces from the dihedral potential on beads i-j-k-l."""
-        bi = chain.beads[i]
-        bj = chain.beads[j]
-        bk = chain.beads[k]
-        bl = chain.beads[l]
-        b1 = bj.pos - bi.pos
-        b2 = bk.pos - bj.pos
-        b3 = bl.pos - bk.pos
-        n1 = np.cross(b1, b2)
-        n2 = np.cross(b2, b3)
-        n1_norm = float(np.linalg.norm(n1))
-        n2_norm = float(np.linalg.norm(n2))
-        if n1_norm < 1e-10 or n2_norm < 1e-10:
-            return np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)
-        n1u = n1 / n1_norm
-        n2u = n2 / n2_norm
-        cos_phi = float(np.dot(n1u, n2u))
-        cos_phi = max(-1.0, min(1.0, cos_phi))
-        phi = math.acos(cos_phi)
-        # Sign convention
-        if float(np.dot(np.cross(n1u, n2u), b2)) < 0:
-            phi = -phi
-        phi_deg = phi * 180.0 / math.pi
-        # Wrap to [0, 360)
-        phi_deg = phi_deg % 360.0
-        dVdphi = self.params.dihedral_force(
-            (bi.resname, bj.resname, bk.resname, bl.resname),
-            (
-                self._bead_type(bi),
-                self._bead_type(bj),
-                self._bead_type(bk),
-                self._bead_type(bl),
-            ),
-            self._dihedral_orders(chain, i, j, k, l),
-            phi_deg,
-        )  # kBT/deg
-        dVdphi_rad = dVdphi / (math.pi / 180.0)  # kBT/rad
-        # Gradient of phi w.r.t. positions
-        b2_norm = float(np.linalg.norm(b2))
-        if b2_norm < 1e-10:
-            return np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)
-        fi = (b2_norm / (n1_norm**2)) * n1
-        fl = -(b2_norm / (n2_norm**2)) * n2
-        fj = (
-            -np.dot(b1, b2) / (b2_norm**2 * n1_norm**2) * n1 * b2_norm
-            + np.dot(b3, b2) / (b2_norm**2 * n2_norm**2) * n2 * b2_norm
-        )
-        fk = -fi - fj - fl
-        return (-dVdphi_rad * fi, -dVdphi_rad * fj, -dVdphi_rad * fk, -dVdphi_rad * fl)
-
-    # Helper methods
-    def _bead_type(self, bead: "ChainBead") -> str:
-        """Get the COFFDROP bead type name for a chain bead."""
-        if ":" in bead.resname:
-            return bead.resname.split(":")[1]
-        # Default: CA for backbone beads
-        return "CA"
-
-    def _angle_orders(self, chain, i, j, k):
-        """Sequence orders for an angle triplet."""
-        # Orders are the sequence positions within the chain.
-        return (i + 1, j + 1, k + 1)
-
-    def _dihedral_orders(self, chain, i, j, k, l):
-        """Sequence orders for a dihedral quartet."""
-        return (i + 1, j + 1, k + 1, l + 1)
-
-
 def build_chain_from_coffdrop(
     residues: List[str], params, start_pos: Optional[np.ndarray] = None
 ) -> "FlexibleChain":
@@ -1763,7 +1577,7 @@ def build_chain_common_from_coffdrop(
     bond potentials, so the bonds remain harmonic.
 
     The returned ChainCommon has one CA bead per residue, with resname
-    "RESNAME:CA" following the legacy COFFDROPForceEvaluator convention. Its
+    "RESNAME:CA" following the "RESNAME:BEADTYPE" naming convention. Its
     bonds form a linear backbone (i, i+1) with equilibrium lengths from
     connectivity.xml. Its angles are every triplet (i, i+1, i+2), with
     type_idx looked up via the forward convention residues=(XXX, R_{i+1},
@@ -1797,7 +1611,7 @@ def build_chain_common_from_coffdrop(
         return params.type_map["residues"].get(rname, 0)  # 0 = XXX wildcard
 
     # Build the atoms, one CA per residue. The resname follows the
-    # "RESNAME:CA" convention used by the legacy COFFDROPForceEvaluator.
+    # "RESNAME:CA" naming convention.
     atoms = []
     for i, rname in enumerate(residues):
         charge = params.bead_charge(rname, "CA")
@@ -1935,8 +1749,8 @@ def build_chain_common_with_sidechains_from_coffdrop(
     more lookup-convention discovery, similar to what was done for the
     backbone CA-CA-CA case, and are left for future work.
 
-    Bead naming follows the legacy "RESNAME:BEADTYPE" convention so that the
-    existing _bead_type() helper in COFFDROPForceEvaluator works.
+    Bead naming follows the "RESNAME:BEADTYPE" convention, encoding both the
+    residue name and the bead type in each atom's resname field.
     """
     from pystarc.simulation.coffdrop_params import _match_pot
 
