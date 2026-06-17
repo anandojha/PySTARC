@@ -55,14 +55,9 @@ echo "[5/7] Installing pip dependencies (cupy, matplotlib, pdb2pqr)."
 echo "pip dependencies installed"
 # 6. Install PySTARC
 echo ""
-echo "[6/7] Installing PySTARC."
-if [ ! -f "$WHEEL" ]; then
-    echo "ERROR: Wheel not found: $WHEEL"
-    echo "Make sure you run this from the PySTARC directory."
-    exit 1
-fi
-"$ENV_PY" -m pip install "$WHEEL" --force-reinstall
-echo "PySTARC installed"
+echo "[6/7] Installing PySTARC from current source."
+"$ENV_PY" -m pip install -e "$SCRIPT_DIR"
+echo "PySTARC installed (editable, from current source)"
 # 7. Verify
 echo ""
 echo "[7/7] Verifying installation."
