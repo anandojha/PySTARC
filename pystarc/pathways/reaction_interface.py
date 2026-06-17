@@ -113,7 +113,31 @@ def make_default_reaction(
     """
     Build a default reaction from the n closest atom pairs as the two molecules
     approach along the line joining their centroids.
+
+    The number of contact pairs is clamped to the smaller atom count of the two
+    molecules, because each pair consumes one atom from each side. A reaction with
+    no contact pairs is degenerate: an empty ReactionCriteria is always satisfied
+    and would fire on every step, so this function refuses to build one. If either
+    molecule has no atoms, or the requested pair count n_pairs is not positive, a
+    ValueError is raised with a clear message rather than returning a reaction that
+    always fires.
     """
+    n1 = len(mol1.atoms)
+    n2 = len(mol2.atoms)
+    if n1 == 0 or n2 == 0:
+        raise ValueError(
+            f"Cannot build a default reaction: molecule {mol1.name!r} has {n1} "
+            f"atoms and molecule {mol2.name!r} has {n2} atoms. Each contact pair "
+            f"needs one atom from each molecule, so both molecules must contain "
+            f"at least one atom."
+        )
+    if n_pairs < 1:
+        raise ValueError(
+            f"Cannot build a default reaction with n_pairs={n_pairs}. A reaction "
+            f"needs at least one contact pair, otherwise its criteria would be "
+            f"empty and would fire on every step."
+        )
+
     c1 = mol1.centroid()
     c2 = mol2.centroid()
 
@@ -122,8 +146,14 @@ def make_default_reaction(
         dists = [np.linalg.norm(a.position - target) for a in mol.atoms]
         return sorted(range(len(dists)), key=lambda i: dists[i])[:n]
 
-    idx1 = closest_atoms(mol1, c2, n_pairs)
-    idx2 = closest_atoms(mol2, c1, n_pairs)
+    # Clamp the pair count so it never exceeds the atoms available on either
+    # molecule. For molecules large enough to supply n_pairs atoms on both sides
+    # this leaves the result unchanged, since closest_atoms already returned at
+    # most n_pairs indices and zip truncated to the shorter list. The clamp makes
+    # that truncation explicit and well defined for small molecules.
+    n_eff = min(n_pairs, n1, n2)
+    idx1 = closest_atoms(mol1, c2, n_eff)
+    idx2 = closest_atoms(mol2, c1, n_eff)
     pairs = [ContactPair(i, j, cutoff) for i, j in zip(idx1, idx2)]
     criteria = ReactionCriteria(name="default", pairs=pairs)
     return ReactionInterface(name="default_reaction", criteria=criteria)
