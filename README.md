@@ -18,7 +18,6 @@ GPU-accelerated rigid-body and flexible chain Brownian dynamics for bimolecular 
 [![CI](https://github.com/anandojha/PySTARC/actions/workflows/ci.yml/badge.svg)](https://github.com/anandojha/PySTARC/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/anandojha/PySTARC/graph/badge.svg)](https://codecov.io/gh/anandojha/PySTARC)
 [![CodeFactor](https://www.codefactor.io/repository/github/anandojha/pystarc/badge)](https://www.codefactor.io/repository/github/anandojha/pystarc)
-[![DeepSource](https://app.deepsource.com/gh/anandojha/PySTARC.svg/?label=active+issues&show_trend=true)](https://app.deepsource.com/gh/anandojha/PySTARC/)
 
 [![PyPI](https://img.shields.io/pypi/v/pystarc.svg)](https://pypi.org/project/pystarc/)
 [![Downloads](https://img.shields.io/pypi/dm/pystarc.svg)](https://pypi.org/project/pystarc/)
@@ -28,6 +27,7 @@ GPU-accelerated rigid-body and flexible chain Brownian dynamics for bimolecular 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Dependabot](https://img.shields.io/badge/dependabot-enabled-blue.svg?logo=dependabot)](https://github.com/anandojha/PySTARC/network/updates)
+[![Lines of Code](https://img.shields.io/badge/lines_of_code-51k-blue.svg)](https://github.com/anandojha/PySTARC)
 
 </div>
 
