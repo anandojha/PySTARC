@@ -15064,7 +15064,7 @@ class TestAdaptiveDtZone:
         )
 
     def test_elapsed_time_correctly_accumulated(self):
-        """With an empty PathwaySet the smoke run reproduces the pre-adaptive mean simulated time of about 1675 ps."""
+        """With an empty PathwaySet the smoke run reproduces the mean simulated time of about 1526 ps."""
         from pystarc.simulation.chain_simulator import (
             ChainBDSimulator,
             ChainBDParameters,
@@ -15128,17 +15128,17 @@ class TestAdaptiveDtZone:
         )
         results = sim.run()
         mean_t = sum(r.time_ps for r in results) / len(results)
-        # Pin to the post-F2.3 smoke value (~1913 ps). Historical drift:
+        # Pin to the post rotation-frame-fix smoke value (~1526 ps). Historical drift:
         # - pre-ADT3-1: ~1675 ps (beads passed through target unphysically)
         # - post-ADT3-1, single-attempt rejection: ~1476 ps
         # - post-F2.3, bounded MAX_HS_ATTEMPTS=3 rejection: ~1913 ps
-        # The current value reflects more aggressive (and correct) overlap
-        # rejection: when the chain wedges near the target, we retry up to
-        # 3 times rather than accepting the first overlap, so trajectories
-        # spend more time near the target before escaping. Generous tol.
-        assert 1700 < mean_t < 2200, (
-            f"empty PathwaySet smoke value drifted: expected ~1913 ps "
-            f"(post-F2.3 bounded HS retries), got {mean_t:.1f} ps"
+        # - post rotation-frame fix (lab-frame left product): ~1526 ps
+        # The diffusional rotation now composes the lab-frame angular increment
+        # as a left product dq ⊗ q, which changes the chain's reorientation near
+        # the target and lowers the mean escape time. Generous tol.
+        assert 1350 < mean_t < 1750, (
+            f"empty PathwaySet smoke value drifted: expected ~1526 ps "
+            f"(post rotation-frame fix), got {mean_t:.1f} ps"
         )
 
 
