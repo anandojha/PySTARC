@@ -80,20 +80,18 @@ def analyse_convergence(
         SE = 0.0
         relative_SE = 0.0
     SE_kon = conv_factor * k_b * SE
-    # Wilson 95% confidence interval. An audit on 2026-05-21 added a guard for
-    # the N=0 case and ensured the argument of the square root stays non-negative.
+    # Wilson 95% confidence interval. N is guaranteed to be nonzero here by the
+    # early return above, so no separate N=0 guard is needed. The argument of
+    # the square root is clamped to stay non-negative.
     z = 1.96
-    if N == 0:
-        wilson_lo, wilson_hi = 0.0, 1.0
-    else:
-        denom = 1 + z**2 / N
-        centre = (P + z**2 / (2 * N)) / denom
-        # Clamping the argument at zero protects against floating-point roundoff
-        # at the P=0 or P=1 boundary, where it can dip slightly negative.
-        sqrt_arg = max(P * (1 - P) / N + z**2 / (4 * N**2), 0.0)
-        spread = z * math.sqrt(sqrt_arg) / denom
-        wilson_lo = max(0.0, centre - spread)
-        wilson_hi = min(1.0, centre + spread)
+    denom = 1 + z**2 / N
+    centre = (P + z**2 / (2 * N)) / denom
+    # Clamping the argument at zero protects against floating-point roundoff
+    # at the P=0 or P=1 boundary, where it can dip slightly negative.
+    sqrt_arg = max(P * (1 - P) / N + z**2 / (4 * N**2), 0.0)
+    spread = z * math.sqrt(sqrt_arg) / denom
+    wilson_lo = max(0.0, centre - spread)
+    wilson_hi = min(1.0, centre + spread)
     wilson_lo_kon = conv_factor * k_b * wilson_lo
     wilson_hi_kon = conv_factor * k_b * wilson_hi
     # Decide whether the run has converged.
