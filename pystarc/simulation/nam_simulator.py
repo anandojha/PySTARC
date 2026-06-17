@@ -493,7 +493,7 @@ class NAMSimulator:
 
     def _run_serial(self, n: int):
         for i in range(n):
-            if self.params.verbose and i % 1 == 0:
+            if self.params.verbose:
                 print(
                     f"  Trajectory {i+1}/{n}  "
                     f"(reacted={self.n_reacted}, escaped={self.n_escaped})"
