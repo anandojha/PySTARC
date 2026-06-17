@@ -79,7 +79,7 @@ which obabel   >/dev/null 2>&1 && echo "obabel"   || echo "obabel not found"
 echo ""
 echo "Running tests."
 cd "$SCRIPT_DIR"
-"$ENV_PY" -m pytest tests/ -q --tb=short 2>&1 | tail -3
+"$ENV_PY" -m pytest tests/ --tb=short || true
 echo ""
 echo "  Installation complete!"
 echo ""
