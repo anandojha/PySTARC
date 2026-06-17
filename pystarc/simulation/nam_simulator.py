@@ -42,6 +42,7 @@ from dataclasses import dataclass
 import multiprocessing as mp
 import scipy.stats as _stats
 import numpy as np
+import warnings
 import math
 import copy
 
@@ -249,10 +250,16 @@ class NAMSimulator:
                 g0=g0,
                 g1=g1,
             )
-        except Exception:
+        except Exception as exc:
             # If the outer propagator cannot be set up, fall back to the simple
-            # escape check.
+            # escape check and report the downgrade so it is visible.
             self._outer_prop = None
+            warnings.warn(
+                "Outer propagator setup failed; falling back to the simple "
+                f"escape check. {type(exc).__name__}: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
     def _place_mol2(self, pos: np.ndarray, ori: Quaternion) -> Molecule:
         R = ori.to_rotation_matrix()
@@ -287,6 +294,11 @@ class NAMSimulator:
         prev_pair_dists = None
         prev_dt_outer = 0.0
         prev_D_eff_bb = 0.0
+        # Running total of the physical time advanced by the integrator, summed
+        # from the adaptive time step actually applied on each completed step
+        # (the two half steps of a force backstep each contribute their hdt). It
+        # is reported as the trajectory time in ps.
+        elapsed_ps = 0.0
         for step in range(self.params.max_steps):
             mol2 = self._place_mol2(pos, ori)
             # Compute the current pair distances when the bridge is active.
@@ -323,7 +335,7 @@ class NAMSimulator:
                 return TrajectoryResult(
                     Fate.REACTED,
                     step,
-                    step * self.params.dt,
+                    elapsed_ps,
                     float(np.linalg.norm(pos)),
                     rxn,
                 )
@@ -344,7 +356,7 @@ class NAMSimulator:
                 )
                 if not reached_b:
                     return TrajectoryResult(
-                        Fate.ESCAPED, step, step * self.params.dt, r
+                        Fate.ESCAPED, step, elapsed_ps, r
                     )
                 # The particle returned to the b-sphere, so continue the BD
                 # propagation.
@@ -352,7 +364,7 @@ class NAMSimulator:
             # Simple fallback escape check, used when there is no outer
             # propagator.
             if self._outer_prop is None and r >= self.params.r_escape:
-                return TrajectoryResult(Fate.ESCAPED, step, step * self.params.dt, r)
+                return TrajectoryResult(Fate.ESCAPED, step, elapsed_ps, r)
             force, torque, _ = self.force_fn(self.mol1, mol2)
             # With Rotne-Prager-Yamakawa hydrodynamics the relative
             # translational diffusion depends on position.
@@ -372,6 +384,10 @@ class NAMSimulator:
             # Save the old state before stepping so a hard-sphere rejection can
             # redraw from it.
             pos_old, ori_old = pos, ori
+            # Track the physical time advanced over this step. A normal step
+            # advances the full dt; a force backstep advances it as two hdt
+            # half steps that sum to the same dt.
+            step_dt = dt
             # Draw the Wiener increments and take the step.
             dW_t = math.sqrt(dt) * self.rng.standard_normal(3)
             dW_r = math.sqrt(dt) * self.rng.standard_normal(3)
@@ -402,6 +418,7 @@ class NAMSimulator:
                     pos, ori, f2, t2, D_t2, D_r, hdt, dW_t - dW_mid_t, dW_r - dW_mid_r
                 )
                 self._dt_ctrl._last_dt = hdt  # Record the dt actually used.
+                step_dt = hdt + hdt  # Sum of the two half steps of the backstep.
             # Reject the step if it produces a hard-sphere collision.
             if self.params.use_hard_sphere:
                 mol2_trial = self._place_mol2(pos, ori)
@@ -425,10 +442,12 @@ class NAMSimulator:
                 prev_D_eff_bb = float(
                     self.mobility.relative_translational_diffusion(pos_old)
                 )
+            # Advance the running physical time by the step actually applied.
+            elapsed_ps += step_dt
         return TrajectoryResult(
             Fate.MAX_STEPS,
             self.params.max_steps,
-            self.params.max_steps * self.params.dt,
+            elapsed_ps,
             float(np.linalg.norm(pos)),
         )
 
