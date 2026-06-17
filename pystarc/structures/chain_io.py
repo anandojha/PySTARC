@@ -430,6 +430,18 @@ def pdb_to_bead_positions(
     residues = _parse_pdb_chain_for_beads(pdb_path, chain_id=chain_id)
     bead_mapping = _parse_coffdrop_map_simple(str(map_xml_path))
 
+    # Cap beads (ACE:CN, NME:CC) carry resid=-1 because they have no PDB
+    # residue of their own. Such beads cannot be matched to a PDB residue, so
+    # capped chains are unsupported here. Reject them with a clear error rather
+    # than letting resid=-1 leak into the residue-count check below.
+    if any(bead.resid < 0 for bead in common.atoms):
+        raise ValueError(
+            "pdb_to_bead_positions does not support capped chains: one or more "
+            "beads carry resid < 0, which marks an ACE or NME cap bead with no "
+            "corresponding PDB residue. Build the chain without caps to seed "
+            "positions from a PDB."
+        )
+
     # Map the chain residue identifiers to sequence positions 0 to N-1.
     unique_resids: List[int] = []
     for bead in common.atoms:
