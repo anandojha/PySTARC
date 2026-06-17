@@ -42,8 +42,6 @@ from scipy.interpolate import CubicSpline
 # Unit conversions. The energies in coffdrop.xml are given in kcal/mol, so this
 # is the standard COFFDROP factor that converts them to units of kBT.
 _KCAL_TO_KBT = 1.688656287
-# Angles in the XML are in degrees. Internally we keep radians for forces.
-_DEG_TO_RAD = math.pi / 180.0
 
 
 # Bead mapping
@@ -160,6 +158,12 @@ class TabulatedPotential:
 
     def __post_init__(self):
         n = len(self.values)
+        if n == 0:
+            raise ValueError(
+                "TabulatedPotential requires at least one energy value, but "
+                f"the values array is empty (index={self.index}). This usually "
+                "means an empty <data> tag in the force-field XML."
+            )
         self._dx = (self.x_max - self.x_min) / (n - 1) if n > 1 else 1.0
         # Build the cubic spline once when the object is constructed, so that
         # later calls to value() and deriv() simply evaluate it. We use natural
@@ -271,6 +275,11 @@ def _parse_ff(
     if pairs_node is not None:
         dist_txt = pairs_node.findtext("distance", "").strip()
         dist_vals = [float(v) for v in dist_txt.split()]
+        if len(dist_vals) < 2:
+            raise ValueError(
+                "The <pairs> block requires a <distance> list with at least "
+                f"two values (x_min and x_max), but found {len(dist_vals)}."
+            )
         x_min_p, x_max_p = dist_vals[0], dist_vals[1]
         for pot_node in pairs_node.findall("potentials/potential"):
             orders_txt = pot_node.findtext("orders", "0 0").split()
@@ -299,6 +308,11 @@ def _parse_ff(
     if angles_node is not None:
         ang_txt = angles_node.findtext("angle", "").strip()
         ang_vals = [float(v) for v in ang_txt.split()]
+        if len(ang_vals) < 2:
+            raise ValueError(
+                "The <bond_angles> block requires an <angle> list with at "
+                f"least two values (x_min and x_max), but found {len(ang_vals)}."
+            )
         x_min_a, x_max_a = ang_vals[0], ang_vals[1]
         for pot_node in angles_node.findall("potentials/potential"):
             idx = int(pot_node.findtext("index", "0"))
@@ -323,6 +337,11 @@ def _parse_ff(
     if dih_node is not None:
         ang_txt = dih_node.findtext("angle", "").strip()
         ang_vals = [float(v) for v in ang_txt.split()]
+        if len(ang_vals) < 2:
+            raise ValueError(
+                "The <dihedral_angles> block requires an <angle> list with at "
+                f"least two values (x_min and x_max), but found {len(ang_vals)}."
+            )
         x_min_d, x_max_d = ang_vals[0], ang_vals[1]
         for pot_node in dih_node.findall("potentials/potential"):
             idx = int(pot_node.findtext("index", "0"))
