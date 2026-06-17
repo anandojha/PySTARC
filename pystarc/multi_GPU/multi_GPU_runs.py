@@ -64,6 +64,12 @@ def main():
         if ret.returncode != 0:
             print("  Error: grid generation failed.")
             return
+        if not os.path.isdir(bd_sims):
+            print(
+                f"  Error: grid generation reported success but did not create "
+                f"the expected directory {bd_sims}."
+            )
+            return
         # Remove the leftover files from grid generation, keeping only the grid
         # and structure files (.dx, .cache, .pqr).
         for f in os.listdir(bd_sims):
