@@ -486,6 +486,12 @@ def _hydrodynamic_center(positions, radii):
     radii = np.asarray(radii, dtype=float)
     positions = np.asarray(positions, dtype=float)
     a_sum = float(np.sum(radii))
+    if a_sum <= 0.0:
+        raise ValueError(
+            "hydrodynamic center is undefined: the sum of bead radii must "
+            f"be positive, got sum(radii)={a_sum}. This happens for empty "
+            "input or all-zero radii."
+        )
     return (radii[:, None] * positions).sum(axis=0) / a_sum
 
 
@@ -701,11 +707,16 @@ def chain_diffusion_tensors(positions, radii, kT=1.0, viscosity=None):
     if viscosity is None:
         viscosity = WATER_VISCOSITY
 
-    A, C, hc = chain_rigid_body_resistance(positions, radii)
-
+    # Validate the bead count before the heavy resistance computation. The
+    # downstream chain_rigid_body_resistance call would otherwise process
+    # empty input first and leak a RuntimeWarning from divide-by-zero before
+    # this guard could raise. The error and its condition are unchanged for
+    # N >= 1.
     n = len(positions)
     if n < 1:
         raise ValueError("at least one bead required")
+
+    A, C, hc = chain_rigid_body_resistance(positions, radii)
 
     scale = kT / viscosity
     D_trans = scale * np.linalg.inv(A)
