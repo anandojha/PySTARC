@@ -200,8 +200,22 @@ def analyse_molecule(
     radii_hydro = radii + srad if srad > 0.0 else radii
     # Compute the hydrodynamic radius, either with the Monte Carlo algorithm or
     # with the geometric fallback. The result is cached next to the PQR file so
-    # that re-runs can skip the expensive Monte Carlo calculation.
-    cache_path = Path(str(pqr_path) + f".r_hydro_s{grid_spacing}_p{srad:.4g}.cache")
+    # that re-runs can skip the expensive Monte Carlo calculation. The cache key
+    # records the grid spacing, the probe radius, the Monte Carlo sample count,
+    # and a short digest of the atom coordinates and radii, so that a re-run with
+    # a different sample count or an edited structure recomputes the radius
+    # instead of reusing a value that no longer matches the request.
+    import hashlib
+
+    struct_bytes = (
+        np.ascontiguousarray(coords, dtype=np.float64).tobytes()
+        + np.ascontiguousarray(radii_hydro, dtype=np.float64).tobytes()
+    )
+    struct_hash = hashlib.sha1(struct_bytes).hexdigest()[:12]
+    cache_path = Path(
+        str(pqr_path)
+        + f".r_hydro_s{grid_spacing}_p{srad:.4g}_n{n_mc}_{struct_hash}.cache"
+    )
     if use_mc_hydro:
         if cache_path.exists():
             try:
