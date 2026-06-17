@@ -1343,6 +1343,10 @@ class GPUBatchSimulator:
             # difference tensor at about 24 bytes per element plus the dist² and
             # threshold² scratch at about 17 bytes per element, for roughly 41
             # bytes per element in total.
+            # Track which still-running trajectories have their move reverted by
+            # the overlap check this step, so the bridge crossing below can skip
+            # them. None means no overlap check ran.
+            _reverted_mask = None
             if _use_overlap and _rec_pos_overlap is not None:
                 _new_R_sr = self._quats_to_rotmats(q[sr_idx])  # (N_sr, 3, 3)
                 _new_lig_atoms = (
@@ -1396,6 +1400,9 @@ class GPUBatchSimulator:
                     pos[sr_idx[_inside_idx]] = _old_pos_sr[_inside_idx]
                     q[sr_idx[_inside_idx]] = _old_q_sr[_inside_idx]
                     _n_overlap_rejected += int(_inside_idx.shape[0])
+                # The reverted trajectories did not move this step. Record them in
+                # sr_idx order, aligned with the bridge arrays below.
+                _reverted_mask = _inside_all
             # Brownian bridge crossing check at the reaction surface. To catch
             # reactions that the discrete endpoint checks miss, PySTARC uses the
             # exact Brownian bridge crossing probability
@@ -1451,6 +1458,12 @@ class GPUBatchSimulator:
                     _crossed = _u_bb < _p_cross  # (N_sr, n_pairs)
                     _below = _new_pair_dists < _cutoffs
                     _pair_fired = _crossed | _below  # (N_sr, n_pairs)
+                    # A move rejected by the overlap check this step was reverted
+                    # to the pre-step configuration, so the ligand did not move.
+                    # Skip the bridge crossing for those trajectories to avoid a
+                    # spurious self-overlap capture exp(-x0² / (D Δt)).
+                    if _reverted_mask is not None:
+                        _pair_fired = _pair_fired & (~_reverted_mask[:, None])
                     if self._sm_active:
                         # In state-machine mode, gate each per-reaction firing
                         # on the trajectory's current_state matching
