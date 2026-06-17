@@ -15,6 +15,18 @@ import sys
 import os
 
 
+def _set_or_create(root, tag, value):
+    """Set the text of the child element named tag, creating the element if the
+    input XML does not already contain it. Tags such as n_trajectories, max_steps,
+    seed, and work_dir are optional in a PySTARC input file and fall back to
+    defaults when omitted, so they may be absent from an otherwise valid file."""
+    el = root.find(tag)
+    if el is None:
+        el = ET.SubElement(root, tag)
+    el.text = value
+    return el
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Split PySTARC run into N independent jobs"
@@ -44,8 +56,8 @@ def main():
     ):
         print("  No APBS grids found. Generating grids (1 trajectory) ...")
         grid_xml = os.path.join(base_dir, "_grid_gen.xml")
-        root.find("n_trajectories").text = "1"
-        root.find("max_steps").text = "1"
+        _set_or_create(root, "n_trajectories", "1")
+        _set_or_create(root, "max_steps", "1")
         tree.write(grid_xml, xml_declaration=True, encoding="UTF-8")
         ret = subprocess.run([sys.executable, runner, grid_xml], cwd=base_dir)
         os.remove(grid_xml)
@@ -76,9 +88,9 @@ def main():
             dst = os.path.join(run_dir, f)
             if not os.path.exists(dst):
                 os.symlink(os.path.join("..", f), dst)
-        root.find("n_trajectories").text = str(per_split)
-        root.find("seed").text = str(base_seed + i * 11111111)
-        root.find("work_dir").text = "."
+        _set_or_create(root, "n_trajectories", str(per_split))
+        _set_or_create(root, "seed", str(base_seed + i * 11111111))
+        _set_or_create(root, "work_dir", ".")
         # Turn any relative input paths into absolute ones so they still resolve
         # correctly when the run executes from inside bd_sims/bd_N/.
         for tag in ["rxns_xml", "receptor_pqr", "ligand_pqr"]:
