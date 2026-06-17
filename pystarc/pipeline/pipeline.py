@@ -316,6 +316,12 @@ def run(cfg: PySTARCConfig):
         minimum_core_reaction_dt=getattr(cfg, "minimum_core_reaction_dt", 0.0),
     )
     sim = NAMSimulator(mol_rec, mol_lig, mob, pathway_set, params, engine)
+    # Initialize gpu_sim before the GPU branch so that later code which reads it
+    # never hits an unbound name. The GPU simulator is only constructed when both
+    # cfg.gpu is set and the engine actually selected the cupy backend. If the
+    # user requested cfg.gpu but cupy was unavailable and the engine fell back to
+    # a CPU backend, this branch is skipped and gpu_sim remains None.
+    gpu_sim = None
     if cfg.gpu and engine.backend == "cupy":
         print("\n  Using GPU Batch Simulator - all trajectories on GPU simultaneously")
 
@@ -396,7 +402,12 @@ def run(cfg: PySTARCConfig):
     # the backend used. We pass the Romberg estimate of k_b into the two-level
     # k_on formula. On the GPU we use the Romberg value, while on the CPU we pass
     # zero, which selects the Smoluchowski expression.
-    _k_b = getattr(gpu_sim, "_k_b", 0.0) if cfg.gpu else 0.0
+    # On the GPU path gpu_sim carries the Romberg k_b estimate. When the GPU was
+    # requested but the cupy backend was not available, gpu_sim is None and we
+    # fall back to k_b = 0.0, which selects the Smoluchowski expression just like
+    # the CPU path. Guarding on gpu_sim is not None avoids a NameError without
+    # changing the value used on either healthy path.
+    _k_b = getattr(gpu_sim, "_k_b", 0.0) if gpu_sim is not None else 0.0
     print(result.summary(D_rel, _k_b, cfg.confidence_interval))
     print(f"  Total steps  : {total_steps:,}")
     # Hardware footer
