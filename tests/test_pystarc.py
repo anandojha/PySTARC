@@ -20611,3 +20611,96 @@ def test_nam_parallel_worker_uses_run_one_with_recycling():
         assert worker_result.fate == direct_result.fate
         assert worker_result.steps == direct_result.steps
         assert worker_result.final_separation == direct_result.final_separation
+
+
+def test_effective_charges_browndye2_point_charge_layout():
+    """EffectiveCharges.from_xml must read the BrownDye2 test-charge layout,
+    where each <point> holds <x>, <y>, <z> directly and the signed charge in
+    <charge>. The positions and signed charges must come back exactly."""
+    import os
+    import tempfile
+    import numpy as np
+
+    xml = (
+        "<roottag>\n"
+        "  <point>\n"
+        "    <residue> ALA </residue><number> 1 </number>\n"
+        "    <atom_type> charge-center </atom_type>\n"
+        "    <x> 1.5 </x> <y> -2.0 </y> <z> 3.25 </z>\n"
+        "    <charge> 0.41 </charge>\n"
+        "  </point>\n"
+        "  <point>\n"
+        "    <x> -4.72 </x> <y> -2.97 </y> <z> -9.01 </z>\n"
+        "    <charge> -0.53 </charge>\n"
+        "  </point>\n"
+        "  <total_charge> -0.12 </total_charge>\n"
+        "</roottag>\n"
+    )
+    with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as f:
+        f.write(xml)
+        path = f.name
+    try:
+        ec = EffectiveCharges.from_xml(path)
+    finally:
+        os.unlink(path)
+    assert len(ec) == 2
+    assert np.allclose(ec.positions, [[1.5, -2.0, 3.25], [-4.72, -2.97, -9.01]])
+    assert np.allclose(ec.charges, [0.41, -0.53])
+
+
+def test_effective_charges_browndye2_lumped_layout():
+    """EffectiveCharges.from_xml must read the BrownDye2 lumped-charge layout,
+    where each <point> nests its coordinates in <pos> and stores the magnitude
+    in <q>."""
+    import os
+    import tempfile
+    import numpy as np
+
+    xml = (
+        "<top>\n"
+        '  <point type="permanent">\n'
+        "    <pos> <x>1.0</x> <y>2.0</y> <z>3.0</z> </pos>\n"
+        "    <q>\n      0.5\n    </q>\n"
+        "  </point>\n"
+        '  <point type="induced">\n'
+        "    <pos> <x>-1.0</x> <y>-2.0</y> <z>-3.0</z> </pos>\n"
+        "    <q>\n      -0.25\n    </q>\n"
+        "  </point>\n"
+        "</top>\n"
+    )
+    with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as f:
+        f.write(xml)
+        path = f.name
+    try:
+        ec = EffectiveCharges.from_xml(path)
+    finally:
+        os.unlink(path)
+    assert len(ec) == 2
+    assert np.allclose(ec.positions, [[1.0, 2.0, 3.0], [-1.0, -2.0, -3.0]])
+    assert np.allclose(ec.charges, [0.5, -0.25])
+
+
+def test_effective_charges_all_zero_layout_raises():
+    """A charge file whose layout yields no readable magnitudes must raise a
+    ValueError, since an effective-charge set that is entirely zero is physically
+    meaningless."""
+    import os
+    import tempfile
+    import pytest
+
+    xml = (
+        "<roottag>\n"
+        "  <point>\n"
+        "    <x> 1.0 </x> <y> 2.0 </y> <z> 3.0 </z>\n"
+        "    <unrecognised_magnitude> 0.5 </unrecognised_magnitude>\n"
+        "  </point>\n"
+        "</roottag>\n"
+    )
+    with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as f:
+        f.write(xml)
+        path = f.name
+    try:
+        with pytest.raises(ValueError):
+            EffectiveCharges.from_xml(path)
+    finally:
+        os.unlink(path)

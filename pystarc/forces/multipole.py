@@ -29,6 +29,7 @@ from typing import List, Optional, Tuple
 import xml.etree.ElementTree as ET
 from pathlib import Path
 import numpy as np
+import warnings
 import math
 
 
@@ -118,40 +119,78 @@ class EffectiveCharges:
         bjerrum_length: float = BJERRUM_LENGTH,
     ) -> "EffectiveCharges":
         """
-        Load effective charges from a reference implementation XML file. Both
-        the *_cheby.xml and *_mpole.xml formats are supported. The reference
-        implementation writes the charges in the form
+        Load effective point charges from a BrownDye2 charge file.
 
-            <charges>
-              <charge>
-                <x> -4.72 </x>
-                <y> -2.97 </y>
-                <z> -9.01 </z>
-                <q> 0.523 </q>
-              </charge>
-              ...
-            </charges>
+        BrownDye2 writes effective charges as a list of <point> elements. The
+        lumped-charge writer nests the coordinates in a <pos> block and stores
+        the magnitude in <q>, while the test-charge and effective-volume writers
+        place <x>, <y>, and <z> directly inside <point> and store the magnitude
+        in <charge>. Both layouts are read here:
+
+            <point>
+              <x> 1.0 </x> <y> 2.0 </y> <z> 3.0 </z>
+              <charge> 0.5 </charge>
+            </point>
+
+            <point type="permanent">
+              <pos> <x>1.0</x> <y>2.0</y> <z>3.0</z> </pos>
+              <q> 0.5 </q>
+            </point>
+
+        A PySTARC-native layout that wraps each charge in <charge> or
+        <point_charge> with child <x>, <y>, <z>, and <q> is also accepted.
         """
         tree = ET.parse(xml_path)
         root = tree.getroot()
         positions = []
         charges = []
-        # Accept either a <charges> or a <multipole> root tag.
-        charge_elements = root.findall(".//charge")
-        if not charge_elements:
-            charge_elements = root.findall(".//point_charge")
-        for elem in charge_elements:
-            x = float(elem.findtext("x", "0"))
-            y = float(elem.findtext("y", "0"))
-            z = float(elem.findtext("z", "0"))
-            q = float(elem.findtext("q", "0"))
-            positions.append([x, y, z])
-            charges.append(q)
+
+        def _coord(elem, axis):
+            node = elem.find(f".//{axis}")
+            text = node.text if node is not None else None
+            return float(text) if text and text.strip() else 0.0
+
+        point_elements = root.findall(".//point")
+        if point_elements:
+            for pt in point_elements:
+                # The signed charge is in <q>, in <actual_charge> when <charge>
+                # holds the squared charge, or in <charge> for the plain
+                # test-charge and effective-volume writers.
+                q_text = (
+                    pt.findtext("q")
+                    or pt.findtext("actual_charge")
+                    or pt.findtext("charge")
+                )
+                q = float(q_text) if q_text and q_text.strip() else 0.0
+                positions.append([_coord(pt, "x"), _coord(pt, "y"), _coord(pt, "z")])
+                charges.append(q)
+        else:
+            # PySTARC-native fallback: each charge wrapped in <charge> or
+            # <point_charge> with child <x>, <y>, <z>, and <q>.
+            charge_elements = root.findall(".//charge")
+            if not charge_elements:
+                charge_elements = root.findall(".//point_charge")
+            for elem in charge_elements:
+                positions.append(
+                    [
+                        float(elem.findtext("x", "0")),
+                        float(elem.findtext("y", "0")),
+                        float(elem.findtext("z", "0")),
+                    ]
+                )
+                charges.append(float(elem.findtext("q", "0")))
+
         if not positions:
             raise ValueError(f"No charges found in {xml_path}")
+        charges_arr = np.array(charges, dtype=float)
+        if not np.any(np.abs(charges_arr) > 1e-12):
+            raise ValueError(
+                f"All effective charges in {xml_path} are zero, which means the "
+                f"charge-file layout was not recognised"
+            )
         return cls(
-            positions=np.array(positions),
-            charges=np.array(charges),
+            positions=np.array(positions, dtype=float),
+            charges=charges_arr,
             debye_length=debye_length,
             bjerrum_length=bjerrum_length,
         )
@@ -186,8 +225,11 @@ def load_effective_charges(
         p = d / f"{prefix}{suffix}"
         if p.exists():
             try:
-                ec = EffectiveCharges.from_xml(p, debye_length, bjerrum_length)
-                return ec
-            except Exception:
+                return EffectiveCharges.from_xml(p, debye_length, bjerrum_length)
+            except Exception as exc:
+                warnings.warn(
+                    f"Effective-charge file {p} exists but could not be parsed "
+                    f"({exc}); skipping it."
+                )
                 continue
     return None
