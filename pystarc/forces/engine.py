@@ -24,6 +24,7 @@ from pystarc.forces.electrostatic.grid_force import DXGrid
 from pystarc.forces.multipole import EffectiveCharges
 from pystarc.structures.molecules import Molecule
 from pystarc.forces.lj import LJForceEngine
+from pystarc.global_defs.constants import KCAL_PER_MOL_TO_KBT
 from typing import List, Optional, Tuple
 from pathlib import Path
 import numpy as np
@@ -391,6 +392,18 @@ def _cupy_eval(
     return force, torque, energy
 
 
+def _group_centroid(positions: np.ndarray, charges: np.ndarray) -> np.ndarray:
+    """
+    Return the mean position of the charged atoms in a grid group, which is the
+    reference point the inner kernels use when accumulating that group's torque.
+    Atoms with negligible charge are excluded, matching the kernels.
+    """
+    mask = np.abs(charges) > 1e-9
+    if mask.any():
+        return positions[mask].mean(axis=0)
+    return np.zeros(3)
+
+
 class _GridStack:
     """
     A set of DX grids sorted from finest to coarsest, that is with the smallest
@@ -425,11 +438,18 @@ class _GridStack:
         alpha: float,
         is_born: bool,
         backend: str,
+        ref: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, np.ndarray, float]:
         """
         Evaluate the force on all atoms, assigning each atom to the finest grid
         that contains it. Atoms that fall outside every grid contribute zero,
         since their far-field contribution is negligible.
+
+        The inner kernels return each grid group's torque about that group's own
+        centroid. When ref is given, every group's torque is re-expressed about
+        that single fixed reference point so that the summed torque shares one
+        consistent reference even when the atoms span several grids. When ref is
+        None the per-group centroid is used as the reference.
         """
         if not self._grids:
             return np.zeros(3), np.zeros(3), 0.0
@@ -449,13 +469,17 @@ class _GridStack:
                             assigned[i] = True
                 if not idx:
                     continue
+                sub_pos = np.ascontiguousarray(positions[idx])
+                sub_chg = np.ascontiguousarray(charges[idx])
                 f, t, e = _cupy_eval(
-                    np.ascontiguousarray(positions[idx]),
-                    np.ascontiguousarray(charges[idx]),
+                    sub_pos,
+                    sub_chg,
                     g,
                     alpha,
                     is_born,
                 )
+                if ref is not None:
+                    t = t + np.cross(_group_centroid(sub_pos, sub_chg) - ref, f)
                 total_force += f
                 total_torque += t
                 total_energy += e
@@ -483,6 +507,8 @@ class _GridStack:
                     alpha,
                     is_born,
                 )
+                if ref is not None:
+                    t = t + np.cross(_group_centroid(sub_pos, sub_chg) - ref, f)
                 total_force += f
                 total_torque += t
                 total_energy += e
@@ -529,8 +555,10 @@ class PySTARCEngine:
         self._elec2 = _GridStack(elec_mol2 or [])
         self._born1 = _GridStack(born_mol1 or [])
         self._born2 = _GridStack(born_mol2 or [])
-        # Effective charges, used as a long-range fallback when a point lies
-        # outside all of the grids.
+        # Effective charges, used as a long-range fallback for the
+        # electrostatic term. The fallback engages only when no electrostatic
+        # grids are loaded; when grids are present the electrostatics come
+        # entirely from the grids.
         self._eff1 = eff_charges_mol1
         self._debye = debye_length
         # Optional Lennard-Jones and hydrophobic forces.
@@ -576,22 +604,23 @@ class PySTARCEngine:
         chg2 = np.ascontiguousarray(mol2.charges_array(), dtype=np.float64)
         pos1 = np.ascontiguousarray(mol1.positions_array(), dtype=np.float64)
         chg1 = np.ascontiguousarray(mol1.charges_array(), dtype=np.float64)
+        # The torque on mol2 is taken about mol2's charged-atom centroid, used as
+        # one fixed reference for every term so the summed torque is consistent.
+        c2 = _group_centroid(pos2, chg2)
         # Electrostatic term, evaluating the mol2 atoms in the field of mol1.
         if self._elec1:
-            f, t, e = self._elec1.eval_atoms(pos2, chg2, 0.0, False, self.backend)
+            f, t, e = self._elec1.eval_atoms(
+                pos2, chg2, 0.0, False, self.backend, ref=c2
+            )
             force += f
             torque += t
             energy += e
         elif self._eff1 is not None:
-            # Long-range fallback that uses effective charges when the atoms lie
-            # outside all of the DX grids. The centroid c2 is loop-invariant
-            # because it depends only on pos2 and chg2, so it is hoisted out of
-            # the loop.
-            c2 = (
-                pos2[np.abs(chg2) > 1e-9].mean(axis=0)
-                if np.any(np.abs(chg2) > 1e-9)
-                else np.zeros(3)
-            )
+            # Long-range fallback that uses effective charges for the
+            # electrostatic term. This branch runs only when no electrostatic
+            # grids are loaded, and it then evaluates every mol2 atom from the
+            # effective charges. The centroid c2 is loop-invariant because it
+            # depends only on pos2 and chg2, so it is hoisted out of the loop.
             for i, (p, q) in enumerate(zip(pos2, chg2)):
                 if abs(q) < 1e-9:
                     continue
@@ -602,7 +631,9 @@ class PySTARCEngine:
         # Born desolvation term, evaluating the mol2 atoms in the Born field of
         # mol1.
         if self._born1:
-            f, t, e = self._born1.eval_atoms(pos2, chg2, self.alpha, True, self.backend)
+            f, t, e = self._born1.eval_atoms(
+                pos2, chg2, self.alpha, True, self.backend, ref=c2
+            )
             force += f
             torque += t
             energy += e
@@ -612,22 +643,33 @@ class PySTARCEngine:
         # term. It has been verified against Browndye2 in
         # forces_impl.hh:add_core_forces.
         if self._born2:
-            f, t, e = self._born2.eval_atoms(pos1, chg1, self.alpha, True, self.backend)
-            # This treatment matches the born1 block above and the GPU path, and
-            # corrects the audit findings C1 (a CPU/GPU disagreement) and C2 (an
-            # unjustified factor of 0.5).
-            force += f
-            torque += t
+            # The grid evaluation gives the desolvation force and torque on mol1,
+            # the torque taken about mol1's charged-atom centroid c1. The force
+            # and torque on mol2 follow from Newton's third law: the force on
+            # mol2 is minus the force on mol1, and the torque on mol2 about c2 is
+            # minus the torque on mol1 re-expressed about c2. This mirrors the
+            # force_and_torque0 reciprocity in BD2's add_core_forces.
+            c1 = _group_centroid(pos1, chg1)
+            f, t, e = self._born2.eval_atoms(
+                pos1, chg1, self.alpha, True, self.backend, ref=c1
+            )
+            force += -f
+            torque += np.cross(c2 - c1, f) - t
             energy += e
         # Optional Lennard-Jones and hydrophobic term.
         if self._lj_engine is not None:
             n1 = len(pos1)
             n2 = len(pos2)
-            type_ids1 = list(range(n1))  # atom type per atom, defaulting to index 0
-            type_ids2 = list(range(n2))
+            # Every atom shares a single Lennard-Jones type, so the type index
+            # for each atom is 0.
+            type_ids1 = [0] * n1
+            type_ids2 = [0] * n2
             f1, f2, e_lj = self._lj_engine.compute(pos1, pos2, type_ids1, type_ids2)
-            force += f2  # force on mol2 from mol1
-            energy += e_lj
+            # The Lennard-Jones force and energy come out in kcal/mol and
+            # kcal/mol/Angstrom, so they are converted to kBT before being added
+            # to the accumulators.
+            force += f2 * KCAL_PER_MOL_TO_KBT  # force on mol2 from mol1
+            energy += e_lj * KCAL_PER_MOL_TO_KBT
         return force, torque, energy
 
     def summary(self) -> str:
@@ -667,8 +709,9 @@ def load_dx_directory(
     <prefix>[0-9]_born.dx are Born desolvation grids, files named
     <prefix>_cheby.xml hold Chebyshev effective charges for the long-range
     fallback, and files named <prefix>_mpole.xml hold multipole effective charges
-    as an alternative. The effective charges serve as a long-range fallback when
-    the query point falls outside all of the loaded DX grids.
+    as an alternative. The effective charges serve as a long-range fallback for
+    the electrostatic term that engages only when no electrostatic DX grids are
+    loaded; when grids are present the electrostatics come entirely from them.
     """
     d = Path(directory)
 
