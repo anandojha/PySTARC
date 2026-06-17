@@ -16,7 +16,9 @@ the standard mixing rules
     sig_ij = sig_i + sig_j
 
 An optional Weeks-Chandler-Andersen (WCA) treatment keeps only the repulsive
-branch of the potential by cutting it off at r = 2^(1/6) * sig.
+branch of the potential by cutting it off at r = 2^(1/6) * sig and shifting the
+energy up by the well depth, so that it is purely repulsive and vanishes at the
+cutoff.
 
 A hydrophobic force based on solvent-accessible surface area (SASA) can also be
 applied. It acts only over a contact shell, contributing
@@ -125,7 +127,12 @@ def lj_pair_force(
         r_cut = 2.0 ** (1.0 / 6.0) * sigma
         if r > r_cut:
             return np.zeros(3), 0.0
-    energy = factor * epsilon * (sr12 - sr6)
+        # Shift the energy up by the well depth so that the potential is purely
+        # repulsive, vanishing at the cutoff r = 2^(1/6) * sigma where
+        # (sig/r)^6 = 1/2 and (sig/r)^12 = 1/4, giving V(r_cut) = -factor*eps/4.
+        energy = factor * epsilon * (sr12 - sr6) + factor * epsilon * 0.25
+    else:
+        energy = factor * epsilon * (sr12 - sr6)
     # The radial force magnitude is -dV/dr projected onto the unit separation,
     # which works out to eps*(12*sr12 - 6*sr6)/r^2.
     f_mag = factor * epsilon * (12.0 * sr12 - 6.0 * sr6) / r2
