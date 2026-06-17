@@ -198,7 +198,6 @@ def inject_gho_from_manual(
     mol2_ghos: List[GHOAtom] = []
     n1 = len(mol1_positions)
     n2 = len(mol2_positions)
-    centroid1 = mol1_positions.mean(axis=0) if n1 > 0 else np.zeros(3)
     centroid2 = mol2_positions.mean(axis=0) if n2 > 0 else np.zeros(3)
     for line in ghost_atoms_spec.strip().splitlines():
         line = line.strip()
@@ -213,12 +212,10 @@ def inject_gho_from_manual(
 
             # Decide which molecule this atom belongs to.
             if global_atom_idx < n1:
-                # The atom is in molecule 1, the receptor.
-                pos_abs = (
-                    mol1_positions[global_atom_idx]
-                    if global_atom_idx < n1
-                    else centroid1
-                )
+                # The atom is in molecule 1, the receptor. The branch condition
+                # already guarantees global_atom_idx is a valid index into
+                # mol1_positions, so the index is always in range here.
+                pos_abs = mol1_positions[global_atom_idx]
                 pos_rel = pos_abs - mol1_hydro_cen
                 mol1_ghos.append(GHOAtom(atom_index=rxn_atom_idx, pos_rel=pos_rel))
             else:
