@@ -171,7 +171,8 @@ class RigidTransform:
         The input may be a single point of shape (3,) or an array of points of
         shape (N, 3), and the output matches the shape of the input.
         """
-        pts = np.atleast_2d(np.asarray(points, dtype=float))
+        points = np.asarray(points, dtype=float)
+        pts = np.atleast_2d(points)
         R = self.rotation.to_rotation_matrix()
         rotated = (R @ pts.T).T
         result = rotated + self.translation
