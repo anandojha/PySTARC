@@ -209,6 +209,14 @@ class MobilityTensor:
         where M_12(r) is the off-diagonal mobility tensor. The RPY
         correction reduces D_rel near contact (r ≈ a+b) and vanishes at
         large r, recovering the diagonal result.
+
+        The (2/3)·tr(M_12) term is the isotropic average (one third of the
+        trace) of the relative-diffusion tensor, which is the scalar used for
+        the isotropic three-dimensional inner BD step. The k_b encounter
+        integral instead uses the radial projection r̂·D_rel·r̂, the correct
+        scalar for the purely radial one-dimensional flux. These are two
+        reductions of the same anisotropic tensor and coincide at the b-surface
+        where the coupling is negligible.
         """
         D0 = self.D_trans1 + self.D_trans2
         if not self.use_rpy or r_vec is None:
