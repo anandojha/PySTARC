@@ -84,6 +84,13 @@ def main():
     D_rel = runs[0].get("D_rel", 0)
     r_start = runs[0].get("r_start", 0)
     r_escape = runs[0].get("r_escape", 0)
+    # The pooled k_on, k_b, and geometry are taken from the first shard on the
+    # assumption that every shard ran the same physical system. Verify that
+    # assumption and warn if any later shard reports a different value for these
+    # quantities, since pooling counts across physically different setups would
+    # give a meaningless rate constant. The first-shard values are still used so
+    # consistent runs are unaffected.
+    _warn_run_mismatch(runs)
     CONV = 6.022e8
     k_on = CONV * k_b * P
     SE = math.sqrt(P * (1 - P) / N) if 0 < P < 1 else 0
@@ -302,6 +309,49 @@ def main():
     }
     _save_json(conv, os.path.join(bd_sims, "convergence.json"))
     print(f"\n  All files saved -> {bd_sims}/")
+
+
+def _warn_run_mismatch(runs):
+    """Warn if shards disagree on the physical parameters used for pooling.
+
+    The combined k_on uses k_b and the geometry r_start and r_escape from the
+    first completed shard, and pooling the trajectory counts is only valid when
+    every shard simulated the same system. This routine compares k_b, D_rel,
+    r_start, and r_escape across all shards against the first shard and prints a
+    warning for each quantity that differs. Floating-point values are compared
+    with a small relative and absolute tolerance so that ordinary round-trip
+    noise in the JSON does not trigger a false warning. The first-shard values
+    are still used by the caller, so consistent runs are unaffected.
+    """
+    if len(runs) < 2:
+        return
+    ref = runs[0]
+    checks = [
+        ("k_b", ref.get("k_b")),
+        ("D_rel", ref.get("D_rel")),
+        ("r_start", ref.get("r_start")),
+        ("r_escape", ref.get("r_escape")),
+    ]
+    for key, ref_val in checks:
+        if ref_val is None:
+            continue
+        for i, r in enumerate(runs[1:], start=1):
+            val = r.get(key)
+            if val is None:
+                continue
+            try:
+                mismatch = not math.isclose(
+                    float(val), float(ref_val), rel_tol=1e-9, abs_tol=1e-12
+                )
+            except (TypeError, ValueError):
+                mismatch = val != ref_val
+            if mismatch:
+                print(
+                    f"  Warning: shard {i + 1} has {key}={val} but shard 1 has "
+                    f"{key}={ref_val}; pooling assumes identical runs and uses "
+                    f"the shard 1 value."
+                )
+                break
 
 
 def _save_json(data, path):
