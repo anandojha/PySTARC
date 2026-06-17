@@ -83,7 +83,10 @@ def ermak_mccammon_rotation(
         return orientation
     axis = total_angle / angle_mag
     dq = Quaternion.from_axis_angle(axis, angle_mag)
-    return (orientation * dq).normalized()
+    # total_angle is a lab-frame angular displacement (the torque is lab-frame),
+    # so the increment is applied as a left product dq ⊗ orientation, matching
+    # the GPU path and the analytic Langevin equilibrium for a dipole in a field.
+    return (dq * orientation).normalized()
 
 
 def backstep_due_to_force(
@@ -286,7 +289,10 @@ def ermak_mccammon_rotation_tensor(
         return orientation
     axis = total_angle / angle_mag
     dq = Quaternion.from_axis_angle(axis, angle_mag)
-    return (orientation * dq).normalized()
+    # total_angle is a lab-frame angular displacement (the torque is lab-frame),
+    # so the increment is applied as a left product dq ⊗ orientation, matching
+    # the GPU path and the analytic Langevin equilibrium for a dipole in a field.
+    return (dq * orientation).normalized()
 
 
 def bd_step_wiener_tensor(
