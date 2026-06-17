@@ -20924,6 +20924,11 @@ def test_gpu_yukawa_multipole_force_matches_potential_gradient():
 
     if not getattr(gbe, "_CUPY", False):
         gbe.cp = np  # the kernel calls cp.*; numpy is API-compatible on CPU
+    cp = gbe.cp
+
+    def to_np(a):
+        # The kernel returns CuPy arrays on a GPU and NumPy arrays on a CPU.
+        return a.get() if hasattr(a, "get") else np.asarray(a)
 
     cls = next(
         c for c in vars(gbe).values()
@@ -20936,20 +20941,26 @@ def test_gpu_yukawa_multipole_force_matches_potential_gradient():
     quad = M + M.T
     quad -= np.eye(3) * np.trace(quad) / 3.0  # symmetric traceless quadrupole
     dipole = rng.normal(size=3)
+    # The kernel does its arithmetic through cp, so its position and charge
+    # inputs and the stored multipole tensors must sit on the same device as cp.
     self = types.SimpleNamespace(
         _debye=9.0,
         _V_factor=2.5,            # non-zero monopole
         _multipole=object(),      # truthy so dipole and quadrupole are included
-        _mp_dipole_gpu=dipole,
-        _mp_quad_gpu=quad,
+        _mp_dipole_gpu=cp.asarray(dipole),
+        _mp_quad_gpu=cp.asarray(quad),
         _mp_four_pi_eps=1.0,
     )
 
     def energy_at(x):
-        return float(yuk(self, x.reshape(1, 1, 3), np.array([1.0]))[2][0])
+        pos = cp.asarray(x.reshape(1, 1, 3))
+        q = cp.asarray(np.array([1.0]))
+        return float(to_np(yuk(self, pos, q)[2][0]))
 
     def force_at(x):
-        return yuk(self, x.reshape(1, 1, 3), np.array([1.0]))[0][0]
+        pos = cp.asarray(x.reshape(1, 1, 3))
+        q = cp.asarray(np.array([1.0]))
+        return to_np(yuk(self, pos, q)[0][0])
 
     h = 1e-6
     for _ in range(200):
