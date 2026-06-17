@@ -273,7 +273,30 @@ class ReactionCriteria:
         if threshold == 0:
             return True
         n_satis = 0
+        n1 = len(mol1.atoms)
+        n2 = len(mol2.atoms)
         for pair in self.pairs:
+            # Guard the atom lookups so an out-of-range contact index reports a
+            # clear, descriptive error instead of a bare IndexError raised deep
+            # inside a trajectory loop. The bounds checked here are exactly the
+            # cases that would already have raised IndexError on list indexing
+            # (index at or above the atom count, or more negative than the
+            # negative-wraparound range), so any previously valid lookup is left
+            # untouched.
+            if not -n1 <= pair.mol1_atom_index < n1:
+                raise IndexError(
+                    f"Reaction '{self.name}': contact-pair atom index "
+                    f"{pair.mol1_atom_index} is out of range for molecule "
+                    f"{mol1.name!r}, which has {n1} atoms (valid indices "
+                    f"0 to {n1 - 1})."
+                )
+            if not -n2 <= pair.mol2_atom_index < n2:
+                raise IndexError(
+                    f"Reaction '{self.name}': contact-pair atom index "
+                    f"{pair.mol2_atom_index} is out of range for molecule "
+                    f"{mol2.name!r}, which has {n2} atoms (valid indices "
+                    f"0 to {n2 - 1})."
+                )
             a1 = mol1.atoms[pair.mol1_atom_index]
             a2 = mol2.atoms[pair.mol2_atom_index]
             if a1.distance_to(a2) < pair.distance_cutoff:
