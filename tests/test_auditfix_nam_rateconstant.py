@@ -26,7 +26,7 @@ def _make_result(k_db):
 
 
 def test_rate_constant_uses_stored_k_db_for_lmz():
-    """A nonzero stored self.k_db gives the LMZ rate, not the Smoluchowski one."""
+    """A nonzero stored k_db yields the Luty-McCammon-Zhou rate rather than the Smoluchowski fallback."""
     k_db = 5.0  # Å³/ps from the outer propagator.
     res = _make_result(k_db)
     D_rel = 0.05  # Å²/ps.
@@ -41,7 +41,7 @@ def test_rate_constant_uses_stored_k_db_for_lmz():
 
 
 def test_point_estimate_matches_k_from_P():
-    """The point estimate equals _k_from_P at the same probability."""
+    """The rate_constant point estimate equals _k_from_P evaluated at the same reaction probability."""
     res = _make_result(5.0)
     D_rel = 0.05
 
@@ -52,7 +52,7 @@ def test_point_estimate_matches_k_from_P():
 
 
 def test_lmz_differs_from_smoluchowski_fallback():
-    """With a stored k_db, the LMZ result is not the Smoluchowski fallback."""
+    """With a stored k_db, the rate_constant result differs from the Smoluchowski fallback expression."""
     res = _make_result(5.0)
     D_rel = 0.05
 
@@ -68,7 +68,7 @@ def test_lmz_differs_from_smoluchowski_fallback():
 
 
 def test_zero_stored_k_db_falls_back_to_smoluchowski():
-    """When self.k_db is 0.0 the Smoluchowski expression is used."""
+    """When the stored k_db is 0.0, rate_constant uses the Smoluchowski expression."""
     res = _make_result(0.0)
     D_rel = 0.05
 
@@ -84,7 +84,7 @@ def test_zero_stored_k_db_falls_back_to_smoluchowski():
 
 
 def test_explicit_k_db_argument_overrides_stored():
-    """An explicit positive k_db argument takes precedence over self.k_db."""
+    """An explicit positive k_db argument takes precedence over the stored self.k_db."""
     res = _make_result(5.0)
     D_rel = 0.05
 

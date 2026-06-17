@@ -17,6 +17,7 @@ def _build_pathway_set_n_needed_2():
 
 
 def test_n_needed_survives_round_trip(tmp_path):
+    """n_needed=2 survives the reaction XML write and parse round trip alongside its three contact pairs."""
     pathway_set = _build_pathway_set_n_needed_2()
     out = tmp_path / "reactions.xml"
     write_reaction_xml(pathway_set, out)
@@ -31,6 +32,7 @@ def test_n_needed_survives_round_trip(tmp_path):
 
 
 def test_n_needed_emitted_in_xml(tmp_path):
+    """A reaction with n_needed=2 emits the n_needed tag in the written XML."""
     pathway_set = _build_pathway_set_n_needed_2()
     out = tmp_path / "reactions.xml"
     write_reaction_xml(pathway_set, out)
@@ -39,6 +41,7 @@ def test_n_needed_emitted_in_xml(tmp_path):
 
 
 def test_all_pairs_reaction_stays_concise(tmp_path):
+    """An all-pairs reaction with default n_needed=-1 omits the n_needed tag from the XML and parses back to -1."""
     pairs = [ContactPair(0, 10, 5.0), ContactPair(1, 11, 5.0)]
     criteria = ReactionCriteria(name="rxn", pairs=pairs)  # default n_needed = -1
     rxn = ReactionInterface(name="rxn", criteria=criteria)
@@ -54,6 +57,7 @@ def test_all_pairs_reaction_stays_concise(tmp_path):
 
 
 def test_state_fields_survive_round_trip(tmp_path):
+    """first_state and per-reaction state_before and state_after survive the reaction XML round trip."""
     pairs = [ContactPair(0, 10, 5.0)]
     criteria = ReactionCriteria(
         name="rxn", pairs=pairs, state_before="unbound", state_after="bound"

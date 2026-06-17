@@ -38,7 +38,7 @@ def _radial_force(op: OuterPropagator, r: float) -> float:
 
 
 def test_Fr1_matches_browndye2_form():
-    """Fr1 equals -V/L^2 - 2*Fr0/r (BrownDye2 outer_propagator.cc:300)."""
+    """Fr1 equals -V/L^2 - 2*Fr0/r, matching the BrownDye2 form and differing from the previous incorrect expression."""
     op = _make_propagator(has_hi=False)
     L = op.debye_len
     for r in (25.0, 30.0, 40.0):
@@ -60,12 +60,7 @@ def test_Fr1_matches_browndye2_form():
 
 
 def test_D1_uses_hi_only_part():
-    """D1 is built from the HI-only diffusivity Di, not the full D0.
-
-    BrownDye2 outer_propagator.cc:317 uses
-        D1 = -3*Di*rm1 - D_factor*rm1^2/PI
-    with Di the hydrodynamic-only contribution to D_parallel.
-    """
+    """D1 is built from the HI-only diffusivity Di rather than the full D0, matching the BrownDye2 form and differing from the D0-based variant by the spurious -3*D_const/r term."""
     op = _make_propagator(has_hi=True)
     for r in (25.0, 30.0, 40.0):
         rm1 = 1.0 / r

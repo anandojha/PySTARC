@@ -26,6 +26,7 @@ def _sim(**param_kwargs):
 def test_default_conditions_match_the_previous_constants():
     # The defaults must reproduce the values that used to be hard-coded, so the
     # default behavior is unchanged.
+    """The default outer-propagator conditions reproduce the previously hard-coded kT, Debye length, and viscosity."""
     op = _sim()._outer_prop
     assert op is not None
     assert op.kT == 0.5961
@@ -34,6 +35,7 @@ def test_default_conditions_match_the_previous_constants():
 
 
 def test_configured_conditions_propagate_to_the_outer_propagator():
+    """Configured Debye length and temperature propagate to the outer propagator's debye_len and kT."""
     op = _sim(debye_length=4.0, temperature_kT=0.55)._outer_prop
     assert op is not None
     assert op.debye_len == 4.0
@@ -43,6 +45,7 @@ def test_configured_conditions_propagate_to_the_outer_propagator():
 def test_dielectric_scales_the_screened_coulomb_prefactor():
     # V_factor is inversely proportional to the dielectric, so halving the
     # dielectric must double it.
+    """V_factor is inversely proportional to the dielectric, so halving the dielectric doubles it."""
     op_hi = _sim(dielectric=78.54)._outer_prop
     op_lo = _sim(dielectric=39.27)._outer_prop
     assert op_hi is not None and op_lo is not None

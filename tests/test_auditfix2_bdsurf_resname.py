@@ -23,6 +23,7 @@ def _make_atoms():
 
 
 def test_matching_resnames_split_correctly():
+    """Atoms split by matching residue names yield the receptor and ligand atom sets with correct sizes and names."""
     atoms = _make_atoms()
     rec, lig = split_receptor_ligand(atoms, "MGO", "APN")
     assert len(rec) == 3
@@ -32,6 +33,7 @@ def test_matching_resnames_split_correctly():
 
 
 def test_nonmatching_receptor_resname_raises_named_valueerror():
+    """A receptor resname matching no atoms raises a ValueError naming receptor_resname, the bad value, and the residue names present."""
     atoms = _make_atoms()
     with pytest.raises(ValueError) as excinfo:
         split_receptor_ligand(atoms, "XXX", "APN")
@@ -45,6 +47,7 @@ def test_nonmatching_receptor_resname_raises_named_valueerror():
 
 
 def test_nonmatching_ligand_resname_raises_named_valueerror():
+    """A ligand resname matching no atoms raises a ValueError naming ligand_resname, the bad value, and a present residue name."""
     atoms = _make_atoms()
     with pytest.raises(ValueError) as excinfo:
         split_receptor_ligand(atoms, "MGO", "ZZZ")
@@ -55,6 +58,7 @@ def test_nonmatching_ligand_resname_raises_named_valueerror():
 
 
 def test_both_nonmatching_resnames_named_in_valueerror():
+    """When both resnames match nothing, the ValueError message names both bad values."""
     atoms = _make_atoms()
     with pytest.raises(ValueError) as excinfo:
         split_receptor_ligand(atoms, "AAA", "BBB")

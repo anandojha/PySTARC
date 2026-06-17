@@ -23,7 +23,7 @@ def _hct_closed_form(L, U, r, rho_S_j):
 
 
 def test_engulfed_atom_integrand_uses_absolute_value():
-    """For r < rho_S_j the lower limit is abs(r - rho_S_j), not rho_tilde_i."""
+    """For r < ρ_S_j the HCT integrand lower limit is abs(r - ρ_S_j) rather than ρ̃_i."""
     r, rho_tilde_i, rho_S_j = 1.0, 0.8, 2.0
     # The atom is engulfed by the larger neighbor: rho_S_j - r = 1.0 exceeds
     # rho_tilde_i = 0.8, so the canonical lower limit is abs(r - rho_S_j) = 1.0.
@@ -39,7 +39,7 @@ def test_engulfed_atom_integrand_uses_absolute_value():
 
 
 def test_engulfed_atom_integrand_smaller_than_old_expression():
-    """The absolute value removes the descreening overcount of the L = rho_tilde_i form."""
+    """The abs(r - ρ_S_j) lower limit yields a smaller integrand than the old ρ̃_i form, removing the descreening overcount."""
     r, rho_tilde_i, rho_S_j = 1.0, 0.8, 2.0
     U = r + rho_S_j
 
@@ -55,7 +55,7 @@ def test_engulfed_atom_integrand_smaller_than_old_expression():
 
 
 def test_engulfed_atom_derivative_matches_hand_reference():
-    """In the engulfed regime dL/dr = sign(r - rho_S_j) = -1, matching finite differences."""
+    """In the engulfed regime the analytic HCT integrand derivative gives dL/dr = -1, matching finite differences."""
     r, rho_tilde_i, rho_S_j = 1.0, 0.8, 2.0
 
     analytic = float(_hct_integrand_deriv(r, rho_tilde_i, rho_S_j))
@@ -70,7 +70,7 @@ def test_engulfed_atom_derivative_matches_hand_reference():
 
 
 def test_standard_outside_regime_unchanged():
-    """Where r > rho_S_j the absolute value is a no-op, so existing behavior is preserved."""
+    """For r > ρ_S_j the absolute value is a no-op, so integrand and derivative match the canonical reference."""
     for r, rho_tilde_i, rho_S_j in [(5.0, 1.5, 1.2), (3.0, 2.0, 1.0), (4.0, 1.0, 1.8)]:
         assert r > rho_S_j  # abs(r - rho_S_j) == r - rho_S_j here
 

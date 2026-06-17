@@ -32,21 +32,21 @@ def _write_input_without_tag(tmp_path: Path) -> Path:
 
 
 def test_born2_default_true_when_tag_absent(tmp_path):
-    """Parsing input without the tag enables the BORN2 reciprocal torque."""
+    """Parsing input without the tag enables enable_born2_torque by defaulting it to True."""
     xml_path = _write_input_without_tag(tmp_path)
     cfg = parse(xml_path)
     assert cfg.enable_born2_torque is True
 
 
 def test_born2_parser_default_matches_dataclass(tmp_path):
-    """The parser default agrees with the PySTARCConfig dataclass default."""
+    """The parser default for enable_born2_torque agrees with the PySTARCConfig dataclass default."""
     xml_path = _write_input_without_tag(tmp_path)
     cfg = parse(xml_path)
     assert cfg.enable_born2_torque is PySTARCConfig.enable_born2_torque
 
 
 def test_born2_explicit_false_is_respected(tmp_path):
-    """An explicit <enable_born2_torque>false</enable_born2_torque> disables it."""
+    """An explicit false enable_born2_torque tag disables the BORN2 torque."""
     work_dir = tmp_path / "bd_sims"
     xml = f"""<?xml version="1.0" ?>
 <pystarc_input>

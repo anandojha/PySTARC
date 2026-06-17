@@ -14,6 +14,7 @@ def _mol(coords, charge=0.0, radius=1.8):
 
 
 def test_group_centroid_uses_only_charged_atoms():
+    """_group_centroid averages only charged atoms and returns the origin when no atom is charged."""
     positions = np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [10.0, 10.0, 10.0]])
     charges = np.array([1.0, -1.0, 1e-12])
     # The third atom is uncharged and must be excluded, leaving the mean of the
@@ -27,6 +28,7 @@ def test_lj_type_id_fallback_and_kbt_conversion():
     # One Lennard-Jones type shared by every atom; the engine must map all atoms
     # to type index 0 rather than to per-atom indices (which would index past a
     # single-type table).
+    """A single shared Lennard-Jones type maps all atoms to type index 0 without an IndexError, and the engine converts the LJ contribution from kcal/mol to kBT."""
     ljp = LJParams(atom_types=[LJAtomType(name="X", epsilon=0.2, sigma=3.0)])
     engine = PySTARCEngine(lj_params=ljp)  # no electrostatic or Born grids
 

@@ -46,7 +46,7 @@ def _psurv(x0: float, F: float) -> float:
 
 
 def test_normal_path_is_deterministic_and_unchanged():
-    """Fixed seeds reproduce the established healthy-path outputs exactly."""
+    """Fixed seeds reproduce the established zero-force absorbing-surface step outputs exactly."""
     reference = {
         0: [
             (False, 0.0, 6.7446678441),
@@ -80,7 +80,7 @@ def test_normal_path_is_deterministic_and_unchanged():
 
 
 def test_normal_path_nonzero_force_unchanged():
-    """A nonzero force reproduces its established healthy-path outputs."""
+    """A nonzero force reproduces its established absorbing-surface step outputs exactly."""
     expected = [
         (False, 0.0, 3.1381561308),
         (False, 0.0, 0.576511347),
@@ -97,7 +97,7 @@ def test_normal_path_nonzero_force_unchanged():
 
 
 def test_normal_path_emits_no_warning():
-    """Healthy sampling never trips the rejection-sampling warning."""
+    """Healthy sampling over many absorbing-surface steps never trips the rejection-sampling warning."""
     rng = np.random.default_rng(2024)
     with warnings.catch_warnings():
         warnings.simplefilter("error")
@@ -106,7 +106,7 @@ def test_normal_path_emits_no_warning():
 
 
 def test_survival_fraction_matches_probability():
-    """The empirical survival rate tracks the analytic survival probability."""
+    """The empirical survival fraction matches the analytic survival probability P_surv(x0, F)."""
     x0, F, D = 4.0, 0.1, 1.5
     expected = _psurv(x0, F)
     rng = np.random.default_rng(2024)
@@ -118,7 +118,7 @@ def test_survival_fraction_matches_probability():
 
 
 def test_survival_exhaustion_warns_and_returns_valid_position():
-    """A degenerate survival draw warns instead of silently biasing the result."""
+    """A degenerate survival draw warns about non-convergence and returns a finite, valid no-flux position rather than the deterministic fallback."""
     rng = _StubRNG(first=0.0, rest=0.999999)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -135,7 +135,7 @@ def test_survival_exhaustion_warns_and_returns_valid_position():
 
 
 def test_absorption_exhaustion_warns():
-    """A degenerate absorption draw warns instead of silently accepting."""
+    """A degenerate absorption draw warns and returns survival False with the position pinned at the absorbing surface 0."""
     rng = _StubRNG(first=0.9999, rest=0.999999)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")

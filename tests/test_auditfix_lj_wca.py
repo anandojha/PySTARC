@@ -25,6 +25,7 @@ def _force_energy(r, use_wca, factor=1.0):
 
 
 def test_wca_energy_zero_at_cutoff():
+    """The WCA energy is zero just inside the cutoff r_cut = 2^(1/6) σ."""
     r_cut = 2.0 ** (1.0 / 6.0) * SIGMA
     # Evaluate just inside the cutoff to stay within the WCA branch.
     _, energy = _force_energy(r_cut * (1.0 - 1e-9), use_wca=True)
@@ -32,6 +33,7 @@ def test_wca_energy_zero_at_cutoff():
 
 
 def test_wca_energy_nonnegative_inside():
+    """The WCA energy stays non-negative across separations from 0.5 σ up to the cutoff."""
     r_cut = 2.0 ** (1.0 / 6.0) * SIGMA
     radii = np.linspace(0.5 * SIGMA, r_cut * (1.0 - 1e-12), 200)
     for r in radii:
@@ -40,6 +42,7 @@ def test_wca_energy_nonnegative_inside():
 
 
 def test_wca_energy_continuous_at_cutoff():
+    """Approaching the cutoff from inside, the WCA energy decreases monotonically to zero and is exactly zero beyond it."""
     r_cut = 2.0 ** (1.0 / 6.0) * SIGMA
     # Approaching the cutoff from inside, the energy stays non-negative and
     # shrinks monotonically toward zero.
@@ -60,6 +63,7 @@ def test_wca_energy_continuous_at_cutoff():
 
 def test_wca_force_unchanged():
     # Within the repulsive branch the WCA force matches the plain LJ force.
+    """Within the repulsive branch the WCA force equals the plain Lennard-Jones force."""
     r_cut = 2.0 ** (1.0 / 6.0) * SIGMA
     for r in np.linspace(0.6 * SIGMA, r_cut * (1.0 - 1e-9), 50):
         f_plain, _ = _force_energy(r, use_wca=False, factor=FACTOR)
@@ -69,6 +73,7 @@ def test_wca_force_unchanged():
 
 def test_wca_energy_shift_matches_well_depth():
     # The WCA energy is the plain LJ energy plus the well depth factor*eps/4.
+    """The WCA energy equals the plain Lennard-Jones energy plus the well depth factor·ε/4."""
     r_cut = 2.0 ** (1.0 / 6.0) * SIGMA
     for r in np.linspace(0.6 * SIGMA, r_cut * (1.0 - 1e-9), 50):
         _, e_plain = _force_energy(r, use_wca=False, factor=FACTOR)

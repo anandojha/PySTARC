@@ -69,7 +69,7 @@ class _OverlapSpy:
 
 
 def test_forced_overlap_never_accepts_overlapping_step(monkeypatch):
-    """When every redraw overlaps, the molecule stays at its previous position."""
+    """When every redraw overlaps, no step is accepted and the trajectory runs to MAX_STEPS at its previous position."""
     sim = _make_sim()
 
     spy = _OverlapSpy(lambda pos: True)  # Every configuration overlaps.
@@ -87,7 +87,7 @@ def test_forced_overlap_never_accepts_overlapping_step(monkeypatch):
 
 
 def test_redraw_loops_until_overlap_free(monkeypatch):
-    """A redraw that still overlaps is rejected and a further redraw is drawn."""
+    """An overlapping redraw is rejected and further redraws are drawn until an overlap-free configuration is accepted."""
     sim = _make_sim()
 
     state = {"first_overlap_seen": False, "redraws_rejected": 0}
@@ -119,12 +119,7 @@ def test_redraw_loops_until_overlap_free(monkeypatch):
 
 
 def test_accepted_positions_are_never_reported_overlapping(monkeypatch):
-    """No configuration the simulator advances into is one the checker rejects.
-
-    A region of space is declared overlapping. The simulator's position after
-    every step is recorded, and none of those carried-forward positions may lie
-    in the overlapping region.
-    """
+    """No configuration the simulator carries forward lies in the region declared overlapping by the checker."""
     sim = _make_sim()
 
     def verdict(pos):
@@ -161,12 +156,7 @@ def test_accepted_positions_are_never_reported_overlapping(monkeypatch):
 
 
 def test_no_overlap_path_is_unchanged(monkeypatch):
-    """With no overlap ever reported, the trajectory matches the hard-sphere-off run.
-
-    The normal, no-overlap path and its random-number usage are untouched by the
-    rejection logic, so a run in which the checker never reports overlap is
-    bitwise identical to a run with hard spheres disabled.
-    """
+    """With overlap never reported, the hard-sphere run is bitwise identical to a run with hard spheres disabled."""
     sim_on = _make_sim(use_hard_sphere=True, seed=11)
     spy = _OverlapSpy(lambda pos: False)  # Nothing ever overlaps.
     monkeypatch.setattr(nsim, "_check_hard_sphere_overlap", spy)

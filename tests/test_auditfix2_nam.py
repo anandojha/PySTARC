@@ -51,7 +51,7 @@ def _make_inputs():
 
 
 def test_outer_propagator_failure_warns_and_falls_back():
-    """A failed outer-propagator setup warns and disables the outer propagator."""
+    """A failed outer-propagator setup emits one RuntimeWarning carrying the failure message and leaves the outer propagator disabled."""
     mol1, mol2, mobility, pathway_set, params = _make_inputs()
 
     original = op.OuterPropagator
@@ -77,7 +77,7 @@ def test_outer_propagator_failure_warns_and_falls_back():
 
 
 def test_successful_outer_propagator_setup_is_silent():
-    """A successful outer-propagator setup emits no warning and is enabled."""
+    """A successful outer-propagator setup enables the propagator and emits no RuntimeWarning."""
     mol1, mol2, mobility, pathway_set, params = _make_inputs()
 
     with warnings.catch_warnings(record=True) as caught:
@@ -92,7 +92,7 @@ def test_successful_outer_propagator_setup_is_silent():
 
 
 def test_time_ps_sums_actual_adaptive_steps():
-    """time_ps equals the sum of the adaptive steps actually applied."""
+    """result.time_ps equals the sum of the adaptive steps actually applied, not steps times the nominal dt."""
     mol1, mol2, mobility, pathway_set, params = _make_inputs()
     sim = NAMSimulator(mol1, mol2, mobility, pathway_set, params)
     # Use the simple escape fallback so the adaptive controller drives every step.
@@ -123,7 +123,7 @@ def test_time_ps_sums_actual_adaptive_steps():
 
 
 def test_time_ps_accumulates_backstep_half_steps():
-    """A force backstep contributes the full step time as two half steps."""
+    """A force backstep contributes its full step time as two half steps so time_ps still equals the sum of the chosen steps."""
     mol1, mol2, mobility, pathway_set, params = _make_inputs()
 
     def _strong_varying_force(m1, m2):

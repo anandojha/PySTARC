@@ -41,11 +41,13 @@ def _atoms(n):
 
 
 def test_chain_idx_resolves_chain_atom_ref():
+    """_chain_idx resolves a ChainAtomRef to its underlying integer index."""
     assert _chain_idx(ChainAtomRef(0)) == 0
     assert _chain_idx(ChainAtomRef(7)) == 7
 
 
 def test_chain_idx_passes_through_raw_int():
+    """_chain_idx passes a raw Python int or numpy integer through unchanged."""
     assert _chain_idx(3) == 3
     assert _chain_idx(np.int64(5)) == 5
 
@@ -56,6 +58,7 @@ def test_chain_idx_passes_through_raw_int():
 
 
 def test_length_constraint_atomref_violation_evaluates():
+    """A length constraint with ChainAtomRef endpoints evaluates the violation as the signed deviation from the target length."""
     common = ChainCommon(
         name="len_ref",
         atoms=_atoms(2),
@@ -69,6 +72,7 @@ def test_length_constraint_atomref_violation_evaluates():
 
 
 def test_length_constraint_atomref_matches_raw_int():
+    """A length constraint using ChainAtomRef endpoints yields the same violation as one using raw integer endpoints."""
     positions = np.array([[0, 0, 0], [5.7, 0, 0]], dtype=float)
 
     common_ref = ChainCommon(
@@ -91,6 +95,7 @@ def test_length_constraint_atomref_matches_raw_int():
 
 
 def test_length_constraint_atomref_shake_converges():
+    """SHAKE on a ChainAtomRef length constraint converges to the target separation of 5.0."""
     common = ChainCommon(
         name="len_ref",
         atoms=_atoms(2),
@@ -104,6 +109,7 @@ def test_length_constraint_atomref_shake_converges():
 
 
 def test_length_constraint_atomref_newton_converges():
+    """Newton solving of a ChainAtomRef length constraint converges to the target separation of 5.0."""
     common = ChainCommon(
         name="len_ref",
         atoms=_atoms(2),
@@ -117,6 +123,7 @@ def test_length_constraint_atomref_newton_converges():
 
 
 def test_length_constraint_atomref_jacobian_builds():
+    """The Jacobian of a ChainAtomRef length constraint has shape (1,6) with opposing unit-vector rows for the two atoms."""
     common = ChainCommon(
         name="len_ref",
         atoms=_atoms(2),
@@ -138,6 +145,7 @@ def test_length_constraint_atomref_jacobian_builds():
 
 
 def test_coplanar_constraint_atomref_violation_evaluates():
+    """A coplanar constraint with ChainAtomRef vertices evaluates the violation as the out-of-plane distance of 1.0."""
     common = ChainCommon(
         name="cop_ref",
         atoms=_atoms(4),
@@ -158,6 +166,7 @@ def test_coplanar_constraint_atomref_violation_evaluates():
 
 
 def test_coplanar_constraint_atomref_matches_raw_int():
+    """A coplanar constraint using ChainAtomRef vertices yields the same violation as one using raw integer vertices."""
     positions = np.array(
         [[0, 0, 1.0], [1, 0, 0], [0, 1, 0], [-1, -1, 0]], dtype=float
     )
@@ -185,6 +194,7 @@ def test_coplanar_constraint_atomref_matches_raw_int():
 
 
 def test_coplanar_violation_helper_atomref():
+    """The _coplanar_violation helper returns the out-of-plane distance of 1.0 for a ChainAtomRef constraint."""
     common = ChainCommon(name="cop_ref", atoms=_atoms(4))
     positions = np.array(
         [[0, 0, 1.0], [1, 0, 0], [0, 1, 0], [-1, -1, 0]], dtype=float
@@ -197,6 +207,7 @@ def test_coplanar_violation_helper_atomref():
 
 
 def test_coplanar_constraint_atomref_shake_projects_onto_plane():
+    """SHAKE on a ChainAtomRef coplanar constraint projects the atom onto the plane, driving the violation below 1e-9."""
     common = ChainCommon(
         name="cop_ref",
         atoms=_atoms(4),
@@ -216,6 +227,7 @@ def test_coplanar_constraint_atomref_shake_projects_onto_plane():
 
 
 def test_coplanar_constraint_atomref_jacobian_builds():
+    """The Jacobian of a ChainAtomRef coplanar constraint has shape (1,12) with the atom-a row equal to the plane normal."""
     common = ChainCommon(
         name="cop_ref",
         atoms=_atoms(4),
@@ -241,6 +253,7 @@ def test_coplanar_constraint_atomref_jacobian_builds():
 
 
 def test_mixed_atomref_and_raw_int_endpoints_resolve():
+    """A length constraint mixing a ChainAtomRef and a raw int endpoint resolves both and reports zero violation when satisfied."""
     common = ChainCommon(
         name="mixed",
         atoms=_atoms(2),
@@ -253,6 +266,7 @@ def test_mixed_atomref_and_raw_int_endpoints_resolve():
 
 
 def test_hybrid_solver_with_atomref_endpoints():
+    """The hybrid solver satisfies two chained length constraints with ChainAtomRef endpoints to within tolerance."""
     common = ChainCommon(
         name="hybrid_ref",
         atoms=_atoms(3),
@@ -274,6 +288,7 @@ def test_hybrid_solver_with_atomref_endpoints():
 
 
 def test_coffdrop_force_evaluator_removed():
+    """The coffdrop_chain module no longer defines COFFDROPForceEvaluator."""
     import pystarc.simulation.coffdrop_chain as mod
 
     assert not hasattr(mod, "COFFDROPForceEvaluator")

@@ -29,6 +29,7 @@ def _atom(serial, name, altloc, resname, chain, resid, x, y, z):
 def test_parser_keeps_first_altloc_conformer():
     # SER 10 has OG in two conformers: altLoc A at (1,1,1) first, altLoc B at
     # (9,9,9) second. The parser must keep the first (altLoc A).
+    """The parser keeps the first alternate-location conformer when a residue lists multiple altLocs."""
     lines = [
         _atom(1, "N", " ", "SER", "A", 10, 0.0, 0.0, 0.0),
         _atom(2, "OG", "A", "SER", "A", 10, 1.0, 1.0, 1.0),

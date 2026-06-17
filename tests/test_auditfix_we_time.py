@@ -71,11 +71,7 @@ def _make_pathways(cutoff=10.0):
 
 
 def test_full_steps_match_steps_times_dt():
-    """
-    When every trajectory takes all steps_per_iteration steps at the fixed time
-    step, the ensemble clock advances by exactly
-    n_iterations * steps_per_iteration * dt.
-    """
+    """When every trajectory takes all steps, total_time_ps equals n_iterations·steps_per_iteration·dt."""
     mol1, mol2 = _make_molecules(lig_x=50.0)
     mob = MobilityTensor.from_radii(10.0, 5.0)
     ps = _make_pathways(cutoff=10.0)
@@ -98,11 +94,7 @@ def test_full_steps_match_steps_times_dt():
 
 
 def test_adaptive_small_step_near_boundary_shortens_time():
-    """
-    Near a reaction boundary the adaptive integrator uses the smaller time step
-    dt_rxn, so the elapsed time is shorter than steps_per_iteration * dt and
-    matches the smaller step exactly when every step stays in the reaction zone.
-    """
+    """Near a reaction boundary the adaptive integrator uses dt_rxn, so total_time_ps equals the small-step product."""
     mol1, mol2 = _make_molecules(lig_x=12.0)
     mob = MobilityTensor.from_radii(10.0, 5.0)
     ps = _make_pathways(cutoff=10.0)
@@ -131,12 +123,7 @@ def test_adaptive_small_step_near_boundary_shortens_time():
 
 
 def test_immediate_escape_records_no_elapsed_time():
-    """
-    A trajectory that begins outside the escape radius is collected before any
-    step is taken, so it contributes no elapsed time. When every trajectory
-    escapes immediately, the ensemble clock stays at zero even though weight is
-    accumulated into the escaped state.
-    """
+    """Trajectories that escape immediately accumulate escaped weight while total_time_ps stays at zero."""
     mol1, mol2 = _make_molecules(lig_x=50.0)
     mob = MobilityTensor.from_radii(10.0, 5.0)
     ps = _make_pathways(cutoff=10.0)
@@ -160,13 +147,7 @@ def test_immediate_escape_records_no_elapsed_time():
 
 
 def test_elapsed_time_never_exceeds_fixed_step_product():
-    """
-    The genuinely simulated time per iteration can never exceed
-    steps_per_iteration * dt, since each step advances by at most the fixed
-    time step. The accumulated ensemble clock therefore stays at or below the
-    fixed-step product across a run that mixes ongoing, reacted, and escaped
-    trajectories.
-    """
+    """The accumulated total_time_ps stays positive but never exceeds the fixed-step product across a mixed run."""
     mol1, mol2 = _make_molecules(lig_x=20.0, charge=2.0)
     mob = MobilityTensor.from_radii(10.0, 5.0)
     ps = _make_pathways(cutoff=10.0)
@@ -189,11 +170,7 @@ def test_elapsed_time_never_exceeds_fixed_step_product():
 
 
 def test_flux_matches_weight_over_elapsed_time():
-    """
-    The reported reaction and escape fluxes equal the accumulated weight divided
-    by the elapsed ensemble time, confirming the denominator used for the flux
-    is the genuinely simulated time.
-    """
+    """The reported reaction and escape fluxes equal the accumulated weights divided by total_time_ps."""
     mol1, mol2 = _make_molecules(lig_x=20.0, charge=2.0)
     mob = MobilityTensor.from_radii(10.0, 5.0)
     ps = _make_pathways(cutoff=10.0)

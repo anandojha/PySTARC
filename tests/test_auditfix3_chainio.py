@@ -12,8 +12,7 @@ def _write_pdb(tmp_path, lines):
 
 
 def test_insertion_code_residues_are_distinct(tmp_path):
-    """Residues 100 and 100A share a sequence number but differ by insertion
-    code, so they must be parsed as two separate residues."""
+    """Residues sharing a sequence number but differing by insertion code are parsed as two separate residues with their own atoms."""
     # Columns are laid out per the fixed-width PDB ATOM record. The insertion
     # code sits in column 27 (index 26).
     lines = [
@@ -38,8 +37,7 @@ def test_insertion_code_residues_are_distinct(tmp_path):
 
 
 def test_no_insertion_code_groups_by_resid(tmp_path):
-    """Without insertion codes the parser groups atoms by sequence number, so a
-    plain two-residue chain yields exactly two residues."""
+    """Without insertion codes the parser groups atoms by sequence number, yielding two residues with resids 1 and 2."""
     lines = [
         "ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N",
         "ATOM      2  CA  ALA A   1       1.000   0.000   0.000  1.00  0.00           C",

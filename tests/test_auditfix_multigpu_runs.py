@@ -12,7 +12,7 @@ from pystarc.multi_GPU.multi_GPU_runs import _set_or_create
 
 
 def test_set_or_create_creates_missing_tag():
-    """A tag absent from the XML is created and given the requested text."""
+    """_set_or_create creates a tag absent from the XML and assigns it the requested text."""
     root = ET.fromstring("<simulation><receptor_pqr>r.pqr</receptor_pqr></simulation>")
     assert root.find("n_trajectories") is None
 
@@ -23,7 +23,7 @@ def test_set_or_create_creates_missing_tag():
 
 
 def test_set_or_create_updates_existing_tag():
-    """A tag already present has its text overwritten in place."""
+    """_set_or_create overwrites an existing tag in place without appending a duplicate element."""
     root = ET.fromstring("<simulation><seed>1523</seed></simulation>")
     before = list(root)
 
@@ -36,7 +36,7 @@ def test_set_or_create_updates_existing_tag():
 
 
 def test_set_or_create_handles_all_optional_tags():
-    """All four optional-with-default tags can be set on an XML that omits them."""
+    """_set_or_create sets all four optional-with-default tags on an XML that omits them."""
     root = ET.fromstring("<simulation><receptor_pqr>r.pqr</receptor_pqr></simulation>")
 
     _set_or_create(root, "n_trajectories", "25000")
@@ -51,8 +51,7 @@ def test_set_or_create_handles_all_optional_tags():
 
 
 def test_naive_find_text_assignment_would_crash():
-    """The previous direct find(tag).text pattern raises on a missing tag,
-    which is the failure mode the get-or-create helper removes."""
+    """The naive find(tag).text assignment raises AttributeError on a missing tag, which _set_or_create avoids."""
     root = ET.fromstring("<simulation></simulation>")
 
     try:

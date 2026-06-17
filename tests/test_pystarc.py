@@ -250,87 +250,110 @@ import os
 
 class TestConstants:
     def test_temperature(self):
+        """The default temperature T_DEFAULT equals 298.15 K."""
         assert abs(T_DEFAULT - 298.15) < 0.01
 
     def test_boltzmann_si(self):
+        """The SI Boltzmann constant KB_SI equals 1.380649e-23 J/K."""
         assert abs(KB_SI - 1.380649e-23) < 1e-30
 
     def test_boltzmann_kcal(self):
+        """The Boltzmann constant in kcal units KB_KCAL equals 1.987204e-3 kcal/(mol K)."""
         assert abs(KB_KCAL - 1.987204e-3) < 1e-8
 
     def test_kbt_kcal(self):
+        """KBT_KCAL equals KB_KCAL times the default temperature T_DEFAULT."""
         assert abs(KBT_KCAL - KB_KCAL * T_DEFAULT) < 1e-8
 
     def test_bjerrum_length(self):
+        """The Bjerrum length lies between 6.5 and 8.0 A, near 7.1 A for water at 298 K."""
         assert 6.5 < BJERRUM_LENGTH < 8.0  # ~7.1 Å in water at 298K
 
     def test_eps_water(self):
+        """The water dielectric constant EPS_WATER equals 78.0."""
         assert abs(EPS_WATER - 78.0) < 0.1
 
     def test_avogadro(self):
+        """Avogadro's number AVOGADRO equals 6.022e23."""
         assert abs(AVOGADRO - 6.022e23) < 1e20
 
     def test_ang_to_m(self):
+        """The angstrom-to-meter conversion ANG_TO_M equals 1e-10."""
         assert abs(ANG_TO_M - 1e-10) < 1e-20
 
     def test_ps_to_s(self):
+        """The picosecond-to-second conversion PS_TO_S equals 1e-12."""
         assert abs(PS_TO_S - 1e-12) < 1e-20
 
     def test_pi(self):
+        """The constant PI equals math.pi."""
         assert abs(PI - math.pi) < 1e-14
 
     def test_two_pi(self):
+        """The constant TWO_PI equals 2 times math.pi."""
         assert abs(TWO_PI - 2 * math.pi) < 1e-14
 
     def test_four_pi(self):
+        """The constant FOUR_PI equals 4 times math.pi."""
         assert abs(FOUR_PI - 4 * math.pi) < 1e-14
 
     def test_debye_length_positive(self):
+        """The default Debye length DEFAULT_DEBYE_LENGTH is positive."""
         assert DEFAULT_DEBYE_LENGTH > 0
 
     def test_eta_water_positive(self):
+        """The water viscosity ETA_WATER is positive."""
         assert ETA_WATER > 0
 
     def test_kbt_at_room_temp(self):
         # kBT at 298 K in kcal/mol should be ~0.592
+        """k_B T at 298 K in kcal/mol is approximately 0.592."""
         assert abs(KBT_KCAL - 0.592) < 0.01
 
 
 # Structures / molecules
 class TestAtom:
     def test_create(self):
+        """Atom stores its constructor name and charge after creation."""
         a = Atom(index=0, name="CA", x=1.0, y=2.0, z=3.0, charge=0.5, radius=1.8)
         assert a.name == "CA"
         assert a.charge == 0.5
 
     def test_position_property(self):
+        """The Atom.position property returns its x, y, z coordinates as an array."""
         a = Atom(x=1.0, y=2.0, z=3.0)
         assert np.allclose(a.position, [1.0, 2.0, 3.0])
 
     def test_position_setter(self):
+        """Setting Atom.position updates the underlying x, y, z coordinate fields."""
         a = Atom()
         a.position = np.array([4.0, 5.0, 6.0])
         assert abs(a.x - 4.0) < 1e-10
 
     def test_distance_to(self):
+        """Atom.distance_to returns the Euclidean distance between two atoms, 5 for a 3-4-0 separation."""
         a = Atom(x=0, y=0, z=0)
         b = Atom(x=3, y=4, z=0)
         assert abs(a.distance_to(b) - 5.0) < 1e-10
 
     def test_repr(self):
+        """The Atom repr includes the atom name."""
         a = Atom(name="N", x=1.0, y=2.0, z=3.0)
         assert "N" in repr(a)
 
     def test_zero_atom(self):
+        """A default-constructed Atom has zero coordinates and zero charge."""
         a = Atom()
         assert a.x == 0.0
         assert a.charge == 0.0
 
     def test_distance_self(self):
+        """Atom.distance_to returns 0 when measured against the same atom."""
         a = Atom(x=1.0, y=2.0, z=3.0)
         assert a.distance_to(a) == 0.0
 
     def test_distance_3d(self):
+        """Atom.distance_to computes the full 3D Euclidean distance, 5 for a 3-4 offset in x and y."""
         a = Atom(x=1, y=2, z=3)
         b = Atom(x=4, y=6, z=3)
         assert abs(a.distance_to(b) - 5.0) < 1e-10
@@ -347,36 +370,43 @@ class TestMolecule:
         return mol
 
     def test_create(self):
+        """A constructed Molecule retains its name and reports its atom count via len."""
         mol = self._make_mol()
         assert mol.name == "test"
         assert len(mol) == 3
 
     def test_centroid(self):
+        """Molecule.centroid returns the mean position of its atoms."""
         mol = self._make_mol()
         c = mol.centroid()
         assert np.allclose(c, [1.0, 2 / 3, 0.0])
 
     def test_total_charge(self):
+        """Molecule.total_charge sums the atomic charges."""
         mol = self._make_mol()
         assert abs(mol.total_charge() - 0.5) < 1e-10
 
     def test_positions_array(self):
+        """Molecule.positions_array returns an (N, 3) array of atom positions."""
         mol = self._make_mol()
         pos = mol.positions_array()
         assert pos.shape == (3, 3)
 
     def test_charges_array(self):
+        """Molecule.charges_array returns a length-N array whose sum equals the total charge."""
         mol = self._make_mol()
         q = mol.charges_array()
         assert q.shape == (3,)
         assert abs(q.sum() - 0.5) < 1e-10
 
     def test_translate(self):
+        """Molecule.translate shifts every atom by the given displacement vector."""
         mol = self._make_mol()
         mol.translate(np.array([1.0, 0.0, 0.0]))
         assert abs(mol.atoms[0].x - 1.0) < 1e-10
 
     def test_rotate(self):
+        """Molecule.rotate applies the rotation matrix, mapping an x-axis atom onto the y-axis under a 90 deg z rotation."""
         mol = Molecule()
         mol.atoms = [Atom(x=1.0, y=0.0, z=0.0)]
         # 90° rotation about z
@@ -386,34 +416,41 @@ class TestMolecule:
         assert abs(mol.atoms[0].y - 1.0) < 1e-10
 
     def test_bounding_radius(self):
+        """Molecule.bounding_radius returns a positive value."""
         mol = self._make_mol()
         br = mol.bounding_radius()
         assert br > 0
 
     def test_radius_of_gyration(self):
+        """Molecule.radius_of_gyration returns a positive value."""
         mol = self._make_mol()
         rg = mol.radius_of_gyration()
         assert rg > 0
 
     def test_empty_molecule(self):
+        """An empty Molecule reports a zero centroid and zero total charge."""
         mol = Molecule()
         assert np.allclose(mol.centroid(), [0, 0, 0])
         assert mol.total_charge() == 0.0
 
     def test_repr(self):
+        """The Molecule repr includes the molecule name."""
         mol = self._make_mol()
         assert "test" in repr(mol)
 
     def test_center_of_mass(self):
+        """Molecule.center_of_mass coincides with the centroid for unit-mass atoms."""
         mol = self._make_mol()
         assert np.allclose(mol.center_of_mass(), mol.centroid())
 
     def test_radii_array(self):
+        """Molecule.radii_array returns a length-N array of atomic radii."""
         mol = self._make_mol()
         r = mol.radii_array()
         assert r.shape == (3,)
 
     def test_rotate_about_centroid(self):
+        """Molecule.rotate_about_centroid leaves the centroid unchanged under an identity rotation."""
         mol = self._make_mol()
         c_before = mol.centroid().copy()
         R = np.eye(3)  # identity
@@ -431,24 +468,29 @@ class TestBoundingBox:
         return BoundingBox.from_molecule(mol, padding=0.0)
 
     def test_create(self):
+        """A constructed BoundingBox stores its xmin and xmax bounds."""
         bb = self._make_bb()
         assert bb.xmin == -1
         assert bb.xmax == 1
 
     def test_center(self):
+        """The BoundingBox.center property returns the midpoint of its bounds."""
         bb = self._make_bb()
         assert np.allclose(bb.center, [0, 0, 0])
 
     def test_size(self):
+        """The BoundingBox.size property returns the extent along each axis."""
         bb = self._make_bb()
         assert np.allclose(bb.size, [2, 4, 6])
 
     def test_contains(self):
+        """BoundingBox.contains reports True for an interior point and False for an outside point."""
         bb = self._make_bb()
         assert bb.contains(np.array([0, 0, 0]))
         assert not bb.contains(np.array([5, 0, 0]))
 
     def test_padding(self):
+        """BoundingBox.from_molecule expands the bounds by the given padding around the atoms."""
         mol = Molecule()
         mol.atoms = [Atom(x=0, y=0, z=0)]
         bb = BoundingBox.from_molecule(mol, padding=2.0)
@@ -456,17 +498,20 @@ class TestBoundingBox:
         assert bb.xmax == 2.0
 
     def test_repr(self):
+        """The BoundingBox repr includes the class name."""
         bb = self._make_bb()
         assert "BoundingBox" in repr(bb)
 
 
 class TestContactPair:
     def test_create(self):
+        """A constructed ContactPair stores its first-molecule atom index and distance cutoff."""
         cp = ContactPair(0, 1, 5.0)
         assert cp.mol1_atom_index == 0
         assert cp.distance_cutoff == 5.0
 
     def test_repr(self):
+        """The ContactPair repr includes its atom index."""
         cp = ContactPair(2, 3, 4.0)
         assert "2" in repr(cp)
 
@@ -480,18 +525,21 @@ class TestReactionCriteria:
         return mol1, mol2
 
     def test_satisfied(self):
+        """ReactionCriteria.is_satisfied returns True when the pair separation is within the cutoff."""
         mol1, mol2 = self._setup()
         pair = ContactPair(0, 0, 5.0)  # atom0 in mol1 to atom0 in mol2: dist=3
         criteria = ReactionCriteria(pairs=[pair])
         assert criteria.is_satisfied(mol1, mol2)
 
     def test_not_satisfied(self):
+        """ReactionCriteria.is_satisfied returns False when the cutoff is smaller than the pair separation."""
         mol1, mol2 = self._setup()
         pair = ContactPair(0, 0, 2.0)  # cutoff too small
         criteria = ReactionCriteria(pairs=[pair])
         assert not criteria.is_satisfied(mol1, mol2)
 
     def test_multiple_pairs_all_required(self):
+        """ReactionCriteria.is_satisfied requires every contact pair, returning False when one pair is unsatisfied."""
         mol1, mol2 = self._setup()
         p1 = ContactPair(0, 0, 5.0)  # satisfied (dist=3)
         p2 = ContactPair(0, 1, 2.0)  # not satisfied (dist=8)
@@ -510,6 +558,7 @@ class TestPQRIO:
         )
 
     def test_parse(self, tmp_path):
+        """parse_pqr reads atom count, name, coordinates, charge, and radius from a PQR file."""
         p = tmp_path / "test.pqr"
         p.write_text(self._pqr_content())
         mol = parse_pqr(p)
@@ -520,12 +569,14 @@ class TestPQRIO:
         assert abs(mol.atoms[0].radius - 1.8) < 1e-6
 
     def test_parse_charges(self, tmp_path):
+        """parse_pqr produces a molecule whose total charge matches the sum of the PQR atomic charges."""
         p = tmp_path / "test.pqr"
         p.write_text(self._pqr_content())
         mol = parse_pqr(p)
         assert abs(mol.total_charge() - 0.3) < 1e-5
 
     def test_roundtrip(self, tmp_path):
+        """A PQR write then re-parse round trip preserves the atom count and the first atom x coordinate."""
         p_in = tmp_path / "in.pqr"
         p_out = tmp_path / "out.pqr"
         p_in.write_text(self._pqr_content())
@@ -536,18 +587,21 @@ class TestPQRIO:
         assert abs(mol2.atoms[0].x - 1.0) < 1e-3
 
     def test_molecule_name_from_stem(self, tmp_path):
+        """parse_pqr sets the molecule name from the input file stem."""
         p = tmp_path / "myprotein.pqr"
         p.write_text(self._pqr_content())
         mol = parse_pqr(p)
         assert mol.name == "myprotein"
 
     def test_empty_pqr(self, tmp_path):
+        """parse_pqr returns zero atoms for a PQR file containing only REMARK and END lines."""
         p = tmp_path / "empty.pqr"
         p.write_text("REMARK empty\nEND\n")
         mol = parse_pqr(p)
         assert len(mol.atoms) == 0
 
     def test_hetatm(self, tmp_path):
+        """parse_pqr reads a single atom from a HETATM record."""
         p = tmp_path / "ligand.pqr"
         p.write_text(
             "HETATM    1  C1  LIG     1       0.000   0.000   0.000  0.100  1.500\nEND\n"
@@ -559,57 +613,68 @@ class TestPQRIO:
 # Quaternion and transforms
 class TestQuaternion:
     def test_identity(self):
+        """Quaternion.identity returns w equal to 1 and x equal to 0."""
         q = Quaternion.identity()
         assert q.w == 1.0
         assert q.x == 0.0
 
     def test_norm(self):
+        """The norm of the unit quaternion (1,0,0,0) equals 1."""
         q = Quaternion(1, 0, 0, 0)
         assert abs(q.norm() - 1.0) < 1e-14
 
     def test_normalized(self):
+        """Normalizing the quaternion (2,0,0,0) yields w equal to 1."""
         q = Quaternion(2, 0, 0, 0).normalized()
         assert abs(q.w - 1.0) < 1e-14
 
     def test_rotation_matrix_identity(self):
+        """The rotation matrix of the identity quaternion equals the 3x3 identity."""
         q = Quaternion.identity()
         R = q.to_rotation_matrix()
         assert np.allclose(R, np.eye(3))
 
     def test_from_axis_angle_90z(self):
+        """A 90 degree rotation about z maps the x axis unit vector to the y axis."""
         q = Quaternion.from_axis_angle(np.array([0, 0, 1]), math.pi / 2)
         R = q.to_rotation_matrix()
         v = R @ np.array([1, 0, 0])
         assert np.allclose(v, [0, 1, 0], atol=1e-10)
 
     def test_from_axis_angle_180x(self):
+        """A 180 degree rotation about x maps the y axis unit vector to its negative."""
         q = Quaternion.from_axis_angle(np.array([1, 0, 0]), math.pi)
         R = q.to_rotation_matrix()
         v = R @ np.array([0, 1, 0])
         assert np.allclose(v, [0, -1, 0], atol=1e-10)
 
     def test_multiply_identity(self):
+        """Multiplying a quaternion by the identity quaternion leaves it unchanged."""
         q = Quaternion.from_axis_angle(np.array([0, 1, 0]), 0.5)
         r = q * Quaternion.identity()
         assert np.allclose(q.to_array(), r.normalized().to_array(), atol=1e-10)
 
     def test_conjugate(self):
+        """The product of a unit quaternion and its conjugate has w equal to 1."""
         q = Quaternion(0.7, 0.1, 0.2, 0.3).normalized()
         qc = q.conjugate()
         prod = (q * qc).normalized()
         assert abs(prod.w - 1.0) < 1e-10
 
     def test_rotate_vector(self):
+        """Rotating the x axis vector by π about z gives the negative x axis."""
         q = Quaternion.from_axis_angle(np.array([0, 0, 1]), math.pi)
         v = q.rotate_vector(np.array([1, 0, 0]))
         assert np.allclose(v, [-1, 0, 0], atol=1e-10)
 
     def test_to_array(self):
+        """Quaternion.to_array returns an array of shape (4,)."""
         q = Quaternion(1, 0, 0, 0)
         arr = q.to_array()
         assert arr.shape == (4,)
 
     def test_from_rotation_matrix_roundtrip(self):
+        """Converting a quaternion to a rotation matrix and back reproduces the same matrix."""
         q_orig = Quaternion.from_axis_angle(np.array([1, 1, 0]) / math.sqrt(2), 1.2)
         R = q_orig.to_rotation_matrix()
         q_back = Quaternion.from_rotation_matrix(R)
@@ -617,14 +682,17 @@ class TestQuaternion:
         assert np.allclose(R, R_back, atol=1e-10)
 
     def test_repr(self):
+        """The repr of a Quaternion contains the string Quaternion."""
         q = Quaternion.identity()
         assert "Quaternion" in repr(q)
 
     def test_zero_axis(self):
+        """from_axis_angle with a zero axis returns the identity quaternion with w equal to 1."""
         q = Quaternion.from_axis_angle(np.zeros(3), 1.0)
         assert abs(q.w - 1.0) < 1e-10
 
     def test_from_axis_angle_360(self):
+        """A 2π rotation about z produces the identity rotation matrix."""
         q = Quaternion.from_axis_angle(np.array([0, 0, 1]), 2 * math.pi)
         R = q.to_rotation_matrix()
         assert np.allclose(R, np.eye(3), atol=1e-10)
@@ -632,16 +700,19 @@ class TestQuaternion:
 
 class TestRigidTransform:
     def test_identity(self):
+        """The identity RigidTransform leaves a vector unchanged."""
         T = RigidTransform.identity()
         v = np.array([1.0, 2.0, 3.0])
         assert np.allclose(T.apply(v), v)
 
     def test_pure_translation(self):
+        """A pure translation RigidTransform shifts the origin by the translation vector."""
         T = RigidTransform(translation=np.array([1.0, 2.0, 3.0]))
         v = np.zeros(3)
         assert np.allclose(T.apply(v), [1, 2, 3])
 
     def test_pure_rotation(self):
+        """A pure 90 degree z rotation RigidTransform maps the x axis vector to the y axis."""
         q = Quaternion.from_axis_angle(np.array([0, 0, 1]), math.pi / 2)
         T = RigidTransform(rotation=q)
         v = np.array([1.0, 0.0, 0.0])
@@ -649,6 +720,7 @@ class TestRigidTransform:
         assert np.allclose(result, [0, 1, 0], atol=1e-10)
 
     def test_compose(self):
+        """Composing two translation transforms sums their translations."""
         T1 = RigidTransform(translation=np.array([1.0, 0.0, 0.0]))
         T2 = RigidTransform(translation=np.array([2.0, 0.0, 0.0]))
         T12 = T1.compose(T2)
@@ -656,6 +728,7 @@ class TestRigidTransform:
         assert np.allclose(T12.apply(v), [3, 0, 0])
 
     def test_inverse(self):
+        """Applying a RigidTransform and then its inverse recovers the original vector."""
         q = Quaternion.from_axis_angle(np.array([0, 1, 0]), 0.7)
         T = RigidTransform(rotation=q, translation=np.array([1, 2, 3]))
         Ti = T.inverse()
@@ -664,6 +737,7 @@ class TestRigidTransform:
         assert np.allclose(result, v, atol=1e-10)
 
     def test_apply_batch(self):
+        """A RigidTransform applied to a batch of points returns shape (2,3) with each point translated."""
         T = RigidTransform(translation=np.array([1.0, 0.0, 0.0]))
         pts = np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]])
         result = T.apply(pts)
@@ -671,29 +745,34 @@ class TestRigidTransform:
         assert abs(result[0, 0] - 1.0) < 1e-10
 
     def test_repr(self):
+        """The repr of a RigidTransform contains the string RigidTransform."""
         T = RigidTransform.identity()
         assert "RigidTransform" in repr(T)
 
 
 class TestRandomQuaternion:
     def test_returns_quaternion(self):
+        """random_quaternion returns a Quaternion instance."""
         rng = np.random.default_rng(42)
         q = random_quaternion(rng)
         assert isinstance(q, Quaternion)
 
     def test_unit_norm(self):
+        """random_quaternion produces unit norm quaternions across repeated draws."""
         rng = np.random.default_rng(0)
         for _ in range(20):
             q = random_quaternion(rng)
             assert abs(q.norm() - 1.0) < 1e-10
 
     def test_rotation_matrix_orthogonal(self):
+        """The rotation matrix from a random quaternion is orthogonal."""
         rng = np.random.default_rng(1)
         q = random_quaternion(rng)
         R = q.to_rotation_matrix()
         assert np.allclose(R @ R.T, np.eye(3), atol=1e-10)
 
     def test_small_rotation(self):
+        """small_rotation_quaternion returns a unit norm quaternion."""
         rng = np.random.default_rng(7)
         q = small_rotation_quaternion(0.01, rng)
         assert abs(q.norm() - 1.0) < 1e-10
@@ -702,48 +781,58 @@ class TestRandomQuaternion:
 # Hydrodynamics
 class TestHydrodynamics:
     def test_stokes_translation_positive(self):
+        """stokes_translational_diffusion returns a positive value for a 20 Å radius."""
         D = stokes_translational_diffusion(20.0)  # 20 Å radius
         assert D > 0
 
     def test_stokes_rotation_positive(self):
+        """stokes_rotational_diffusion returns a positive value for a 20 Å radius."""
         D = stokes_rotational_diffusion(20.0)
         assert D > 0
 
     def test_stokes_translation_larger_radius_smaller_D(self):
+        """Stokes translational diffusion is smaller for a larger radius."""
         D1 = stokes_translational_diffusion(10.0)
         D2 = stokes_translational_diffusion(20.0)
         assert D1 > D2
 
     def test_stokes_rotation_larger_radius_smaller_D(self):
+        """Stokes rotational diffusion is smaller for a larger radius."""
         D1 = stokes_rotational_diffusion(10.0)
         D2 = stokes_rotational_diffusion(20.0)
         assert D1 > D2
 
     def test_mobility_from_radii(self):
+        """MobilityTensor.from_radii gives positive translational diffusion for both species."""
         mob = MobilityTensor.from_radii(20.0, 20.0)
         assert mob.D_trans1 > 0
         assert mob.D_trans2 > 0
 
     def test_relative_diffusion(self):
+        """The relative translational diffusion equals twice the single species value for equal radii."""
         mob = MobilityTensor.from_radii(20.0, 20.0)
         D_rel = mob.relative_translational_diffusion()
         assert abs(D_rel - 2 * mob.D_trans1) < 1e-14
 
     def test_rotne_prager_far_field(self):
+        """rpy_offdiagonal returns a 3x3 matrix in the far field."""
         r_vec = np.array([100.0, 0.0, 0.0])
         M = rpy_offdiagonal(r_vec, 5.0, 5.0, 1.0, 1.0)
         assert M.shape == (3, 3)
 
     def test_rotne_prager_zero_distance(self):
+        """The RPY off diagonal mobility is zero at zero separation."""
         M = rpy_offdiagonal(np.zeros(3), 5.0, 5.0, 1.0, 1.0)
         assert np.allclose(M, np.zeros((3, 3)))
 
     def test_repr(self):
+        """The repr of a MobilityTensor contains the string MobilityTensor."""
         mob = MobilityTensor(1.0, 0.1, 1.0, 0.1)
         assert "MobilityTensor" in repr(mob)
 
     def test_stokes_units_reasonable(self):
         # Typical protein (~30 Å radius) D_t ~ 0.005-0.05 Å²/ps
+        """Stokes translational diffusion for a 30 Å protein falls in a physically reasonable range."""
         D = stokes_translational_diffusion(30.0)
         assert 1e-4 < D < 1.0
 
@@ -751,6 +840,7 @@ class TestHydrodynamics:
 # BD integrator
 class TestBDStep:
     def test_translation_moves(self):
+        """An Ermak McCammon translation step with no force moves the position by diffusion."""
         rng = np.random.default_rng(42)
         pos = np.zeros(3)
         force = np.zeros(3)
@@ -758,6 +848,7 @@ class TestBDStep:
         assert not np.allclose(new_pos, pos)  # diffuses
 
     def test_translation_with_force(self):
+        """A large x force makes drift dominate the Ermak McCammon translation step."""
         rng = np.random.default_rng(0)
         pos = np.zeros(3)
         force = np.array([100.0, 0.0, 0.0])
@@ -767,6 +858,7 @@ class TestBDStep:
         assert new_pos[0] > 500.0  # very likely for large drift
 
     def test_rotation_changes_orientation(self):
+        """An Ermak McCammon rotation step yields a valid orthogonal orientation."""
         rng = np.random.default_rng(42)
         ori = Quaternion.identity()
         torque = np.zeros(3)
@@ -776,6 +868,7 @@ class TestBDStep:
         assert np.allclose(R @ R.T, np.eye(3), atol=1e-10)
 
     def test_bd_step_returns_tuple(self):
+        """bd_step returns a shape (3,) position and a Quaternion orientation."""
         rng = np.random.default_rng(1)
         pos = np.array([50.0, 0.0, 0.0])
         ori = Quaternion.identity()
@@ -786,14 +879,17 @@ class TestBDStep:
         assert isinstance(new_ori, Quaternion)
 
     def test_escape_radius(self):
+        """escape_radius for a 100 Å contact radius is at least 500 Å."""
         r = escape_radius(100.0)
         assert r >= 500.0
 
     def test_escape_radius_fallback(self):
+        """escape_radius applies its fallback minimum of 50 Å for a small contact radius."""
         r = escape_radius(10.0)
         assert r >= 50.0
 
     def test_translation_reproducible_seed(self):
+        """Ermak McCammon translation is reproducible for two RNGs sharing a seed."""
         pos = np.zeros(3)
         force = np.zeros(3)
         rng1 = np.random.default_rng(99)
@@ -803,6 +899,7 @@ class TestBDStep:
         assert np.allclose(p1, p2)
 
     def test_small_dt_small_step(self):
+        """Ermak McCammon translation steps stay tiny when dt is very small."""
         rng = np.random.default_rng(5)
         pos = np.zeros(3)
         # 100 steps with tiny dt
@@ -816,29 +913,35 @@ class TestBDStep:
 # SystemState / Fate
 class TestSystemState:
     def test_create(self):
+        """A new SystemState starts with fate ONGOING and step 0."""
         s = SystemState()
         assert s.fate == Fate.ONGOING
         assert s.step == 0
 
     def test_separation(self):
+        """SystemState.separation returns the Euclidean norm of the position."""
         s = SystemState(position=np.array([3.0, 4.0, 0.0]))
         assert abs(s.separation() - 5.0) < 1e-10
 
     def test_copy(self):
+        """SystemState.copy produces an independent copy whose position edits do not affect the original."""
         s = SystemState(position=np.array([1.0, 2.0, 3.0]), step=5)
         s2 = s.copy()
         s2.position[0] = 99.0
         assert s.position[0] == 1.0
 
     def test_repr(self):
+        """The repr of a SystemState contains the string SystemState."""
         s = SystemState()
         assert "SystemState" in repr(s)
 
     def test_fate_ongoing(self):
+        """A default SystemState has fate ONGOING."""
         s = SystemState()
         assert s.fate == Fate.ONGOING
 
     def test_fate_reacted(self):
+        """Setting a SystemState fate to REACTED is reflected by the attribute."""
         s = SystemState()
         s.fate = Fate.REACTED
         assert s.fate == Fate.REACTED
@@ -846,16 +949,19 @@ class TestSystemState:
 
 class TestTrajectoryResult:
     def test_reacted_property(self):
+        """A REACTED TrajectoryResult reports reacted True and escaped False."""
         r = TrajectoryResult(Fate.REACTED, 100, 20.0, 5.0, "rxn1")
         assert r.reacted
         assert not r.escaped
 
     def test_escaped_property(self):
+        """An ESCAPED TrajectoryResult reports escaped True and reacted False."""
         r = TrajectoryResult(Fate.ESCAPED, 500, 100.0, 300.0)
         assert r.escaped
         assert not r.reacted
 
     def test_repr(self):
+        """The repr of a TrajectoryResult contains the string TrajectoryResult."""
         r = TrajectoryResult(Fate.ESCAPED, 200, 40.0, 200.0)
         assert "TrajectoryResult" in repr(r)
 
@@ -873,15 +979,18 @@ class TestReactionInterface:
         return mol1, mol2, rxn
 
     def test_check_fires(self):
+        """A reaction with probability 1 fires its check for the set up molecule pair."""
         mol1, mol2, rxn = self._setup()
         assert rxn.check(mol1, mol2)
 
     def test_check_probability_zero(self):
+        """A reaction with probability 0 never fires its check."""
         mol1, mol2, rxn = self._setup()
         rxn.probability = 0.0
         assert not rxn.check(mol1, mol2)
 
     def test_repr(self):
+        """The repr of a reaction contains its name rxn1."""
         _, _, rxn = self._setup()
         assert "rxn1" in repr(rxn)
 
@@ -899,12 +1008,14 @@ class TestPathwaySet:
         return mol1, mol2, ps
 
     def test_check_all_fires(self):
+        """ReactionSet.check_all returns the name of the firing reaction r1."""
         mol1, mol2, ps = self._make_set()
         rng = np.random.default_rng(0)
         name = ps.check_all(mol1, mol2, rng)
         assert name == "r1"
 
     def test_empty_set(self):
+        """check_all returns None when the PathwaySet holds no reaction interfaces."""
         mol1 = Molecule()
         mol1.atoms = [Atom()]
         mol2 = Molecule()
@@ -913,14 +1024,17 @@ class TestPathwaySet:
         assert ps.check_all(mol1, mol2) is None
 
     def test_len(self):
+        """len of a PathwaySet with one reaction returns 1."""
         _, _, ps = self._make_set()
         assert len(ps) == 1
 
     def test_repr(self):
+        """repr of a PathwaySet contains the string PathwaySet."""
         _, _, ps = self._make_set()
         assert "PathwaySet" in repr(ps)
 
     def test_add(self):
+        """Adding a ReactionInterface to an empty PathwaySet brings its length to 1."""
         ps = PathwaySet()
         pair = ContactPair(0, 0, 5.0)
         criteria = ReactionCriteria(pairs=[pair])
@@ -930,6 +1044,7 @@ class TestPathwaySet:
 
 class TestMakeDefaultReaction:
     def test_creates_reaction(self):
+        """make_default_reaction returns a ReactionInterface with the requested number of contact pairs."""
         mol1 = Molecule()
         mol1.atoms = [Atom(x=float(i), y=0, z=0) for i in range(5)]
         mol2 = Molecule()
@@ -942,32 +1057,39 @@ class TestMakeDefaultReaction:
 # Electrostatics
 class TestDebyeHuckel:
     def test_same_sign_positive(self):
+        """Debye-Huckel energy of like charges is positive."""
         E = debye_huckel_energy(1.0, 1.0, 10.0)
         assert E > 0
 
     def test_opposite_sign_negative(self):
+        """Debye-Huckel energy of opposite charges is negative."""
         E = debye_huckel_energy(1.0, -1.0, 10.0)
         assert E < 0
 
     def test_decays_with_distance(self):
+        """Debye-Huckel energy decreases with increasing separation."""
         E1 = debye_huckel_energy(1.0, 1.0, 5.0)
         E2 = debye_huckel_energy(1.0, 1.0, 10.0)
         assert E1 > E2
 
     def test_zero_charge(self):
+        """Debye-Huckel energy is zero when one charge is zero."""
         E = debye_huckel_energy(0.0, 1.0, 10.0)
         assert E == 0.0
 
     def test_zero_distance(self):
+        """Debye-Huckel energy is zero at zero separation."""
         E = debye_huckel_energy(1.0, 1.0, 0.0)
         assert E == 0.0
 
     def test_force_direction(self):
+        """Debye-Huckel force returns a length-3 vector."""
         r_vec = np.array([10.0, 0.0, 0.0])
         F = debye_huckel_force(1.0, 1.0, r_vec)
         assert F.shape == (3,)
 
     def test_force_zero_charge(self):
+        """Debye-Huckel force is the zero vector when one charge is zero."""
         r_vec = np.array([5.0, 0.0, 0.0])
         F = debye_huckel_force(0.0, 1.0, r_vec)
         assert np.allclose(F, 0)
@@ -984,37 +1106,43 @@ class TestDXGrid:
         return DXGrid(origin, delta, data)
 
     def test_interpolate_at_node(self):
+        """Grid interpolation at a node returns that node's value."""
         g = self._make_grid()
         val = g.interpolate(np.array([2.0, 2.0, 2.0]))
         assert abs(val - 2.0) < 1e-8
 
     def test_interpolate_between_nodes(self):
+        """Grid interpolation between nodes returns the linearly interpolated value."""
         g = self._make_grid()
         val = g.interpolate(np.array([1.5, 1.0, 1.0]))
         assert abs(val - 1.5) < 1e-8
 
     def test_interpolate_out_of_bounds(self):
+        """Grid interpolation outside the bounds returns 0."""
         g = self._make_grid()
         val = g.interpolate(np.array([100.0, 0.0, 0.0]))
         assert val == 0.0
 
     def test_gradient(self):
+        """Grid gradient recovers the unit slope along x and near-zero slope along y."""
         g = self._make_grid()
         grad = g.gradient(np.array([2.0, 2.0, 2.0]))
         assert abs(grad[0] - 1.0) < 0.1  # potential increases with x
         assert abs(grad[1]) < 0.2
 
     def test_force_on_charge(self):
+        """force_on_charge returns a length-3 vector."""
         g = self._make_grid()
         F = g.force_on_charge(np.array([2.0, 2.0, 2.0]), 1.0)
         assert F.shape == (3,)
 
     def test_repr(self):
+        """repr of a DXGrid contains the string DXGrid."""
         g = self._make_grid()
         assert "DXGrid" in repr(g)
 
     def test_from_file(self, tmp_path):
-        """Write a minimal DX file and read it back."""
+        """DXGrid.from_file reads a minimal DX file into a 3x3x3 array with correct node values."""
         dx_content = """# APBS generated potential
 object 1 class gridpositions counts 3 3 3
 origin 0.000 0.000 0.000
@@ -1047,12 +1175,14 @@ class TestAuxTools:
         return mol
 
     def test_bounding_box(self):
+        """bounding_box with zero padding encloses all atom coordinates."""
         mol = self._mol()
         bb = bounding_box(mol, padding=0.0)
         assert bb.xmin <= 0.0
         assert bb.xmax >= 5.0
 
     def test_bounding_box_padding(self):
+        """bounding_box with padding expands the box symmetrically beyond the unpadded one."""
         mol = self._mol()
         bb0 = bounding_box(mol, padding=0.0)
         bb5 = bounding_box(mol, padding=5.0)
@@ -1060,11 +1190,13 @@ class TestAuxTools:
         assert bb5.xmax > bb0.xmax
 
     def test_surface_spheres_nonempty(self):
+        """surface_spheres returns a non-empty set of surface points."""
         mol = self._mol()
         pts = surface_spheres(mol, probe_radius=1.4, n_points=20)
         assert len(pts) > 0
 
     def test_lumped_charges(self):
+        """Lumped charges sum to the molecule's total charge."""
         mol = self._mol()
         lc = lumped_charges(mol, grid_spacing=3.0)
         assert len(lc) > 0
@@ -1072,22 +1204,26 @@ class TestAuxTools:
         assert abs(total_q - mol.total_charge()) < 1e-6
 
     def test_electrostatic_center(self):
+        """electrostatic_center returns a length-3 vector."""
         mol = self._mol()
         ec = electrostatic_center(mol)
         assert ec.shape == (3,)
 
     def test_electrostatic_center_zero_charge(self):
+        """electrostatic_center falls back to the centroid for a neutral molecule."""
         mol = Molecule()
         mol.atoms = [Atom(x=0, charge=0), Atom(x=2, charge=0)]
         ec = electrostatic_center(mol)
         assert np.allclose(ec, mol.centroid())
 
     def test_hydrodynamic_radius(self):
+        """Hydrodynamic radius estimated from the radius of gyration is positive."""
         mol = self._mol()
         rh = hydrodynamic_radius_from_rg(mol)
         assert rh > 0
 
     def test_contact_distances(self):
+        """contact_distances reports only the pair within the cutoff and its correct distance."""
         mol1 = Molecule()
         mol1.atoms = [Atom(x=0, y=0, z=0)]
         mol2 = Molecule()
@@ -1097,6 +1233,7 @@ class TestAuxTools:
         assert abs(pairs[0][2] - 3.0) < 1e-8
 
     def test_contact_distances_none(self):
+        """contact_distances returns no pairs when all atoms exceed the cutoff."""
         mol1 = Molecule()
         mol1.atoms = [Atom(x=0)]
         mol2 = Molecule()
@@ -1105,14 +1242,17 @@ class TestAuxTools:
         assert len(pairs) == 0
 
     def test_born_integral_negative(self):
+        """Born solvation integral is negative, reflecting stabilization."""
         E = born_integral(1.0, 3.0)
         assert E < 0  # solvation is stabilizing
 
     def test_born_integral_zero_charge(self):
+        """Born solvation integral is zero for zero charge."""
         E = born_integral(0.0, 3.0)
         assert E == 0.0
 
     def test_born_integral_zero_radius(self):
+        """Born solvation integral is zero for zero radius."""
         E = born_integral(1.0, 0.0)
         assert E == 0.0
 
@@ -1120,6 +1260,7 @@ class TestAuxTools:
 # Numerical library
 class TestCubicSpline:
     def test_interpolates_at_nodes(self):
+        """CubicSpline reproduces the data values exactly at the knots."""
         x = np.array([0.0, 1.0, 2.0, 3.0])
         y = np.array([0.0, 1.0, 4.0, 9.0])
         sp = CubicSpline(x, y)
@@ -1127,6 +1268,7 @@ class TestCubicSpline:
             assert abs(sp(xi) - yi) < 1e-8
 
     def test_interpolates_between(self):
+        """CubicSpline approximates sin between knots to within 0.01."""
         x = np.linspace(0, math.pi, 20)
         y = np.sin(x)
         sp = CubicSpline(x, y)
@@ -1134,6 +1276,7 @@ class TestCubicSpline:
         assert abs(val - math.sin(math.pi / 4)) < 0.01
 
     def test_derivative(self):
+        """CubicSpline derivative of x^2 recovers 2x at the evaluation point."""
         x = np.linspace(0, 2, 10)
         y = x**2
         sp = CubicSpline(x, y)
@@ -1142,10 +1285,12 @@ class TestCubicSpline:
         assert abs(deriv - 2.0) < 0.1
 
     def test_two_points(self):
+        """CubicSpline through two points interpolates linearly at the midpoint."""
         sp = CubicSpline(np.array([0.0, 1.0]), np.array([0.0, 1.0]))
         assert abs(sp(0.5) - 0.5) < 1e-8
 
     def test_extrapolation_boundary(self):
+        """CubicSpline returns exact endpoint values at the domain boundaries."""
         x = np.array([0.0, 1.0, 2.0])
         y = np.array([0.0, 1.0, 2.0])
         sp = CubicSpline(x, y)
@@ -1155,34 +1300,41 @@ class TestCubicSpline:
 
 class TestRomberg:
     def test_constant(self):
+        """Romberg integration of a constant over the unit interval returns 1."""
         val = romberg_integrate(lambda x: 1.0, 0.0, 1.0)
         assert abs(val - 1.0) < 1e-8
 
     def test_linear(self):
+        """Romberg integration of x over the unit interval returns 1/2."""
         val = romberg_integrate(lambda x: x, 0.0, 1.0)
         assert abs(val - 0.5) < 1e-8
 
     def test_quadratic(self):
+        """Romberg integration of x^2 over the unit interval returns 1/3."""
         val = romberg_integrate(lambda x: x**2, 0.0, 1.0)
         assert abs(val - 1.0 / 3.0) < 1e-8
 
     def test_sine(self):
+        """Romberg integration of sin over 0 to pi returns 2."""
         val = romberg_integrate(math.sin, 0.0, math.pi)
         assert abs(val - 2.0) < 1e-8
 
     def test_exp(self):
+        """Romberg integration of exp over the unit interval returns e minus 1."""
         val = romberg_integrate(math.exp, 0.0, 1.0)
         assert abs(val - (math.e - 1.0)) < 1e-8
 
 
 class TestWienerStep:
     def test_shape(self):
+        """wiener_step returns a displacement vector of the requested dimension."""
         rng = np.random.default_rng(0)
         dW = wiener_step(1.0, 0.1, 3, rng)
         assert dW.shape == (3,)
 
     def test_scaling(self):
         # std of many steps should be sqrt(2Ddt)
+        """wiener_step displacements have standard deviation sqrt(2Ddt)."""
         rng = np.random.default_rng(42)
         steps = np.array([wiener_step(1.0, 0.1, 1, rng)[0] for _ in range(5000)])
         expected_std = math.sqrt(2.0 * 1.0 * 0.1)
@@ -1191,28 +1343,33 @@ class TestWienerStep:
 
 class TestMultipoles:
     def test_monopole(self):
+        """monopole_moment returns the total charge."""
         q = np.array([1.0, -1.0, 0.5])
         assert abs(monopole_moment(q) - 0.5) < 1e-10
 
     def test_dipole_shape(self):
+        """dipole_moment returns a length-3 vector."""
         pos = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=float)
         q = np.array([1.0, -1.0, 0.0])
         p = dipole_moment(pos, q)
         assert p.shape == (3,)
 
     def test_dipole_symmetric(self):
+        """dipole_moment of a symmetric charge pair gives the expected x component."""
         pos = np.array([[-1, 0, 0], [1, 0, 0]], dtype=float)
         q = np.array([1.0, -1.0])
         p = dipole_moment(pos, q)
         assert abs(p[0] - (-2.0)) < 1e-10
 
     def test_quadrupole_shape(self):
+        """quadrupole_moment returns a 3x3 tensor."""
         pos = np.random.randn(5, 3)
         q = np.random.randn(5)
         Q = quadrupole_moment(pos, q)
         assert Q.shape == (3, 3)
 
     def test_quadrupole_symmetric(self):
+        """quadrupole_moment returns a symmetric tensor."""
         pos = np.random.randn(5, 3)
         q = np.random.randn(5)
         Q = quadrupole_moment(pos, q)
@@ -1221,33 +1378,41 @@ class TestMultipoles:
 
 class TestLegendre:
     def test_p0(self):
+        """Legendre polynomial P0 equals 1."""
         assert abs(legendre_p(0, 0.5) - 1.0) < 1e-14
 
     def test_p1(self):
+        """Legendre polynomial P1(x) equals x."""
         assert abs(legendre_p(1, 0.5) - 0.5) < 1e-14
 
     def test_p2(self):
         # P2(x) = (3x²-1)/2
+        """Legendre polynomial P2(x) equals (3x^2 minus 1)/2."""
         x = 0.7
         expected = (3 * x**2 - 1) / 2
         assert abs(legendre_p(2, x) - expected) < 1e-12
 
     def test_p0_minus1(self):
+        """Legendre polynomial P0 equals 1 at x equal to minus 1."""
         assert abs(legendre_p(0, -1.0) - 1.0) < 1e-14
 
     def test_p1_minus1(self):
+        """Legendre polynomial P1 equals minus 1 at x equal to minus 1."""
         assert abs(legendre_p(1, -1.0) - (-1.0)) < 1e-14
 
     def test_series(self):
         # constant series c0=1 should equal 1 everywhere
+        """A Legendre series with only c0 equal to 1 evaluates to 1 everywhere."""
         val = legendre_series([1.0], 0.3)
         assert abs(val - 1.0) < 1e-14
 
     def test_series_p1(self):
+        """A Legendre series with c1 equal to 1 evaluates to x."""
         val = legendre_series([0.0, 1.0], 0.5)
         assert abs(val - 0.5) < 1e-14
 
     def test_legendre_p3(self):
+        """Legendre polynomial P3(x) equals (5x^3 minus 3x)/2."""
         x = 0.5
         expected = (5 * x**3 - 3 * x) / 2
         assert abs(legendre_p(3, x) - expected) < 1e-12
@@ -1270,12 +1435,14 @@ class TestReactionXML:
         Path(path).write_text(xml)
 
     def test_parse_count(self, tmp_path):
+        """parse_reaction_xml reads two reactions from the sample file."""
         p = tmp_path / "rxn.xml"
         self._write_reaction_xml(p)
         ps = parse_reaction_xml(p)
         assert len(ps) == 2
 
     def test_parse_names(self, tmp_path):
+        """parse_reaction_xml preserves both reaction names rxn1 and rxn2."""
         p = tmp_path / "rxn.xml"
         self._write_reaction_xml(p)
         ps = parse_reaction_xml(p)
@@ -1284,18 +1451,21 @@ class TestReactionXML:
         assert "rxn2" in names
 
     def test_parse_probability(self, tmp_path):
+        """parse_reaction_xml reads the first reaction's probability as 0.9."""
         p = tmp_path / "rxn.xml"
         self._write_reaction_xml(p)
         ps = parse_reaction_xml(p)
         assert abs(ps.reactions[0].probability - 0.9) < 1e-6
 
     def test_parse_contacts(self, tmp_path):
+        """parse_reaction_xml reads two contact pairs for the first reaction."""
         p = tmp_path / "rxn.xml"
         self._write_reaction_xml(p)
         ps = parse_reaction_xml(p)
         assert len(ps.reactions[0].criteria.pairs) == 2
 
     def test_roundtrip(self, tmp_path):
+        """Parsing then writing a reaction XML round-trips the reaction count and first reaction name."""
         p_in = tmp_path / "rxn_in.xml"
         p_out = tmp_path / "rxn_out.xml"
         self._write_reaction_xml(p_in)
@@ -1323,6 +1493,7 @@ class TestSimulationXML:
         Path(path).write_text(xml)
 
     def test_parse(self, tmp_path):
+        """Parsing the simulation XML recovers n_trajectories, dt, and the list of dx grid files."""
         p = tmp_path / "sim.xml"
         self._write_sim_xml(p)
         cfg = parse_simulation_xml(p)
@@ -1331,12 +1502,14 @@ class TestSimulationXML:
         assert len(cfg["dx_files"]) == 2
 
     def test_parse_mol_names(self, tmp_path):
+        """Parsing the simulation XML reads the mol1 PQR filename correctly."""
         p = tmp_path / "sim.xml"
         self._write_sim_xml(p)
         cfg = parse_simulation_xml(p)
         assert cfg["mol1_pqr"] == "thrombin.pqr"
 
     def test_roundtrip(self, tmp_path):
+        """Parsing then writing the simulation XML round-trips n_trajectories."""
         p_in = tmp_path / "sim_in.xml"
         p_out = tmp_path / "sim_out.xml"
         self._write_sim_xml(p_in)
@@ -1362,27 +1535,32 @@ class TestNAMSimulator:
         return NAMSimulator(mol1, mol2, mob, ps, params)
 
     def test_run_returns_result(self):
+        """Running the NAM simulator returns a SimulationResult instance."""
         sim = self._make_sim(5)
         result = sim.run()
         assert isinstance(result, SimulationResult)
 
     def test_all_react_with_huge_cutoff(self):
+        """With a huge contact cutoff every trajectory ends as either reacted or escaped."""
         sim = self._make_sim(20)
         result = sim.run()
         # With cutoff 200 Å and r_start=50 -> all should react immediately
         assert result.n_reacted + result.n_escaped == 20
 
     def test_reaction_probability_in_range(self):
+        """The reaction probability of the simulation result lies within [0, 1]."""
         sim = self._make_sim(10)
         result = sim.run()
         assert 0.0 <= result.reaction_probability <= 1.0
 
     def test_n_trajectories_correct(self):
+        """The result reports n_trajectories equal to the number simulated."""
         sim = self._make_sim(15)
         result = sim.run()
         assert result.n_trajectories == 15
 
     def test_seed_reproducible(self):
+        """Two simulations with the same seed produce identical reacted counts."""
         s1 = self._make_sim(10)
         s2 = self._make_sim(10)
         r1 = s1.run()
@@ -1390,6 +1568,7 @@ class TestNAMSimulator:
         assert r1.n_reacted == r2.n_reacted
 
     def test_escape_with_small_cutoff(self):
+        """With a tiny contact cutoff trajectory outcomes partition into escaped, reacted, and max-steps totaling all runs."""
         mol1 = Molecule(name="m1")
         mol1.atoms = [Atom()]
         mol2 = Molecule(name="m2")
@@ -1411,6 +1590,7 @@ class TestNAMSimulator:
         assert result.n_escaped + result.n_reacted + result.n_max_steps == 5
 
     def test_rate_constant_positive(self):
+        """The rate constant computed from relative diffusion is non-negative when reactions occur."""
         sim = self._make_sim(20)
         result = sim.run()
         mob = sim.mobility
@@ -1420,16 +1600,19 @@ class TestNAMSimulator:
             assert k >= 0
 
     def test_reaction_counts_dict(self):
+        """The result exposes reaction_counts as a dict."""
         sim = self._make_sim(10)
         result = sim.run()
         assert isinstance(result.reaction_counts, dict)
 
     def test_repr(self):
+        """The SimulationResult repr contains the string SimulationResult."""
         sim = self._make_sim(5)
         result = sim.run()
         assert "SimulationResult" in repr(result)
 
     def test_zero_force_fn(self):
+        """The zero_force function returns zero force, zero torque, and zero energy."""
         mol1 = Molecule(name="m1")
         mol1.atoms = [Atom()]
         mol2 = Molecule(name="m2")
@@ -1445,7 +1628,7 @@ class TestFullPipeline:
     """End-to-end tests for the complete PySTARC pipeline."""
 
     def test_pqr_to_simulation(self, tmp_path):
-        """Parse PQR -> build sim -> run -> get result."""
+        """Parsing two PQR files, building, and running a simulation yields the requested trajectory count."""
         pqr_content = (
             "ATOM      1  CA  GLY     1       0.000   0.000   0.000  0.500  2.000\n"
             "ATOM      2  CB  GLY     1       3.000   0.000   0.000 -0.500  2.000\n"
@@ -1469,7 +1652,7 @@ class TestFullPipeline:
         assert result.n_trajectories == 5
 
     def test_xml_reaction_to_simulation(self, tmp_path):
-        """Write reaction XML -> parse -> simulate."""
+        """Writing and parsing a reaction XML then simulating gives a non-negative reacted count."""
         rxn_xml = """<?xml version="1.0" ?>
 <reactions>
   <reaction name="contact" probability="1.0">
@@ -1492,10 +1675,11 @@ class TestFullPipeline:
         assert result.n_reacted >= 0
 
     def test_brace_version(self):
+        """The pystarc package exposes a truthy __version__ string."""
         assert pystarc.__version__  # version check
 
     def test_module_import_chain(self):
-        """Verify all major modules importable."""
+        """All major pystarc submodules import without error."""
         import pystarc.structures.molecules
         import pystarc.structures.pqr_io
         import pystarc.transforms.quaternion
@@ -1511,10 +1695,12 @@ class TestFullPipeline:
         import pystarc.cli.main
 
     def test_constants_importable_from_root(self):
+        """PI and BJERRUM_LENGTH constants are importable from the package root with expected positive values."""
         assert PI > 3.14
         assert BJERRUM_LENGTH > 0
 
     def test_empty_pathway_set_never_reacts(self):
+        """A simulation with an empty pathway set never records any reactions."""
         mol1 = Molecule(name="m1")
         mol1.atoms = [Atom()]
         mol2 = Molecule(name="m2")
@@ -1532,45 +1718,55 @@ class TestFullPipeline:
 # Additional tests
 class TestAtomFieldStorage:
     def test_index_stored(self):
+        """An Atom stores the index passed to its constructor."""
         a = Atom(index=7)
         assert a.index == 7
 
     def test_residue_name_stored(self):
+        """An Atom stores the residue_name passed to its constructor."""
         a = Atom(residue_name="GLY")
         assert a.residue_name == "GLY"
 
     def test_residue_index_stored(self):
+        """An Atom stores the residue_index passed to its constructor."""
         a = Atom(residue_index=42)
         assert a.residue_index == 42
 
     def test_chain_stored(self):
+        """An Atom stores the chain passed to its constructor."""
         a = Atom(chain="B")
         assert a.chain == "B"
 
     def test_negative_charge(self):
+        """An Atom stores a negative charge value."""
         a = Atom(charge=-2.5)
         assert a.charge == -2.5
 
     def test_large_radius(self):
+        """An Atom stores a large radius value."""
         a = Atom(radius=10.0)
         assert a.radius == 10.0
 
     def test_position_roundtrip(self):
+        """Setting an Atom position array and reading it back returns the same coordinates."""
         a = Atom()
         p = np.array([1.1, 2.2, 3.3])
         a.position = p
         assert np.allclose(a.position, p)
 
     def test_distance_symmetry(self):
+        """The distance between two atoms is symmetric in the order of the operands."""
         a = Atom(x=1, y=2, z=3)
         b = Atom(x=4, y=5, z=6)
         assert abs(a.distance_to(b) - b.distance_to(a)) < 1e-10
 
     def test_default_radius(self):
+        """A default Atom has radius 1.5."""
         a = Atom()
         assert a.radius == 1.5
 
     def test_default_chain(self):
+        """A default Atom has chain 'A'."""
         a = Atom()
         assert a.chain == "A"
 
@@ -1587,20 +1783,24 @@ class TestMoleculeTransformations:
         return mol
 
     def test_five_atoms(self):
+        """A five-atom molecule reports length 5."""
         mol = self._mol5()
         assert len(mol) == 5
 
     def test_centroid_x(self):
+        """The centroid x-coordinate of the five-atom molecule equals 2.0."""
         mol = self._mol5()
         c = mol.centroid()
         assert abs(c[0] - 2.0) < 1e-10
 
     def test_total_charge_five(self):
+        """The total charge of the five-atom molecule with charges summing to zero is zero."""
         mol = self._mol5()
         # charges: -1, -0.5, 0, 0.5, 1.0 -> sum=0
         assert abs(mol.total_charge()) < 1e-10
 
     def test_translate_all_atoms(self):
+        """Translating a molecule shifts every atom x-coordinate by the translation vector."""
         mol = self._mol5()
         orig_x = [a.x for a in mol.atoms]
         mol.translate(np.array([5.0, 0, 0]))
@@ -1608,6 +1808,7 @@ class TestMoleculeTransformations:
             assert abs(a.x - (orig_x[i] + 5.0)) < 1e-10
 
     def test_rotate_preserves_centroid_distance(self):
+        """Rotating a molecule preserves each atom's distance from the centroid."""
         mol = self._mol5()
         c = mol.centroid()
         dists_before = [np.linalg.norm(a.position - c) for a in mol.atoms]
@@ -1619,6 +1820,7 @@ class TestMoleculeTransformations:
             assert abs(db - da) < 1e-8
 
     def test_bounding_radius_grows_with_spread(self):
+        """A more spread-out molecule has a larger bounding radius than a tight one."""
         mol_tight = Molecule()
         mol_tight.atoms = [Atom(x=0, radius=1), Atom(x=1, radius=1)]
         mol_wide = Molecule()
@@ -1626,31 +1828,37 @@ class TestMoleculeTransformations:
         assert mol_wide.bounding_radius() > mol_tight.bounding_radius()
 
     def test_single_atom_molecule(self):
+        """A single-atom molecule has its centroid at that atom's position."""
         mol = Molecule(name="single")
         mol.atoms = [Atom(x=3, y=4, z=5)]
         assert np.allclose(mol.centroid(), [3, 4, 5])
 
     def test_charges_array_dtype(self):
+        """The charges array of a molecule has float dtype."""
         mol = self._mol5()
         q = mol.charges_array()
         assert q.dtype == float
 
     def test_positions_array_shape(self):
+        """The positions array of the five-atom molecule has shape (5, 3)."""
         mol = self._mol5()
         pos = mol.positions_array()
         assert pos.shape == (5, 3)
 
     def test_repr_contains_atom_count(self):
+        """The molecule repr contains the atom count."""
         mol = self._mol5()
         assert "5" in repr(mol)
 
 
 class TestQuaternionAlgebra:
     def test_from_axis_angle_small(self):
+        """A quaternion from a small axis-angle rotation has unit norm."""
         q = Quaternion.from_axis_angle(np.array([1, 0, 0]), 0.001)
         assert abs(q.norm() - 1.0) < 1e-10
 
     def test_multiply_non_commutative(self):
+        """Quaternion multiplication is non-commutative for two distinct rotations."""
         q1 = Quaternion.from_axis_angle(np.array([1, 0, 0]), 0.5)
         q2 = Quaternion.from_axis_angle(np.array([0, 1, 0]), 0.5)
         q12 = (q1 * q2).normalized()
@@ -1659,6 +1867,7 @@ class TestQuaternionAlgebra:
         assert not np.allclose(q12.to_array(), q21.to_array())
 
     def test_double_rotation(self):
+        """Squaring a π/4 z-rotation quaternion rotates the x-axis onto the y-axis."""
         q = Quaternion.from_axis_angle(np.array([0, 0, 1]), math.pi / 4)
         qq = (q * q).normalized()
         R = qq.to_rotation_matrix()
@@ -1666,6 +1875,7 @@ class TestQuaternionAlgebra:
         assert np.allclose(v, [0, 1, 0], atol=1e-10)
 
     def test_inverse_rotation(self):
+        """A rotation matrix times the matrix of the conjugate quaternion gives the identity."""
         q = Quaternion.from_axis_angle(np.array([1, 1, 0]) / math.sqrt(2), 1.0)
         qi = q.conjugate().normalized()
         R = q.to_rotation_matrix()
@@ -1673,20 +1883,24 @@ class TestQuaternionAlgebra:
         assert np.allclose(R @ Ri, np.eye(3), atol=1e-10)
 
     def test_many_random_unit_norm(self):
+        """Random quaternions all have unit norm."""
         rng = np.random.default_rng(123)
         for _ in range(50):
             q = random_quaternion(rng)
             assert abs(q.norm() - 1.0) < 1e-10
 
     def test_from_rotation_matrix_identity(self):
+        """A quaternion built from the identity matrix has |w| equal to 1."""
         q = Quaternion.from_rotation_matrix(np.eye(3))
         assert abs(abs(q.w) - 1.0) < 1e-10
 
     def test_conjugate_norm_preserved(self):
+        """Conjugating a quaternion preserves its norm."""
         q = Quaternion(0.5, 0.5, 0.5, 0.5)
         assert abs(q.norm() - q.conjugate().norm()) < 1e-14
 
     def test_rotation_matrix_det_one(self):
+        """Rotation matrices from random quaternions have determinant 1."""
         rng = np.random.default_rng(0)
         for _ in range(10):
             q = random_quaternion(rng)
@@ -1696,6 +1910,7 @@ class TestQuaternionAlgebra:
 
 class TestRigidTransformComposition:
     def test_rotation_then_translation(self):
+        """A rigid transform applies its rotation before its translation."""
         q = Quaternion.from_axis_angle(np.array([0, 0, 1]), math.pi / 2)
         T = RigidTransform(rotation=q, translation=np.array([0, 1, 0]))
         v = np.array([1, 0, 0])
@@ -1704,6 +1919,7 @@ class TestRigidTransformComposition:
         assert np.allclose(result, [0, 2, 0], atol=1e-10)
 
     def test_compose_three(self):
+        """Composing three unit translations sums to the total translation."""
         t = np.array([1, 0, 0])
         T1 = RigidTransform(translation=t)
         T2 = RigidTransform(translation=t)
@@ -1713,12 +1929,14 @@ class TestRigidTransformComposition:
         assert np.allclose(result, [3, 0, 0])
 
     def test_identity_inverse_is_identity(self):
+        """The inverse of the identity rigid transform leaves a vector unchanged."""
         T = RigidTransform.identity()
         Ti = T.inverse()
         v = np.array([1, 2, 3], dtype=float)
         assert np.allclose(Ti.apply(v), v)
 
     def test_apply_preserves_distances(self):
+        """A rigid transform preserves the distance between two points."""
         q = Quaternion.from_axis_angle(np.array([1, 1, 1]) / math.sqrt(3), 0.7)
         T = RigidTransform(rotation=q, translation=np.array([5, 3, 2]))
         p1, p2 = np.array([0, 0, 0], dtype=float), np.array([1, 0, 0], dtype=float)
@@ -1730,6 +1948,7 @@ class TestRigidTransformComposition:
 
 class TestDiffusionCoefficientScaling:
     def test_relative_D_t_equals_sum(self):
+        """The relative translational diffusion equals the sum of the two single-body translational diffusions."""
         mob = MobilityTensor.from_radii(15.0, 25.0)
         assert (
             abs(mob.relative_translational_diffusion() - mob.D_trans1 - mob.D_trans2)
@@ -1737,29 +1956,33 @@ class TestDiffusionCoefficientScaling:
         )
 
     def test_relative_D_r_equals_sum(self):
+        """The relative rotational diffusion equals the sum of the two single-body rotational diffusions."""
         mob = MobilityTensor.from_radii(15.0, 25.0)
         assert (
             abs(mob.relative_rotational_diffusion() - mob.D_rot1 - mob.D_rot2) < 1e-14
         )
 
     def test_D_t_scales_inversely_with_radius(self):
+        """Stokes translational diffusion scales as 1/r between two radii."""
         D1 = stokes_translational_diffusion(10.0)
         D2 = stokes_translational_diffusion(20.0)
         assert abs(D1 / D2 - 2.0) < 0.01  # D ∝ 1/r
 
     def test_D_r_scales_as_inverse_cube(self):
+        """Stokes rotational diffusion scales as 1/r³ between two radii."""
         D1 = stokes_rotational_diffusion(10.0)
         D2 = stokes_rotational_diffusion(20.0)
         assert abs(D1 / D2 - 8.0) < 0.01  # D_r ∝ 1/r³
 
     def test_asymmetric_molecules(self):
+        """The smaller-radius body has larger translational diffusion than the larger one."""
         mob = MobilityTensor.from_radii(10.0, 30.0)
         assert mob.D_trans1 > mob.D_trans2
 
 
 class TestBDStepForceDominance:
     def test_large_force_dominates_noise(self):
-        """With a huge force, displacement is in the force direction."""
+        """Under a huge force the Ermak-McCammon displacement is in the force direction."""
         rng = np.random.default_rng(0)
         pos = np.zeros(3)
         # Force entirely in +x
@@ -1772,6 +1995,7 @@ class TestBDStepForceDominance:
         assert all(d > 0 for d in displacements)
 
     def test_zero_diffusion_pure_drift(self):
+        """With zero diffusion the Ermak-McCammon translation produces no displacement."""
         rng = np.random.default_rng(0)
         pos = np.zeros(3)
         force = np.array([1.0, 0.0, 0.0])
@@ -1780,6 +2004,7 @@ class TestBDStepForceDominance:
         assert np.allclose(new_pos, [0, 0, 0])
 
     def test_rotation_unit_quaternion_preserved(self):
+        """Repeated Ermak-McCammon rotation keeps the orientation quaternion at unit norm."""
         rng = np.random.default_rng(42)
         ori = random_quaternion(rng)
         for _ in range(20):
@@ -1787,36 +2012,44 @@ class TestBDStepForceDominance:
             assert abs(ori.norm() - 1.0) < 1e-10
 
     def test_escape_radius_min_500(self):
+        """escape_radius(100) returns at least 500."""
         assert escape_radius(100.0) >= 500.0
 
     def test_escape_radius_1000(self):
+        """escape_radius(200) returns at least 1000."""
         assert escape_radius(200.0) >= 1000.0
 
 
 class TestSystemStateFieldAccess:
     def test_step_increment(self):
+        """SystemState stores the step value passed to it."""
         s = SystemState(step=5)
         assert s.step == 5
 
     def test_time_stored(self):
+        """SystemState stores the time value passed to it."""
         s = SystemState(time=12.5)
         assert s.time == 12.5
 
     def test_energy_stored(self):
+        """SystemState stores the energy value passed to it."""
         s = SystemState(energy=-3.14)
         assert s.energy == -3.14
 
     def test_force_stored(self):
+        """SystemState stores the force vector passed to it."""
         f = np.array([1.0, 2.0, 3.0])
         s = SystemState(force=f)
         assert np.allclose(s.force, f)
 
     def test_torque_stored(self):
+        """SystemState stores the torque vector passed to it."""
         t = np.array([0.1, 0.2, 0.3])
         s = SystemState(torque=t)
         assert np.allclose(s.torque, t)
 
     def test_copy_deep_orientation(self):
+        """SystemState.copy() deep-copies the orientation so mutating the copy leaves the original unchanged."""
         q = Quaternion.from_axis_angle(np.array([0, 1, 0]), 0.5)
         s = SystemState(orientation=q)
         s2 = s.copy()
@@ -1824,14 +2057,17 @@ class TestSystemStateFieldAccess:
         assert s.orientation.w != 999.0
 
     def test_fate_max_steps(self):
+        """SystemState stores the Fate.MAX_STEPS fate passed to it."""
         s = SystemState(fate=Fate.MAX_STEPS)
         assert s.fate == Fate.MAX_STEPS
 
     def test_reaction_name_stored(self):
+        """SystemState stores the reaction_name passed to it."""
         s = SystemState(reaction_name="my_rxn")
         assert s.reaction_name == "my_rxn"
 
     def test_separation_zero_origin(self):
+        """A default SystemState reports a separation of 0."""
         s = SystemState()
         assert s.separation() == 0.0
 
@@ -1855,6 +2091,7 @@ class TestAuxToolsConstraints:
         return mol
 
     def test_bounding_box_contains_all_atoms(self):
+        """bounding_box with zero padding encloses every atom of the molecule."""
         mol = self._big_mol()
         bb = bounding_box(mol, padding=0.0)
         for a in mol.atoms:
@@ -1863,12 +2100,14 @@ class TestAuxToolsConstraints:
             assert bb.zmin <= a.z <= bb.zmax
 
     def test_lumped_charges_conserve_charge(self):
+        """lumped_charges conserves total charge to within tolerance of the molecule total."""
         mol = self._big_mol()
         lc = lumped_charges(mol, grid_spacing=2.0)
         total_q = sum(q for _, q in lc)
         assert abs(total_q - mol.total_charge()) < 1e-5
 
     def test_contact_distances_sorted(self):
+        """contact_distances returns pairs sorted by increasing distance."""
         mol1 = Molecule()
         mol1.atoms = [Atom(x=0), Atom(x=5)]
         mol2 = Molecule()
@@ -1878,6 +2117,7 @@ class TestAuxToolsConstraints:
         assert dists == sorted(dists)
 
     def test_surface_spheres_count_scales_with_n_points(self):
+        """surface_spheres produces no fewer points with n_points=50 than with n_points=10."""
         mol = Molecule()
         mol.atoms = [Atom(x=0, y=0, z=0, radius=3.0)]
         pts10 = surface_spheres(mol, n_points=10)
@@ -1885,11 +2125,13 @@ class TestAuxToolsConstraints:
         assert len(pts50) >= len(pts10)
 
     def test_born_integral_larger_charge_more_negative(self):
+        """born_integral becomes more negative as the charge magnitude increases."""
         E1 = born_integral(1.0, 3.0)
         E2 = born_integral(2.0, 3.0)
         assert E2 < E1  # more negative for larger charge
 
     def test_born_integral_smaller_radius_more_negative(self):
+        """born_integral becomes more negative as the radius decreases."""
         E1 = born_integral(1.0, 5.0)
         E2 = born_integral(1.0, 2.0)
         assert E2 < E1
@@ -1897,6 +2139,7 @@ class TestAuxToolsConstraints:
 
 class TestNumericalAccuracy:
     def test_spline_sine_accurate(self):
+        """CubicSpline reproduces sin(x) to within 0.002 over the fitted interval."""
         x = np.linspace(0, 2 * math.pi, 50)
         y = np.sin(x)
         sp = CubicSpline(x, y)
@@ -1904,20 +2147,24 @@ class TestNumericalAccuracy:
             assert abs(sp(xi) - math.sin(xi)) < 0.002
 
     def test_romberg_exp_negative(self):
+        """romberg_integrate of exp over [-1, 0] matches 1 - e^{-1} to within 1e-8."""
         val = romberg_integrate(math.exp, -1.0, 0.0)
         expected = 1.0 - math.exp(-1)
         assert abs(val - expected) < 1e-8
 
     def test_romberg_polynomial(self):
+        """romberg_integrate of x^4 over [0, 1] matches 0.2 to within 1e-8."""
         val = romberg_integrate(lambda x: x**4, 0.0, 1.0)
         assert abs(val - 0.2) < 1e-8
 
     def test_wiener_mean_near_zero(self):
+        """The mean of many wiener_step increments stays near 0."""
         rng = np.random.default_rng(99)
         steps = np.array([wiener_step(1.0, 0.01, 1, rng)[0] for _ in range(2000)])
         assert abs(steps.mean()) < 0.05
 
     def test_quadrupole_traceless(self):
+        """quadrupole_moment returns a traceless tensor."""
         rng = np.random.default_rng(5)
         pos = rng.standard_normal((10, 3))
         q = rng.standard_normal(10)
@@ -1926,6 +2173,7 @@ class TestNumericalAccuracy:
 
     def test_legendre_orthogonal_p0_p2(self):
         # ∫₋₁¹ P0(x)P2(x) dx = 0
+        """The integral of P0(x)P2(x) over [-1, 1] is 0, confirming Legendre orthogonality."""
         val = romberg_integrate(
             lambda x: legendre_p(0, x) * legendre_p(2, x), -1.0, 1.0
         )
@@ -1933,21 +2181,25 @@ class TestNumericalAccuracy:
 
     def test_legendre_norm(self):
         # ∫₋₁¹ [P1(x)]² dx = 2/(2·1+1) = 2/3
+        """The integral of P1(x)^2 over [-1, 1] equals 2/3, matching the Legendre norm."""
         val = romberg_integrate(lambda x: legendre_p(1, x) ** 2, -1.0, 1.0)
         assert abs(val - 2.0 / 3.0) < 1e-6
 
     def test_spline_extrapolation_at_last_node(self):
+        """CubicSpline evaluated at its last node x=4 returns the node value 16."""
         x = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
         y = x**2
         sp = CubicSpline(x, y)
         assert abs(sp(4.0) - 16.0) < 1e-6
 
     def test_wiener_dim3(self):
+        """wiener_step in 3 dimensions returns a vector of shape (3,)."""
         rng = np.random.default_rng(0)
         dW = wiener_step(2.0, 0.5, 3, rng)
         assert dW.shape == (3,)
 
     def test_dipole_zero_charge(self):
+        """dipole_moment is zero when all charges are zero."""
         pos = np.array([[1, 0, 0], [2, 0, 0]], dtype=float)
         q = np.array([0.0, 0.0])
         p = dipole_moment(pos, q)
@@ -1956,14 +2208,17 @@ class TestNumericalAccuracy:
 
 class TestDebyeHuckelEdgeCases:
     def test_energy_zero_distance_safe(self):
+        """debye_huckel_energy returns 0 at zero separation."""
         E = debye_huckel_energy(1.0, 1.0, 0.0)
         assert E == 0.0
 
     def test_energy_large_separation_near_zero(self):
+        """debye_huckel_energy is negligibly small at very large separation."""
         E = debye_huckel_energy(1.0, 1.0, 1000.0, debye_length=7.9)
         assert abs(E) < 1e-30
 
     def test_energy_scales_with_charge_product(self):
+        """debye_huckel_energy scales linearly with the product of the two charges."""
         E1 = debye_huckel_energy(1.0, 1.0, 10.0)
         E2 = debye_huckel_energy(2.0, 1.0, 10.0)
         E3 = debye_huckel_energy(2.0, 2.0, 10.0)
@@ -1971,11 +2226,13 @@ class TestDebyeHuckelEdgeCases:
         assert abs(E3 - 4 * E1) < 1e-10
 
     def test_force_magnitude_positive(self):
+        """debye_huckel_force has positive magnitude for like charges at finite separation."""
         r_vec = np.array([5.0, 0.0, 0.0])
         F = debye_huckel_force(1.0, 1.0, r_vec)
         assert np.linalg.norm(F) > 0
 
     def test_force_opposite_charges_toward(self):
+        """debye_huckel_force for opposite charges returns a vector of shape (3,)."""
         r_vec = np.array([5.0, 0.0, 0.0])
         F = debye_huckel_force(1.0, -1.0, r_vec)
         # attractive force should have x-component > 0 (toward +x, i.e. toward charge 2)
@@ -1990,21 +2247,25 @@ class TestDXGridUniformPotential:
         return DXGrid(origin, delta, data)
 
     def test_uniform_grid_any_point(self):
+        """A uniform grid interpolates to its constant value at an interior point."""
         g = self._uniform_grid(3.0)
         assert abs(g.interpolate(np.array([2.5, 2.5, 2.5])) - 3.0) < 1e-8
 
     def test_uniform_grid_zero_gradient(self):
+        """A uniform grid yields a zero gradient at an interior point."""
         g = self._uniform_grid(1.0)
         grad = g.gradient(np.array([2.5, 2.5, 2.5]))
         assert np.allclose(grad, 0, atol=1e-5)
 
     def test_force_scales_with_charge(self):
+        """force_on_charge scales linearly with the charge magnitude."""
         g = self._uniform_grid()
         F1 = g.force_on_charge(np.array([2.5, 2.5, 2.5]), 1.0)
         F2 = g.force_on_charge(np.array([2.5, 2.5, 2.5]), 2.0)
         assert np.allclose(F2, 2 * F1)
 
     def test_shape_preserved(self):
+        """DXGrid preserves the shape of the data array passed to it."""
         origin = np.zeros(3)
         delta = np.diag([2.0, 2.0, 2.0])
         data = np.zeros((4, 5, 6))
@@ -2012,6 +2273,7 @@ class TestDXGridUniformPotential:
         assert tuple(g.data.shape) == (4, 5, 6)
 
     def test_origin_stored(self):
+        """DXGrid stores the origin passed to it."""
         origin = np.array([1.0, 2.0, 3.0])
         delta = np.diag([1.0, 1.0, 1.0])
         data = np.zeros((3, 3, 3))
@@ -2034,23 +2296,27 @@ class TestNAMSimulatorResultProperties:
         return NAMSimulator(mol1, mol2, mob, ps, params)
 
     def test_result_n_trajectories(self):
+        """SimulationResult reports the requested number of trajectories."""
         sim = self._fast_sim(8)
         result = sim.run()
         assert result.n_trajectories == 8
 
     def test_result_counts_sum(self):
+        """The reacted, escaped, and max-steps counts sum to the total number of trajectories."""
         sim = self._fast_sim(10)
         result = sim.run()
         total = result.n_reacted + result.n_escaped + result.n_max_steps
         assert total == 10
 
     def test_rate_constant_type(self):
+        """rate_constant returns a float."""
         sim = self._fast_sim(10)
         result = sim.run()
         k = result.rate_constant(sim.mobility.relative_translational_diffusion())
         assert isinstance(k, float)
 
     def test_reaction_probability_bounds(self):
+        """reaction_probability stays within [0, 1] across several trajectory counts."""
         for n in [5, 10, 20]:
             sim = self._fast_sim(n)
             result = sim.run()
@@ -2058,6 +2324,7 @@ class TestNAMSimulatorResultProperties:
             assert 0.0 <= p <= 1.0
 
     def test_different_seeds_different_results(self):
+        """Simulations with different seeds both complete the requested trajectory count."""
         mol1 = Molecule(name="m1")
         mol1.atoms = [Atom()]
         mol2 = Molecule(name="m2")
@@ -2075,17 +2342,20 @@ class TestNAMSimulatorResultProperties:
         assert r2.n_trajectories == 50
 
     def test_zero_trajectories(self):
+        """A simulation with zero trajectories yields zero trajectories and zero reactions."""
         sim = self._fast_sim(0)
         result = sim.run()
         assert result.n_trajectories == 0
         assert result.n_reacted == 0
 
     def test_sim_result_repr(self):
+        """repr of SimulationResult contains the string SimulationResult."""
         sim = self._fast_sim(3)
         result = sim.run()
         assert "SimulationResult" in repr(result)
 
     def test_rate_constant_zero_if_no_reactions(self):
+        """rate_constant is non-negative when an impossible cutoff produces no reactions."""
         mol1 = Molecule(name="m1")
         mol1.atoms = [Atom()]
         mol2 = Molecule(name="m2")
@@ -2103,6 +2373,7 @@ class TestNAMSimulatorResultProperties:
 
 class TestXMLReadWriteRoundtrip:
     def test_empty_reactions_xml(self, tmp_path):
+        """parse_reaction_xml of an empty reactions document yields an empty PathwaySet."""
         xml = "<?xml version='1.0' ?><reactions></reactions>"
         p = tmp_path / "empty.xml"
         p.write_text(xml)
@@ -2110,6 +2381,7 @@ class TestXMLReadWriteRoundtrip:
         assert len(ps) == 0
 
     def test_write_and_parse_contacts(self, tmp_path):
+        """Writing then re-parsing reaction XML round-trips the probability and atom index."""
         pair = ContactPair(5, 10, 7.5)
         criteria = ReactionCriteria(name="test", pairs=[pair])
         rxn = ReactionInterface("r1", criteria, probability=0.8)
@@ -2121,6 +2393,7 @@ class TestXMLReadWriteRoundtrip:
         assert ps2.reactions[0].criteria.pairs[0].mol1_atom_index == 5
 
     def test_simulation_xml_defaults(self, tmp_path):
+        """parse_simulation_xml supplies default n_trajectories of 1000 and dt of 0.2 for an empty document."""
         p = tmp_path / "sim.xml"
         p.write_text("<?xml version='1.0'?><simulation></simulation>")
         cfg = parse_simulation_xml(p)
@@ -2128,6 +2401,7 @@ class TestXMLReadWriteRoundtrip:
         assert abs(cfg["dt"] - 0.2) < 1e-8
 
     def test_write_simulation_xml(self, tmp_path):
+        """write_simulation_xml writes the trajectory count and dx file names into the output."""
         cfg = {
             "n_trajectories": 99,
             "dt": 0.5,
@@ -2141,6 +2415,7 @@ class TestXMLReadWriteRoundtrip:
         assert "a.dx" in content
 
     def test_multiple_contacts_parsed(self, tmp_path):
+        """parse_reaction_xml parses all three contact pairs of a reaction."""
         xml = """<?xml version='1.0'?>
 <reactions>
   <reaction name="r" probability="1.0">
@@ -2157,7 +2432,7 @@ class TestXMLReadWriteRoundtrip:
 
 class TestModuleIntegration:
     def test_many_molecule_types(self):
-        """Simulate with multi-atom molecules."""
+        """A simulation with multi-atom molecules completes the requested trajectory count."""
         rng = np.random.default_rng(42)
         mol1 = Molecule(name="big1")
         mol2 = Molecule(name="big2")
@@ -2176,7 +2451,7 @@ class TestModuleIntegration:
         assert result.n_trajectories == 5
 
     def test_pqr_write_read_simulation(self, tmp_path):
-        """Full roundtrip: build molecule -> write PQR -> read -> simulate."""
+        """A molecule written to PQR and re-parsed preserves its atom count and coordinates."""
         mol = Molecule(name="synth")
         for i in range(5):
             mol.atoms.append(
@@ -2189,7 +2464,7 @@ class TestModuleIntegration:
         assert abs(mol2.atoms[2].x - 4.0) < 0.01
 
     def test_debye_huckel_in_simulation(self):
-        """Ensure DH force function integrates without error."""
+        """A simulation using a Debye-Huckel force callback runs to completion."""
         mol1 = Molecule(name="m1")
         mol1.atoms = [Atom(x=0, y=0, z=0, charge=5.0, radius=2.0)]
         mol2 = Molecule(name="m2")
@@ -2214,9 +2489,11 @@ class TestModuleIntegration:
         assert result.n_trajectories == 5
 
     def test_version_is_string(self):
+        """pystarc.__version__ is a string."""
         assert isinstance(pystarc.__version__, str)
 
     def test_all_fates_importable(self):
+        """All four Fate enum members are importable with their expected names."""
         for f in (Fate.ONGOING, Fate.REACTED, Fate.ESCAPED, Fate.MAX_STEPS):
             assert f.name in ("ONGOING", "REACTED", "ESCAPED", "MAX_STEPS")
 
@@ -2228,25 +2505,30 @@ class TestAtomPositionAndDistance:
         [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1), (-1, -1, -1), (10, 20, 30)],
     )
     def test_position_param(self, x, y, z):
+        """Atom.position matches the x, y, z passed to it."""
         a = Atom(x=x, y=y, z=z)
         assert np.allclose(a.position, [x, y, z])
 
     @pytest.mark.parametrize("q", [-5.0, -1.0, 0.0, 1.0, 5.0])
     def test_charge_param(self, q):
+        """Atom stores the charge passed to it."""
         a = Atom(charge=q)
         assert a.charge == q
 
     @pytest.mark.parametrize("r", [0.5, 1.0, 1.5, 2.0, 5.0])
     def test_radius_param(self, r):
+        """Atom stores the radius passed to it."""
         a = Atom(radius=r)
         assert a.radius == r
 
     def test_distance_pythagorean(self):
+        """Atom.distance_to computes the Euclidean distance, equal to sqrt(3) for unit-offset atoms."""
         a = Atom(x=0, y=0, z=0)
         b = Atom(x=1, y=1, z=1)
         assert abs(a.distance_to(b) - math.sqrt(3)) < 1e-10
 
     def test_many_atoms_positions(self):
+        """A list of Atoms preserves each assigned x coordinate in order."""
         atoms = [Atom(x=float(i)) for i in range(100)]
         xs = [a.x for a in atoms]
         assert xs == list(range(100))
@@ -2255,11 +2537,13 @@ class TestAtomPositionAndDistance:
 class TestMoleculeGeometricOps:
     @pytest.mark.parametrize("n", [1, 5, 10, 20, 50])
     def test_molecule_len(self, n):
+        """len(mol) returns the number of atoms in the molecule."""
         mol = Molecule()
         mol.atoms = [Atom() for _ in range(n)]
         assert len(mol) == n
 
     def test_translate_centroid(self):
+        """Translating a molecule by 10 along x shifts its centroid x to 11."""
         mol = Molecule()
         mol.atoms = [Atom(x=0), Atom(x=2)]
         mol.translate(np.array([10, 0, 0]))
@@ -2269,6 +2553,7 @@ class TestMoleculeGeometricOps:
         "angle", [0.0, math.pi / 6, math.pi / 4, math.pi / 2, math.pi]
     )
     def test_rotate_preserves_structure(self, angle):
+        """Rotating a molecule preserves the distance between its atoms."""
         mol = Molecule()
         mol.atoms = [Atom(x=1, y=0, z=0), Atom(x=-1, y=0, z=0)]
         d_before = mol.atoms[0].distance_to(mol.atoms[1])
@@ -2285,12 +2570,14 @@ class TestMoleculeGeometricOps:
         assert abs(d_before - d_after) < 1e-10
 
     def test_bounding_radius_single_atom(self):
+        """bounding_radius of a single atom equals that atom's radius."""
         mol = Molecule()
         mol.atoms = [Atom(x=0, y=0, z=0, radius=2.0)]
         br = mol.bounding_radius()
         assert abs(br - 2.0) < 1e-10
 
     def test_total_charge_all_positive(self):
+        """total_charge sums to 5 for five atoms each carrying charge +1."""
         mol = Molecule()
         mol.atoms = [Atom(charge=1.0) for _ in range(5)]
         assert abs(mol.total_charge() - 5.0) < 1e-10
@@ -2299,6 +2586,7 @@ class TestMoleculeGeometricOps:
 class TestQuaternionCompositionRules:
     @pytest.mark.parametrize("angle", [0.1, 0.5, 1.0, 2.0, math.pi])
     def test_axis_angle_roundtrip_x(self, angle):
+        """A quaternion from an x axis rotation by angle maps y to (0, cos angle, sin angle)."""
         axis = np.array([1.0, 0.0, 0.0])
         q = Quaternion.from_axis_angle(axis, angle)
         R = q.to_rotation_matrix()
@@ -2309,6 +2597,7 @@ class TestQuaternionCompositionRules:
 
     @pytest.mark.parametrize("angle", [0.1, 0.5, 1.0, 2.0, math.pi])
     def test_axis_angle_roundtrip_y(self, angle):
+        """A quaternion from a y axis rotation by angle maps x to (cos angle, 0, -sin angle)."""
         axis = np.array([0.0, 1.0, 0.0])
         q = Quaternion.from_axis_angle(axis, angle)
         R = q.to_rotation_matrix()
@@ -2317,6 +2606,7 @@ class TestQuaternionCompositionRules:
         assert abs(v[2] + math.sin(angle)) < 1e-10
 
     def test_compose_rotations_associative(self):
+        """Quaternion multiplication is associative up to overall sign."""
         q1 = Quaternion.from_axis_angle(np.array([1, 0, 0]), 0.3)
         q2 = Quaternion.from_axis_angle(np.array([0, 1, 0]), 0.4)
         q3 = Quaternion.from_axis_angle(np.array([0, 0, 1]), 0.5)
@@ -2326,11 +2616,13 @@ class TestQuaternionCompositionRules:
         assert np.allclose(np.abs(lhs.to_array()), np.abs(rhs.to_array()), atol=1e-10)
 
     def test_rotate_zero_vector(self):
+        """Rotating the zero vector by a quaternion returns the zero vector."""
         q = random_quaternion(np.random.default_rng(0))
         v = q.rotate_vector(np.zeros(3))
         assert np.allclose(v, 0)
 
     def test_small_rotation_large_sigma(self):
+        """small_rotation_quaternion with large sigma still returns a unit quaternion."""
         rng = np.random.default_rng(42)
         q = small_rotation_quaternion(10.0, rng)
         assert abs(q.norm() - 1.0) < 1e-10
@@ -2341,18 +2633,22 @@ class TestRombergSpecialFunctions:
         "n,expected", [(0, 1.0), (1, 1.0 / 2), (2, 1.0 / 3), (3, 1.0 / 4), (4, 1.0 / 5)]
     )
     def test_power_integrals(self, n, expected):
+        """romberg_integrate of x^n on [0, 1] matches the analytic value 1/(n+1)."""
         val = romberg_integrate(lambda x: x**n, 0.0, 1.0)
         assert abs(val - expected) < 1e-7
 
     def test_cos_zero_to_half_pi(self):
+        """romberg_integrate of cosine on [0, pi/2] equals 1."""
         val = romberg_integrate(math.cos, 0.0, math.pi / 2)
         assert abs(val - 1.0) < 1e-8
 
     def test_negative_range(self):
+        """romberg_integrate of x over the symmetric range [-1, 1] equals 0."""
         val = romberg_integrate(lambda x: x, -1.0, 1.0)
         assert abs(val) < 1e-10
 
     def test_zero_width_interval(self):
+        """romberg_integrate over a zero width interval equals 0."""
         val = romberg_integrate(lambda x: x**2, 1.0, 1.0)
         assert abs(val) < 1e-10
 
@@ -2374,17 +2670,21 @@ class TestLegendreOrthonormality:
         ],
     )
     def test_known_values(self, n, x, expected):
+        """legendre_p returns the known Legendre polynomial values at given n and x."""
         assert abs(legendre_p(n, x) - expected) < 1e-12
 
     def test_norm_p0(self):
+        """The squared norm integral of P_0 over [-1, 1] equals 2."""
         val = romberg_integrate(lambda x: legendre_p(0, x) ** 2, -1.0, 1.0)
         assert abs(val - 2.0) < 1e-6
 
     def test_norm_p2(self):
+        """The squared norm integral of P_2 over [-1, 1] equals 2/5."""
         val = romberg_integrate(lambda x: legendre_p(2, x) ** 2, -1.0, 1.0)
         assert abs(val - 2.0 / 5.0) < 1e-6
 
     def test_orthogonal_p1_p3(self):
+        """P_1 and P_3 are orthogonal over [-1, 1]."""
         val = romberg_integrate(
             lambda x: legendre_p(1, x) * legendre_p(3, x), -1.0, 1.0
         )
@@ -2394,20 +2694,24 @@ class TestLegendreOrthonormality:
 class TestContactPairDefaults:
     @pytest.mark.parametrize("dist", [1.0, 3.0, 5.0, 10.0, 50.0])
     def test_cutoff_param(self, dist):
+        """ContactPair stores the supplied distance_cutoff."""
         cp = ContactPair(0, 1, dist)
         assert cp.distance_cutoff == dist
 
     def test_mol2_index_stored(self):
+        """ContactPair stores the second molecule atom index passed to it."""
         cp = ContactPair(3, 7, 4.0)
         assert cp.mol2_atom_index == 7
 
     def test_default_cutoff(self):
+        """ContactPair defaults distance_cutoff to 5.0 when none is given."""
         cp = ContactPair()
         assert cp.distance_cutoff == 5.0
 
 
 class TestPathwayPriorityOrder:
     def test_multiple_reactions_first_wins(self):
+        """check_all returns the first matching reaction interface's name."""
         mol1 = Molecule()
         mol1.atoms = [Atom(x=0)]
         mol2 = Molecule()
@@ -2424,6 +2728,7 @@ class TestPathwayPriorityOrder:
         assert name == "first"
 
     def test_pathway_no_match_returns_none(self):
+        """check_all returns None when no reaction criterion is satisfied."""
         mol1 = Molecule()
         mol1.atoms = [Atom(x=0)]
         mol2 = Molecule()
@@ -2433,6 +2738,7 @@ class TestPathwayPriorityOrder:
         assert ps.check_all(mol1, mol2) is None
 
     def test_pathway_set_empty_add(self):
+        """An empty PathwaySet has length 0 and grows to 1 after add."""
         ps = PathwaySet()
         assert len(ps) == 0
         c = ReactionCriteria(pairs=[ContactPair(0, 0, 5)])
@@ -2443,6 +2749,7 @@ class TestPathwayPriorityOrder:
 class TestMobilityTensorSymmetry:
     @pytest.mark.parametrize("r1,r2", [(10, 10), (15, 25), (5, 50), (30, 30), (8, 12)])
     def test_symmetric_molecules_equal_D(self, r1, r2):
+        """from_radii gives equal translational diffusion for equal radii and unequal otherwise."""
         mob = MobilityTensor.from_radii(r1, r2)
         if r1 == r2:
             assert abs(mob.D_trans1 - mob.D_trans2) < 1e-14
@@ -2450,11 +2757,13 @@ class TestMobilityTensorSymmetry:
             assert mob.D_trans1 != mob.D_trans2
 
     def test_direct_constructor(self):
+        """The MobilityTensor constructor stores the diffusion coefficients passed to it."""
         mob = MobilityTensor(1.0, 0.5, 2.0, 0.8)
         assert mob.D_trans1 == 1.0
         assert mob.D_rot2 == 0.8
 
     def test_relative_always_larger_than_either(self):
+        """Relative translational diffusion exceeds each individual translational diffusion coefficient."""
         mob = MobilityTensor.from_radii(20.0, 30.0)
         D_rel = mob.relative_translational_diffusion()
         assert D_rel > mob.D_trans1
@@ -2464,22 +2773,27 @@ class TestMobilityTensorSymmetry:
 class TestTrajectoryResultDefaults:
     @pytest.mark.parametrize("fate", [Fate.REACTED, Fate.ESCAPED, Fate.MAX_STEPS])
     def test_fate_stored(self, fate):
+        """TrajectoryResult stores the fate passed to it."""
         r = TrajectoryResult(fate, 100, 20.0, 50.0)
         assert r.fate == fate
 
     def test_reaction_name_none_by_default(self):
+        """TrajectoryResult defaults reaction_name to None."""
         r = TrajectoryResult(Fate.ESCAPED, 50, 10.0, 200.0)
         assert r.reaction_name is None
 
     def test_energy_at_reaction_zero_default(self):
+        """TrajectoryResult defaults energy_at_reaction to 0.0."""
         r = TrajectoryResult(Fate.REACTED, 10, 2.0, 5.0, "r")
         assert r.energy_at_reaction == 0.0
 
     def test_steps_stored(self):
+        """TrajectoryResult stores the number of steps passed to it."""
         r = TrajectoryResult(Fate.ESCAPED, 777, 155.4, 300.0)
         assert r.steps == 777
 
     def test_time_ps_stored(self):
+        """TrajectoryResult stores the elapsed time in ps passed to it."""
         r = TrajectoryResult(Fate.ESCAPED, 100, 42.5, 200.0)
         assert abs(r.time_ps - 42.5) < 1e-10
 
@@ -2498,23 +2812,28 @@ class TestSimulationResultStatistics:
         )
 
     def test_reaction_probability(self):
+        """reaction_probability of the sample result equals 0.6."""
         r = self._result()
         assert abs(r.reaction_probability - 0.6) < 1e-10
 
     def test_rate_constant_nonzero(self):
+        """rate_constant of the sample result is positive."""
         r = self._result()
         k = r.rate_constant(10.0)
         assert k > 0
 
     def test_p_rxn_zero_when_no_reactions(self):
+        """reaction_probability is 0 when no trajectories react."""
         r = SimulationResult(100, 0, 100, 0, {}, 100.0, 500.0, 0.2)
         assert r.reaction_probability == 0.0
 
     def test_p_rxn_one_when_all_react(self):
+        """reaction_probability is 1 when all trajectories react."""
         r = SimulationResult(100, 100, 0, 0, {"r": 100}, 100.0, 500.0, 0.2)
         assert abs(r.reaction_probability - 1.0) < 1e-10
 
     def test_repr_contains_n(self):
+        """The SimulationResult repr contains the trajectory count 100."""
         r = self._result()
         assert "100" in repr(r)
 
@@ -2523,6 +2842,7 @@ class TestSimulationResultStatistics:
 class TestSplineInterpolationAccuracy:
     @pytest.mark.parametrize("n", [3, 5, 10, 20, 50])
     def test_interpolates_x_squared(self, n):
+        """CubicSpline interpolates x^2 within a node count dependent tolerance."""
         x = np.linspace(0, 3, n)
         y = x**2
         sp = CubicSpline(x, y)
@@ -2532,6 +2852,7 @@ class TestSplineInterpolationAccuracy:
 
     @pytest.mark.parametrize("n", [4, 8, 16, 32])
     def test_interpolates_cosine(self, n):
+        """CubicSpline interpolates cosine within a node count dependent tolerance."""
         x = np.linspace(0, math.pi, n)
         y = np.cos(x)
         sp = CubicSpline(x, y)
@@ -2540,6 +2861,7 @@ class TestSplineInterpolationAccuracy:
             assert abs(sp(xi) - math.cos(xi)) < tol
 
     def test_derivative_cosine(self):
+        """The CubicSpline derivative of cosine matches -sin within 0.05."""
         x = np.linspace(0, math.pi, 40)
         y = np.cos(x)
         sp = CubicSpline(x, y)
@@ -2550,16 +2872,19 @@ class TestSplineInterpolationAccuracy:
 class TestDebyeHuckelChargeSign:
     @pytest.mark.parametrize("sep", [2.0, 5.0, 10.0, 20.0, 50.0])
     def test_energy_positive_same_sign(self, sep):
+        """Debye-Huckel energy is positive for like sign charges."""
         E = debye_huckel_energy(1.0, 1.0, sep)
         assert E > 0
 
     @pytest.mark.parametrize("sep", [2.0, 5.0, 10.0, 20.0, 50.0])
     def test_energy_negative_opposite_sign(self, sep):
+        """Debye-Huckel energy is negative for opposite sign charges."""
         E = debye_huckel_energy(1.0, -1.0, sep)
         assert E < 0
 
     @pytest.mark.parametrize("debye", [3.0, 7.9, 15.0, 30.0])
     def test_longer_debye_longer_range(self, debye):
+        """A longer Debye length gives larger Debye-Huckel energy at the same separation."""
         E_short = debye_huckel_energy(1.0, 1.0, 20.0, debye_length=5.0)
         E_long = debye_huckel_energy(1.0, 1.0, 20.0, debye_length=debye)
         # longer Debye -> less screened -> larger energy at same separation
@@ -2570,6 +2895,7 @@ class TestDebyeHuckelChargeSign:
 class TestBDStepDiffusionScaling:
     @pytest.mark.parametrize("D", [0.001, 0.01, 0.1, 1.0, 10.0])
     def test_diffusion_scales_step(self, D):
+        """Ermak-McCammon translation step std scales as sqrt(2 D dt) within 15%."""
         rng = np.random.default_rng(42)
         pos = np.zeros(3)
         steps = [
@@ -2582,6 +2908,7 @@ class TestBDStepDiffusionScaling:
 
     @pytest.mark.parametrize("dt", [0.001, 0.01, 0.1, 1.0])
     def test_timestep_scales_step(self, dt):
+        """Ermak-McCammon translation step std scales as sqrt(2 dt) in dt within 15%."""
         rng = np.random.default_rng(0)
         pos = np.zeros(3)
         steps = [
@@ -2596,6 +2923,7 @@ class TestBDStepDiffusionScaling:
 class TestNAMParameterStorage:
     @pytest.mark.parametrize("n_traj", [1, 5, 10, 25, 50])
     def test_n_trajectories_exact(self, n_traj):
+        """Reacted, escaped, and max step trajectory counts sum to the requested number of trajectories."""
         mol1 = Molecule()
         mol1.atoms = [Atom()]
         mol2 = Molecule()
@@ -2611,6 +2939,7 @@ class TestNAMParameterStorage:
 
     @pytest.mark.parametrize("r_start", [30.0, 50.0, 80.0, 100.0])
     def test_r_start_stored(self, r_start):
+        """The simulation result stores the r_start passed in the parameters."""
         mol1 = Molecule()
         mol1.atoms = [Atom()]
         mol2 = Molecule()
@@ -2630,33 +2959,42 @@ class TestNAMParameterStorage:
 
 class TestDerivedConstantValues:
     def test_kb_times_T_gives_kbt(self):
+        """KB_SI times T_DEFAULT equals KB_SI times 298.15."""
         assert abs(KB_SI * T_DEFAULT - KB_SI * 298.15) < 1e-30
 
     def test_ang_to_m_squared(self):
+        """ANG_TO_M squared equals 1e-20 m^2."""
         assert abs(ANG_TO_M**2 - 1e-20) < 1e-30
 
     def test_ps_to_s_value(self):
+        """PS_TO_S equals 1e-12 s."""
         assert abs(PS_TO_S - 1e-12) < 1e-22
 
     def test_pi_precision(self):
+        """The PI constant matches pi to 13 decimal places."""
         assert abs(PI - 3.14159265358979) < 1e-13
 
     def test_avogadro_order(self):
+        """AVOGADRO lies between 6e23 and 7e23."""
         assert 6e23 < AVOGADRO < 7e23
 
     def test_eta_water_order(self):
+        """ETA_WATER lies between 1e-4 and 1e-2 Pa s."""
         assert 1e-4 < ETA_WATER < 1e-2
 
     def test_bjerrum_order(self):
+        """BJERRUM_LENGTH lies between 5 and 10 angstrom."""
         assert 5 < BJERRUM_LENGTH < 10
 
     def test_eps_water_order(self):
+        """EPS_WATER lies between 70 and 90."""
         assert 70 < EPS_WATER < 90
 
 
 class TestBoundingBoxPaddingAndCenter:
     @pytest.mark.parametrize("padding", [0.0, 1.0, 2.5, 5.0, 10.0])
     def test_padding_increases_size(self, padding):
+        """Padding expands the bounding box outward in both x directions."""
         mol = Molecule()
         mol.atoms = [Atom(x=0), Atom(x=4)]
         bb0 = BoundingBox.from_molecule(mol, padding=0.0)
@@ -2665,12 +3003,14 @@ class TestBoundingBoxPaddingAndCenter:
         assert bbp.xmax >= bb0.xmax
 
     def test_center_1d(self):
+        """The bounding box center x is the midpoint of the atom x coordinates."""
         mol = Molecule()
         mol.atoms = [Atom(x=2.0), Atom(x=8.0)]
         bb = BoundingBox.from_molecule(mol, padding=0)
         assert abs(bb.center[0] - 5.0) < 1e-10
 
     def test_size_all_axes(self):
+        """The bounding box size equals the atom coordinate extents on all three axes."""
         mol = Molecule()
         mol.atoms = [
             Atom(x=0, y=0, z=0),
@@ -2683,6 +3023,7 @@ class TestBoundingBoxPaddingAndCenter:
 class TestAuxToolsGridSpacing:
     @pytest.mark.parametrize("spacing", [1.0, 2.0, 3.0, 5.0])
     def test_lumped_charges_grid_spacing(self, spacing):
+        """lumped_charges preserves the net molecular charge regardless of grid spacing."""
         mol = Molecule()
         mol.atoms = [Atom(x=0, charge=1.0), Atom(x=10, charge=-1.0)]
         lc = lumped_charges(mol, grid_spacing=spacing)
@@ -2691,12 +3032,14 @@ class TestAuxToolsGridSpacing:
 
     @pytest.mark.parametrize("probe", [1.0, 1.4, 2.0])
     def test_surface_spheres_probe(self, probe):
+        """surface_spheres returns a nonempty point set for any probe radius."""
         mol = Molecule()
         mol.atoms = [Atom(x=0, y=0, z=0, radius=3.0)]
         pts = surface_spheres(mol, probe_radius=probe, n_points=20)
         assert len(pts) > 0
 
     def test_contact_distances_all_close(self):
+        """contact_distances returns one pair per atom of the second molecule when all lie within the cutoff."""
         mol1 = Molecule()
         mol1.atoms = [Atom(x=0)]
         mol2 = Molecule()
@@ -2708,10 +3051,12 @@ class TestAuxToolsGridSpacing:
 class TestMultipoleMomentValues:
     @pytest.mark.parametrize("n", [2, 4, 6, 8, 10])
     def test_monopole_sum(self, n):
+        """The monopole moment of n unit charges equals n."""
         q = np.ones(n)
         assert abs(monopole_moment(q) - n) < 1e-10
 
     def test_dipole_linear_molecule(self):
+        """The dipole moment of a +1/-1 charge pair points along the negative x axis."""
         pos = np.array([[0, 0, 0], [1, 0, 0]], dtype=float)
         q = np.array([1.0, -1.0])
         p = dipole_moment(pos, q)
@@ -2720,6 +3065,7 @@ class TestMultipoleMomentValues:
 
     @pytest.mark.parametrize("n", [3, 5, 10])
     def test_quadrupole_symmetric_n(self, n):
+        """The quadrupole moment is symmetric and traceless for random charges and positions."""
         rng = np.random.default_rng(n)
         pos = rng.standard_normal((n, 3))
         q = rng.standard_normal(n)
@@ -2731,12 +3077,14 @@ class TestMultipoleMomentValues:
 class TestWienerProcessDimAndVariance:
     @pytest.mark.parametrize("dim", [1, 2, 3, 6])
     def test_wiener_dim(self, dim):
+        """wiener_step returns an array of shape (dim,) for the requested dimension."""
         rng = np.random.default_rng(dim)
         dW = wiener_step(1.0, 0.1, dim, rng)
         assert dW.shape == (dim,)
 
     @pytest.mark.parametrize("D,dt", [(0.1, 0.01), (1.0, 0.1), (10.0, 0.5)])
     def test_wiener_variance(self, D, dt):
+        """The variance of many Wiener steps approaches 2*D*dt within 10 percent."""
         rng = np.random.default_rng(0)
         samples = np.array([wiener_step(D, dt, 1, rng)[0] for _ in range(3000)])
         expected_var = 2 * D * dt
@@ -2756,12 +3104,14 @@ class TestPQRRoundtripPreservation:
 
     @pytest.mark.parametrize("n", [1, 5, 10, 50])
     def test_parse_n_atoms(self, n, tmp_path):
+        """parse_pqr reads back the same number of atoms that were written to the file."""
         p = tmp_path / "mol.pqr"
         self._write_n_atoms(p, n)
         mol = parse_pqr(p)
         assert len(mol.atoms) == n
 
     def test_write_preserves_residue_name(self, tmp_path):
+        """Writing and reparsing a PQR file preserves the atom residue name."""
         mol = Molecule(name="test")
         mol.atoms = [Atom(residue_name="GLY", x=1, y=2, z=3, charge=0.1, radius=1.5)]
         p = tmp_path / "out.pqr"
@@ -2770,6 +3120,7 @@ class TestPQRRoundtripPreservation:
         assert mol2.atoms[0].residue_name == "GLY"
 
     def test_write_preserves_positions(self, tmp_path):
+        """Writing and reparsing a PQR file preserves atom coordinates to within 0.001 Angstrom."""
         mol = Molecule(name="pos_test")
         mol.atoms = [Atom(x=1.234, y=5.678, z=9.012, charge=0.5, radius=1.8)]
         p = tmp_path / "pos.pqr"
@@ -2782,25 +3133,30 @@ class TestPQRRoundtripPreservation:
 class TestAtomNameAndRepr:
     @pytest.mark.parametrize("name", ["CA", "CB", "N", "O", "S", "FE", "ZN"])
     def test_atom_names(self, name):
+        """An Atom stores the name it was constructed with."""
         a = Atom(name=name)
         assert a.name == name
 
     @pytest.mark.parametrize("resname", ["ALA", "GLY", "SER", "THR", "VAL", "LEU"])
     def test_residue_names(self, resname):
+        """An Atom stores the residue name it was constructed with."""
         a = Atom(residue_name=resname)
         assert a.residue_name == resname
 
     @pytest.mark.parametrize("idx", [0, 1, 10, 100, 999])
     def test_indices(self, idx):
+        """An Atom stores the index it was constructed with."""
         a = Atom(index=idx)
         assert a.index == idx
 
     def test_repr_has_position(self):
+        """The repr of an Atom includes its position coordinates."""
         a = Atom(x=1.5, y=2.5, z=3.5)
         r = repr(a)
         assert "1.50" in r or "1.5" in r
 
     def test_distance_triangle_inequality(self):
+        """Atom distances satisfy the triangle inequality."""
         a = Atom(x=0, y=0, z=0)
         b = Atom(x=1, y=0, z=0)
         c = Atom(x=2, y=0, z=0)
@@ -2816,17 +3172,20 @@ class TestMoleculeLinearChain:
 
     @pytest.mark.parametrize("n", [2, 4, 6, 8, 10])
     def test_centroid_line_mol(self, n):
+        """The centroid x coordinate of a line of n atoms equals (n-1)/2."""
         mol = self._line_mol(n)
         c = mol.centroid()
         assert abs(c[0] - (n - 1) / 2.0) < 1e-10
 
     @pytest.mark.parametrize("n", [2, 3, 5, 10])
     def test_bounding_radius_line_mol(self, n):
+        """The bounding radius of a line molecule is strictly positive."""
         mol = self._line_mol(n)
         br = mol.bounding_radius()
         assert br > 0
 
     def test_charges_sum_to_zero_balanced(self):
+        """total_charge of a charge-balanced molecule is zero."""
         mol = Molecule()
         mol.atoms = [
             Atom(charge=1.0),
@@ -2840,6 +3199,7 @@ class TestMoleculeLinearChain:
         "dx,dy,dz", [(1, 0, 0), (0, 1, 0), (0, 0, 1), (-1, -1, -1), (5, 3, 2)]
     )
     def test_translate_shift(self, dx, dy, dz):
+        """translate shifts an atom at the origin by exactly the given displacement vector."""
         mol = Molecule()
         mol.atoms = [Atom(x=0, y=0, z=0)]
         mol.translate(np.array([dx, dy, dz], dtype=float))
@@ -2858,16 +3218,19 @@ class TestConstantPhysicalRanges:
         ],
     )
     def test_constant_range(self, v, lo, hi):
+        """Each named physical constant falls within its expected numeric range."""
         val = getattr(C, v)
         assert lo < val < hi
 
     def test_kbt_in_joules(self):
         # kBT ≈ 4.1e-21 J at 298 K
+        """k_B*T at the default temperature lies between 3e-21 and 5e-21 J."""
         kbt_J = KB_SI * T_DEFAULT
         assert 3e-21 < kbt_J < 5e-21
 
     def test_bjerrum_from_eps(self):
         # l_B = e²/(4π ε₀ ε_r kBT) in SI, then convert to Å
+        """The Bjerrum length computed from SI constants matches BJERRUM_LENGTH within 0.5 Angstrom."""
         lB_m = E_CHARGE**2 / (4 * math.pi * EPS0_SI * EPS_WATER * KB_SI * T_DEFAULT)
         lB_A = lB_m / ANG_TO_M
         assert abs(lB_A - BJERRUM_LENGTH) < 0.5
@@ -2876,6 +3239,7 @@ class TestConstantPhysicalRanges:
 class TestReactionCriteriaBoundary:
     @pytest.mark.parametrize("n_pairs", [1, 2, 3, 5])
     def test_n_pairs_all_required(self, n_pairs):
+        """ReactionCriteria is satisfied when all required contact pairs are within their cutoffs."""
         mol1 = Molecule()
         mol2 = Molecule()
         for i in range(n_pairs + 1):
@@ -2888,6 +3252,7 @@ class TestReactionCriteriaBoundary:
 
     @pytest.mark.parametrize("cutoff", [1.0, 1.5, 1.9])
     def test_cutoff_just_below_dist(self, cutoff):
+        """ReactionCriteria is not satisfied when the cutoff is below the pair distance."""
         mol1 = Molecule()
         mol1.atoms = [Atom(x=0)]
         mol2 = Molecule()
@@ -2897,7 +3262,7 @@ class TestReactionCriteriaBoundary:
 
     @pytest.mark.parametrize("cutoff", [2.1, 3.0, 10.0])
     def test_cutoff_above_dist(self, cutoff):
-        """reference uses strict <: reaction fires when distance < cutoff."""
+        """ReactionCriteria fires when the pair distance is strictly below the cutoff."""
         mol1 = Molecule()
         mol1.atoms = [Atom(x=0)]
         mol2 = Molecule()
@@ -2906,7 +3271,7 @@ class TestReactionCriteriaBoundary:
         assert c.is_satisfied(mol1, mol2)
 
     def test_cutoff_exact_dist_not_satisfied(self):
-        """reference: distance < cutoff (strict), so equal is NOT satisfied."""
+        """ReactionCriteria is not satisfied when the distance exactly equals the cutoff."""
         mol1 = Molecule()
         mol1.atoms = [Atom(x=0)]
         mol2 = Molecule()
@@ -2918,20 +3283,24 @@ class TestReactionCriteriaBoundary:
 class TestRPYTensorProperties:
     @pytest.mark.parametrize("r", [5.0, 10.0, 20.0, 50.0])
     def test_D_t_finite_positive(self, r):
+        """stokes_translational_diffusion returns a finite positive coefficient for any radius."""
         D = stokes_translational_diffusion(r)
         assert 0 < D < float("inf")
 
     @pytest.mark.parametrize("r", [5.0, 10.0, 20.0])
     def test_D_r_finite_positive(self, r):
+        """stokes_rotational_diffusion returns a finite positive coefficient for any radius."""
         D = stokes_rotational_diffusion(r)
         assert 0 < D < float("inf")
 
     def test_rpy_off_diagonal_symmetric(self):
+        """The off-diagonal Rotne-Prager-Yamakawa mobility block is symmetric."""
         r_vec = np.array([10.0, 5.0, 3.0])
         M = rpy_offdiagonal(r_vec, 3.0, 3.0, 1.0, 1.0)
         assert np.allclose(M, M.T)
 
     def test_mobility_relative_D_positive(self):
+        """The relative translational and rotational diffusion of a MobilityTensor are positive."""
         for r1, r2 in [(5, 5), (10, 20), (15, 30)]:
             mob = MobilityTensor.from_radii(r1, r2)
             assert mob.relative_translational_diffusion() > 0
@@ -2940,6 +3309,7 @@ class TestRPYTensorProperties:
 
 class TestFateEnumValues:
     def test_all_fates_distinct(self):
+        """The four Fate enum values are all distinct."""
         fates = [Fate.ONGOING, Fate.REACTED, Fate.ESCAPED, Fate.MAX_STEPS]
         assert len(set(fates)) == 4
 
@@ -2953,6 +3323,7 @@ class TestFateEnumValues:
         ],
     )
     def test_bool_properties(self, fate, reacted, escaped):
+        """The reacted and escaped boolean properties of TrajectoryResult match the trajectory fate."""
         r = TrajectoryResult(fate, 0, 0.0, 0.0)
         assert r.reacted == reacted
         assert r.escaped == escaped
@@ -2961,6 +3332,7 @@ class TestFateEnumValues:
 class TestXMLProbabilityStorage:
     @pytest.mark.parametrize("n_rxns", [1, 2, 3, 5])
     def test_write_n_reactions(self, n_rxns, tmp_path):
+        """Writing and reparsing reaction XML preserves the number of reactions."""
         ps = PathwaySet()
         for i in range(n_rxns):
             c = ReactionCriteria(pairs=[ContactPair(i, i, 5.0)])
@@ -2972,6 +3344,7 @@ class TestXMLProbabilityStorage:
 
     @pytest.mark.parametrize("prob", [0.0, 0.25, 0.5, 0.75, 1.0])
     def test_probability_roundtrip(self, prob, tmp_path):
+        """Writing and reparsing reaction XML preserves the reaction probability within 1e-5."""
         c = ReactionCriteria(pairs=[ContactPair(0, 0, 5.0)])
         ps = PathwaySet([ReactionInterface("r", c, prob)])
         p = tmp_path / f"rxn_{int(prob*100)}.xml"
@@ -2982,7 +3355,7 @@ class TestXMLProbabilityStorage:
 
 class TestPipelineReproducibility:
     def test_full_pipeline_no_crash(self, tmp_path):
-        """Run full pipeline with PQR + XML + simulation."""
+        """The full PQR plus XML simulation pipeline runs and reports the requested trajectory count."""
         pqr = (
             "ATOM      1  CA  ALA     1       0.000   0.000   0.000 "
             " 1.000  2.000\nATOM      2  CB  ALA     1       5.000"
@@ -3012,6 +3385,7 @@ class TestPipelineReproducibility:
 
     @pytest.mark.parametrize("seed", [0, 1, 42, 100, 999])
     def test_reproducible_seeds(self, seed):
+        """Running the simulator twice with the same seed yields identical reaction counts."""
         mol1 = Molecule()
         mol1.atoms = [Atom(x=0, radius=2)]
         mol2 = Molecule()
@@ -3029,10 +3403,12 @@ class TestPipelineReproducibility:
         assert run_with_seed(seed) == run_with_seed(seed)
 
     def test_brace_package_has_version(self):
+        """The pystarc package exposes a non-empty __version__ attribute."""
         assert hasattr(pystarc, "__version__")
         assert pystarc.__version__  # version check
 
     def test_all_submodules_load(self):
+        """All listed pystarc submodules import successfully."""
         mods = [
             "pystarc.structures.molecules",
             "pystarc.structures.pqr_io",
@@ -3057,20 +3433,24 @@ class TestPipelineReproducibility:
 class TestDXGridParametric:
     @pytest.mark.parametrize("v", [0.0, 1.0, -1.0, 3.14, -2.72])
     def test_uniform_grid_constant_value(self, v):
+        """Interpolating a uniform grid returns the constant value at an interior point."""
         g = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), np.full((5, 5, 5), v))
         assert abs(g.interpolate(np.array([2.0, 2.0, 2.0])) - v) < 1e-8
 
     @pytest.mark.parametrize("charge", [-2.0, -1.0, 0.0, 1.0, 2.0])
     def test_force_proportional_to_charge(self, charge):
+        """The force from a zero-valued potential grid is zero regardless of charge."""
         g = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), np.zeros((5, 5, 5)))
         F = g.force_on_charge(np.array([2.0, 2.0, 2.0]), charge)
         assert np.allclose(F, 0)
 
     def test_non_square_grid(self):
+        """A DXGrid retains its non-cubic data array shape."""
         g = DXGrid(np.zeros(3), np.diag([1.0, 2.0, 3.0]), np.ones((3, 4, 5)))
         assert g.data.shape == (3, 4, 5)
 
     def test_interpolate_corner(self):
+        """Interpolating at a grid corner returns the value stored at that corner."""
         data = np.zeros((4, 4, 4))
         data[0, 0, 0] = 1.0
         g = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), data)
@@ -3079,6 +3459,7 @@ class TestDXGridParametric:
 
     @pytest.mark.parametrize("pt", [[0.5, 0.5, 0.5], [1.5, 1.5, 1.5], [2.5, 2.5, 2.5]])
     def test_interpolate_interior(self, pt):
+        """Interpolating a constant grid returns that constant at interior points."""
         data = np.ones((5, 5, 5))
         g = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), data)
         val = g.interpolate(np.array(pt))
@@ -3090,6 +3471,7 @@ class TestQuaternionUnitProperties:
         "w,x,y,z", [(1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1)]
     )
     def test_unit_quaternions(self, w, x, y, z):
+        """A Quaternion built from a unit input has norm 1."""
         q = Quaternion(w, x, y, z)
         assert abs(q.norm() - 1.0) < 1e-14
 
@@ -3109,11 +3491,13 @@ class TestQuaternionUnitProperties:
         ],
     )
     def test_rotation_angle_determinant(self, angle):
+        """The rotation matrix from an axis-angle quaternion has determinant 1."""
         q = Quaternion.from_axis_angle(np.array([0, 1, 0]), angle)
         R = q.to_rotation_matrix()
         assert abs(np.linalg.det(R) - 1.0) < 1e-10
 
     def test_conjugate_is_inverse_for_unit(self):
+        """The conjugate of a unit quaternion is its inverse, giving an identity product."""
         rng = np.random.default_rng(77)
         for _ in range(20):
             q = random_quaternion(rng)
@@ -3128,12 +3512,14 @@ class TestNumericalParityAndSign:
         "a,b,expected", [(0, 1, 1), (0, 2, 2), (1, 3, 2), (-1, 1, 2)]
     )
     def test_romberg_constant_1(self, a, b, expected):
+        """Romberg integration of the constant 1 over [a,b] returns b-a."""
         val = romberg_integrate(lambda x: 1.0, float(a), float(b))
         assert abs(val - expected) < 1e-8
 
     @pytest.mark.parametrize("n", [0, 1, 2, 3, 4, 5])
     def test_legendre_at_zero_parity(self, n):
         # Pn(0) = 0 for odd n, nonzero for even n
+        """The Legendre polynomial P_n(0) is zero for odd n and nonzero for even n."""
         val = legendre_p(n, 0.0)
         if n % 2 == 1:
             assert abs(val) < 1e-12
@@ -3142,15 +3528,18 @@ class TestNumericalParityAndSign:
 
     @pytest.mark.parametrize("dim", [1, 2, 3, 4, 5, 6])
     def test_wiener_correct_dim(self, dim):
+        """wiener_step returns a step of the requested dimension."""
         rng = np.random.default_rng(dim * 10)
         dW = wiener_step(1.0, 1.0, dim, rng)
         assert len(dW) == dim
 
     def test_monopole_negative(self):
+        """The monopole moment of negative charges equals their signed sum."""
         q = np.array([-1.0, -2.0, -3.0])
         assert abs(monopole_moment(q) - (-6.0)) < 1e-10
 
     def test_dipole_3atoms(self):
+        """The dipole moment of a three-atom linear arrangement points along the negative x axis."""
         pos = np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0]], dtype=float)
         q = np.array([1.0, 0.0, -1.0])
         p = dipole_moment(pos, q)
@@ -3173,21 +3562,25 @@ class TestNAMSeedReproducibility:
 
     @pytest.mark.parametrize("seed", [0, 7, 13, 42, 99])
     def test_seed_gives_same_result(self, seed):
+        """Running a tiny simulation twice with the same seed gives the same reaction count."""
         r1 = self._tiny_sim(seed=seed).run()
         r2 = self._tiny_sim(seed=seed).run()
         assert r1.n_reacted == r2.n_reacted
 
     @pytest.mark.parametrize("n", [1, 2, 3, 4, 5])
     def test_exact_n_traj(self, n):
+        """The reacted, escaped, and max-steps counts of a simulation sum to the trajectory total."""
         result = self._tiny_sim(n=n).run()
         total = result.n_reacted + result.n_escaped + result.n_max_steps
         assert total == n
 
     def test_reaction_probability_with_huge_cutoff_is_high(self):
+        """A very large reaction cutoff yields a reaction probability above 0.5."""
         result = self._tiny_sim(cutoff=1000.0, n=20).run()
         assert result.reaction_probability > 0.5
 
     def test_sim_result_rate_nonnegative(self):
+        """The rate constant from a simulation result is non-negative."""
         result = self._tiny_sim(n=5).run()
         mob = MobilityTensor.from_radii(20.0, 20.0)
         k = result.rate_constant(mob.relative_translational_diffusion())
@@ -3195,6 +3588,7 @@ class TestNAMSeedReproducibility:
 
     @pytest.mark.parametrize("dt", [0.05, 0.1, 0.2, 0.5])
     def test_dt_stored_in_result(self, dt):
+        """The simulation result stores the time step dt that was configured."""
         mol1 = Molecule()
         mol1.atoms = [Atom()]
         mol2 = Molecule()
@@ -3210,11 +3604,13 @@ class TestNAMSeedReproducibility:
 
 class TestAuxToolsEmptyInput:
     def test_lumped_charges_empty_mol(self):
+        """lumped_charges of an empty molecule returns an empty list."""
         mol = Molecule()
         lc = lumped_charges(mol)
         assert lc == []
 
     def test_contact_distances_empty(self):
+        """contact_distances returns an empty list when the first molecule has no atoms."""
         mol1 = Molecule()
         mol1.atoms = []
         mol2 = Molecule()
@@ -3223,6 +3619,7 @@ class TestAuxToolsEmptyInput:
         assert pairs == []
 
     def test_bounding_box_single_atom(self):
+        """The bounding box of a single atom collapses to that atom's position with zero padding."""
         mol = Molecule()
         mol.atoms = [Atom(x=5, y=3, z=1)]
         bb = bounding_box(mol, padding=0.0)
@@ -3238,16 +3635,19 @@ class TestAuxToolsEmptyInput:
         ],
     )
     def test_born_sign(self, q, r, expected_sign):
+        """The Born integral energy has the sign expected for the given charge and radius."""
         E = born_integral(q, r)
         assert math.copysign(1, E) == expected_sign or E == 0
 
     def test_hydrodynamic_radius_positive(self):
+        """The hydrodynamic radius derived from the radius of gyration is positive."""
         mol = Molecule()
         mol.atoms = [Atom(x=0), Atom(x=3), Atom(x=6)]
         rh = hydrodynamic_radius_from_rg(mol)
         assert rh > 0
 
     def test_electrostatic_center_shape(self):
+        """electrostatic_center returns a 3-component vector for a multi-atom molecule."""
         mol = Molecule()
         mol.atoms = [Atom(x=i, charge=float(i)) for i in range(1, 6)]
         ec = electrostatic_center(mol)
@@ -3260,12 +3660,14 @@ class TestParametricPhysicsValues:
         [(-1.0, 1.0), (-0.5, -0.125), (0.0, -0.5), (0.5, -0.125), (1.0, 1.0)],
     )
     def test_legendre_p2_values(self, x, expected):
+        """The Legendre polynomial P2 evaluates to its known analytic value at the test points."""
         assert abs(legendre_p(2, x) - expected) < 1e-12
 
     @pytest.mark.parametrize(
         "q1,q2,sep", [(1, 1, 5), (1, -1, 5), (2, 2, 10), (0.5, 0.5, 3), (-1, -1, 7)]
     )
     def test_dh_energy_sign(self, q1, q2, sep):
+        """The Debye-Huckel energy sign matches the sign of the charge product q1*q2."""
         E = debye_huckel_energy(float(q1), float(q2), float(sep))
         expected_sign = math.copysign(1, q1 * q2)
         if abs(q1 * q2) > 1e-10 and sep > 0:
@@ -3275,40 +3677,47 @@ class TestParametricPhysicsValues:
         "r1,r2", [(10, 10), (15, 15), (20, 20), (25, 25), (30, 30)]
     )
     def test_equal_radii_equal_diffusion(self, r1, r2):
+        """Equal-radius particles yield equal translational diffusion coefficients in the mobility tensor."""
         mob = MobilityTensor.from_radii(float(r1), float(r2))
         if r1 == r2:
             assert abs(mob.D_trans1 - mob.D_trans2) < 1e-14
 
     @pytest.mark.parametrize("angle", [0.0, 0.1, 0.5, 1.0, 2.0, math.pi])
     def test_from_axis_angle_unit_norm(self, angle):
+        """A quaternion built from an axis and angle has unit norm."""
         q = Quaternion.from_axis_angle(np.array([0, 0, 1]), angle)
         assert abs(q.norm() - 1.0) < 1e-10
 
     @pytest.mark.parametrize("n", [2, 4, 6, 8, 10, 12, 14, 16, 18, 20])
     def test_romberg_x_power_n(self, n):
+        """Romberg integration of x^n on [0,1] equals 1/(n+1)."""
         val = romberg_integrate(lambda x: x**n, 0.0, 1.0)
         expected = 1.0 / (n + 1)
         assert abs(val - expected) < 1e-7
 
     @pytest.mark.parametrize("v", [-3.0, -1.0, 0.0, 1.0, 3.0])
     def test_constant_dx_grid_any_point(self, v):
+        """Interpolation on a constant-valued DX grid returns that constant at any query point."""
         g = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), np.full((4, 4, 4), v))
         for pt in [[1, 1, 1], [1.5, 1.5, 1.5], [2, 2, 2]]:
             assert abs(g.interpolate(np.array(pt)) - v) < 1e-8
 
     @pytest.mark.parametrize("n", [1, 2, 3, 5, 8, 13])
     def test_molecule_len_correct(self, n):
+        """len(molecule) equals the number of atoms it contains."""
         mol = Molecule()
         mol.atoms = [Atom() for _ in range(n)]
         assert len(mol) == n
 
     @pytest.mark.parametrize("charge", [-5, -2, -1, 0, 1, 2, 5])
     def test_atom_charge_stored(self, charge):
+        """An Atom stores the charge it was constructed with."""
         a = Atom(charge=float(charge))
         assert a.charge == float(charge)
 
     @pytest.mark.parametrize("r", [0.5, 1.0, 1.5, 2.0, 2.5, 3.0])
     def test_atom_radius_stored(self, r):
+        """An Atom stores the radius it was constructed with."""
         a = Atom(radius=r)
         assert a.radius == r
 
@@ -3316,16 +3725,19 @@ class TestParametricPhysicsValues:
         "fate", [Fate.ONGOING, Fate.REACTED, Fate.ESCAPED, Fate.MAX_STEPS]
     )
     def test_system_state_fate_set(self, fate):
+        """SystemState stores the fate value it was constructed with."""
         s = SystemState(fate=fate)
         assert s.fate == fate
 
     @pytest.mark.parametrize("steps", [0, 1, 100, 10000])
     def test_trajectory_steps_stored(self, steps):
+        """TrajectoryResult stores the step count it was constructed with."""
         r = TrajectoryResult(Fate.ESCAPED, steps, float(steps) * 0.2, 200.0)
         assert r.steps == steps
 
     @pytest.mark.parametrize("n_contacts", [1, 2, 3, 4, 5])
     def test_make_default_reaction_n_pairs(self, n_contacts):
+        """make_default_reaction produces a reaction with the requested number of contact pairs."""
         mol1 = Molecule()
         mol1.atoms = [Atom(x=float(i)) for i in range(10)]
         mol2 = Molecule()
@@ -3335,6 +3747,7 @@ class TestParametricPhysicsValues:
 
     @pytest.mark.parametrize("pqr_line_count", [1, 3, 5, 10, 20])
     def test_pqr_parse_count(self, pqr_line_count, tmp_path):
+        """parse_pqr reads exactly as many atoms as there are ATOM records in the file."""
         lines = ["REMARK test\n"]
         for i in range(pqr_line_count):
             lines.append(
@@ -3349,6 +3762,7 @@ class TestParametricPhysicsValues:
 
     @pytest.mark.parametrize("padding", [0, 1, 2, 5, 10])
     def test_bb_contains_with_padding(self, padding):
+        """A padded bounding box still contains its own center."""
         mol = Molecule()
         mol.atoms = [Atom(x=5, y=5, z=5)]
         bb = bounding_box(mol, padding=float(padding))
@@ -3357,6 +3771,7 @@ class TestParametricPhysicsValues:
 
     @pytest.mark.parametrize("prob", [0.0, 0.1, 0.5, 0.9, 1.0])
     def test_reaction_interface_prob_stored(self, prob):
+        """ReactionInterface stores the reaction probability it was constructed with."""
         c = ReactionCriteria(pairs=[ContactPair(0, 0, 5.0)])
         rxn = ReactionInterface("r", c, prob)
         assert abs(rxn.probability - prob) < 1e-10
@@ -3366,6 +3781,7 @@ class TestParametricGeometryAndSymmetry:
     # Atom geometry
     @pytest.mark.parametrize("d", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     def test_distance_along_x(self, d):
+        """distance_to between two atoms separated along x returns that separation."""
         a = Atom(x=0)
         b = Atom(x=float(d))
         assert abs(a.distance_to(b) - float(d)) < 1e-10
@@ -3382,6 +3798,7 @@ class TestParametricGeometryAndSymmetry:
         ],
     )
     def test_rotation_basis_vectors(self, axis, vec, angle, expected):
+        """Quaternion rotation of a vector about an axis matches the expected rotated result."""
         q = Quaternion.from_axis_angle(np.array(axis, dtype=float), angle)
         result = q.rotate_vector(np.array(vec, dtype=float))
         assert np.allclose(result, expected, atol=1e-10)
@@ -3391,6 +3808,7 @@ class TestParametricGeometryAndSymmetry:
         "a,b", [(0, math.pi / 4), (0, math.pi / 2), (math.pi / 4, math.pi / 2)]
     )
     def test_romberg_sine_analytically(self, a, b):
+        """Romberg integration of sin over [a,b] equals cos(a) - cos(b)."""
         val = romberg_integrate(math.sin, a, b)
         expected = math.cos(a) - math.cos(b)
         assert abs(val - expected) < 1e-8
@@ -3398,6 +3816,7 @@ class TestParametricGeometryAndSymmetry:
     # Debye-Hückel symmetry
     @pytest.mark.parametrize("q1,q2", [(1, 2), (2, 1), (-1, -3), (-3, -1)])
     def test_dh_energy_symmetric_charges(self, q1, q2):
+        """The Debye-Huckel energy is symmetric under swapping the two charges."""
         E12 = debye_huckel_energy(float(q1), float(q2), 10.0)
         E21 = debye_huckel_energy(float(q2), float(q1), 10.0)
         assert abs(E12 - E21) < 1e-10
@@ -3405,6 +3824,7 @@ class TestParametricGeometryAndSymmetry:
     # BD step: translation returns (3,) array
     @pytest.mark.parametrize("seed", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
     def test_translation_shape(self, seed):
+        """Ermak-McCammon translation returns a 3-component position vector."""
         rng = np.random.default_rng(seed)
         pos = np.zeros(3)
         new = ermak_mccammon_translation(pos, np.zeros(3), 1.0, 0.1, rng)
@@ -3415,6 +3835,7 @@ class TestParametricGeometryAndSymmetry:
         "q_list", [[1, -1], [2, -1, -1], [0.5, 0.5, -1], [0, 0, 0], [1, 1, 1, -3]]
     )
     def test_total_charge(self, q_list):
+        """total_charge equals the sum of the atomic charges."""
         mol = Molecule()
         mol.atoms = [Atom(charge=q) for q in q_list]
         assert abs(mol.total_charge() - sum(q_list)) < 1e-10
@@ -3422,6 +3843,7 @@ class TestParametricGeometryAndSymmetry:
     # Wiener mean
     @pytest.mark.parametrize("D,dt", [(1, 0.1), (2, 0.2), (0.5, 0.05)])
     def test_wiener_mean_zero(self, D, dt):
+        """Wiener displacement steps have a sample mean near zero over many draws."""
         rng = np.random.default_rng(0)
         samples = np.array([wiener_step(D, dt, 1, rng)[0] for _ in range(5000)])
         assert abs(samples.mean()) < 0.1
@@ -3429,6 +3851,7 @@ class TestParametricGeometryAndSymmetry:
     # Legendre series constant
     @pytest.mark.parametrize("c0", [0.5, 1.0, 2.0, -1.0])
     def test_legendre_series_constant(self, c0):
+        """A single-coefficient Legendre series evaluates to that constant for all x."""
         for x in [-0.9, 0.0, 0.5, 0.9]:
             val = legendre_series([c0], x)
             assert abs(val - c0) < 1e-12
@@ -3436,6 +3859,7 @@ class TestParametricGeometryAndSymmetry:
     # BoundingBox center correct
     @pytest.mark.parametrize("lo,hi", [(-1, 1), (-5, 5), (0, 10), (2, 8), (-3, 7)])
     def test_bb_center_x(self, lo, hi):
+        """The bounding box center x-coordinate is the midpoint of the atom extents."""
         mol = Molecule()
         mol.atoms = [Atom(x=lo), Atom(x=hi)]
         bb = BoundingBox.from_molecule(mol, padding=0)
@@ -3444,6 +3868,7 @@ class TestParametricGeometryAndSymmetry:
     # Rotne-Prager: far field symmetric
     @pytest.mark.parametrize("dist", [10.0, 20.0, 50.0])
     def test_rpy_far_symmetric(self, dist):
+        """The far-field RPY off-diagonal mobility block is symmetric."""
         r_vec = np.array([dist, 0.0, 0.0])
         M = rpy_offdiagonal(r_vec, 2.0, 2.0, 1.0, 1.0)
         assert np.allclose(M, M.T, atol=1e-10)
@@ -3451,6 +3876,7 @@ class TestParametricGeometryAndSymmetry:
     # Stokes: D ∝ 1/r
     @pytest.mark.parametrize("factor", [2.0, 3.0, 5.0])
     def test_D_t_inv_radius(self, factor):
+        """Stokes translational diffusion scales inversely with radius."""
         D1 = stokes_translational_diffusion(10.0)
         D2 = stokes_translational_diffusion(10.0 * factor)
         assert abs(D1 / D2 - factor) < 0.01
@@ -3460,6 +3886,7 @@ class TestParametricGeometryAndSymmetry:
         "n_satisfied,n_total", [(1, 1), (2, 2), (3, 3), (2, 3), (1, 2)]
     )
     def test_reaction_all_or_nothing(self, n_satisfied, n_total):
+        """Reaction criteria are satisfied only when all contact pairs are within their cutoffs."""
         mol1 = Molecule()
         mol2 = Molecule()
         for i in range(n_total + 1):
@@ -3478,21 +3905,25 @@ class TestParametricGeometryAndSymmetry:
 class TestHighOrderLegendreAndCentroid:
     @pytest.mark.parametrize("x", [-1.0, -0.5, 0.0, 0.5, 1.0])
     def test_p3_values(self, x):
+        """The Legendre polynomial P3 evaluates to (5x^3 - 3x)/2."""
         expected = (5 * x**3 - 3 * x) / 2
         assert abs(legendre_p(3, x) - expected) < 1e-12
 
     @pytest.mark.parametrize("x", [-1.0, -0.5, 0.0, 0.5, 1.0])
     def test_p4_values(self, x):
+        """The Legendre polynomial P4 evaluates to (35x^4 - 30x^2 + 3)/8."""
         expected = (35 * x**4 - 30 * x**2 + 3) / 8
         assert abs(legendre_p(4, x) - expected) < 1e-12
 
     @pytest.mark.parametrize("dim", [1, 2, 3, 4, 5])
     def test_monopole_ones(self, dim):
+        """The monopole moment of all-ones charges equals the number of charges."""
         q = np.ones(dim)
         assert abs(monopole_moment(q) - float(dim)) < 1e-10
 
     @pytest.mark.parametrize("n", [5, 10, 20, 50, 100])
     def test_large_molecule_centroid(self, n):
+        """The centroid x-coordinate of atoms at 0..n-1 equals (n-1)/2."""
         mol = Molecule()
         for i in range(n):
             mol.atoms.append(Atom(x=float(i)))
@@ -3510,6 +3941,7 @@ class TestHighOrderLegendreAndCentroid:
         ],
     )
     def test_rotation_cos_check(self, angle, cos_val):
+        """The (0,0) entry of the z-axis rotation matrix equals cos(angle)."""
         q = Quaternion.from_axis_angle(np.array([0, 0, 1]), angle)
         R = q.to_rotation_matrix()
         assert abs(R[0, 0] - cos_val) < 1e-10
@@ -3518,11 +3950,13 @@ class TestHighOrderLegendreAndCentroid:
         "charge,radius", [(1.0, 2.0), (2.0, 3.0), (0.5, 1.5), (3.0, 4.0)]
     )
     def test_born_negative(self, charge, radius):
+        """The Born solvation integral energy is negative."""
         E = born_integral(charge, radius)
         assert E < 0
 
     @pytest.mark.parametrize("D", [0.01, 0.1, 1.0, 10.0])
     def test_D_t_positive(self, D):
+        """Ermak-McCammon translation steps remain finite with no NaN or inf."""
         rng = np.random.default_rng(0)
         steps = [
             ermak_mccammon_translation(np.zeros(3), np.zeros(3), D, 0.1, rng)
@@ -3534,11 +3968,13 @@ class TestHighOrderLegendreAndCentroid:
 
     @pytest.mark.parametrize("r", [5.0, 10.0, 20.0, 30.0, 50.0])
     def test_escape_radius_gt_r(self, r):
+        """The escape radius is strictly greater than the contact radius r."""
         re = escape_radius(r)
         assert re > r
 
     @pytest.mark.parametrize("n_rx,n_esc", [(0, 10), (5, 5), (10, 0)])
     def test_p_rxn_values(self, n_rx, n_esc):
+        """reaction_probability equals n_rx / (n_rx + n_esc)."""
         r = SimulationResult(n_rx + n_esc, n_rx, n_esc, 0, {}, 100.0, 500.0, 0.2)
         if n_rx + n_esc > 0:
             assert abs(r.reaction_probability - n_rx / (n_rx + n_esc)) < 1e-10
@@ -3556,11 +3992,13 @@ class TestSeparationAndDecay:
         ],
     )
     def test_separation_3d(self, x, y, z, expected_r):
+        """SystemState.separation returns the Euclidean norm of the position vector."""
         s = SystemState(position=np.array([x, y, z], dtype=float))
         assert abs(s.separation() - expected_r) < 1e-10
 
     @pytest.mark.parametrize("n", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     def test_pathway_set_len(self, n):
+        """len(PathwaySet) equals the number of reaction interfaces added."""
         ps = PathwaySet()
         for i in range(n):
             c = ReactionCriteria(pairs=[ContactPair(i, i, 5.0)])
@@ -3569,12 +4007,14 @@ class TestSeparationAndDecay:
 
     @pytest.mark.parametrize("r", [10.0, 20.0, 30.0, 40.0, 50.0])
     def test_D_r_decreases_with_r(self, r):
+        """Stokes rotational diffusion decreases as the radius increases."""
         D_small = stokes_rotational_diffusion(r)
         D_large = stokes_rotational_diffusion(r * 2)
         assert D_small > D_large
 
     @pytest.mark.parametrize("sep", [5.0, 10.0, 15.0, 20.0, 25.0])
     def test_dh_decays_exponentially(self, sep):
+        """The Debye-Huckel energy ratio over one Debye length matches (sep/(sep+λ))*exp(-1)."""
         lam = DEFAULT_DEBYE_LENGTH
         E1 = debye_huckel_energy(1.0, 1.0, sep)
         E2 = debye_huckel_energy(1.0, 1.0, sep + lam)
@@ -3594,6 +4034,7 @@ class TestSeparationAndDecay:
         ],
     )
     def test_unit_quaternion_rotation_matrix_orthogonal(self, w, x, y, z):
+        """A unit quaternion produces an orthogonal rotation matrix with determinant 1."""
         q = Quaternion(w, x, y, z)
         R = q.to_rotation_matrix()
         assert np.allclose(R @ R.T, np.eye(3), atol=1e-10)
@@ -3603,6 +4044,7 @@ class TestSeparationAndDecay:
         "a,b,n_expected", [(0.0, 1.0, 1.0 / 3), (0.0, 2.0, 8.0 / 3), (0.0, 3.0, 9.0)]
     )
     def test_romberg_x2(self, a, b, n_expected):
+        """Romberg integration of x^2 over [a,b] matches the expected definite integral."""
         val = romberg_integrate(lambda x: x**2, a, b)
         assert abs(val - n_expected) < 1e-8
 
@@ -3614,6 +4056,7 @@ class TestSeparationAndDecay:
         ],
     )
     def test_reaction_set_fires(self, n_atoms, cutoff, expected):
+        """Reaction criteria fire only when the pair distance is within the contact cutoff."""
         mol1 = Molecule()
         mol2 = Molecule()
         for i in range(n_atoms):
@@ -3626,28 +4069,34 @@ class TestSeparationAndDecay:
 
 class TestDefaultConstructorValues:
     def test_atom_default_index(self):
+        """An Atom defaults its index to 0."""
         assert Atom().index == 0
 
     def test_molecule_empty_centroid(self):
+        """An empty molecule has a centroid at the origin."""
         mol = Molecule()
         assert np.allclose(mol.centroid(), [0, 0, 0])
 
     def test_molecule_one_atom_rg(self):
+        """A single-atom molecule has a radius of gyration of 0."""
         mol = Molecule()
         mol.atoms = [Atom(x=5)]
         assert mol.radius_of_gyration() == 0.0
 
     def test_quaternion_w1_is_identity(self):
+        """The identity quaternion (1,0,0,0) yields the identity rotation matrix."""
         q = Quaternion(1, 0, 0, 0)
         assert np.allclose(q.to_rotation_matrix(), np.eye(3))
 
     def test_rigid_transform_apply_1d_input(self):
+        """A RigidTransform applies its translation to a 1D input vector."""
         T = RigidTransform(translation=np.array([1.0, 0, 0]))
         v = np.array([0.0, 0.0, 0.0])
         result = T.apply(v)
         assert abs(result[0] - 1.0) < 1e-10
 
     def test_bd_step_finite(self):
+        """A Brownian-dynamics step returns a finite position and a unit-norm orientation."""
         rng = np.random.default_rng(42)
         pos = np.array([50.0, 0.0, 0.0])
         ori = Quaternion.identity()
@@ -3658,25 +4107,30 @@ class TestDefaultConstructorValues:
         assert abs(new_ori.norm() - 1.0) < 1e-10
 
     def test_system_state_default_position_zero(self):
+        """SystemState defaults its position to the origin."""
         s = SystemState()
         assert np.allclose(s.position, [0, 0, 0])
 
     def test_contact_pair_default_values(self):
+        """ContactPair defaults both atom indices to 0."""
         cp = ContactPair()
         assert cp.mol1_atom_index == 0
         assert cp.mol2_atom_index == 0
 
     def test_pathway_set_empty_repr(self):
+        """The repr of an empty PathwaySet contains the string PathwaySet."""
         ps = PathwaySet()
         assert "PathwaySet" in repr(ps)
 
     def test_bounding_box_contains_center(self):
+        """A zero-padding bounding box contains its own center."""
         mol = Molecule()
         mol.atoms = [Atom(x=0), Atom(x=10), Atom(y=0), Atom(y=10)]
         bb = bounding_box(mol, padding=0)
         assert bb.contains(bb.center)
 
     def test_lumped_charges_single_atom(self):
+        """Lumping a single charged atom onto the grid conserves total charge."""
         mol = Molecule()
         mol.atoms = [Atom(x=5, y=5, z=5, charge=2.0)]
         lc = lumped_charges(mol, grid_spacing=2.0)
@@ -3686,35 +4140,42 @@ class TestDefaultConstructorValues:
     def test_born_larger_eps_out_less_negative(self):
         # born_integral ∝ -(1/eps_in - 1/eps_out)
         # higher eps_out -> larger (1/eps_in - 1/eps_out) -> MORE negative
+        """A larger eps_out makes the Born integral energy more negative."""
         E1 = born_integral(1.0, 3.0, eps_in=4.0, eps_out=40.0)
         E2 = born_integral(1.0, 3.0, eps_in=4.0, eps_out=80.0)
         # both negative; E2 more negative than E1
         assert E2 < E1
 
     def test_dx_grid_shape_query(self):
+        """A DXGrid reports the shape of its underlying data array."""
         g = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), np.zeros((7, 8, 9)))
         assert tuple(g.data.shape) == (7, 8, 9)
 
     def test_dh_energy_proportional_to_bjerrum(self):
+        """The Debye-Huckel energy is proportional to the Bjerrum length."""
         E1 = debye_huckel_energy(1.0, 1.0, 10.0, bjerrum_length=5.0)
         E2 = debye_huckel_energy(1.0, 1.0, 10.0, bjerrum_length=10.0)
         assert abs(E2 / E1 - 2.0) < 1e-10
 
     def test_monopole_single(self):
+        """The monopole moment of a single charge equals that charge."""
         assert abs(monopole_moment(np.array([3.7])) - 3.7) < 1e-10
 
     def test_dipole_zero_positions(self):
+        """The dipole moment is zero when all charge positions are at the origin."""
         pos = np.zeros((3, 3))
         q = np.array([1.0, -2.0, 1.0])
         p = dipole_moment(pos, q)
         assert np.allclose(p, 0)
 
     def test_wiener_zero_D(self):
+        """wiener_step returns a zero displacement vector when the diffusion coefficient D is zero."""
         rng = np.random.default_rng(0)
         dW = wiener_step(0.0, 1.0, 3, rng)
         assert np.allclose(dW, 0)
 
     def test_spline_linear_exact(self):
+        """A cubic spline through points on a line reproduces that line to within 1e-8."""
         x = np.linspace(0, 5, 10)
         y = 3 * x + 2
         sp = CubicSpline(x, y)
@@ -3722,10 +4183,12 @@ class TestDefaultConstructorValues:
             assert abs(sp(xi) - (3 * xi + 2)) < 1e-8
 
     def test_reaction_name_in_result(self):
+        """TrajectoryResult stores the reaction_name passed to its constructor."""
         r = TrajectoryResult(Fate.REACTED, 10, 2.0, 5.0, "my_rxn")
         assert r.reaction_name == "my_rxn"
 
     def test_simulation_result_dt(self):
+        """SimulationResult exposes the time step dt passed to its constructor."""
         r = SimulationResult(10, 5, 5, 0, {}, 100.0, 500.0, 0.123)
         assert abs(r.dt - 0.123) < 1e-10
 
@@ -3735,6 +4198,7 @@ class TestLJForces:
     """Tests for Lennard-Jones and hydrophobic SASA forces."""
 
     def test_lj_pair_repulsive_at_small_r(self):
+        """The Lennard-Jones force on atom a points away from b for separations below σ."""
         pos_a = np.array([0.0, 0.0, 0.0])
         pos_b = np.array([1.0, 0.0, 0.0])
         f, e = lj_pair_force(pos_a, pos_b, epsilon=1.0, sigma=2.0)
@@ -3743,6 +4207,7 @@ class TestLJForces:
         assert f[0] < 0
 
     def test_lj_pair_attractive_at_large_r(self):  # noqa
+        """The Lennard-Jones force on atom a points toward b for separations above σ."""
         pos_a = np.array([0.0, 0.0, 0.0])
         pos_b = np.array([3.0, 0.0, 0.0])
         f, e = lj_pair_force(pos_a, pos_b, epsilon=1.0, sigma=2.0)
@@ -3751,6 +4216,7 @@ class TestLJForces:
         assert f[0] > 0
 
     def test_lj_energy_minimum_at_sigma(self):
+        """The Lennard-Jones energy equals the minimum -ε/4 at r = 2^(1/6)σ."""
         pos_a = np.array([0.0, 0.0, 0.0])
         # At r = 2^(1/6)*sigma force = 0 (energy minimum)
         r_min = 2.0 ** (1.0 / 6.0) * 2.0
@@ -3759,6 +4225,7 @@ class TestLJForces:
         assert abs(e - (-0.25)) < 0.01  # reference: V_min = -eps/4 at r=2^(1/6)*sig
 
     def test_lj_mixing_rules(self):
+        """LJForceEngine with Lorentz-Berthelot mixing obeys Newton's third law, f1 = -f2."""
         lj = LJParams(
             atom_types=[
                 LJAtomType("C", epsilon=0.1, sigma=1.7),
@@ -3773,6 +4240,7 @@ class TestLJForces:
         assert np.allclose(f1, -f2, atol=1e-10)
 
     def test_lj_newton_third_law(self):
+        """LJForceEngine for identical atom types obeys Newton's third law, f1 = -f2."""
         lj = LJParams(atom_types=[LJAtomType("A", epsilon=0.5, sigma=2.0)])
         engine = LJForceEngine(lj_params=lj)
         pos1 = np.array([[0.0, 0.0, 0.0]])
@@ -3781,6 +4249,7 @@ class TestLJForces:
         assert np.allclose(f1, -f2, atol=1e-10)
 
     def test_wca_zero_beyond_cutoff(self):
+        """The WCA force and energy vanish beyond the r = 2^(1/6)σ cutoff."""
         pos_a = np.array([0.0, 0.0, 0.0])
         sigma = 2.0
         r_cut = 2.0 ** (1.0 / 6.0) * sigma + 0.1  # just beyond cutoff
@@ -3790,6 +4259,7 @@ class TestLJForces:
         assert e == 0.0
 
     def test_hydrophobic_zero_outside_range(self):
+        """The hydrophobic SASA force is zero when the surface separation lies below the range lower bound a."""
         hp = HydrophobicParams(a=3.1, b=4.35)
         r_vec = np.array([1.0, 0.0, 0.0])
         # r + radius = 1.0 + 0.5 = 1.5 < a=3.1 -> zero
@@ -3797,6 +4267,7 @@ class TestLJForces:
         assert np.allclose(f, 0.0)
 
     def test_hydrophobic_nonzero_in_range(self):
+        """The hydrophobic SASA force is nonzero when the surface separation falls within [a, b]."""
         hp = HydrophobicParams(a=3.1, b=4.35)
         r_vec = np.array([1.0, 0.0, 0.0])
         # r=3.0, radius_a=0.5 -> ri = 3.5, which is in [3.1, 4.35]
@@ -3808,6 +4279,7 @@ class TestGHOInjection:
     """Tests for GHO ghost atom auto-injection."""
 
     def test_gho_world_position_identity(self):
+        """gho_world_position returns the relative position unchanged under identity rotation and zero translation."""
         atom = GHOAtom(atom_index=0, pos_rel=np.array([1.0, 2.0, 3.0]))
         rot = np.eye(3)
         trans = np.zeros(3)
@@ -3815,6 +4287,7 @@ class TestGHOInjection:
         assert np.allclose(pos, [1.0, 2.0, 3.0])
 
     def test_gho_world_position_rotated(self):
+        """gho_world_position correctly applies a 90 degree rotation about z to the relative position."""
         atom = GHOAtom(atom_index=0, pos_rel=np.array([1.0, 0.0, 0.0]))
         # 90 degree rotation around z-axis
         rot = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
@@ -3823,12 +4296,14 @@ class TestGHOInjection:
         assert np.allclose(pos, [0.0, 1.0, 0.0], atol=1e-10)
 
     def test_gho_world_position_translated(self):
+        """gho_world_position adds the translation vector to a ghost atom at the body origin."""
         atom = GHOAtom(atom_index=0, pos_rel=np.array([0.0, 0.0, 0.0]))
         trans = np.array([5.0, 3.0, 1.0])
         pos = gho_world_position(atom, np.eye(3), trans)
         assert np.allclose(pos, [5.0, 3.0, 1.0])
 
     def test_gho_criterion_distance(self):
+        """gho_criterion_distance returns the Euclidean distance between two ghost atoms, here 5.0."""
         g1 = GHOAtom(0, np.array([0.0, 0.0, 0.0]))
         g2 = GHOAtom(0, np.array([3.0, 4.0, 0.0]))
         d = gho_criterion_distance(
@@ -3837,18 +4312,21 @@ class TestGHOInjection:
         assert abs(d - 5.0) < 1e-10
 
     def test_gho_reaction_criterion_satisfied(self):
+        """GHOReactionCriterion.is_satisfied returns True when the pair distance is within the cutoff."""
         g1 = GHOAtom(0, np.array([0.0, 0.0, 0.0]))
         g2 = GHOAtom(0, np.array([3.0, 0.0, 0.0]))
         crit = GHOReactionCriterion([(g1, g2, 5.0)])
         assert crit.is_satisfied(np.eye(3), np.zeros(3), np.eye(3), np.zeros(3))
 
     def test_gho_reaction_criterion_not_satisfied(self):
+        """GHOReactionCriterion.is_satisfied returns False when the pair distance exceeds the cutoff."""
         g1 = GHOAtom(0, np.array([0.0, 0.0, 0.0]))
         g2 = GHOAtom(0, np.array([10.0, 0.0, 0.0]))
         crit = GHOReactionCriterion([(g1, g2, 5.0)])
         assert not crit.is_satisfied(np.eye(3), np.zeros(3), np.eye(3), np.zeros(3))
 
     def test_parse_manual_ghost_atoms(self):
+        """inject_gho_from_manual assigns ghost atoms to the receptor or ligand list per the spec's molecule index."""
         mol1_pos = np.random.default_rng(0).random((10, 3)) * 20.0
         mol2_pos = np.random.default_rng(1).random((5, 3)) * 10.0
         spec = "3,0,17.0\n4,0,10.0"
@@ -3859,6 +4337,7 @@ class TestGHOInjection:
         assert len(g2) == 0
 
     def test_rxns_xml_parser_handles_missing_file(self):
+        """_parse_rxns_xml_criteria returns an empty pair list and n_needed of -1 for a missing file."""
         pairs, n_needed = _parse_rxns_xml_criteria(Path("/nonexistent/rxns.xml"))
         assert pairs == []
         assert n_needed == -1
@@ -3868,11 +4347,13 @@ class TestCOFFDROPChain:
     """Tests for flexible chain model."""
 
     def test_build_linear_chain(self):
+        """build_linear_chain creates a chain with n beads and n-1 bonds."""
         chain = build_linear_chain(5)
         assert chain.n_beads == 5
         assert len(chain.bonds) == 4
 
     def test_chain_positions_array(self):
+        """positions_array places beads along x at multiples of the bond length with shape (n, 3)."""
         chain = build_linear_chain(3, bond_length=4.0)
         pos = chain.positions_array()
         assert pos.shape == (3, 3)
@@ -3881,6 +4362,7 @@ class TestCOFFDROPChain:
         assert abs(pos[2, 0] - 8.0) < 1e-10
 
     def test_chain_bd_step_moves_beads(self):
+        """ChainBDPropagator.step displaces an unfrozen chain's beads."""
         chain = build_linear_chain(3)
         prop = ChainBDPropagator()
         rng = np.random.default_rng(42)
@@ -3890,6 +4372,7 @@ class TestCOFFDROPChain:
         assert not np.allclose(pos_before, pos_after)
 
     def test_frozen_chain_doesnt_move(self):
+        """ChainBDPropagator.step leaves a frozen chain's bead positions unchanged."""
         chain = build_linear_chain(3)
         chain.frozen = True
         prop = ChainBDPropagator()
@@ -3899,6 +4382,7 @@ class TestCOFFDROPChain:
         assert np.allclose(chain.positions_array(), pos_before)
 
     def test_bond_forces_zero_at_equilibrium(self):
+        """ChainForceEvaluator yields near-zero bond forces when beads sit at the equilibrium bond length."""
         chain = build_linear_chain(2, bond_length=3.8)
         # Beads already at equilibrium distance
         evaluator = ChainForceEvaluator()
@@ -3908,12 +4392,14 @@ class TestCOFFDROPChain:
         assert np.linalg.norm(F[1]) < 1e-8
 
     def test_max_time_step_positive(self):
+        """ChainBDPropagator.max_time_step returns a positive time step."""
         chain = build_linear_chain(3)
         prop = ChainBDPropagator()
         dt = prop.max_time_step(chain)
         assert dt > 0
 
     def test_satisfy_bond_constraints(self):
+        """satisfy_bond_constraints pulls a stretched bond back toward its equilibrium length."""
         chain = build_linear_chain(3, bond_length=4.0)
         # Stretch the bond by hand
         chain.beads[1].pos = np.array([10.0, 0.0, 0.0])
@@ -3930,6 +4416,7 @@ class TestGeometryRxnsXML:
     def test_auto_detect_reactions_no_gho_raises(self):
         # No GHO atoms -> must raise RuntimeError (centroid fallback removed)
         # All PQRs in the pipeline have GHO injected before this is called.
+        """auto_detect_reactions raises RuntimeError when no GHO ghost atoms are present."""
         import pytest
 
         rec = MoleculeGeometry(
@@ -3959,6 +4446,7 @@ class TestGeometryRxnsXML:
             auto_detect_reactions(geom, ghost_atoms="auto", rxns_xml="")
 
     def test_auto_detect_reactions_manual_spec(self):
+        """auto_detect_reactions builds one stage with the cutoffs from a manual ghost-atom spec and returns n_needed of -1."""
         rec = MoleculeGeometry(10, 5, 0, np.zeros(3), 20.0, 20.0, [], [], 1.0)
         lig = MoleculeGeometry(5, 2, 0, np.zeros(3), 5.0, 5.0, [], [], 0.0)
         geom = SystemGeometry(rec, lig, 25.0, 50.0)
@@ -3972,6 +4460,7 @@ class TestGeometryRxnsXML:
 
     def test_auto_detect_missing_rxns_xml_raises_without_gho(self):
         # Missing rxns.xml + no GHO -> RuntimeError (no silent fallback)
+        """auto_detect_reactions raises RuntimeError when the rxns.xml is missing and no GHO atoms exist."""
         import pytest
 
         rec = MoleculeGeometry(10, 5, 0, np.zeros(3), 20.0, 20.0, [], [], 1.0)
@@ -3995,32 +4484,33 @@ reference_CONV = 602000000.0  # Å³/ps -> M⁻¹s⁻¹ (from compute_rate_const
 # 1. Physical constants
 class TestPhysicalConstants:
     def test_vacuum_permittivity(self):
-        """vacuum_permittivity = 0.000142 e²/(kBT·Å)"""
+        """The reference vacuum permittivity ε0 equals 0.000142 e²/(kBT·Å)."""
         assert reference_EPS0 == 0.000142
 
     def test_water_viscosity(self):
-        """water_viscosity = 0.243 kBT·ps/Å³"""
+        """The reference water viscosity μ equals 0.243 kBT·ps/Å³."""
         assert reference_MU == 0.243
 
     def test_kT_unity(self):
-        """kT = 1.0 (energy unit is kBT)"""
+        """The reference thermal energy kT equals 1.0."""
         assert reference_KT == 1.0
 
     def test_solvent_dielectric_default(self):
-        """solvent_dielectric = 78.0"""
+        """The reference solvent dielectric constant equals 78.0."""
         assert reference_SDIE == 78.0
 
     def test_conversion_factor(self):
-        """conv_factor = 602000000.0"""
+        """The PySTARC unit conversion factor matches the reference value to within 0.1 percent."""
         CONV_PYSTARC = 6.022e23 * 1e-30 / 1e-12 / 1e-3
         assert abs(CONV_PYSTARC - reference_CONV) / reference_CONV < 1e-3
 
     def test_desolvation_alpha_default(self):
-        """solvation_parameter=1.0 -> alpha=1/(4π)"""
+        """A solvation parameter of 1.0 gives a desolvation α of 1/(4π) ≈ 0.0796."""
         alpha = 1.0 / (4.0 * math.pi)
         assert abs(alpha - 0.07957747) < 1e-5
 
     def test_qb_factor(self):
+        """A trivial sanity check that 1.1 equals 1.1."""
         assert 1.1 == 1.1
 
 
@@ -4033,26 +4523,29 @@ class TestDiffusionCoefficients:
         return reference_KT / (6.0 * reference_PI * reference_MU * a)
 
     def test_D_single_sphere_1A(self):
+        """The translational diffusion coefficient of a 1 Å sphere equals 0.21803."""
         D = self._D_trans(1.0)
         assert abs(D - 0.21803) < 0.001
 
     def test_D_charged_spheres(self):
+        """The relative translational diffusion of two 1.005 Å spheres equals 0.43371."""
         a = 1.005
         D_rel = 2 * self._D_trans(a)
         assert abs(D_rel - 0.43371) < 0.002
 
     def test_D_thrombin(self):
-        """thrombin: r_hydro(rec)=25.375, r_hydro(lig)=21.620"""
+        """The relative translational diffusion for thrombin's receptor and ligand radii equals 0.01867."""
         D_rel = self._D_trans(25.375) + self._D_trans(21.620)
         assert abs(D_rel - 0.01867) < 0.001
 
     def test_D_inversely_proportional_to_radius(self):
+        """The translational diffusion coefficient is inversely proportional to sphere radius."""
         D1 = self._D_trans(10.0)
         D2 = self._D_trans(20.0)
         assert abs(D1 / D2 - 2.0) < 0.01
 
     def test_D_rotational_inverse_cube(self):
-        """D_rot = kT/(8πμa³)"""
+        """The rotational diffusion coefficient scales as the inverse cube of the radius."""
 
         def D_rot(a):
             return reference_KT / (8.0 * reference_PI * reference_MU * a**3)
@@ -4072,16 +4565,18 @@ class TestYukawaPotential:
         return q_rec * q_lig / (4.0 * reference_PI * eps_s)
 
     def test_V_factor_two_spheres(self):
+        """The interaction potential V factor for the receptor and ligand charges equals -7.1847."""
         V = self._V_factor(self.Q_REC, self.Q_LIG)
         assert abs(V - (-7.1847)) < 0.01
 
     def test_potential_at_10A(self):
+        """The screened Coulomb potential at r = 10 Å equals -0.200268."""
         V = self._V_factor(self.Q_REC, self.Q_LIG)
         phi = V * math.exp(-10.0 / self.DEBYE) / 10.0
         assert abs(phi - (-0.200268)) < 0.001
 
     def test_gradient_at_10A_matches_central_diff(self):
-        """Analytical gradient should match numerical central difference."""
+        """The analytic potential gradient at r = 10 Å matches the central-difference estimate to within 1e-4."""
         V = self._V_factor(self.Q_REC, self.Q_LIG)
         r = 10.0
         # Analytical
@@ -4094,7 +4589,7 @@ class TestYukawaPotential:
         assert abs(dphi_dr - grad_cd) / abs(dphi_dr) < 1e-4
 
     def test_force_attractive_for_opposite_charges(self):
-        """phi_rec uses only receptor charge."""
+        """The force on the ligand is attractive, pointing toward the receptor, for opposite charges."""
         # V_factor for receptor potential (not interaction potential)
         V_rec = self.Q_REC / (4.0 * reference_PI * reference_SDIE * reference_EPS0)
         r = 10.0
@@ -4104,6 +4599,7 @@ class TestYukawaPotential:
         assert F_x < 0  # negative x = toward receptor at origin = attractive
 
     def test_force_repulsive_for_same_charges(self):
+        """The force on the ligand is repulsive, pointing away from the receptor, for like charges."""
         V_rec = 1.0 / (4.0 * reference_PI * reference_SDIE * reference_EPS0)
         r = 10.0
         dphi_dr = V_rec * math.exp(-r / self.DEBYE) * (-1 / r**2 - 1 / (r * self.DEBYE))
@@ -4112,7 +4608,7 @@ class TestYukawaPotential:
 
     @pytest.mark.parametrize("r", [3.0, 5.0, 8.0, 10.0, 15.0, 20.0])
     def test_force_decays_with_distance(self, r):
-        """Force magnitude should decrease with distance."""
+        """The screened Coulomb force magnitude decreases as separation increases."""
         V = self._V_factor(self.Q_REC, self.Q_LIG)
         dphi_r1 = V * math.exp(-r / self.DEBYE) * (-1 / r**2 - 1 / (r * self.DEBYE))
         dphi_r2 = (
@@ -4130,18 +4626,19 @@ class TestGridBounds:
     """Verify grid bound calculations account for gradient probe width."""
 
     def test_ref_potential_range(self):
-        """reference in_range1: ix in [0, nx-2] inclusive."""
+        """The reference potential interpolation index range covers [0, nx-2] inclusive."""
         nx = 129
         assert 0 <= 0 and 0 <= nx - 2  # low end
         assert 0 <= nx - 2 and nx - 2 <= nx - 2  # high end
 
     def test_ref_gradient_range(self):
+        """The reference gradient interpolation index range covers [1, nx-3] inclusive."""
         nx = 129
         assert 1 <= 1 and 1 <= nx - 3
         assert 1 <= nx - 3 and nx - 3 <= nx - 3
 
     def test_pystarc_gradient_aware_bounds(self):
-        """valid range is [origin+0.5*sp, origin+(n-2.5)*sp]."""
+        """The PySTARC gradient-aware valid range [origin+0.5·sp, origin+(n-2.5)·sp] covers interior indices 1 to n-3."""
         origin, sp, nx = 0.0, 1.0, 129
         lo = origin + 0.5 * sp  # = 0.5
         hi = origin + (nx - 2.5) * sp  # = 126.5
@@ -4150,8 +4647,7 @@ class TestGridBounds:
         assert hi >= (nx - 3) * sp  # hi covers ix=126
 
     def test_two_spheres_grid_coverage(self):
-        """charged_spheres: coarse grid spacing 0.16, nx=129, origin≈-10.25.
-        Atom at r=10 (b-sphere): check if inside gradient-aware bounds."""
+        """For the two-sphere coarse grid, the upper gradient-aware bound sits near the b-sphere at r = 10 Å."""
         sp = 0.1602
         nx = 129
         origin = -10.25  # approximate
@@ -4168,12 +4664,13 @@ class TestPureDiffusion:
     """Verify pure diffusion P_rxn matches Smoluchowski formula."""
 
     def test_smoluchowski_two_spheres(self):
-        """a=2.5, b=10, q=20 -> P_diff = 0.1429"""
+        """The Smoluchowski diffusion-limited probability for a=2.5, b=10, q=20 equals 0.1429."""
         a, b, q = 2.5, 10.0, 20.0
         P = (1 / b - 1 / q) / (1 / a - 1 / q)
         assert abs(P - 0.1429) < 0.001
 
     def test_expected_P_with_attraction(self):
+        """Electrostatic attraction more than triples the reaction probability over the pure-diffusion value."""
         P_ref = 0.44
         P_diff = 0.143
         assert P_ref > 3 * P_diff  # attraction triples P_rxn
@@ -4186,32 +4683,32 @@ class TestBDStepPhysics:
     """Verify BD step matches Ermak-McCammon integrator."""
 
     def test_drift_formula(self):
-        """drift = D × F × dt"""
+        """The Brownian drift D·F·dt evaluates to -0.00396 for the given parameters."""
         D, F, dt = 0.43371, -0.04561, 0.2
         drift = D * F * dt
         assert abs(drift - (-0.00396)) < 0.0001
 
     def test_noise_rms(self):
-        """sigma = sqrt(2 × D × dt)"""
+        """The noise RMS √(2·D·dt) evaluates to 0.4169 for the given parameters."""
         D, dt = 0.43371, 0.2
         sigma = math.sqrt(2 * D * dt)
         assert abs(sigma - 0.4169) < 0.001
 
     def test_drift_noise_ratio(self):
-        """At b-sphere: drift/noise ≈ 0.01 (noise-dominated)."""
+        """At the b-sphere the drift-to-noise ratio stays below 0.02, confirming noise dominance."""
         D, F, dt = 0.43371, -0.04561, 0.2
         drift = abs(D * F * dt)
         sigma = math.sqrt(2 * D * dt)
         assert drift / sigma < 0.02  # force is weak relative to noise
 
     def test_zero_force_pure_diffusion(self):
-        """With F=0: drift=0, only noise."""
+        """With zero force the Brownian drift is exactly zero, leaving only noise."""
         D, dt = 0.43371, 0.2
         drift = D * 0.0 * dt
         assert drift == 0.0
 
     def test_no_HI_D_is_sum(self):
-        """Without HI: D_rel = D_1 + D_2."""
+        """Without hydrodynamic interactions the relative diffusion D_rel = D1 + D2 equals 0.43371."""
         D1 = reference_KT / (6 * reference_PI * reference_MU * 1.005)
         D2 = reference_KT / (6 * reference_PI * reference_MU * 1.005)
         D_rel = D1 + D2
@@ -4227,14 +4724,14 @@ class TestAdaptiveTimestep:
     TRIG = 11.0  # qb_factor × b
 
     def test_dt_edge_at_boundary(self):
-        """At r = 10.5: dist_b=0.5, dist_trig=0.5."""
+        """At the boundary r = 10.5 the adaptive edge time step dt_edge equals 0.032."""
         r = 10.5
         dist = min(r - self.B, self.TRIG - r)
         dt_edge = dist**2 / (18.0 * self.D)
         assert abs(dt_edge - 0.032) < 0.005
 
     def test_dt_edge_zero_at_b(self):
-        """At r = b exactly, dt_edge -> 0."""
+        """dt_edge approaches 0 when the separation r equals the contact radius b."""
         r = self.B
         dist = max(r - self.B, 1e-3)
         dt_edge = dist**2 / (18.0 * self.D)
@@ -4242,7 +4739,7 @@ class TestAdaptiveTimestep:
 
     @pytest.mark.parametrize("r", [10.1, 10.3, 10.5, 10.7, 10.9])
     def test_dt_edge_increases_toward_middle(self, r):
-        """dt_edge is largest at (b+trig)/2 = 10.5."""
+        """dt_edge stays positive at separations between the contact radius and the trigger radius."""
         dist = min(r - self.B, self.TRIG - r)
         dt_edge = dist**2 / (18.0 * self.D)
         assert dt_edge > 0
@@ -4291,29 +4788,30 @@ class TestOuterPropagator:
         return 4.0 * reference_PI / igral
 
     def test_k_b_two_spheres(self):
-        """k_b(b=10) should be ~57.5 Å³/ps."""
+        """The relative rate k_b at r = b equals about 57.5 Å³/ps."""
         k_b = self._relative_rate(self.B)
         assert abs(k_b - 57.5) < 1.0
 
     def test_qradius_formula(self):
-        """reference: qradius = 20.0 × max_mol_radius"""
+        """The q-radius equals 20 times the maximum molecular radius, giving 20.1 Å."""
         max_r = 1.005  # r_hydro for charged_spheres
         q_out = 20.0 * max_r
         assert abs(q_out - 20.1) < 0.01
 
     def test_return_prob_two_spheres(self):
-        """return_prob = k_b(b) / k_b(q_out) ≈ 0.52"""
+        """The return probability k_b(b)/k_b(q_out) for two spheres is about 0.52."""
         k_b = self._relative_rate(self.B)
         k_q = self._relative_rate(20.1)
         rp = k_b / k_q
         assert abs(rp - 0.52) < 0.03
 
     def test_qb_factor_1_1(self):
-        """reference qb_factor.hh: constexpr double qb_factor = 1.1"""
+        """The trigger radius equals 1.1 times b, yielding 11.0 Å."""
         trigger = 1.1 * self.B
         assert abs(trigger - 11.0) < 1e-10
 
     def test_return_prob_between_0_and_1(self):
+        """The return probability k_b(b)/k_b(q_out) lies strictly between 0 and 1."""
         k_b = self._relative_rate(self.B)
         k_q = self._relative_rate(20.1)
         rp = k_b / k_q
@@ -4325,7 +4823,7 @@ class TestRombergPhysics:
     """Verify Romberg integration"""
 
     def test_yukawa_integral_converges(self):
-        """The Romberg integral for k_b should converge."""
+        """The Romberg integral for k_b with a Yukawa potential converges to a finite positive value."""
         D = 0.43371
         eps_s = reference_SDIE * reference_EPS0
         V = 1.0 * (-1.0) / (4.0 * reference_PI * eps_s)
@@ -4342,11 +4840,12 @@ class TestRombergPhysics:
 
     @pytest.mark.parametrize("n", [0, 1, 2, 3, 4, 5])
     def test_power_integrals(self, n):
-        """∫₀¹ xⁿ dx = 1/(n+1)"""
+        """Romberg integration of xⁿ over [0,1] gives 1/(n+1)."""
         val = TestOuterPropagator._romberg(lambda x: x**n, 0.0, 1.0)
         assert abs(val - 1.0 / (n + 1)) < 1e-8
 
     def test_sin_integral(self):
+        """Romberg integration of sin from 0 to π gives 2."""
         val = TestOuterPropagator._romberg(math.sin, 0.0, reference_PI)
         assert abs(val - 2.0) < 1e-8
 
@@ -4358,7 +4857,7 @@ class TestRateConstant:
     """Verify the k_on formula."""
 
     def test_formula_matches_reference(self):
-        """k_on = CONV × k_b × P_rxn"""
+        """k_on = CONV × k_b × P_rxn reproduces the reference 1.52e10 within 5%."""
         CONV = 6.022e8
         k_b = 57.5
         P = 0.44
@@ -4366,12 +4865,12 @@ class TestRateConstant:
         assert abs(k_on - 1.52e10) / 1.52e10 < 0.05
 
     def test_conv_factor_derivation(self):
-        """CONV = N_A × Å³->L / ps->s = 6.022e23 × 1e-30/1e-12/1e-3"""
+        """The unit conversion factor CONV derived from N_A and unit scalings equals 6.022e8."""
         CONV = 6.022e23 * 1e-30 / 1e-12 / 1e-3
         assert abs(CONV - 6.022e8) / 6.022e8 < 1e-3
 
     def test_k_on_zero_if_P_zero(self):
-        """No reactions -> k_on = 0."""
+        """k_on is 0 when the reaction probability P_rxn is 0."""
         assert 6.022e8 * 57.5 * 0.0 == 0.0
 
     @pytest.mark.parametrize(
@@ -4379,7 +4878,7 @@ class TestRateConstant:
         [(0.1, 3.46e9), (0.2, 6.93e9), (0.3, 1.04e10), (0.4, 1.39e10), (0.5, 1.73e10)],
     )
     def test_k_on_linear_in_P(self, P, k_expected):
-        """k_on ∝ P_rxn (linear relationship)."""
+        """k_on scales linearly with the reaction probability P_rxn."""
         k_b = 57.5
         k_on = 6.022e8 * k_b * P
         assert abs(k_on - k_expected) / k_expected < 0.02
@@ -4392,19 +4891,19 @@ class TestBornDesolvation:
     """Verify Born desolvation."""
 
     def test_two_spheres_alpha_zero(self):
-        """charged_spheres: desolvation_alpha = 0.0 -> no Born force."""
+        """A desolvation_alpha of 0 yields zero Born force for the charged spheres."""
         alpha = 0.0
         q = -1.0
         F = -alpha * q**2 * 0.1  # any gradient
         assert F == 0.0
 
     def test_thrombin_alpha_nonzero(self):
-        """thrombin: desolvation_alpha = 0.07957747 -> Born force active."""
+        """The thrombin desolvation_alpha of 0.07957747 is positive, so the Born force is active."""
         alpha = 0.07957747
         assert alpha > 0
 
     def test_born_force_always_repulsive(self):
-        """Born desolvation force is always repulsive (pushes charges apart)."""
+        """The Born desolvation force is positive, always pushing charges apart."""
         alpha = 0.07957747
         q = 1.0
         grad_born = -0.01  # negative gradient, so field decreases outward
@@ -4419,7 +4918,7 @@ class TestScreenedCoulomb:
     """Verify screened Coulomb formula."""
 
     def test_formula_at_10A(self):
-        """F(r=10) for q0=1, q1=-1, L=7.828."""
+        """The Yukawa force magnitude at r = 10 Å for opposite unit charges is positive."""
         q0, q1 = 1.0, -1.0
         r = 10.0
         L = 7.828
@@ -4430,7 +4929,7 @@ class TestScreenedCoulomb:
         assert F_mag > 0
 
     def test_newton_third_law(self):
-        """F(mol0->mol1) = -F(mol1->mol0)"""
+        """The Yukawa force from molecule 0 on molecule 1 equals minus the reciprocal force, satisfying Newton's third law."""
         q0, q1 = 1.0, -1.0
         r_vec = np.array([10.0, 0.0, 0.0])
         r = 10.0
@@ -4453,8 +4952,7 @@ class TestYukawaFallback:
     """Verify the Yukawa fallback is correct."""
 
     def test_matches_apbs_inside_grid(self):
-        """At r=5 (well inside grid), Yukawa ≈ APBS solution
-        for pdie=sdie=78 (no dielectric boundary)."""
+        """The Yukawa potential at r = 5 Å with pdie = sdie reduces to a nonzero pure Coulomb-screened form matching APBS."""
         V = 1.0 * (-1.0) / (4.0 * reference_PI * reference_SDIE * reference_EPS0)
         r = 5.0
         debye = 7.828
@@ -4464,7 +4962,7 @@ class TestYukawaFallback:
         assert abs(phi_yukawa) > 0
 
     def test_force_matches_numerical_gradient(self):
-        """Yukawa analytical force should match finite-diff of Yukawa potential."""
+        """The analytical Yukawa force matches the finite-difference gradient of the potential to within 1e-6 relative."""
         V = 1.0 * (-1.0) / (4.0 * reference_PI * reference_SDIE * reference_EPS0)
         r = 10.0
         debye = 7.828
@@ -4476,8 +4974,7 @@ class TestYukawaFallback:
         assert abs(grad_num - grad_ana) / abs(grad_ana) < 1e-6
 
     def test_monopole_matches_ref_far_field(self):
-        """Chebyshev blob reduces to monopole at large r.
-        Here, the Yukawa is the monopole term."""
+        """At r = 50 Å the multipole expansion reduces to a positive monopole Yukawa far field."""
         V = 1.0 / (4.0 * reference_PI * reference_SDIE * reference_EPS0)
         r = 50.0
         debye = 7.828
@@ -4487,13 +4984,13 @@ class TestYukawaFallback:
         assert phi_mono > 0
 
     def test_zero_charge_zero_force(self):
-        """Q_rec = 0 -> no Yukawa force."""
+        """A zero receptor charge produces zero Yukawa potential prefactor."""
         V = 0.0 / (4.0 * reference_PI * reference_SDIE * reference_EPS0)
         assert V == 0.0
 
     @pytest.mark.parametrize("r", [5, 10, 15, 20, 30, 50])
     def test_yukawa_monotonically_decreasing(self, r):
-        """|phi(r)| should decrease with r."""
+        """The Yukawa potential magnitude decreases monotonically with increasing r."""
         V = -7.1847
         debye = 7.828
         phi_r = abs(V * math.exp(-r / debye) / r)
@@ -4506,17 +5003,17 @@ class TestExpectedResults:
     """Verify expected k_on values for both test systems."""
 
     def test_two_spheres_analytical(self):
-        """Analytical k_on ≈ 1.57e10 M⁻¹s⁻¹ (Debye-Smoluchowski)."""
+        """The analytical Debye-Smoluchowski k_on for two spheres exceeds 1e10 M⁻¹s⁻¹, near 1.57e10."""
         k_anal = 1.57e10
         assert k_anal > 1e10
 
     def test_two_spheres_reference(self):
-        """k_on ≈ 1.526e10 M⁻¹s⁻¹ (numerical, APBS grid)."""
+        """The numerical APBS-grid k_on of 1.526e10 agrees with the analytical 1.57e10 within 5%."""
         k_ref = 1.526e10
         assert abs(k_ref - 1.57e10) / 1.57e10 < 0.05  # within 5% of analytical
 
     def test_thrombin_experimental(self):
-        """Experimental k_on ≈ 4e7 M⁻¹s⁻¹ for thrombin-thrombomodulin."""
+        """The experimental thrombin-thrombomodulin k_on of about 4e7 M⁻¹s⁻¹ exceeds 1e7."""
         k_exp = 4e7
         assert k_exp > 1e7
 
@@ -4526,18 +5023,17 @@ class TestReactionCriterionPhysics:
     """Verify reaction criterion."""
 
     def test_two_spheres_single_pair(self):
-        """charged_spheres: 1 pair, n_needed=1, cutoff=2.5 Å."""
+        """For the charged spheres, n_needed of 1 does not exceed the single available pair."""
         n_pairs, n_needed, cutoff = 1, 1, 2.5
         assert n_needed <= n_pairs
 
     def test_thrombin_21_pairs_3_needed(self):
-        """thrombin: 21 pairs, n_needed=3, cutoff=15.0 Å."""
+        """For thrombin, n_needed of 3 does not exceed the 21 available pairs."""
         n_pairs, n_needed = 21, 3
         assert n_needed <= n_pairs
 
     def test_n_needed_semantics(self):
-        """reaction fires if n_satisfied >= n_needed.
-        This is an or-of-subsets, not all-or-nothing."""
+        """Reaction firing follows or-of-subsets semantics, requiring n_satisfied ≥ n_needed."""
         # With 21 pairs and n_needed=3, ANY 3 of 21 can trigger
         assert True  # documents the semantics
 
@@ -4547,7 +5043,7 @@ class TestMultipoleExpansion:
     """Test the MultipoleExpansion class."""
 
     def test_monopole_only(self):
-        """Single point charge -> only monopole, no dipole/quadrupole."""
+        """A single point charge gives monopole Q equal to the charge with zero dipole and quadrupole."""
         mp = MultipoleExpansion(
             np.array([[0, 0, 0.0]]), np.array([5.0]), debye_length=7.86
         )
@@ -4556,7 +5052,7 @@ class TestMultipoleExpansion:
         assert mp.quad_mag < 1e-10
 
     def test_monopole_potential_exact(self):
-        """Monopole potential matches hand calculation exactly."""
+        """The monopole potential at r = 20 Å matches the exact screened Coulomb hand calculation."""
         mp = MultipoleExpansion(
             np.array([[0, 0, 0.0]]), np.array([3.0]), debye_length=7.86
         )
@@ -4567,7 +5063,7 @@ class TestMultipoleExpansion:
         assert abs(V_mp - V_exact) / abs(V_exact) < 1e-10
 
     def test_pure_dipole(self):
-        """Two opposite charges -> Q=0, pure dipole."""
+        """Two opposite charges give net charge Q = 0 and a pure dipole of magnitude 10."""
         mp = MultipoleExpansion(
             np.array([[5.0, 0, 0], [-5.0, 0, 0]]),
             np.array([1.0, -1.0]),
@@ -4577,7 +5073,7 @@ class TestMultipoleExpansion:
         assert abs(mp.dipole_mag - 10.0) < 1e-10
 
     def test_dipole_potential_nonzero_for_neutral(self):
-        """Neutral molecule with dipole should have nonzero potential."""
+        """A neutral molecule with a dipole produces a nonzero far-field potential."""
         mp = MultipoleExpansion(
             np.array([[5.0, 0, 0], [-5.0, 0, 0]]),
             np.array([1.0, -1.0]),
@@ -4587,7 +5083,7 @@ class TestMultipoleExpansion:
         assert abs(V) > 1e-6  # not zero — dipole contributes
 
     def test_potential_decays_with_distance(self):
-        """Potential magnitude should decrease with r."""
+        """The multipole potential magnitude decreases as r increases through 10, 20, and 50 Å."""
         mp = MultipoleExpansion(
             np.array([[0, 0, 0.0]]), np.array([3.0]), debye_length=7.86
         )
@@ -4597,7 +5093,7 @@ class TestMultipoleExpansion:
         assert V10 > V20 > V50
 
     def test_force_is_negative_gradient(self):
-        """Force should match -dV/dr numerically."""
+        """The multipole force matches the negative numerical gradient of the potential componentwise."""
         mp = MultipoleExpansion(
             np.array([[0, 0, 0.0]]), np.array([3.0]), debye_length=7.86
         )
@@ -4614,7 +5110,7 @@ class TestMultipoleExpansion:
             assert abs(F[i] - F_num) < 1e-4 * max(abs(F_num), 1e-10)
 
     def test_repulsive_force_same_sign(self):
-        """Q_rec=+3, test point at +x -> gradient points outward (repulsive)."""
+        """A positive receptor charge yields an outward, repulsive force along +x for a same-sign test point."""
         mp = MultipoleExpansion(
             np.array([[0, 0, 0.0]]), np.array([3.0]), debye_length=7.86
         )
@@ -4623,7 +5119,7 @@ class TestMultipoleExpansion:
         assert F[0] > 0  # repulsive for same-sign charges
 
     def test_quadrupole_nonzero_for_distributed(self):
-        """Multiple charges at various positions -> nonzero quadrupole."""
+        """A distribution of randomly placed charges produces a nonzero quadrupole magnitude."""
         rng = np.random.default_rng(123)
         pos = rng.standard_normal((50, 3)) * 10.0
         charges = rng.standard_normal(50) * 0.5
@@ -4631,7 +5127,7 @@ class TestMultipoleExpansion:
         assert mp.quad_mag > 0
 
     def test_summary_string(self):
-        """Summary should contain key info."""
+        """The multipole summary string contains the Monopole, Dipole, and Quadrupole labels."""
         mp = MultipoleExpansion(
             np.array([[0, 0, 0.0]]), np.array([3.0]), debye_length=7.86
         )
@@ -4641,7 +5137,7 @@ class TestMultipoleExpansion:
         assert "Quadrupole" in s
 
     def test_zero_charge_zero_potential(self):
-        """All charges zero -> V=0 everywhere."""
+        """All-zero charges give a vanishing potential everywhere."""
         mp = MultipoleExpansion(
             np.array([[1, 0, 0.0], [-1, 0, 0.0]]),
             np.array([0.0, 0.0]),
@@ -4651,7 +5147,7 @@ class TestMultipoleExpansion:
         assert abs(V) < 1e-15
 
     def test_monopole_dominates_at_large_r(self):
-        """At large r, monopole >> dipole >> quadrupole."""
+        """At r = 100 Å the monopole accounts for more than 90% of the total potential."""
         # Molecule with Q=5, small dipole
         pos = np.array([[1.0, 0, 0], [-1.0, 0, 0], [0, 0, 0]])
         charges = np.array([3.0, 2.0, 0.0])  # Q=5, p=[1,0,0]
@@ -4669,10 +5165,12 @@ class TestOverlapCheck:
     """Test the overlap check configuration."""
 
     def test_default_enabled(self):
+        """The overlap_check config flag defaults to True."""
         cfg = PySTARCConfig()
         assert cfg.overlap_check is True
 
     def test_xml_disable(self, tmp_path):
+        """Parsing an XML overlap_check tag set to false yields overlap_check False."""
         xml = tmp_path / "test.xml"
         xml.write_text("""<?xml version="1.0" ?>
 <pystarc>
@@ -4684,6 +5182,7 @@ class TestOverlapCheck:
         assert cfg.overlap_check is False
 
     def test_xml_enable(self, tmp_path):
+        """Parsing an XML overlap_check tag set to true yields overlap_check True."""
         xml = tmp_path / "test.xml"
         xml.write_text("""<?xml version="1.0" ?>
 <pystarc>
@@ -4699,10 +5198,12 @@ class TestMultipoleFallbackConfig:
     """Test multipole_fallback configuration."""
 
     def test_default_enabled(self):
+        """The multipole_fallback config flag defaults to True."""
         cfg = PySTARCConfig()
         assert cfg.multipole_fallback is True
 
     def test_xml_disable(self, tmp_path):
+        """Parsing an XML multipole_fallback tag set to false yields multipole_fallback False."""
         xml = tmp_path / "test.xml"
         xml.write_text("""<?xml version="1.0" ?>
 <pystarc>
@@ -4714,6 +5215,7 @@ class TestMultipoleFallbackConfig:
         assert cfg.multipole_fallback is False
 
     def test_both_flags_independent(self, tmp_path):
+        """Parsing XML sets overlap_check and multipole_fallback independently."""
         xml = tmp_path / "test.xml"
         xml.write_text("""<?xml version="1.0" ?>
 <pystarc>
@@ -4731,10 +5233,12 @@ class TestLJForcesConfig:
     """Test lj_forces configuration."""
 
     def test_default_disabled(self):
+        """The lj_forces config flag defaults to False."""
         cfg = PySTARCConfig()
         assert cfg.lj_forces is False
 
     def test_xml_enable(self, tmp_path):
+        """Parsing an XML lj_forces tag set to true yields lj_forces True."""
         xml = tmp_path / "test.xml"
         xml.write_text("""<?xml version="1.0" ?>
 <pystarc>
@@ -4746,6 +5250,7 @@ class TestLJForcesConfig:
         assert cfg.lj_forces is True
 
     def test_all_three_flags_independent(self, tmp_path):
+        """Parsing XML sets overlap_check, multipole_fallback, and lj_forces independently."""
         xml = tmp_path / "test.xml"
         xml.write_text("""<?xml version="1.0" ?>
 <pystarc>
@@ -4765,31 +5270,37 @@ class TestOutputConfig:
     """Test the OutputConfig dataclass."""
 
     def test_all_defaults_true(self):
+        """Every boolean field of OutputConfig defaults to True."""
         oc = OutputConfig()
         for f in fields(oc):
             if f.type is bool:
                 assert getattr(oc, f.name) is True, f"{f.name} should default True"
 
     def test_save_interval_default(self):
+        """The OutputConfig save_interval defaults to 10."""
         oc = OutputConfig()
         assert oc.save_interval == 10
 
     def test_custom_save_interval(self):
+        """OutputConfig accepts a custom save_interval of 100."""
         oc = OutputConfig(save_interval=100)
         assert oc.save_interval == 100
 
     def test_disable_heavy_outputs(self):
+        """Disabling full_paths and energetics leaves results_json True."""
         oc = OutputConfig(full_paths=False, energetics=False)
         assert oc.full_paths is False
         assert oc.energetics is False
         assert oc.results_json is True
 
     def test_field_count(self):
+        """OutputConfig has 15 fields, 14 booleans plus the integer save_interval."""
         oc = OutputConfig()
         # 14 bool flags + 1 int save_interval = 15 fields
         assert len(fields(oc)) == 15
 
     def test_pystarc_config_has_outputs(self):
+        """PySTARCConfig provides an outputs block with results_json True and save_interval 10."""
         cfg = PySTARCConfig()
         assert cfg.outputs is not None
         assert cfg.outputs.results_json is True
@@ -4813,6 +5324,7 @@ class TestOutputXMLParsing:
         return p
 
     def test_no_outputs_block_uses_defaults(self, tmp_path):
+        """An XML file with no outputs block falls back to the default OutputConfig values."""
         p = self._write_xml(tmp_path)
         cfg = parse(p)
         assert cfg.outputs.results_json is True
@@ -4820,6 +5332,7 @@ class TestOutputXMLParsing:
         assert cfg.outputs.save_interval == 10
 
     def test_disable_paths(self, tmp_path):
+        """Disabling full_paths in the XML outputs block leaves the other defaults unchanged."""
         p = self._write_xml(
             tmp_path,
             """
@@ -4832,6 +5345,7 @@ class TestOutputXMLParsing:
         assert cfg.outputs.results_json is True  # other defaults unchanged
 
     def test_custom_save_interval(self, tmp_path):
+        """Setting save_interval to 50 in the XML outputs block parses to 50."""
         p = self._write_xml(
             tmp_path,
             """
@@ -4843,6 +5357,7 @@ class TestOutputXMLParsing:
         assert cfg.outputs.save_interval == 50
 
     def test_disable_multiple(self, tmp_path):
+        """Disabling several XML output flags applies each while leaving trajectories_csv True."""
         p = self._write_xml(
             tmp_path,
             """
@@ -4861,6 +5376,7 @@ class TestOutputXMLParsing:
         assert cfg.outputs.trajectories_csv is True
 
     def test_yes_true_1_all_work(self, tmp_path):
+        """Parsing full_paths accepts true, True, TRUE, yes, Yes, and 1 as boolean True."""
         for val in ["true", "True", "TRUE", "yes", "Yes", "1"]:
             p = self._write_xml(
                 tmp_path,
@@ -4873,6 +5389,7 @@ class TestOutputXMLParsing:
             assert cfg.outputs.full_paths is True, f"'{val}' should parse as True"
 
     def test_false_no_0_all_work(self, tmp_path):
+        """Parsing full_paths accepts false, False, FALSE, no, No, and 0 as boolean False."""
         for val in ["false", "False", "FALSE", "no", "No", "0"]:
             p = self._write_xml(
                 tmp_path,
@@ -4944,12 +5461,14 @@ class TestResultsJSON:
     """Test results.json output."""
 
     def test_file_created(self, tmp_path):
+        """write_all creates results.json in the output directory."""
         result = _make_result()
         data = _make_dummy_data()
         write_all(tmp_path, result, data, OutputConfig(), k_b=57.47, D_rel=0.434)
         assert (tmp_path / "results.json").exists()
 
     def test_json_parseable(self, tmp_path):
+        """The written results.json parses into a dict."""
         write_all(
             tmp_path,
             _make_result(),
@@ -4962,6 +5481,7 @@ class TestResultsJSON:
         assert isinstance(data, dict)
 
     def test_required_fields(self, tmp_path):
+        """results.json contains all required summary fields including k_on, P_rxn, and timing keys."""
         write_all(
             tmp_path,
             _make_result(),
@@ -4990,6 +5510,7 @@ class TestResultsJSON:
             assert key in data, f"Missing key: {key}"
 
     def test_k_on_positive(self, tmp_path):
+        """k_on in results.json is positive and lies within its low and high bounds."""
         write_all(
             tmp_path,
             _make_result(),
@@ -5003,6 +5524,7 @@ class TestResultsJSON:
         assert data["k_on_low"] <= data["k_on"] <= data["k_on_high"]
 
     def test_log10_present(self, tmp_path):
+        """results.json includes log10_k_on equal to log10 of k_on."""
         write_all(
             tmp_path,
             _make_result(),
@@ -5016,6 +5538,7 @@ class TestResultsJSON:
         assert abs(data["log10_k_on"] - math.log10(data["k_on"])) < 1e-6
 
     def test_disabled(self, tmp_path):
+        """Disabling results_json prevents results.json from being written."""
         oc = OutputConfig(results_json=False)
         write_all(
             tmp_path, _make_result(), _make_dummy_data(), oc, k_b=57.47, D_rel=0.434
@@ -5027,6 +5550,7 @@ class TestTrajectoriesCSV:
     """Test trajectories.csv output."""
 
     def test_file_created(self, tmp_path):
+        """write_all creates trajectories.csv in the output directory."""
         write_all(
             tmp_path,
             _make_result(),
@@ -5038,6 +5562,7 @@ class TestTrajectoriesCSV:
         assert (tmp_path / "trajectories.csv").exists()
 
     def test_correct_row_count(self, tmp_path):
+        """trajectories.csv has one row per trajectory matching the trajectory count."""
         write_all(
             tmp_path,
             _make_result(45, 55),
@@ -5051,6 +5576,7 @@ class TestTrajectoriesCSV:
         assert len(rows) == 100
 
     def test_outcome_values(self, tmp_path):
+        """trajectories.csv outcomes are valid labels and the reacted count matches the result."""
         write_all(
             tmp_path,
             _make_result(),
@@ -5067,6 +5593,7 @@ class TestTrajectoriesCSV:
         assert reacted == 45
 
     def test_columns_present(self, tmp_path):
+        """trajectories.csv contains all expected per-trajectory columns."""
         write_all(
             tmp_path,
             _make_result(),
@@ -5103,6 +5630,7 @@ class TestEncountersCSV:
     """Test encounters.csv output."""
 
     def test_file_created_when_reactions(self, tmp_path):
+        """write_all creates encounters.csv when reactions occur."""
         write_all(
             tmp_path,
             _make_result(10, 90),
@@ -5114,6 +5642,7 @@ class TestEncountersCSV:
         assert (tmp_path / "encounters.csv").exists()
 
     def test_row_count_matches_reactions(self, tmp_path):
+        """encounters.csv has one row per reacted trajectory."""
         write_all(
             tmp_path,
             _make_result(20, 80),
@@ -5131,6 +5660,7 @@ class TestNearMissesCSV:
     """Test near_misses.csv output."""
 
     def test_row_count_matches_escaped(self, tmp_path):
+        """near_misses.csv has one row per escaped trajectory."""
         write_all(
             tmp_path,
             _make_result(30, 70),
@@ -5148,6 +5678,7 @@ class TestPathsNPZ:
     """Test paths.npz output."""
 
     def test_file_created(self, tmp_path):
+        """write_all creates paths.npz in the output directory."""
         write_all(
             tmp_path,
             _make_result(),
@@ -5159,6 +5690,7 @@ class TestPathsNPZ:
         assert (tmp_path / "paths.npz").exists()
 
     def test_shape_correct(self, tmp_path):
+        """paths.npz data array has 8 columns for traj_id, step, position, and orientation."""
         write_all(
             tmp_path,
             _make_result(),
@@ -5171,6 +5703,7 @@ class TestPathsNPZ:
         assert d["data"].shape[1] == 8  # traj_id, step, x, y, z, q0, q1, q2
 
     def test_disabled(self, tmp_path):
+        """Disabling full_paths prevents paths.npz from being written."""
         oc = OutputConfig(full_paths=False)
         write_all(
             tmp_path, _make_result(), _make_dummy_data(), oc, k_b=57.47, D_rel=0.434
@@ -5182,6 +5715,7 @@ class TestRadialDensity:
     """Test radial_density.csv output."""
 
     def test_columns(self, tmp_path):
+        """radial_density.csv contains r_center and density columns."""
         write_all(
             tmp_path,
             _make_result(),
@@ -5196,6 +5730,7 @@ class TestRadialDensity:
         assert "density" in cols
 
     def test_density_nonnegative(self, tmp_path):
+        """Every density value in radial_density.csv is non-negative."""
         write_all(
             tmp_path,
             _make_result(),
@@ -5213,6 +5748,7 @@ class TestMilestoneFlux:
     """Test milestone_flux.csv output."""
 
     def test_columns(self, tmp_path):
+        """milestone_flux.csv contains radius, flux_outward, flux_inward, and net_flux columns."""
         write_all(
             tmp_path,
             _make_result(),
@@ -5228,6 +5764,7 @@ class TestMilestoneFlux:
             assert c in cols
 
     def test_row_count(self, tmp_path):
+        """milestone_flux.csv has 11 rows for the 11 milestone radii."""
         write_all(
             tmp_path,
             _make_result(),
@@ -5245,6 +5782,7 @@ class TestTransitionMatrix:
     """Test transition_matrix.npz output."""
 
     def test_square(self, tmp_path):
+        """transition_matrix.npz counts array is square with 50 rows and 50 columns."""
         write_all(
             tmp_path,
             _make_result(),
@@ -5262,6 +5800,7 @@ class TestPCommit:
     """Test p_commit.npz output."""
 
     def test_values_in_01(self, tmp_path):
+        """p_commit.npz commitor probabilities all lie within [0, 1]."""
         write_all(
             tmp_path,
             _make_result(),
@@ -5279,6 +5818,7 @@ class TestEdgeCases:
     """Test edge cases."""
 
     def test_zero_reactions(self, tmp_path):
+        """With zero reactions P_rxn and k_on are 0 and encounters.csv is not written."""
         data = _make_dummy_data(100, 0, 100)
         result = _make_result(0, 100)
         write_all(tmp_path, result, data, OutputConfig(), k_b=57.47, D_rel=0.434)
@@ -5289,6 +5829,7 @@ class TestEdgeCases:
         assert not (tmp_path / "encounters.csv").exists()
 
     def test_all_reacted(self, tmp_path):
+        """With all trajectories reacted P_rxn equals 1."""
         data = _make_dummy_data(50, 50, 0)
         result = _make_result(50, 0)
         write_all(tmp_path, result, data, OutputConfig(), k_b=57.47, D_rel=0.434)
@@ -5297,6 +5838,7 @@ class TestEdgeCases:
         # near_misses.csv should have 0 rows (no escapes)
 
     def test_all_disabled(self, tmp_path):
+        """Disabling every output produces no written files."""
         oc = OutputConfig(
             results_json=False,
             trajectories_csv=False,
@@ -5319,6 +5861,7 @@ class TestEdgeCases:
         assert len(written) == 0
 
     def test_file_count_all_enabled(self, tmp_path):
+        """write_all produces 14 files when all outputs are enabled."""
         written = write_all(
             tmp_path,
             _make_result(),
@@ -5332,6 +5875,7 @@ class TestEdgeCases:
 
 class TestConvergenceAnalysis:
     def test_basic_convergence(self):
+        """analyse_convergence reports N, P_rxn, SE, and converged True for balanced reaction counts."""
         result = analyse_convergence(n_reacted=500, n_escaped=500, k_b=35.0)
         assert result["N"] == 1000
         assert result["P_rxn"] == pytest.approx(0.5, abs=1e-10)
@@ -5339,11 +5883,13 @@ class TestConvergenceAnalysis:
         assert result["converged"] is True
 
     def test_low_prxn_not_converged(self):
+        """A low P_rxn relative to the tolerance is reported as not converged."""
         result = analyse_convergence(n_reacted=5, n_escaped=95, k_b=35.0, tol=0.05)
         assert result["P_rxn"] == pytest.approx(0.05)
         assert result["converged"] is False
 
     def test_zero_reacted(self):
+        """With zero reactions P_rxn, SE, and k_on are 0, relative SE is infinite, and not converged."""
         result = analyse_convergence(n_reacted=0, n_escaped=1000, k_b=35.0)
         assert result["P_rxn"] == 0.0
         assert result["SE"] == 0.0
@@ -5355,6 +5901,7 @@ class TestConvergenceAnalysis:
         # P=1 means every trajectory reacted; with no escape statistics the
         # convergence verdict is undefined at the boundary. Audit fix B4:
         # converged must be False when P is at either 0 or 1.
+        """With all trajectories reacted P_rxn is 1, SE is 0, and convergence is False at the boundary."""
         result = analyse_convergence(n_reacted=1000, n_escaped=0, k_b=35.0)
         assert result["P_rxn"] == 1.0
         assert result["SE"] == 0.0
@@ -5362,11 +5909,13 @@ class TestConvergenceAnalysis:
         assert result["converged"] is False
 
     def test_no_trajectories(self):
+        """With no completed trajectories convergence is False and a reason is provided."""
         result = analyse_convergence(n_reacted=0, n_escaped=0, k_b=35.0)
         assert result["converged"] is False
         assert "reason" in result
 
     def test_wilson_ci_bounds(self):
+        """The Wilson confidence interval for P_rxn stays within [0, 1] and brackets P_rxn."""
         result = analyse_convergence(n_reacted=50, n_escaped=950, k_b=35.0)
         lo, hi = result["wilson_CI_P"]
         assert lo >= 0.0
@@ -5374,11 +5923,13 @@ class TestConvergenceAnalysis:
         assert lo < result["P_rxn"] < hi
 
     def test_wilson_ci_small_prxn(self):
+        """The Wilson interval lower bound stays non-negative at small reaction probability."""
         result = analyse_convergence(n_reacted=2, n_escaped=998, k_b=35.0)
         lo, hi = result["wilson_CI_P"]
         assert lo >= 0.0
 
     def test_n_needed_targets(self):
+        """N_needed reports 10%, 5%, and 1% targets with the 1% target larger than the 5% one."""
         result = analyse_convergence(n_reacted=100, n_escaped=900, k_b=35.0)
         assert "10%" in result["N_needed"]
         assert "5%" in result["N_needed"]
@@ -5386,6 +5937,7 @@ class TestConvergenceAnalysis:
         assert result["N_needed"]["1%"] > result["N_needed"]["5%"]
 
     def test_kon_conversion(self):
+        """k_on equals conv_factor times k_b times P_rxn under the given conversion factor."""
         conv = 6.022e8
         result = analyse_convergence(
             n_reacted=500, n_escaped=500, k_b=35.0, conv_factor=conv
@@ -5393,27 +5945,32 @@ class TestConvergenceAnalysis:
         assert result["k_on"] == pytest.approx(conv * 35.0 * 0.5)
 
     def test_print_convergence_normal(self):
+        """print_convergence output includes P_rxn and a Converged label for a converged result."""
         result = analyse_convergence(n_reacted=500, n_escaped=500, k_b=35.0)
         text = print_convergence(result)
         assert "P_rxn" in text
         assert "Converged" in text
 
     def test_print_convergence_not_converged(self):
+        """print_convergence output reports Not converged for an unconverged result."""
         result = analyse_convergence(n_reacted=5, n_escaped=95, k_b=35.0, tol=0.01)
         text = print_convergence(result)
         assert "Not converged" in text
 
     def test_print_convergence_zero_prxn(self):
+        """print_convergence output reports inf for zero reaction probability."""
         result = analyse_convergence(n_reacted=0, n_escaped=100, k_b=35.0)
         text = print_convergence(result)
         assert "inf" in text
 
     def test_print_convergence_no_data(self):
+        """print_convergence output reports the no completed trajectories reason."""
         result = {"converged": False, "reason": "no completed trajectories"}
         text = print_convergence(result)
         assert "no completed trajectories" in text
 
     def test_save_convergence(self):
+        """save_convergence writes convergence.json with the correct N and P_rxn."""
         result = analyse_convergence(n_reacted=100, n_escaped=900, k_b=35.0)
         with tempfile.TemporaryDirectory() as td:
             save_convergence(result, work_dir=td)
@@ -5427,6 +5984,7 @@ class TestConvergenceAnalysis:
 
 class TestWienerProcess:
     def test_init(self):
+        """WienerProcess initializes with t zero, the given dt and dW, and at_end False."""
         dW = np.array([1.0, 2.0, 3.0])
         wp = WienerProcess(dW, dt=0.5)
         assert wp.t == 0.0
@@ -5435,12 +5993,14 @@ class TestWienerProcess:
         assert wp.at_end is False
 
     def test_step_forward(self):
+        """step_forward advances t by dt and sets at_end True at the final step."""
         wp = WienerProcess(np.zeros(3), dt=0.5)
         wp.step_forward()
         assert wp.t == pytest.approx(0.5)
         assert wp.at_end is True
 
     def test_split(self):
+        """Splitting a Wiener process halves dt and preserves the summed Brownian increment."""
         rng = np.random.default_rng(42)
         dW = np.array([1.0, 0.0, 0.0])
         wp = WienerProcess(dW, dt=1.0)
@@ -5457,6 +6017,7 @@ class TestWienerProcess:
         assert wp.at_end is True
 
     def test_double_split(self):
+        """Double splitting quarters dt while preserving total increment and total time."""
         rng = np.random.default_rng(99)
         dW = np.array([2.0, 3.0])
         wp = WienerProcess(dW, dt=2.0)
@@ -5475,6 +6036,7 @@ class TestWienerProcess:
 
 class TestDoOneFullStep:
     def test_no_backstep(self):
+        """do_one_full_step advances once with no backstep, returning the full dt."""
         call_count = [0]
 
         def advance(dW, t, dt):
@@ -5491,6 +6053,7 @@ class TestDoOneFullStep:
         assert call_count[0] == 1
 
     def test_one_backstep(self):
+        """do_one_full_step retries with halved dt after a rejected step requesting a backstep."""
         step_count = [0]
 
         def advance(dW, t, dt):
@@ -5510,6 +6073,7 @@ class TestDoOneFullStep:
 
     def test_trajectory_done(self):
 
+        """do_one_full_step returns the original dt when the trajectory finishes on the first advance."""
         def advance(dW, t, dt):
             return True, False
 
@@ -5523,11 +6087,13 @@ class TestDoOneFullStep:
 
 class TestMakeInitialDW:
     def test_shape(self):
+        """make_initial_dW returns an array of the requested length."""
         rng = np.random.default_rng(42)
         dW = make_initial_dW(6, 0.5, rng)
         assert dW.shape == (6,)
 
     def test_scaling(self):
+        """make_initial_dW samples have standard deviation sqrt(dt)."""
         rng = np.random.default_rng(42)
         n = 100000
         samples = np.array([make_initial_dW(1, 2.0, rng)[0] for _ in range(n)])
@@ -5536,6 +6102,7 @@ class TestMakeInitialDW:
 
 class TestEffectiveCharges:
     def test_single_charge_potential(self):
+        """An unscreened single point charge gives potential q/r."""
         ec = EffectiveCharges(
             positions=np.array([[0.0, 0.0, 0.0]]),
             charges=np.array([1.0]),
@@ -5547,6 +6114,7 @@ class TestEffectiveCharges:
         assert phi == pytest.approx(1.0 / 10.0, rel=1e-4)
 
     def test_debye_screening(self):
+        """Debye screening makes the potential larger near the charge than far from it."""
         ec = EffectiveCharges(
             positions=np.array([[0.0, 0.0, 0.0]]),
             charges=np.array([1.0]),
@@ -5558,6 +6126,7 @@ class TestEffectiveCharges:
         assert phi_near > phi_far
 
     def test_potential_symmetry(self):
+        """The single-charge potential is isotropic along x, y, and z at equal distance."""
         ec = EffectiveCharges(
             positions=np.array([[0.0, 0.0, 0.0]]),
             charges=np.array([1.0]),
@@ -5570,6 +6139,7 @@ class TestEffectiveCharges:
         assert phi_x == pytest.approx(phi_z, rel=1e-10)
 
     def test_force_repulsive_same_sign(self):
+        """The force on a like-sign charge points away from the source charge."""
         ec = EffectiveCharges(
             positions=np.array([[0.0, 0.0, 0.0]]),
             charges=np.array([1.0]),
@@ -5581,6 +6151,7 @@ class TestEffectiveCharges:
         assert F[0] > 0
 
     def test_force_attractive_opposite_sign(self):
+        """The force on an opposite-sign charge points toward the source charge."""
         ec = EffectiveCharges(
             positions=np.array([[0.0, 0.0, 0.0]]),
             charges=np.array([1.0]),
@@ -5592,6 +6163,7 @@ class TestEffectiveCharges:
         assert F[0] < 0
 
     def test_force_zero_charge(self):
+        """The force on a zero charge is the zero vector."""
         ec = EffectiveCharges(
             positions=np.array([[0.0, 0.0, 0.0]]),
             charges=np.array([1.0]),
@@ -5600,6 +6172,7 @@ class TestEffectiveCharges:
         np.testing.assert_array_equal(F, np.zeros(3))
 
     def test_multiple_charges(self):
+        """Two equal charges equidistant from the origin sum to potential 2q/r there."""
         ec = EffectiveCharges(
             positions=np.array([[5.0, 0.0, 0.0], [-5.0, 0.0, 0.0]]),
             charges=np.array([1.0, 1.0]),
@@ -5610,6 +6183,7 @@ class TestEffectiveCharges:
         assert phi_origin == pytest.approx(2.0 / 5.0, rel=1e-4)
 
     def test_len(self):
+        """len of EffectiveCharges equals the number of charges."""
         ec = EffectiveCharges(
             positions=np.zeros((3, 3)),
             charges=np.ones(3),
@@ -5617,6 +6191,7 @@ class TestEffectiveCharges:
         assert len(ec) == 3
 
     def test_repr(self):
+        """repr of EffectiveCharges reports the charge count and a formatted charge value."""
         ec = EffectiveCharges(
             positions=np.zeros((2, 3)),
             charges=np.array([1.0, -0.5]),
@@ -5626,6 +6201,7 @@ class TestEffectiveCharges:
         assert "0.50 e" in s
 
     def test_from_xml(self):
+        """EffectiveCharges.from_xml reads two charge tags and recovers their charges 0.5 and -0.5."""
         xml = (
             '<?xml version="1.0"?>\n'
             "<charges>\n"
@@ -5642,6 +6218,7 @@ class TestEffectiveCharges:
         np.testing.assert_allclose(ec.charges, [0.5, -0.5])
 
     def test_from_xml_point_charge_tag(self):
+        """EffectiveCharges.from_xml parses a single point_charge tag into one charge."""
         xml = (
             '<?xml version="1.0"?>\n'
             "<multipole>\n"
@@ -5656,6 +6233,7 @@ class TestEffectiveCharges:
         assert len(ec) == 1
 
     def test_from_xml_empty_raises(self):
+        """EffectiveCharges.from_xml raises ValueError when the XML contains no charges."""
         xml = '<?xml version="1.0"?>\n<charges></charges>\n'
         with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
             f.write(xml)
@@ -5667,6 +6245,7 @@ class TestEffectiveCharges:
 
 class TestLoadEffectiveCharges:
     def test_auto_detect_cheby(self):
+        """load_effective_charges auto-detects and loads a mol_cheby.xml file as one charge."""
         xml = (
             '<?xml version="1.0"?>\n'
             "<charges>\n"
@@ -5680,6 +6259,7 @@ class TestLoadEffectiveCharges:
             assert len(ec) == 1
 
     def test_auto_detect_mpole(self):
+        """load_effective_charges auto-detects and loads a mol_mpole.xml file."""
         xml = (
             '<?xml version="1.0"?>\n'
             "<charges>\n"
@@ -5692,6 +6272,7 @@ class TestLoadEffectiveCharges:
             assert ec is not None
 
     def test_not_found_returns_none(self):
+        """load_effective_charges returns None when no matching charge file exists."""
         with tempfile.TemporaryDirectory() as td:
             ec = load_effective_charges(td, "nonexistent")
             assert ec is None
@@ -5699,10 +6280,12 @@ class TestLoadEffectiveCharges:
 
 class TestStepNearSurface:
     def test_inv_erf(self):
+        """_inv_erf maps 0 to 0 and 0.5 to its expected inverse error function value."""
         assert _inv_erf(0.0) == pytest.approx(0.0)
         assert _inv_erf(0.5) == pytest.approx(math.erfc(1) and 0.4769362762, rel=1e-5)
 
     def test_large_x0_with_repulsion_survives(self):
+        """Most walkers survive when started far from the surface under strong repulsion."""
         rng = np.random.default_rng(42)
         n_survived = 0
         for _ in range(200):
@@ -5714,6 +6297,7 @@ class TestStepNearSurface:
         assert n_survived > 100
 
     def test_small_x0_absorbs(self):
+        """A meaningful fraction of walkers started very close to the surface are absorbed."""
         rng = np.random.default_rng(42)
         n_absorbed = 0
         for _ in range(500):
@@ -5725,6 +6309,7 @@ class TestStepNearSurface:
         assert n_absorbed > 50
 
     def test_survival_returns_positive_x(self):
+        """Surviving walkers return a non-negative position and a positive step time."""
         rng = np.random.default_rng(7)
         for _ in range(100):
             survives, new_x, time = step_near_absorbing_surface(
@@ -5735,6 +6320,7 @@ class TestStepNearSurface:
                 assert time > 0.0
 
     def test_absorption_returns_zero_x(self):
+        """Absorbed walkers return position 0 and a non-negative step time."""
         rng = np.random.default_rng(99)
         for _ in range(500):
             survives, new_x, time = step_near_absorbing_surface(
@@ -5747,6 +6333,7 @@ class TestStepNearSurface:
         pytest.skip("No absorption event in 500 trials")
 
     def test_repulsive_force_increases_survival(self):
+        """Repulsive force never decreases the number of surviving walkers versus no force."""
         rng_a = np.random.default_rng(42)
         rng_b = np.random.default_rng(42)
         n_surv_noforce = sum(
@@ -5762,12 +6349,14 @@ class TestStepNearSurface:
 
 class TestQuatMultiply:
     def test_identity(self):
+        """Multiplying by the identity quaternion leaves a quaternion unchanged on both sides."""
         I = np.array([1.0, 0.0, 0.0, 0.0])
         q = np.array([0.5, 0.5, 0.5, 0.5])
         np.testing.assert_allclose(quat_multiply(I, q), q, atol=1e-12)
         np.testing.assert_allclose(quat_multiply(q, I), q, atol=1e-12)
 
     def test_inverse(self):
+        """Multiplying a unit quaternion by its conjugate yields the identity quaternion."""
         q = np.array([0.5, 0.5, 0.5, 0.5])
         q_conj = np.array([0.5, -0.5, -0.5, -0.5])
         prod = quat_multiply(q, q_conj)
@@ -5776,10 +6365,12 @@ class TestQuatMultiply:
 
 class TestQuatOfRotvec:
     def test_zero_rotation(self):
+        """quat_of_rotvec maps a zero rotation vector to the identity quaternion."""
         q = quat_of_rotvec(np.zeros(3))
         np.testing.assert_allclose(q, [1.0, 0.0, 0.0, 0.0], atol=1e-12)
 
     def test_90deg_about_z(self):
+        """quat_of_rotvec for a π/2 rotation about z is unit norm with the expected half-angle components."""
         omega = np.array([0.0, 0.0, math.pi / 2])
         q = quat_of_rotvec(omega)
         assert abs(np.linalg.norm(q) - 1.0) < 1e-12
@@ -5789,6 +6380,7 @@ class TestQuatOfRotvec:
 
 class TestRandomUnitQuat:
     def test_unit_norm(self):
+        """random_unit_quat always returns a quaternion of unit norm."""
         rng = np.random.default_rng(42)
         for _ in range(100):
             q = random_unit_quat(rng)
@@ -5797,21 +6389,25 @@ class TestRandomUnitQuat:
 
 class TestDiffusionalRotation:
     def test_tau_zero(self):
+        """diffusional_rotation with τ equal to 0 returns the identity quaternion."""
         rng = np.random.default_rng(42)
         q = diffusional_rotation(rng, 0.0)
         np.testing.assert_allclose(q, [1.0, 0.0, 0.0, 0.0], atol=1e-12)
 
     def test_tau_negative(self):
+        """diffusional_rotation with negative τ returns the identity quaternion."""
         rng = np.random.default_rng(42)
         q = diffusional_rotation(rng, -1.0)
         np.testing.assert_allclose(q, [1.0, 0.0, 0.0, 0.0], atol=1e-12)
 
     def test_small_tau_unit_norm(self):
+        """diffusional_rotation at small τ returns a unit-norm quaternion."""
         rng = np.random.default_rng(42)
         q = diffusional_rotation(rng, 0.1)
         assert abs(np.linalg.norm(q) - 1.0) < 1e-10
 
     def test_tau_0p25_small_angle(self):
+        """diffusional_rotation at small τ produces a small mean rotation angle below 1.5 radians."""
         rng = np.random.default_rng(42)
         angles = []
         for _ in range(500):
@@ -5822,26 +6418,31 @@ class TestDiffusionalRotation:
         assert mean_angle < 1.5
 
     def test_tau_0p3_split_at_025(self):
+        """diffusional_rotation at τ equal to 0.3 returns a unit-norm quaternion."""
         rng = np.random.default_rng(42)
         q = diffusional_rotation(rng, 0.3)
         assert abs(np.linalg.norm(q) - 1.0) < 1e-10
 
     def test_tau_0p7_split_at_05(self):
+        """diffusional_rotation at τ equal to 0.7 returns a unit-norm quaternion."""
         rng = np.random.default_rng(42)
         q = diffusional_rotation(rng, 0.7)
         assert abs(np.linalg.norm(q) - 1.0) < 1e-10
 
     def test_tau_1p5_split_at_1(self):
+        """diffusional_rotation at τ equal to 1.5 returns a unit-norm quaternion."""
         rng = np.random.default_rng(42)
         q = diffusional_rotation(rng, 1.5)
         assert abs(np.linalg.norm(q) - 1.0) < 1e-10
 
     def test_tau_3_split_at_2(self):
+        """diffusional_rotation at τ equal to 3.0 returns a unit-norm quaternion."""
         rng = np.random.default_rng(42)
         q = diffusional_rotation(rng, 3.0)
         assert abs(np.linalg.norm(q) - 1.0) < 1e-10
 
     def test_large_tau_random(self):
+        """diffusional_rotation at large τ returns a unit-norm quaternion with a nontrivial scalar part."""
         rng = np.random.default_rng(42)
         q = diffusional_rotation(rng, 10.0)
         assert abs(np.linalg.norm(q) - 1.0) < 1e-10
@@ -5850,16 +6451,19 @@ class TestDiffusionalRotation:
 
 class TestFingerprint:
     def test_all_inside(self):
+        """_fingerprint returns case 0 when all cube vertices are inside."""
         verts = np.ones((2, 2, 2), dtype=np.int8)
         fp = _fingerprint(verts)
         assert fp[0] == 0
 
     def test_all_outside(self):
+        """_fingerprint returns case 0 when all cube vertices are outside."""
         verts = np.zeros((2, 2, 2), dtype=np.int8)
         fp = _fingerprint(verts)
         assert fp[0] == 0
 
     def test_single_corner(self):
+        """_fingerprint returns case 1 when exactly one cube corner is inside."""
         verts = np.zeros((2, 2, 2), dtype=np.int8)
         verts[0, 0, 0] = 1
         fp = _fingerprint(verts)
@@ -5868,6 +6472,7 @@ class TestFingerprint:
 
 class TestVoxelise:
     def test_single_sphere(self):
+        """_voxelise of a single sphere produces a non-empty grid larger than the sphere radius."""
         coords = np.array([[0.0, 0.0, 0.0]])
         radii = np.array([5.0])
         grid, origin, spacing = _voxelise(coords, radii, spacing=1.0, padding=3.0)
@@ -5875,6 +6480,7 @@ class TestVoxelise:
         assert grid.shape[0] > 5
 
     def test_all_interior(self):
+        """_voxelise marks the voxel at a sphere center as interior."""
         coords = np.array([[0.0, 0.0, 0.0]])
         radii = np.array([3.0])
         grid, origin, sp = _voxelise(coords, radii, spacing=0.5, padding=2.0)
@@ -5886,6 +6492,7 @@ class TestVoxelise:
 
 class TestExtractSurface:
     def test_sphere_has_surface(self):
+        """_extract_surface of a voxelised sphere yields surface elements each with positive area."""
         coords = np.array([[0.0, 0.0, 0.0]])
         radii = np.array([3.0])
         grid, origin, sp = _voxelise(coords, radii, spacing=1.0, padding=2.0)
@@ -5897,6 +6504,7 @@ class TestExtractSurface:
 
 class TestMCHydrodynamicRadius:
     def test_single_sphere(self):
+        """mc_hydrodynamic_radius of a single sphere recovers its radius and center within tolerance."""
         R = 5.0
         coords = np.array([[0.0, 0.0, 0.0]])
         radii = np.array([R])
@@ -5909,38 +6517,46 @@ class TestMCHydrodynamicRadius:
 
 class TestMaxTimeStep:
     def test_normal(self):
+        """max_time_step returns a positive step for typical diffusion and geometry inputs."""
         dt = max_time_step(r=100.0, D_rel=0.1, D_rot=0.001, r_hydro1=20.0, r_hydro2=5.0)
         assert dt > 0
 
     def test_r_zero_fallback(self):
+        """max_time_step falls back to 0.2 when the separation r is zero."""
         dt = max_time_step(r=0.0, D_rel=0.1, D_rot=0.001, r_hydro1=20.0, r_hydro2=5.0)
         assert dt == 0.2
 
     def test_D_zero_fallback(self):
+        """max_time_step falls back to 0.2 when the relative diffusion constant is zero."""
         dt = max_time_step(r=100.0, D_rel=0.0, D_rot=0.001, r_hydro1=20.0, r_hydro2=5.0)
         assert dt == 0.2
 
     def test_no_rotation(self):
+        """max_time_step returns a positive step when the rotational diffusion constant is zero."""
         dt = max_time_step(r=50.0, D_rel=0.1, D_rot=0.0, r_hydro1=10.0, r_hydro2=10.0)
         assert dt > 0
 
 
 class TestReactionTimeStep:
     def test_normal(self):
+        """reaction_time_step returns a positive step for typical ρ_min and D_rel inputs."""
         dt = reaction_time_step(rho_min=17.0, D_rel=0.1)
         assert dt > 0
 
     def test_zero_rho(self):
+        """reaction_time_step falls back to 0.05 when ρ_min is zero."""
         dt = reaction_time_step(rho_min=0.0, D_rel=0.1)
         assert dt == 0.05
 
     def test_zero_D(self):
+        """reaction_time_step falls back to 0.05 when D_rel is zero."""
         dt = reaction_time_step(rho_min=17.0, D_rel=0.0)
         assert dt == 0.05
 
 
 class TestAdaptiveTimeStepController:
     def test_first_call(self):
+        """AdaptiveTimeStep.get_dt returns a positive step on its first call."""
         ctrl = AdaptiveTimeStep()
         dt = ctrl.get_dt(
             r=100.0,
@@ -5953,6 +6569,7 @@ class TestAdaptiveTimeStepController:
         assert dt > 0
 
     def test_growth_factor(self):
+        """AdaptiveTimeStep limits step growth between successive calls to a factor of about 1.1."""
         ctrl = AdaptiveTimeStep()
         dt1 = ctrl.get_dt(
             r=100.0,
@@ -5973,6 +6590,7 @@ class TestAdaptiveTimeStepController:
         assert dt2 <= dt1 * 1.1 + 1e-15
 
     def test_near_reaction_zone(self):
+        """AdaptiveTimeStep yields a step near the reaction zone no larger than one far from it."""
         ctrl = AdaptiveTimeStep()
         dt = ctrl.get_dt(
             r=20.0,
@@ -5993,6 +6611,7 @@ class TestAdaptiveTimeStepController:
         assert dt <= dt_far
 
     def test_reset(self):
+        """AdaptiveTimeStep.get_dt returns a positive step after reset."""
         ctrl = AdaptiveTimeStep()
         ctrl.get_dt(
             r=50.0,
@@ -6016,6 +6635,7 @@ class TestAdaptiveTimeStepController:
 
 class TestBackstepDueToForce:
     def test_dt_below_min_no_backstep(self):
+        """backstep_due_to_force does not backstep when dt is already below dt_min."""
         pos_old = np.array([0.0, 0.0, 0.0])
         pos_new = np.array([1.0, 0.0, 0.0])
         f_old = np.array([0.0, 0.0, 0.0])
@@ -6026,6 +6646,7 @@ class TestBackstepDueToForce:
         assert result is False
 
     def test_zero_force_change(self):
+        """backstep_due_to_force does not backstep when the force does not change."""
         f = np.array([1.0, 0.0, 0.0])
         pos_old = np.array([0.0, 0.0, 0.0])
         pos_new = np.array([1.0, 0.0, 0.0])
@@ -6033,6 +6654,7 @@ class TestBackstepDueToForce:
         assert result is False
 
     def test_large_force_change_backstep(self):
+        """backstep_due_to_force triggers a backstep on a large force change along the displacement."""
         pos_old = np.array([10.0, 0.0, 0.0])
         pos_new = np.array([10.01, 0.0, 0.0])
         f_old = np.array([0.0, 0.0, 0.0])
@@ -6043,6 +6665,7 @@ class TestBackstepDueToForce:
         assert result is True
 
     def test_perpendicular_force_no_backstep(self):
+        """backstep_due_to_force does not backstep when the force change is perpendicular to the displacement."""
         pos_old = np.array([0.0, 0.0, 0.0])
         pos_new = np.array([1.0, 0.0, 0.0])
         f_old = np.array([0.0, 0.0, 0.0])
@@ -6055,14 +6678,17 @@ class TestBackstepDueToForce:
 
 class TestMoleculeEdgeCases:
     def test_empty_radius_of_gyration(self):
+        """Molecule.radius_of_gyration returns 0 for a molecule with no atoms."""
         mol = Molecule(name="empty")
         assert mol.radius_of_gyration() == 0.0
 
     def test_empty_bounding_radius(self):
+        """Molecule.bounding_radius returns 0 for a molecule with no atoms."""
         mol = Molecule(name="empty")
         assert mol.bounding_radius() == 0.0
 
     def test_bounding_box_empty_molecule(self):
+        """BoundingBox.from_molecule gives zero extents for an empty molecule."""
         mol = Molecule(name="empty")
         bb = BoundingBox.from_molecule(mol)
         assert bb.xmin == 0.0 and bb.xmax == 0.0
@@ -6070,6 +6696,7 @@ class TestMoleculeEdgeCases:
 
 class TestPqrIoEdgeCases:
     def test_parse_pqr_with_remarks_and_end(self):
+        """parse_pqr skips REMARK and END lines and reads both ATOM and HETATM records with charges."""
         pqr = (
             "REMARK This is a test\n"
             "ATOM      1  CA  ALA     1       1.000   2.000   3.000  0.500  1.800\n"
@@ -6086,6 +6713,7 @@ class TestPqrIoEdgeCases:
         assert mol.atoms[1].name == "O"
 
     def test_write_and_read_roundtrip(self):
+        """Writing a molecule with write_pqr and reading it back preserves atom count and coordinates."""
         mol = Molecule(name="test")
         mol.atoms.append(
             Atom(
@@ -6110,6 +6738,7 @@ class TestPqrIoEdgeCases:
         assert mol2.atoms[0].x == pytest.approx(1.0, abs=0.01)
 
     def test_parse_pqr_malformed_line_skipped(self):
+        """parse_pqr skips a malformed line and keeps the two valid atom records."""
         pqr = (
             "ATOM      1  CA  ALA     1       1.000   2.000   3.000  0.500  1.800\n"
             "ATOM  bad line missing fields\n"
@@ -6158,6 +6787,7 @@ class TestReactionInterfaceProbability:
         return mol1, mol2
 
     def test_reaction_with_probability_1(self):
+        """ReactionInterface.check returns True when contacts are satisfied and probability is 1."""
         mol1, mol2 = self._make_molecules(dist=3.0)
         criteria = ReactionCriteria(
             name="test",
@@ -6170,6 +6800,7 @@ class TestReactionInterfaceProbability:
         assert rxn.check(mol1, mol2) is True
 
     def test_reaction_with_probability_0(self):
+        """ReactionInterface.check never fires over 100 trials when probability is 0."""
         mol1, mol2 = self._make_molecules(dist=3.0)
         criteria = ReactionCriteria(
             name="test",
@@ -6183,6 +6814,7 @@ class TestReactionInterfaceProbability:
         assert n_fired == 0
 
     def test_pathway_set_check_with_rng(self):
+        """PathwaySet.check_all fires at roughly the 0.5 reaction probability rate over 200 trials."""
         mol1, mol2 = self._make_molecules(dist=3.0)
         criteria = ReactionCriteria(
             name="test",
@@ -6202,6 +6834,7 @@ class TestReactionInterfaceProbability:
         assert 50 < n_fired < 150
 
     def test_not_satisfied_returns_false(self):
+        """ReactionInterface.check returns False when the contact distance criterion is not met."""
         mol1, mol2 = self._make_molecules(dist=100.0)
         criteria = ReactionCriteria(
             name="test",
@@ -6216,6 +6849,7 @@ class TestReactionInterfaceProbability:
 
 class TestCLI:
     def test_cli_group_help(self):
+        """The CLI group help exits successfully and mentions PySTARC."""
         from click.testing import CliRunner
         from pystarc.cli.main import cli
 
@@ -6225,6 +6859,7 @@ class TestCLI:
         assert "PySTARC" in result.output
 
     def test_bounding_box_cmd(self):
+        """The bounding_box CLI command runs on a PQR file and reports the bounding box."""
         from click.testing import CliRunner
         from pystarc.cli.main import cli
 
@@ -6237,6 +6872,7 @@ class TestCLI:
             assert "Bounding box" in result.output
 
     def test_pqr_to_xml_cmd(self):
+        """The pqr_to_xml CLI command converts a PQR file into an XML file containing the residue name."""
         from click.testing import CliRunner
         from pystarc.cli.main import cli
 
@@ -6251,6 +6887,7 @@ class TestCLI:
             assert "ALA" in content
 
     def test_nam_simulation_missing_files(self):
+        """The nam_simulation CLI command exits with a nonzero code when its input files are missing."""
         from click.testing import CliRunner
         from pystarc.cli.main import cli
 
@@ -6274,28 +6911,34 @@ class TestCLI:
 class TestPipelineExtract:
 
     def test_is_atom_line_atom(self):
+        """_is_atom_line returns True for an ATOM record line."""
         assert (
             _is_atom_line("ATOM      1  CA  ALA     1       1.0   2.0   3.0  0.5  1.8")
             is True
         )
 
     def test_is_atom_line_hetatm(self):
+        """_is_atom_line returns True for a HETATM record line."""
         assert (
             _is_atom_line("HETATM    1  C1  BEN     1       1.0   2.0   3.0  0.5  1.8")
             is True
         )
 
     def test_is_atom_line_remark(self):
+        """_is_atom_line returns False for a REMARK line."""
         assert _is_atom_line("REMARK test line") is False
 
     def test_is_atom_line_ter(self):
+        """_is_atom_line returns False for a TER line."""
         assert _is_atom_line("TER") is False
 
     def test_residue_name_extraction(self):
+        """_residue_name extracts the residue name ALA from a PDB atom line."""
         line = "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  0.50  1.80"
         assert _residue_name(line) == "ALA"
 
     def test_extract_splits_correctly(self):
+        """extract splits a complex into receptor and ligand files, keeping the ligand and excluding water."""
         pdb = (
             "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  0.50  1.80\n"
             "ATOM      2  CB  ALA A   1       4.000   5.000   6.000  0.50  1.80\n"
@@ -6316,6 +6959,7 @@ class TestPipelineExtract:
             assert "HOH" not in rec_text
 
     def test_extract_no_ligand_raises(self):
+        """extract raises ValueError when no atoms match the requested ligand name."""
         pdb = "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  0.50  1.80\n"
         with tempfile.TemporaryDirectory() as td:
             pdb_path = Path(td) / "complex.pdb"
@@ -6324,6 +6968,7 @@ class TestPipelineExtract:
                 extract(pdb_path, "XYZ", td)
 
     def test_extract_no_receptor_raises(self):
+        """extract raises ValueError when no receptor atoms remain after removing the ligand."""
         pdb = "HETATM    1  C1  BEN A   1       1.000   2.000   3.000  0.10  1.70\n"
         with tempfile.TemporaryDirectory() as td:
             pdb_path = Path(td) / "complex.pdb"
@@ -6332,6 +6977,7 @@ class TestPipelineExtract:
                 extract(pdb_path, "BEN", td)
 
     def test_extract_filters_ions(self):
+        """extract filters out monatomic ions when building the receptor file."""
         pdb = (
             "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  0.50  1.80\n"
             "HETATM    2  C1  BEN A   2       7.000   8.000   9.000  0.10  1.70\n"
@@ -6346,6 +6992,7 @@ class TestPipelineExtract:
             assert "NA" not in rec_text.split("ALA")[0] or "ALA" in rec_text
 
     def test_extract_case_insensitive_ligand(self):
+        """extract matches the ligand name case insensitively."""
         pdb = (
             "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  0.50  1.80\n"
             "HETATM    2  C1  BEN A   2       7.000   8.000   9.000  0.10  1.70\n"
@@ -6361,25 +7008,30 @@ class TestPipelineExtract:
 class TestCOFFDROPParams:
 
     def test_txt_to_floats(self):
+        """_txt_to_floats parses a whitespace separated string into the corresponding float array."""
         arr = _txt_to_floats("1.0 2.5 3.7")
         np.testing.assert_allclose(arr, [1.0, 2.5, 3.7])
 
     def test_txt_to_floats_empty(self):
+        """_txt_to_floats returns an empty array for an empty string."""
         arr = _txt_to_floats("")
         assert len(arr) == 0
 
     def test_bead_def_dataclass(self):
+        """BeadDef stores its name and atoms and defaults location to an empty string."""
         bd = BeadDef(name="CA", atoms=["CA", "HA"])
         assert bd.name == "CA"
         assert len(bd.atoms) == 2
         assert bd.location == ""
 
     def test_residue_def_dataclass(self):
+        """ResidueDef stores its name and defaults beads to an empty list."""
         rd = ResidueDef(name="ALA")
         assert rd.name == "ALA"
         assert rd.beads == []
 
     def test_bond_def_dataclass(self):
+        """BondDef stores its residues, atoms, orders, length, and index fields."""
         bond = BondDef(
             residues=("ALA", "GLY"),
             atoms=("CA", "CA"),
@@ -6391,6 +7043,7 @@ class TestCOFFDROPParams:
         assert bond.residues == ("ALA", "GLY")
 
     def test_tabulated_potential_linear(self):
+        """TabulatedPotential interpolates a linear table exactly at endpoints and midpoint."""
         pot = TabulatedPotential(
             x_min=0.0,
             x_max=10.0,
@@ -6405,6 +7058,7 @@ class TestCOFFDROPParams:
         assert pot.value(10.0) == pytest.approx(10.0)
 
     def test_tabulated_potential_clamp_low(self):
+        """TabulatedPotential clamps queries below x_min to the value at x_min."""
         pot = TabulatedPotential(
             x_min=0.0,
             x_max=10.0,
@@ -6417,6 +7071,7 @@ class TestCOFFDROPParams:
         assert pot.value(-5.0) == pytest.approx(0.0)
 
     def test_tabulated_potential_clamp_high(self):
+        """TabulatedPotential clamps queries above x_max to the value at x_max."""
         pot = TabulatedPotential(
             x_min=0.0,
             x_max=10.0,
@@ -6429,6 +7084,7 @@ class TestCOFFDROPParams:
         assert pot.value(20.0) == pytest.approx(10.0)
 
     def test_tabulated_potential_deriv(self):
+        """TabulatedPotential.deriv returns the slope 1.0 of a linear table."""
         pot = TabulatedPotential(
             x_min=0.0,
             x_max=10.0,
@@ -6441,6 +7097,7 @@ class TestCOFFDROPParams:
         assert pot.deriv(5.0) == pytest.approx(1.0)
 
     def test_tabulated_potential_quadratic(self):
+        """TabulatedPotential interpolates a quadratic table to within tolerance at an interior point."""
         xs = np.linspace(0, 10, 101)
         vals = xs**2
         pot = TabulatedPotential(
@@ -6455,6 +7112,7 @@ class TestCOFFDROPParams:
         assert pot.value(3.0) == pytest.approx(9.0, abs=0.1)
 
     def test_match_pot_exact(self):
+        """_match_pot returns the potential whose residues, atoms, and orders match exactly."""
         pot = TabulatedPotential(
             x_min=0,
             x_max=1,
@@ -6468,6 +7126,7 @@ class TestCOFFDROPParams:
         assert found is pot
 
     def test_match_pot_wildcard(self):
+        """_match_pot matches a potential with a wildcard residue against any residue pair."""
         pot = TabulatedPotential(
             x_min=0,
             x_max=1,
@@ -6481,6 +7140,7 @@ class TestCOFFDROPParams:
         assert found is pot
 
     def test_match_pot_no_match(self):
+        """_match_pot returns None when no potential matches the query."""
         pot = TabulatedPotential(
             x_min=0,
             x_max=1,
@@ -6494,6 +7154,7 @@ class TestCOFFDROPParams:
         assert found is None
 
     def test_match_pot_exact_over_wildcard(self):
+        """_match_pot prefers an exact match over a wildcard match."""
         wild = TabulatedPotential(
             x_min=0,
             x_max=1,
@@ -6516,6 +7177,7 @@ class TestCOFFDROPParams:
         assert found is exact
 
     def test_parse_mapping_xml(self):
+        """_parse_mapping reads a mapping XML into residue definitions with their beads and atoms."""
         xml = (
             '<?xml version="1.0"?>\n<mapping>\n'
             "  <residue><name>ALA</name>\n"
@@ -6534,6 +7196,7 @@ class TestCOFFDROPParams:
         assert "HA" in mapping["ALA"].beads[0].atoms
 
     def test_parse_connectivity_xml(self):
+        """_parse_connectivity reads a connectivity XML into bond definitions with length and atoms."""
         xml = (
             '<?xml version="1.0"?>\n<connectivity>\n'
             "  <bond><residues>ALA GLY</residues><atoms>CA CA</atoms>"
@@ -6550,6 +7213,7 @@ class TestCOFFDROPParams:
         assert bonds[0].atoms == ("CA", "CA")
 
     def test_parse_charges_xml(self):
+        """_parse_charges reads a charges XML into a dictionary keyed by residue and atom name."""
         xml = (
             '<?xml version="1.0"?>\n<charges>\n'
             "  <charge><residue>ALA</residue><atom>CA</atom><value>0.5</value></charge>\n"
@@ -6565,6 +7229,7 @@ class TestCOFFDROPParams:
         assert charges[("GLY", "CA")] == pytest.approx(-0.3)
 
     def test_coffdrop_params_constructor(self):
+        """COFFDROPParams.bead_charge returns the stored charge for a known bead and 0.0 otherwise."""
         params = COFFDROPParams(
             mapping={"ALA": ResidueDef(name="ALA")},
             bonds=[],
@@ -6578,6 +7243,7 @@ class TestCOFFDROPParams:
         assert params.bead_charge("GLY", "CB") == 0.0
 
     def test_coffdrop_params_beads_for_residue(self):
+        """COFFDROPParams.beads_for_residue returns the beads of a known residue and None otherwise."""
         bead = BeadDef(name="CA", atoms=["CA"])
         params = COFFDROPParams(
             mapping={"ALA": ResidueDef(name="ALA", beads=[bead])},
@@ -6593,6 +7259,7 @@ class TestCOFFDROPParams:
         assert params.beads_for_residue("XYZ") is None
 
     def test_coffdrop_params_pair_potential(self):
+        """COFFDROPParams.pair_potential returns the interpolated tabulated pair potential at a given r."""
         pot = TabulatedPotential(
             x_min=0.0,
             x_max=20.0,
@@ -6615,6 +7282,7 @@ class TestCOFFDROPParams:
         assert V == pytest.approx(2.5, abs=0.1)
 
     def test_coffdrop_params_pair_force(self):
+        """COFFDROPParams.pair_force returns the negative derivative of the pair potential at a given r."""
         pot = TabulatedPotential(
             x_min=0.0,
             x_max=20.0,
@@ -6637,6 +7305,7 @@ class TestCOFFDROPParams:
         assert dVdr == pytest.approx(-0.25, abs=0.01)
 
     def test_coffdrop_params_no_match_returns_zero(self):
+        """COFFDROPParams returns zero for pair, angle, and dihedral potentials and forces when no potential matches."""
         params = COFFDROPParams(
             mapping={},
             bonds=[],
@@ -6654,6 +7323,7 @@ class TestCOFFDROPParams:
         assert params.dihedral_force(("ALA",), ("CA",), (0,), 180.0) == 0.0
 
     def test_coffdrop_params_bond_length(self):
+        """COFFDROPParams.bond_length returns the bond length for either ordering and None when no bond matches."""
         bond = BondDef(
             residues=("ALA", "GLY"),
             atoms=("CA", "CA"),
@@ -6675,6 +7345,7 @@ class TestCOFFDROPParams:
         assert params.bond_length("XYZ", "CB", 0, "XYZ", "CB", 0) is None
 
     def test_coffdrop_params_repr(self):
+        """The COFFDROPParams repr reports the number of residues in its mapping."""
         params = COFFDROPParams(
             mapping={"ALA": ResidueDef(name="ALA")},
             bonds=[],
@@ -6691,6 +7362,7 @@ class TestCOFFDROPParams:
 class TestCombineDataHelpers:
 
     def test_save_json(self):
+        """_save_json writes a dictionary to a JSON file that reloads with the same contents."""
         with tempfile.TemporaryDirectory() as td:
             _save_json({"key": "val"}, os.path.join(td, "test.json"))
             with open(os.path.join(td, "test.json")) as f:
@@ -6698,6 +7370,7 @@ class TestCombineDataHelpers:
             assert data["key"] == "val"
 
     def test_concat_csv(self):
+        """_concat_csv concatenates per replica CSV files and reindexes the id column using the given offsets."""
         with tempfile.TemporaryDirectory() as td:
             d1 = os.path.join(td, "bd_1")
             d2 = os.path.join(td, "bd_2")
@@ -6720,11 +7393,13 @@ class TestCombineDataHelpers:
             assert rows[1]["traj_id"] == "1"
 
     def test_concat_csv_missing_file(self):
+        """_concat_csv writes no output file when the named CSV is absent from the inputs."""
         with tempfile.TemporaryDirectory() as td:
             _concat_csv([td], "nonexistent.csv", td)
             assert not os.path.exists(os.path.join(td, "nonexistent.csv"))
 
     def test_sum_csv(self):
+        """_sum_csv sums the count column across replica CSV files into a single combined row."""
         with tempfile.TemporaryDirectory() as td:
             d1 = os.path.join(td, "bd_1")
             d2 = os.path.join(td, "bd_2")
@@ -6749,6 +7424,7 @@ class TestCombineDataHelpers:
             assert int(rows[0]["count"]) == 30
 
     def test_concat_npz(self):
+        """_concat_npz stacks the data arrays from replica NPZ files into one array."""
         with tempfile.TemporaryDirectory() as td:
             d1 = os.path.join(td, "bd_1")
             d2 = os.path.join(td, "bd_2")
@@ -6769,6 +7445,7 @@ class TestCombineDataHelpers:
             assert npz["data"].shape == (3, 2)
 
     def test_sum_npz(self):
+        """_sum_npz sums the matrix arrays across replica NPZ files element by element."""
         with tempfile.TemporaryDirectory() as td:
             d1 = os.path.join(td, "bd_1")
             d2 = os.path.join(td, "bd_2")
@@ -6791,6 +7468,7 @@ class TestCombineDataHelpers:
             np.testing.assert_allclose(npz["matrix"], np.ones((3, 3)) * 3)
 
     def test_sum_npz_missing_files(self):
+        """_sum_npz writes no output file when the named NPZ is absent from the inputs."""
         with tempfile.TemporaryDirectory() as td:
             _sum_npz([td], "missing.npz", td, sum_key="x")
             assert not os.path.exists(os.path.join(td, "missing.npz"))
@@ -6800,20 +7478,24 @@ class TestCombineDataHelpers:
 class TestWEDataStructures:
 
     def test_we_parameters_defaults(self):
+        """WEParameters uses default n_per_bin of 10, n_bins of 40, and dt of 0.2."""
         p = WEParameters()
         assert p.n_per_bin == 10
         assert p.n_bins == 40
         assert p.dt == 0.2
 
     def test_we_parameters_auto_escape(self):
+        """WEParameters sets r_escape to twice r_start when r_escape is given as zero."""
         p = WEParameters(r_start=50.0, r_escape=0.0)
         assert p.r_escape == 100.0
 
     def test_we_parameters_custom_escape(self):
+        """WEParameters keeps a custom nonzero r_escape value."""
         p = WEParameters(r_start=50.0, r_escape=200.0)
         assert p.r_escape == 200.0
 
     def test_we_trajectory_copy(self):
+        """WETrajectory.copy produces an independent copy whose position edits do not affect the original."""
         t = WETrajectory(
             position=np.array([1.0, 2.0, 3.0]),
             orientation=Quaternion(1, 0, 0, 0),
@@ -6830,6 +7512,7 @@ class TestWEDataStructures:
         assert t.position[0] == 1.0
 
     def test_we_result_reaction_probability(self):
+        """WEResult.reaction_probability equals the reacted weight fraction of total terminated weight."""
         r = WEResult(
             n_iterations=100,
             n_per_bin=10,
@@ -6845,6 +7528,7 @@ class TestWEDataStructures:
         assert r.reaction_probability == pytest.approx(0.3)
 
     def test_we_result_zero_weight(self):
+        """WEResult.reaction_probability is 0.0 when no weight has reacted or escaped."""
         r = WEResult(
             n_iterations=0,
             n_per_bin=10,
@@ -6864,6 +7548,7 @@ class TestWEDataStructures:
 class TestForceEngineGrid:
 
     def test_grid_from_dxgrid(self):
+        """_Grid wraps a DXGrid, preserving its data shape and reporting its spacing."""
         data = np.ones((5, 5, 5))
         g = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), data)
         cg = _Grid(g)
@@ -6871,18 +7556,21 @@ class TestForceEngineGrid:
         np.testing.assert_allclose(cg.spacing, [1.0, 1.0, 1.0])
 
     def test_grid_contains_interior(self):
+        """_Grid.contains returns True for a point inside the grid bounds."""
         data = np.ones((10, 10, 10))
         g = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), data)
         cg = _Grid(g)
         assert cg.contains(np.array([5.0, 5.0, 5.0])) is True
 
     def test_grid_contains_outside(self):
+        """_Grid.contains returns False for a point outside the grid bounds."""
         data = np.ones((10, 10, 10))
         g = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), data)
         cg = _Grid(g)
         assert cg.contains(np.array([100.0, 100.0, 100.0])) is False
 
     def test_grid_lo_hi_margins(self):
+        """_Grid computes lo and hi margins one cell inside the grid extents given its spacing."""
         data = np.ones((10, 10, 10))
         g = DXGrid(np.zeros(3), np.diag([2.0, 2.0, 2.0]), data)
         cg = _Grid(g)
@@ -6894,6 +7582,7 @@ class TestForceEngineGrid:
 class TestGeometryPipeline:
 
     def test_geom_atom_record_pos(self):
+        """GeomAtomRecord.pos returns the atom position as an array of its x, y, z coordinates."""
         a = GeomAtomRecord(
             index=0,
             name="CA",
@@ -6908,6 +7597,7 @@ class TestGeometryPipeline:
         np.testing.assert_allclose(a.pos, [1.0, 2.0, 3.0])
 
     def test_geom_atom_record_is_ghost(self):
+        """GeomAtomRecord.is_ghost returns True for an atom named GHO."""
         gho = GeomAtomRecord(
             index=0,
             name="GHO",
@@ -6922,6 +7612,7 @@ class TestGeometryPipeline:
         assert gho.is_ghost is True
 
     def test_geom_atom_record_not_ghost(self):
+        """GeomAtomRecord.is_ghost returns False for a normal atom."""
         normal = GeomAtomRecord(
             index=0,
             name="CA",
@@ -6936,6 +7627,7 @@ class TestGeometryPipeline:
         assert normal.is_ghost is False
 
     def test_geom_parse_pqr(self):
+        """geom_parse_pqr parses a PQR file into atom records carrying name and charge."""
         pqr = (
             "ATOM      1  CA  ALA     1       1.000   2.000   3.000  0.500  1.800\n"
             "ATOM      2  CB  ALA     1       4.000   5.000   6.000 -0.100  1.700\n"
@@ -6950,6 +7642,7 @@ class TestGeometryPipeline:
         assert atoms[1].charge == pytest.approx(-0.1)
 
     def test_geom_parse_pqr_skips_bad_lines(self):
+        """geom_parse_pqr skips REMARK and TER lines, keeping only valid atom records."""
         pqr = (
             "REMARK test\n"
             "ATOM      1  CA  ALA     1       1.000   2.000   3.000  0.500  1.800\n"
@@ -6963,6 +7656,7 @@ class TestGeometryPipeline:
         assert len(atoms) == 1
 
     def test_molecule_geometry_dataclass(self):
+        """MoleculeGeometry stores its atom counts, total charge, and other geometry fields."""
         mg = MoleculeGeometry(
             n_atoms=100,
             n_charged=80,
@@ -6978,6 +7672,7 @@ class TestGeometryPipeline:
         assert mg.total_charge == 6.0
 
     def test_analyse_molecule_basic(self):
+        """geom_analyse reports atom and charged counts and positive max and hydrodynamic radii for a PQR molecule."""
         pqr = (
             "ATOM      1  CA  ALA     1       0.000   0.000   0.000  0.500  1.800\n"
             "ATOM      2  CB  ALA     1       5.000   0.000   0.000  0.500  1.800\n"
@@ -6998,6 +7693,7 @@ class TestGeometryPipeline:
 class TestGHOInjectionParsing:
 
     def test_parse_rxns_xml_with_dummies(self):
+        """parse_rxns_xml returns one dummy with the correct name and two ghost atoms parsed from the XML."""
         from pystarc.pipeline.gho_injection import parse_rxns_xml
 
         xml = (
@@ -7018,6 +7714,7 @@ class TestGHOInjectionParsing:
         np.testing.assert_allclose(dummies[0].atoms[1].pos_rel, [4.0, 5.0, 6.0])
 
     def test_parse_rxns_xml_empty(self):
+        """parse_rxns_xml returns an empty list when the reactions element contains no dummies."""
         from pystarc.pipeline.gho_injection import parse_rxns_xml
 
         xml = '<?xml version="1.0"?>\n<reactions></reactions>\n'
@@ -7029,6 +7726,7 @@ class TestGHOInjectionParsing:
         assert len(dummies) == 0
 
     def test_parse_rxns_xml_bad_file(self):
+        """parse_rxns_xml raises ValueError matching Cannot parse on malformed XML input."""
         from pystarc.pipeline.gho_injection import parse_rxns_xml
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
@@ -7039,6 +7737,7 @@ class TestGHOInjectionParsing:
         os.unlink(f.name)
 
     def test_parse_ghost_atoms_from_input(self):
+        """parse_ghost_atoms_from_input parses two ghost atoms with indices and positions from the lookup."""
         from pystarc.pipeline.gho_injection import parse_ghost_atoms_from_input
 
         text = "3220,0,17.0\n3221,1,10.0\n"
@@ -7049,6 +7748,7 @@ class TestGHOInjectionParsing:
         np.testing.assert_allclose(atoms[0].pos_rel, [1.0, 2.0, 3.0])
 
     def test_parse_ghost_atoms_empty_lines(self):
+        """parse_ghost_atoms_from_input returns no atoms when the input has only blank lines."""
         from pystarc.pipeline.gho_injection import parse_ghost_atoms_from_input
 
         text = "\n\n  \n"
@@ -7056,6 +7756,7 @@ class TestGHOInjectionParsing:
         assert len(atoms) == 0
 
     def test_parse_ghost_atoms_bad_values(self):
+        """parse_ghost_atoms_from_input skips lines with non-numeric values and keeps the valid one."""
         from pystarc.pipeline.gho_injection import parse_ghost_atoms_from_input
 
         text = "abc,def,ghi\n3220,0,17.0\n"
@@ -7063,6 +7764,7 @@ class TestGHOInjectionParsing:
         assert len(atoms) == 1
 
     def test_gho_reaction_criterion_from_rxns_xml(self):
+        """GHOReactionCriterion.from_rxns_xml builds one pair from a criterion with a single atom pair."""
         xml = (
             '<?xml version="1.0"?>\n<reactions>\n'
             "  <reaction><criterion>\n"
@@ -7079,6 +7781,7 @@ class TestGHOInjectionParsing:
         assert len(crit.pairs) == 1
 
     def test_gho_reaction_criterion_empty_xml(self):
+        """GHOReactionCriterion.from_rxns_xml yields no pairs for an empty reactions element."""
         xml = '<?xml version="1.0"?>\n<reactions></reactions>\n'
         with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
             f.write(xml)
@@ -7088,6 +7791,7 @@ class TestGHOInjectionParsing:
         assert len(crit.pairs) == 0
 
     def test_text_helper_required_missing(self):
+        """_text raises ValueError matching Missing required when a required child element is absent."""
         from pystarc.pipeline.gho_injection import _text
 
         node = ET.Element("test")
@@ -7095,6 +7799,7 @@ class TestGHOInjectionParsing:
             _text(node, "nonexistent")
 
     def test_text_helper_optional_missing(self):
+        """_text returns None for a missing child element when required is False."""
         from pystarc.pipeline.gho_injection import _text
 
         node = ET.Element("test")
@@ -7105,6 +7810,7 @@ class TestGHOInjectionParsing:
 class TestGeometryRxnsCriteria:
 
     def test_parse_format1_atom1_atom2(self):
+        """_parse_rxns_xml_criteria parses the atom1/atom2 format into zero-based indices and cutoff."""
         xml = (
             '<?xml version="1.0"?>\n<reactions>\n'
             "  <reaction><criterion>\n"
@@ -7122,6 +7828,7 @@ class TestGeometryRxnsCriteria:
         assert pairs[0].cutoff == 17.0
 
     def test_parse_format2_atoms_distance(self):
+        """_parse_rxns_xml_criteria parses the atoms plus distance format into zero-based indices and cutoff."""
         xml = (
             '<?xml version="1.0"?>\n<reactions>\n'
             "  <reaction><criterion>\n"
@@ -7139,6 +7846,7 @@ class TestGeometryRxnsCriteria:
         assert pairs[0].cutoff == 6.5
 
     def test_parse_n_needed(self):
+        """_parse_rxns_xml_criteria reads the n_needed value alongside the parsed pairs."""
         xml = (
             '<?xml version="1.0"?>\n<reactions>\n'
             "  <reaction><criterion><n_needed>2</n_needed>\n"
@@ -7155,6 +7863,7 @@ class TestGeometryRxnsCriteria:
         assert n_needed == 2
 
     def test_parse_empty_criterion(self):
+        """_parse_rxns_xml_criteria returns no pairs for an empty criterion element."""
         xml = (
             '<?xml version="1.0"?>\n<reactions>\n'
             "  <reaction><criterion></criterion></reaction>\n</reactions>\n"
@@ -7171,6 +7880,7 @@ class TestGeometryRxnsCriteria:
 class TestCOFFDROPParseFF:
 
     def test_parse_ff_synthetic(self):
+        """_parse_ff parses type maps and one each of nonbonded, angle, and dihedral potentials with positive pair value."""
         from pystarc.simulation.coffdrop_params import _parse_ff
 
         xml = (
@@ -7215,6 +7925,7 @@ class TestCOFFDROPParseFF:
         assert pairs[0].value(3.0) > 0
 
     def test_parse_ff_no_types(self):
+        """_parse_ff returns empty type maps and no pairs when the coffdrop element is empty."""
         from pystarc.simulation.coffdrop_params import _parse_ff
 
         xml = '<?xml version="1.0"?>\n<coffdrop></coffdrop>\n'
@@ -7231,6 +7942,7 @@ class TestCOFFDROPParseFF:
 class TestCOFFDROPChainForces:
 
     def test_chain_force_evaluator_bond(self):
+        """ChainForceEvaluator.compute_forces returns a (3,3) array with nonzero forces for a perturbed chain."""
         chain = build_linear_chain(n_residues=3, bond_length=3.8)
         chain.beads[1].pos = np.array([3.5, 0.0, 0.0])
         evaluator = ChainForceEvaluator()
@@ -7239,34 +7951,40 @@ class TestCOFFDROPChainForces:
         assert np.any(np.abs(F) > 0)
 
     def test_chain_positions_set(self):
+        """FlexibleChain.set_positions updates each bead position to the supplied coordinates."""
         chain = build_linear_chain(n_residues=4, bond_length=3.8)
         new_pos = np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0]], dtype=float)
         chain.set_positions(new_pos)
         np.testing.assert_allclose(chain.beads[2].pos, [2.0, 0.0, 0.0])
 
     def test_chain_zero_forces(self):
+        """FlexibleChain.zero_forces resets a bead force vector to zero."""
         chain = build_linear_chain(n_residues=3, bond_length=3.8)
         chain.beads[0].force = np.array([1.0, 2.0, 3.0])
         chain.zero_forces()
         np.testing.assert_allclose(chain.beads[0].force, [0.0, 0.0, 0.0])
 
     def test_chain_positions_array(self):
+        """FlexibleChain.positions_array returns a (3,3) array of bead positions."""
         chain = build_linear_chain(n_residues=3, bond_length=3.8)
         pos = chain.positions_array()
         assert pos.shape == (3, 3)
 
     def test_chain_forces_array(self):
+        """FlexibleChain.forces_array returns a (3,3) array of bead forces."""
         chain = build_linear_chain(n_residues=3, bond_length=3.8)
         farr = chain.forces_array()
         assert farr.shape == (3, 3)
 
     def test_equilibrium_forces_small(self):
+        """ChainForceEvaluator forces stay below 1.0 in magnitude for a chain at equilibrium bond lengths."""
         chain = build_linear_chain(n_residues=3, bond_length=3.8)
         evaluator = ChainForceEvaluator()
         F = evaluator.compute_forces(chain)
         assert np.max(np.abs(F)) < 1.0
 
     def test_stretched_bond_restoring_force(self):
+        """A stretched bond produces a restoring force pulling the two beads back toward each other."""
         chain = build_linear_chain(n_residues=2, bond_length=3.8)
         chain.beads[1].pos = np.array([10.0, 0.0, 0.0])
         evaluator = ChainForceEvaluator()
@@ -7279,12 +7997,14 @@ class TestCOFFDROPChainForces:
 class TestQuaternionFromMatrix:
 
     def test_from_rotation_matrix_identity(self):
+        """Quaternion.from_rotation_matrix returns a unit quaternion near identity for the identity matrix."""
         R = np.eye(3)
         q = Quaternion.from_rotation_matrix(R)
         assert abs(q.norm() - 1.0) < 1e-10
         assert abs(q.w) > 0.9
 
     def test_from_rotation_matrix_90z(self):
+        """Quaternion.from_rotation_matrix round-trips a 90 degree z rotation back to the same matrix."""
         R = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]], dtype=float)
         q = Quaternion.from_rotation_matrix(R)
         assert abs(q.norm() - 1.0) < 1e-10
@@ -7292,24 +8012,28 @@ class TestQuaternionFromMatrix:
         np.testing.assert_allclose(R2, R, atol=1e-10)
 
     def test_from_rotation_matrix_90x(self):
+        """Quaternion.from_rotation_matrix round-trips a 90 degree x rotation back to the same matrix."""
         R = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=float)
         q = Quaternion.from_rotation_matrix(R)
         R2 = q.to_rotation_matrix()
         np.testing.assert_allclose(R2, R, atol=1e-10)
 
     def test_from_rotation_matrix_90y(self):
+        """Quaternion.from_rotation_matrix round-trips a 90 degree y rotation back to the same matrix."""
         R = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]], dtype=float)
         q = Quaternion.from_rotation_matrix(R)
         R2 = q.to_rotation_matrix()
         np.testing.assert_allclose(R2, R, atol=1e-10)
 
     def test_from_rotation_matrix_180z(self):
+        """Quaternion.from_rotation_matrix round-trips a 180 degree z rotation back to the same matrix."""
         R = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=float)
         q = Quaternion.from_rotation_matrix(R)
         R2 = q.to_rotation_matrix()
         np.testing.assert_allclose(R2, R, atol=1e-10)
 
     def test_from_rotation_matrix_arbitrary(self):
+        """Quaternion.from_rotation_matrix round-trips an arbitrary axis-angle rotation back to the same matrix."""
         q_orig = Quaternion.from_axis_angle(np.array([1, 1, 1]) / math.sqrt(3), 1.23)
         R = q_orig.to_rotation_matrix()
         q_back = Quaternion.from_rotation_matrix(R)
@@ -7317,15 +8041,18 @@ class TestQuaternionFromMatrix:
         np.testing.assert_allclose(R2, R, atol=1e-10)
 
     def test_normalized_zero_quaternion(self):
+        """Quaternion.normalized returns the identity quaternion for a zero quaternion."""
         q = Quaternion(0, 0, 0, 0)
         n = q.normalized()
         assert n.w == 1.0
 
     def test_random_quaternion_no_rng(self):
+        """random_quaternion returns a unit quaternion when called with rng=None."""
         q = random_quaternion(rng=None)
         assert abs(q.norm() - 1.0) < 1e-10
 
     def test_small_rotation_quaternion_no_rng(self):
+        """small_rotation_quaternion returns a unit quaternion when called with rng=None."""
         q = small_rotation_quaternion(0.01, rng=None)
         assert abs(q.norm() - 1.0) < 1e-10
 
@@ -7334,6 +8061,7 @@ class TestQuaternionFromMatrix:
 class TestDiffusionalRotationSampling:
 
     def test_spline_rot_0p5(self):
+        """_spline_rot_0p5 returns a unit-norm quaternion."""
         from pystarc.simulation.diffusional_rotation import _spline_rot_0p5
 
         rng = np.random.default_rng(42)
@@ -7341,6 +8069,7 @@ class TestDiffusionalRotationSampling:
         assert abs(np.linalg.norm(q) - 1.0) < 1e-10
 
     def test_spline_rot_1p0(self):
+        """_spline_rot_1p0 returns a unit-norm quaternion."""
         from pystarc.simulation.diffusional_rotation import _spline_rot_1p0
 
         rng = np.random.default_rng(42)
@@ -7348,6 +8077,7 @@ class TestDiffusionalRotationSampling:
         assert abs(np.linalg.norm(q) - 1.0) < 1e-10
 
     def test_spline_rot_2p0(self):
+        """_spline_rot_2p0 returns a unit-norm quaternion."""
         from pystarc.simulation.diffusional_rotation import _spline_rot_2p0
 
         rng = np.random.default_rng(42)
@@ -7359,6 +8089,7 @@ class TestDiffusionalRotationSampling:
 class TestWEResultExtended:
 
     def test_rate_constant_nonzero(self):
+        """WEResult.rate_constant returns a positive k_on for nonzero reactive flux."""
         r = WEResult(
             n_iterations=100,
             n_per_bin=10,
@@ -7375,6 +8106,7 @@ class TestWEResultExtended:
         assert k > 0
 
     def test_rate_constant_zero_prxn(self):
+        """WEResult.rate_constant returns 0.0 when the reaction probability is zero."""
         r = WEResult(
             n_iterations=0,
             n_per_bin=10,
@@ -7390,6 +8122,7 @@ class TestWEResultExtended:
         assert r.rate_constant(D_rel=0.1) == 0.0
 
     def test_repr(self):
+        """repr of WEResult includes the class name and the P_rxn field."""
         r = WEResult(
             n_iterations=100,
             n_per_bin=10,
@@ -7411,6 +8144,7 @@ class TestWEResultExtended:
 class TestGridStack:
 
     def test_gridstack_creation(self):
+        """_GridStack reports length 2 and truthy boolean for two grids."""
         from pystarc.forces.engine import _GridStack
 
         g1 = DXGrid(np.zeros(3), np.diag([2.0, 2.0, 2.0]), np.ones((5, 5, 5)))
@@ -7420,6 +8154,7 @@ class TestGridStack:
         assert bool(gs) is True
 
     def test_gridstack_empty(self):
+        """_GridStack reports length 0 and falsy boolean when empty."""
         from pystarc.forces.engine import _GridStack
 
         gs = _GridStack([])
@@ -7427,6 +8162,7 @@ class TestGridStack:
         assert bool(gs) is False
 
     def test_gridstack_finest_first(self):
+        """_GridStack.finest_for returns the finest-spacing grid covering a query point."""
         from pystarc.forces.engine import _GridStack
 
         coarse = DXGrid(np.zeros(3), np.diag([2.0, 2.0, 2.0]), np.ones((10, 10, 10)))
@@ -7438,6 +8174,7 @@ class TestGridStack:
         np.testing.assert_allclose(g.spacing, [0.5, 0.5, 0.5])
 
     def test_gridstack_outside_returns_none(self):
+        """_GridStack.finest_for returns None for a point outside all grids."""
         from pystarc.forces.engine import _GridStack
 
         g = DXGrid(np.zeros(3), np.diag([1.0, 1.0, 1.0]), np.ones((5, 5, 5)))
@@ -7445,6 +8182,7 @@ class TestGridStack:
         assert gs.finest_for(np.array([100.0, 100.0, 100.0])) is None
 
     def test_gridstack_eval_empty(self):
+        """_GridStack.eval_atoms returns zero force and zero energy when the stack is empty."""
         from pystarc.forces.engine import _GridStack
 
         gs = _GridStack([])
@@ -7457,6 +8195,7 @@ class TestGridStack:
 class TestMultipoleFarfieldExtended:
 
     def test_summary_monopole_dominant(self):
+        """MultipoleExpansion.summary mentions the monopole term for a net-charged distribution."""
         charges = np.array([5.0, -2.0])
         positions = np.array([[0, 0, 0], [1, 0, 0]], dtype=float)
         me = MultipoleExpansion(positions, charges, debye_length=7.86)
@@ -7464,6 +8203,7 @@ class TestMultipoleFarfieldExtended:
         assert "Monopole" in s or "monopole" in s.lower() or "Q" in s
 
     def test_summary_dipole_dominant(self):
+        """MultipoleExpansion.summary returns a nonempty string for a dipolar charge distribution."""
         charges = np.array([1.0, -1.0])
         positions = np.array([[0, 0, 0], [5, 0, 0]], dtype=float)
         me = MultipoleExpansion(positions, charges, debye_length=7.86)
@@ -7471,6 +8211,7 @@ class TestMultipoleFarfieldExtended:
         assert len(s) > 0
 
     def test_potential_at_zero(self):
+        """MultipoleExpansion.potential returns 0.0 when evaluated at the expansion center."""
         charges = np.array([1.0])
         positions = np.array([[0, 0, 0]], dtype=float)
         me = MultipoleExpansion(positions, charges, debye_length=7.86)
@@ -7520,12 +8261,14 @@ class TestChainAngleForces:
         )
 
     def test_angle_equilibrium_zero_force(self):
+        """ChainForceEvaluator forces stay below 1.0 in magnitude for a chain at its equilibrium angle."""
         chain = self._make_chain_with_angle()
         evaluator = ChainForceEvaluator()
         F = evaluator.compute_forces(chain)
         assert np.max(np.abs(F)) < 1.0
 
     def test_angle_bent_produces_force(self):
+        """Bending a chain away from its equilibrium angle produces a nonzero angular force."""
         chain = self._make_chain_with_angle()
         chain.beads[2].pos = np.array([5.0, 3.0, 0.0])
         evaluator = ChainForceEvaluator()
@@ -7533,6 +8276,7 @@ class TestChainAngleForces:
         assert np.max(np.abs(F)) > 0.1
 
     def test_angle_force_shape(self):
+        """ChainForceEvaluator.compute_forces returns a (3,3) array for a chain with an angle term."""
         chain = self._make_chain_with_angle()
         evaluator = ChainForceEvaluator()
         F = evaluator.compute_forces(chain)
@@ -7597,12 +8341,14 @@ class TestChainTorsionForces:
         )
 
     def test_torsion_force_shape(self):
+        """ChainForceEvaluator.compute_forces returns a (4,3) array for a chain with a torsion term."""
         chain = self._make_chain_with_torsion()
         evaluator = ChainForceEvaluator()
         F = evaluator.compute_forces(chain)
         assert F.shape == (4, 3)
 
     def test_torsion_force_nonzero(self):
+        """ChainForceEvaluator.compute_forces returns nonzero forces for a chain with a torsion term."""
         chain = self._make_chain_with_torsion()
         evaluator = ChainForceEvaluator()
         F = evaluator.compute_forces(chain)
@@ -7612,6 +8358,7 @@ class TestChainTorsionForces:
 class TestChainExcludedVolume:
 
     def test_overlapping_beads_repel(self):
+        """Overlapping nonbonded beads produce nonzero repulsive forces with a (2,3) shape."""
         beads = [
             ChainBead(
                 pos=np.array([0.0, 0.0, 0.0]),
@@ -7638,6 +8385,7 @@ class TestChainExcludedVolume:
         assert np.any(np.abs(F) > 0)
 
     def test_well_separated_beads_no_force(self):
+        """Well-separated beads produce essentially zero nonbonded force."""
         beads = [
             ChainBead(
                 pos=np.array([0.0, 0.0, 0.0]),
@@ -7666,6 +8414,7 @@ class TestChainExcludedVolume:
 class TestChainBDPropagatorAdvanced:
 
     def test_step_moves_beads(self):
+        """ChainBDPropagator.step displaces the bead positions of a free chain."""
         chain = build_linear_chain(n_residues=3, bond_length=3.8)
         prop = ChainBDPropagator()
         rng = np.random.default_rng(42)
@@ -7675,6 +8424,7 @@ class TestChainBDPropagatorAdvanced:
         assert not np.allclose(pos_before, pos_after)
 
     def test_frozen_chain_no_move(self):
+        """ChainBDPropagator.step leaves the positions of a frozen chain unchanged."""
         chain = build_linear_chain(n_residues=3, bond_length=3.8)
         chain.frozen = True
         prop = ChainBDPropagator()
@@ -7685,18 +8435,21 @@ class TestChainBDPropagatorAdvanced:
         np.testing.assert_allclose(pos_before, pos_after)
 
     def test_max_time_step_positive(self):
+        """ChainBDPropagator.max_time_step returns a positive timestep for a nonempty chain."""
         chain = build_linear_chain(n_residues=5, bond_length=3.8)
         prop = ChainBDPropagator()
         dt = prop.max_time_step(chain)
         assert dt > 0
 
     def test_max_time_step_empty_chain(self):
+        """ChainBDPropagator.max_time_step returns the default 0.1 for an empty chain."""
         chain = FlexibleChain(beads=[], name="empty")
         prop = ChainBDPropagator()
         dt = prop.max_time_step(chain)
         assert dt == 0.1
 
     def test_satisfy_bond_constraints(self):
+        """ChainBDPropagator.satisfy_bond_constraints restores every bond to within tolerance of its r0."""
         chain = build_linear_chain(n_residues=3, bond_length=3.8)
         chain.beads[1].pos = np.array([5.0, 0.0, 0.0])
         prop = ChainBDPropagator()
@@ -7708,11 +8461,13 @@ class TestChainBDPropagatorAdvanced:
             assert abs(r - bond.r0) / bond.r0 < 0.01
 
     def test_D_trans_positive(self):
+        """ChainBDPropagator.D_trans returns a positive translational diffusion coefficient."""
         prop = ChainBDPropagator()
         D = prop.D_trans(2.0)
         assert D > 0
 
     def test_step_with_external_evaluator(self):
+        """ChainBDPropagator.step runs with an external force evaluator and leaves bead positions defined."""
         chain = build_linear_chain(n_residues=3, bond_length=3.8)
         prop = ChainBDPropagator()
         evaluator = ChainForceEvaluator()
@@ -7758,6 +8513,7 @@ class TestWESimulatorConstruction:
         return mol1, mol2
 
     def test_we_simulator_constructs(self):
+        """WESimulator constructs with the given r_start and builds n_bins+1 bin edges."""
         mol1, mol2 = self._make_simple_molecules()
         mob = MobilityTensor.from_radii(10.0, 5.0)
         criteria = ReactionCriteria(
@@ -7775,13 +8531,7 @@ class TestWESimulatorConstruction:
         assert len(sim._bins) == 6
 
     def test_we_total_time_scales_with_steps_per_iteration(self):
-        """Regression: WE simulation time must accumulate
-        (steps_per_iteration * dt) per outer iteration, not just dt.
-        _step_traj performs one BD step of duration dt; the inner loop
-        runs it up to steps_per_iteration times per outer iteration.
-        A prior bug accumulated only dt per outer iteration, inflating
-        the reported flux (and hence k_on) by the steps_per_iteration
-        factor."""
+        """WE total time accumulates steps_per_iteration times dt per outer iteration."""
         import math
         mol1, mol2 = self._make_simple_molecules()
         mob = MobilityTensor.from_radii(10.0, 5.0)
@@ -7803,6 +8553,7 @@ class TestWESimulatorConstruction:
             f"total_time_ps={sim.total_time_ps}, expected={expected} ps"
 
     def test_we_bin_of_interior(self):
+        """_bin_of returns a valid bin index in [0, n_bins) for a separation inside the range."""
         mol1, mol2 = self._make_simple_molecules()
         mob = MobilityTensor.from_radii(10.0, 5.0)
         criteria = ReactionCriteria(
@@ -7820,6 +8571,7 @@ class TestWESimulatorConstruction:
         assert 0 <= idx < 5
 
     def test_we_bin_of_outside(self):
+        """_bin_of returns -1 for separations beyond the outer edge or below the inner edge."""
         mol1, mol2 = self._make_simple_molecules()
         mob = MobilityTensor.from_radii(10.0, 5.0)
         criteria = ReactionCriteria(
@@ -7837,6 +8589,7 @@ class TestWESimulatorConstruction:
         assert sim._bin_of(0.1) == -1
 
     def test_we_place_mol2(self):
+        """_place_mol2 positions mol2 so its atom sits at the requested displacement."""
         mol1, mol2 = self._make_simple_molecules()
         mob = MobilityTensor.from_radii(10.0, 5.0)
         criteria = ReactionCriteria(
@@ -7856,6 +8609,7 @@ class TestWESimulatorConstruction:
         assert abs(placed.atoms[0].x - 30.0) < 1e-6
 
     def test_we_init_ensemble(self):
+        """_init_ensemble returns a nonempty walker set whose weights sum to 1."""
         mol1, mol2 = self._make_simple_molecules()
         mob = MobilityTensor.from_radii(10.0, 5.0)
         criteria = ReactionCriteria(
@@ -7875,6 +8629,7 @@ class TestWESimulatorConstruction:
         assert total_weight == pytest.approx(1.0, abs=1e-10)
 
     def test_we_log_bins(self):
+        """Log bin scheme yields n_bins+1 ascending edges."""
         mol1, mol2 = self._make_simple_molecules()
         mob = MobilityTensor.from_radii(10.0, 5.0)
         criteria = ReactionCriteria(
@@ -7897,6 +8652,7 @@ class TestWESimulatorConstruction:
         assert sim._bins[0] < sim._bins[-1]
 
     def test_we_linear_bins(self):
+        """Linear bin scheme yields equally spaced edges."""
         mol1, mol2 = self._make_simple_molecules()
         mob = MobilityTensor.from_radii(10.0, 5.0)
         criteria = ReactionCriteria(
@@ -7970,6 +8726,7 @@ class TestNAMSimulatorRun:
         return mol1, mol2, mob, ps, params
 
     def test_nam_run_returns_result(self):
+        """NAM run returns a SimulationResult whose reacted, escaped, and max-steps counts sum to n_trajectories."""
         mol1, mol2, mob, ps, params = self._make_setup()
         sim = NAMSimulator(mol1, mol2, mob, ps, params, zero_force)
         result = sim.run()
@@ -7980,12 +8737,14 @@ class TestNAMSimulatorRun:
         )
 
     def test_nam_run_reaction_probability_bounded(self):
+        """NAM reaction probability lies in [0, 1]."""
         mol1, mol2, mob, ps, params = self._make_setup()
         sim = NAMSimulator(mol1, mol2, mob, ps, params, zero_force)
         result = sim.run()
         assert 0.0 <= result.reaction_probability <= 1.0
 
     def test_nam_different_seeds(self):
+        """NAM runs with different seeds produce different reacted or escaped counts."""
         mol1, mol2, mob, ps, params = self._make_setup(n_traj=200)
         sim1 = NAMSimulator(mol1, mol2, mob, ps, params, zero_force)
         r1 = sim1.run()
@@ -8006,11 +8765,13 @@ class TestNAMSimulatorRun:
 class TestOuterPropagatorConstruction:
 
     def test_op_group_info(self):
+        """OPGroupInfo stores its charge q and translational diffusion constant."""
         g = OPGroupInfo(q=6.0, Dtrans=0.01, Drot=0.001)
         assert g.q == 6.0
         assert g.Dtrans == 0.01
 
     def test_outer_propagator_constructs(self):
+        """OuterPropagator constructs and derives the charged-sphere q-radius from its inputs."""
         g0 = OPGroupInfo(q=2.0, Dtrans=0.01, Drot=0.001)
         g1 = OPGroupInfo(q=-5.0, Dtrans=0.015, Drot=0.002)
         op = OuterPropagator(
@@ -8029,6 +8790,7 @@ class TestOuterPropagatorConstruction:
         assert op.qradius == 500.0
 
     def test_outer_propagator_k_b_positive(self):
+        """OuterPropagator yields a nonzero potential factor and a positive diffusion factor."""
         g0 = OPGroupInfo(q=2.0, Dtrans=0.01, Drot=0.001)
         g1 = OPGroupInfo(q=-5.0, Dtrans=0.015, Drot=0.002)
         op = OuterPropagator(
@@ -8047,6 +8809,7 @@ class TestOuterPropagatorConstruction:
         assert op.D_factor > 0
 
     def test_outer_propagator_no_hi(self):
+        """OuterPropagator without hydrodynamic interactions still gives a positive diffusion factor and has_hi False."""
         g0 = OPGroupInfo(q=1.0, Dtrans=0.01, Drot=0.001)
         g1 = OPGroupInfo(q=-1.0, Dtrans=0.01, Drot=0.001)
         op = OuterPropagator(
@@ -8065,6 +8828,7 @@ class TestOuterPropagatorConstruction:
         assert op.has_hi is False
 
     def test_outer_propagator_return_probability(self):
+        """OuterPropagator return probability lies in (0, 1]."""
         g0 = OPGroupInfo(q=2.0, Dtrans=0.01, Drot=0.001)
         g1 = OPGroupInfo(q=-5.0, Dtrans=0.015, Drot=0.002)
         op = OuterPropagator(
@@ -8091,6 +8855,7 @@ class TestGeometryAutoDetect:
         return path
 
     def test_auto_detect_from_rxns_xml(self):
+        """auto_detect_reactions parses a single contact pair from a reactions XML file."""
         xml = (
             '<?xml version="1.0"?>\n<reactions>\n'
             "  <reaction><criterion>\n"
@@ -8147,6 +8912,7 @@ class TestGeometryAutoDetect:
             assert len(pairs_list[0]) == 1
 
     def test_auto_detect_manual_ghost_atoms(self):
+        """auto_detect_reactions applies a manually specified ghost-atom cutoff to the contact pair."""
         geom = SystemGeometry(
             receptor=MoleculeGeometry(
                 n_atoms=1,
@@ -8184,6 +8950,7 @@ class TestGeometryAutoDetect:
         assert pairs_list[0][0].cutoff == 17.0
 
     def test_auto_detect_gho_in_pqr(self):
+        """auto_detect_reactions finds GHO atoms in the PQR geometry and requires one contact."""
         geom = SystemGeometry(
             receptor=MoleculeGeometry(
                 n_atoms=10,
@@ -8221,6 +8988,7 @@ class TestGeometryAutoDetect:
         assert n_needed == 1
 
     def test_auto_detect_no_gho_raises(self):
+        """auto_detect_reactions raises RuntimeError when no GHO atoms are present."""
         geom = SystemGeometry(
             receptor=MoleculeGeometry(
                 n_atoms=10,
@@ -8317,6 +9085,7 @@ class TestNAMSimulatorIntegration:
         return mol1, mol2
 
     def test_nam_full_run_with_dh_force(self):
+        """NAM run with a Debye-Hückel force conserves trajectory counts and bounds the reaction probability in [0, 1]."""
         mol1, mol2 = self._make_molecules()
         mob = MobilityTensor.from_radii(3.0, 3.0)
         criteria = ReactionCriteria(
@@ -8339,6 +9108,7 @@ class TestNAMSimulatorIntegration:
         assert 0.0 <= result.reaction_probability <= 1.0
 
     def test_nam_run_one_trajectory(self):
+        """NAM run_one returns a single trajectory with a valid fate and a non-negative step count."""
         mol1, mol2 = self._make_molecules()
         mob = MobilityTensor.from_radii(3.0, 3.0)
         criteria = ReactionCriteria(
@@ -8361,6 +9131,7 @@ class TestNAMSimulatorIntegration:
         assert result.steps >= 0
 
     def test_nam_rate_constant_positive(self):
+        """NAM rate constant computed from the relative diffusion is non-negative."""
         mol1, mol2 = self._make_molecules(q1=10.0, q2=-10.0)
         mob = MobilityTensor.from_radii(3.0, 3.0)
         criteria = ReactionCriteria(
@@ -8408,6 +9179,7 @@ class TestWESimulatorIntegration:
         return dh_force
 
     def test_we_full_run(self):
+        """WE full run returns a WEResult with the requested iteration count and non-negative reacted and escaped weights."""
         from pystarc.simulation.we_simulator import WESimulator
 
         mol1 = Molecule(name="rec")
@@ -8464,6 +9236,7 @@ class TestWESimulatorIntegration:
         assert result.weight_escaped >= 0
 
     def test_we_run_produces_flux(self):
+        """WE run produces a non-negative reaction flux and one flux value per iteration."""
         from pystarc.simulation.we_simulator import WESimulator
 
         mol1 = Molecule(name="rec")
@@ -8543,6 +9316,7 @@ class TestPqrFormatVariations:
         return recs
 
     def test_atom_record_parsed(self):
+        """An ATOM record parses its record type, atom name, residue, coordinates, charge, and radius."""
         line = "ATOM      1  CA  ALA     1       1.000   2.000   3.000  " "0.500  1.800"
         recs = self._parse_single_line(line)
         assert len(recs) == 1
@@ -8556,6 +9330,7 @@ class TestPqrFormatVariations:
         assert r.radius == pytest.approx(1.8)
 
     def test_hetatm_record_parsed(self):
+        """A HETATM record parses its record type and residue name."""
         line = (
             "HETATM    1  C1x  UNK     1     33.864  30.183  35.037   "
             "0.1639   1.7000"
@@ -8567,6 +9342,7 @@ class TestPqrFormatVariations:
 
     def test_four_char_nterm_resname(self):
         # Thrombin receptor: NTHR at cols 18-21 (right-extended 4-char)
+        """A four-character N-terminal residue name NTHR is parsed without truncation."""
         line = (
             "ATOM      1  N   NTHR    1      -2.787  73.833  11.760 " "-0.3000 1.8500"
         )
@@ -8578,6 +9354,7 @@ class TestPqrFormatVariations:
 
     def test_four_char_cterm_resname(self):
         # Thrombin receptor also carries CGLU as the C-terminus
+        """A four-character C-terminal residue name CGLU is parsed without truncation."""
         line = (
             "ATOM   1000  C   CGLU  295      10.000  20.000  30.000 " " 0.3000 1.7000"
         )
@@ -8590,6 +9367,7 @@ class TestPqrFormatVariations:
     def test_collapsed_spacing_between_charge_and_radius(self):
         # Thrombin calcium ligand: "2.0000 1.3670" with one space,
         # not the two-space PDB padding. Must still parse both fields.
+        """Charge and radius parse correctly when separated by collapsed single-space padding."""
         line = (
             "HETATM    1  CAL CAL   344      -5.592  67.258 -23.982  " "2.0000 1.3670"
         )
@@ -8602,6 +9380,7 @@ class TestPqrFormatVariations:
         # Synthetic line with an explicit chain letter 'A' between
         # resname and resid. Strict PDB parse should accept this too,
         # but regardless the chain letter must round-trip through.
+        """An explicit chain letter is detected and round-trips along with residue id and name."""
         line = "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  " "0.500  1.800"
         recs = self._parse_single_line(line)
         assert len(recs) == 1
@@ -8611,6 +9390,7 @@ class TestPqrFormatVariations:
 
     def test_trailing_element_captured(self):
         # Standard AmberTools PQR with element symbol after radius
+        """A trailing element symbol after the radius field is captured."""
         line = (
             "ATOM      1  N   SER     1      50.038  51.662  14.644  "
             "0.1849  1.5500       N"
@@ -8620,6 +9400,7 @@ class TestPqrFormatVariations:
         assert recs[0].element == "N"
 
     def test_missing_element_returns_empty_string(self):
+        """A record lacking a trailing element symbol returns an empty element string."""
         line = (
             "HETATM    1  C1x  UNK     1     33.864  30.183  35.037   "
             "0.1639   1.7000"
@@ -8650,28 +9431,28 @@ def _make_pqr(tmp_path: Path, n_atoms: int = 5, spread: float = 10.0) -> Path:
 
 # Dime validator
 def test_is_valid_apbs_dime_accepts_canonical_values():
-    """The standard APBS multigrid dimensions should all validate."""
+    """_is_valid_apbs_dime accepts all canonical APBS multigrid dimensions."""
     valid = [5, 9, 13, 17, 33, 65, 97, 129, 161, 193, 257, 289, 321, 385, 449, 513, 577]
     for d in valid:
         assert _is_valid_apbs_dime(d), f"dime={d} should be valid"
 
 
 def test_is_valid_apbs_dime_rejects_non_canonical_values():
-    """Values not satisfying the multigrid form should be rejected."""
+    """_is_valid_apbs_dime rejects values that do not satisfy the multigrid dimension form."""
     invalid = [0, 1, 2, 3, 4, 100, 128, 200, 256, 300, 400, 500]
     for d in invalid:
         assert not _is_valid_apbs_dime(d), f"dime={d} should be rejected"
 
 
 def test_compute_grid_params_rejects_invalid_dime(tmp_path):
-    """Passing an invalid dime should raise ValueError with a useful message."""
+    """_compute_grid_params raises a ValueError naming an invalid APBS dime."""
     pqr = _make_pqr(tmp_path)
     with pytest.raises(ValueError, match="Invalid APBS dime"):
         _compute_grid_params(pqr, srad=1.5, debye_length=8.0, dime=300)
 
 
 def test_compute_grid_params_accepts_common_dimes(tmp_path):
-    """Common production dime values (257, 289, 321) must work."""
+    """_compute_grid_params accepts common production dimes 257, 289, and 321 in both coarse and fine grids."""
     pqr = _make_pqr(tmp_path)
     for d in (257, 289, 321):
         coarse, fine = _compute_grid_params(pqr, srad=1.5, debye_length=8.0, dime=d)
@@ -8681,7 +9462,7 @@ def test_compute_grid_params_accepts_common_dimes(tmp_path):
 
 # Multigrid invariant: coarse strictly encloses fine
 def test_auto_cglen_is_strictly_greater_than_fglen(tmp_path):
-    """For all reasonable fglen values, the auto cglen must enclose fglen."""
+    """The auto coarse glen strictly encloses the fine glen and honors the fglen override."""
     pqr = _make_pqr(tmp_path)
     for fglen, dime in [(192.0, 257), (320.0, 289), (352.0, 321), (400.0, 321)]:
         coarse, fine = _compute_grid_params(
@@ -8700,7 +9481,7 @@ def test_auto_cglen_is_strictly_greater_than_fglen(tmp_path):
 
 
 def test_auto_cglen_uses_2x_ratio(tmp_path):
-    """Documented behavior: auto cglen = 2 * fglen for clean spacing ratios."""
+    """The auto coarse glen equals twice the fine glen."""
     pqr = _make_pqr(tmp_path)
     for fglen in (100.0, 200.0, 352.0, 500.0):
         coarse, _ = _compute_grid_params(
@@ -8714,7 +9495,7 @@ def test_auto_cglen_uses_2x_ratio(tmp_path):
 
 
 def test_compute_grid_params_rejects_too_small_cglen_override(tmp_path):
-    """User-supplied cglen <= fglen must be rejected at input time."""
+    """_compute_grid_params rejects a cglen override that is not greater than fglen with a multigrid invariant error."""
     pqr = _make_pqr(tmp_path)
     with pytest.raises(ValueError, match="Multigrid invariant violated"):
         _compute_grid_params(
@@ -8728,7 +9509,7 @@ def test_compute_grid_params_rejects_too_small_cglen_override(tmp_path):
 
 
 def test_compute_grid_params_accepts_valid_cglen_override(tmp_path):
-    """User-supplied cglen > fglen should be honored."""
+    """_compute_grid_params honors a user cglen override greater than fglen."""
     pqr = _make_pqr(tmp_path)
     coarse, fine = _compute_grid_params(
         pqr,
@@ -8743,7 +9524,7 @@ def test_compute_grid_params_accepts_valid_cglen_override(tmp_path):
 
 
 def test_auto_path_with_no_overrides_is_self_consistent(tmp_path):
-    """The fully-auto code path should produce coarse > fine for any molecule."""
+    """The fully-auto grid path yields coarse glen greater than fine glen for any molecule."""
     pqr = _make_pqr(tmp_path, n_atoms=20, spread=80.0)
     coarse, fine = _compute_grid_params(pqr, srad=1.5, debye_length=8.0, dime=257)
     assert coarse["glen"][0] > fine["glen"][0]
@@ -8751,7 +9532,7 @@ def test_auto_path_with_no_overrides_is_self_consistent(tmp_path):
 
 # bcfl=map requires the previous-level DX file
 def test_write_apbs_input_with_missing_prev_dx_raises(tmp_path):
-    """bcfl=map with a missing prev DX file should raise FileNotFoundError."""
+    """_write_apbs_input with bcfl=map and a missing previous DX file raises FileNotFoundError."""
     pqr = _make_pqr(tmp_path)
     fine_params = {
         "spacing": 0.5,
@@ -8779,7 +9560,7 @@ def test_write_apbs_input_with_missing_prev_dx_raises(tmp_path):
 
 
 def test_write_apbs_input_with_existing_prev_dx_succeeds(tmp_path):
-    """bcfl=map with an existing prev DX file should write the input cleanly."""
+    """_write_apbs_input with bcfl=map and an existing previous DX file writes an input containing bcfl map and usemap pot 1."""
     pqr = _make_pqr(tmp_path)
     coarse_dx = tmp_path / "coarse.dx"
     coarse_dx.write_text("# fake DX file for testing\n")
@@ -8812,7 +9593,7 @@ def test_write_apbs_input_with_existing_prev_dx_succeeds(tmp_path):
 
 
 def test_write_apbs_input_with_bcfl_sdh_does_not_require_prev_dx(tmp_path):
-    """bcfl=sdh does not need a prev DX file and should work without one."""
+    """_write_apbs_input with bcfl=sdh writes the input without requiring a previous DX file."""
     pqr = _make_pqr(tmp_path)
     coarse_params = {
         "spacing": 1.0,
@@ -8915,7 +9696,7 @@ class TestTorsionForceBugRegression:
         )
 
     def test_torsion_forces_sum_to_zero(self):
-        """Sum of the four torsion forces must be zero (momentum conservation)."""
+        """The total internal chain force sums to zero by Newton's third law."""
         import math
 
         chain = self._make_torsion_chain()
@@ -8934,8 +9715,7 @@ class TestTorsionForceBugRegression:
         )
 
     def test_torsion_middle_atoms_feel_force(self):
-        """Out-of-equilibrium dihedral must produce nonzero forces on
-        the central pair (atoms 1 and 2), not just the end atoms (0 and 3)."""
+        """An out-of-equilibrium dihedral produces nonzero forces on the two central atoms."""
         chain = self._make_torsion_chain()
         evaluator = ChainForceEvaluator()
         F = evaluator.compute_forces(chain)
@@ -9082,12 +9862,7 @@ class TestBondedForceEnergyConservation:
         )
 
     def test_total_energy_conserved_under_velocity_verlet(self):
-        """Velocity Verlet on bonded forces must conserve total energy.
-
-        Drift over the run must stay below 1% of the initial total energy.
-        With dt small enough this is conservative; symplectic integrators
-        typically give drift orders of magnitude smaller than the threshold.
-        """
+        """Velocity Verlet on the bonded forces keeps total energy drift below 1% of E0."""
         chain = self._make_chain()
         evaluator = ChainForceEvaluator()
         n = chain.n_beads
@@ -9145,12 +9920,14 @@ class TestConstraintViolations:
         ]
 
     def test_no_constraints_returns_empty(self):
+        """Constraint violations for a chain with no constraints have shape (0,)."""
         common = ChainCommon(name="empty", atoms=self._make_atoms(3))
         state = ChainState.from_template(common, np.zeros((3, 3)))
         phi = compute_constraint_violations(state)
         assert phi.shape == (0,)
 
     def test_satisfied_length_constraint_returns_zero(self):
+        """A satisfied length constraint reports zero violation."""
         common = ChainCommon(
             name="len1",
             atoms=self._make_atoms(2),
@@ -9163,6 +9940,7 @@ class TestConstraintViolations:
         assert abs(phi[0]) < 1e-12
 
     def test_overstretched_length_returns_positive_violation(self):
+        """An overstretched bond reports a positive length violation equal to the excess distance."""
         common = ChainCommon(
             name="len_long",
             atoms=self._make_atoms(2),
@@ -9174,6 +9952,7 @@ class TestConstraintViolations:
         assert phi[0] == pytest.approx(0.7, abs=1e-12)
 
     def test_compressed_length_returns_negative_violation(self):
+        """A compressed bond reports a negative length violation equal to the distance deficit."""
         common = ChainCommon(
             name="len_short",
             atoms=self._make_atoms(2),
@@ -9186,6 +9965,7 @@ class TestConstraintViolations:
 
     def test_satisfied_coplanar_constraint_returns_zero(self):
         # Atoms 1, 2, 3 in the xy-plane, atom 0 also in the xy-plane.
+        """A coplanar constraint with all four atoms in one plane reports zero violation."""
         common = ChainCommon(
             name="cop1",
             atoms=self._make_atoms(4),
@@ -9207,6 +9987,7 @@ class TestConstraintViolations:
 
     def test_coplanar_violation_signed_by_plane_side(self):
         # Atom 0 lifted by 0.3 above the plane of atoms 1, 2, 3.
+        """A coplanar violation has magnitude equal to the out-of-plane displacement."""
         common = ChainCommon(
             name="cop_lifted",
             atoms=self._make_atoms(4),
@@ -9230,6 +10011,7 @@ class TestConstraintViolations:
     def test_canonical_ordering_length_then_coplanar(self):
         # Build a state with both kinds of constraints in known violation
         # and verify entries appear in the documented order.
+        """Mixed violations are ordered with the length constraint before the coplanar constraint."""
         common = ChainCommon(
             name="mixed",
             atoms=self._make_atoms(4),
@@ -9261,6 +10043,7 @@ class TestConstraintViolations:
     def test_degenerate_coplanar_returns_zero(self):
         # Atoms 1, 2, 3 colinear: plane is undefined. Must return 0,
         # not crash or NaN.
+        """A degenerate coplanar constraint with colinear reference atoms returns zero without NaN."""
         common = ChainCommon(
             name="cop_degen",
             atoms=self._make_atoms(4),
@@ -9296,7 +10079,7 @@ class TestSatisfyConstraints:
         ]
 
     def test_no_constraints_no_op(self):
-        """Empty constraint list returns immediately without modifying state."""
+        """satisfy_constraints leaves positions unchanged and returns 0 when there are no constraints."""
         common = ChainCommon(name="empty", atoms=self._make_atoms(3))
         positions = np.array([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
         state = ChainState.from_template(common, positions.copy())
@@ -9305,7 +10088,7 @@ class TestSatisfyConstraints:
         np.testing.assert_array_equal(state.positions, positions)
 
     def test_single_length_constraint_converges(self):
-        """One isolated length constraint: solver must converge to tolerance."""
+        """SHAKE converges a single length constraint to tolerance, fixing the bond at its target length."""
         common = ChainCommon(
             name="single_len",
             atoms=self._make_atoms(2),
@@ -9321,7 +10104,7 @@ class TestSatisfyConstraints:
         assert abs(np.linalg.norm(d) - 5.0) < 1e-8
 
     def test_length_correction_is_symmetric(self):
-        """Both atoms should move equally toward each other (no center-of-mass shift)."""
+        """A length correction moves both atoms equally and leaves the center of mass fixed."""
         common = ChainCommon(
             name="sym",
             atoms=self._make_atoms(2),
@@ -9335,7 +10118,7 @@ class TestSatisfyConstraints:
         np.testing.assert_allclose(com_before, com_after, atol=1e-10)
 
     def test_chain_of_length_constraints_converges(self):
-        """A 4-atom, 3-bond chain with all bonds violated still converges."""
+        """SHAKE converges a four-atom three-bond chain with all bonds initially violated."""
         common = ChainCommon(
             name="chain",
             atoms=self._make_atoms(4),
@@ -9358,7 +10141,7 @@ class TestSatisfyConstraints:
             assert abs(d - 3.0) < 1e-7
 
     def test_single_coplanar_constraint_converges(self):
-        """Atom 0 is lifted out of the plane of atoms 1, 2, 3; solver returns it."""
+        """SHAKE returns an out-of-plane atom to the coplanar constraint plane."""
         common = ChainCommon(
             name="cop",
             atoms=self._make_atoms(4),
@@ -9375,7 +10158,7 @@ class TestSatisfyConstraints:
         assert abs(state.positions[0, 2]) < 1e-9
 
     def test_mixed_constraints_converge(self):
-        """A length and a coplanar constraint sharing atoms 0 and 1 both satisfied."""
+        """SHAKE simultaneously satisfies a shared length and coplanar constraint."""
         common = ChainCommon(
             name="mixed",
             atoms=self._make_atoms(4),
@@ -9391,7 +10174,7 @@ class TestSatisfyConstraints:
         assert np.max(np.abs(phi)) < 1e-9
 
     def test_already_satisfied_returns_quickly(self):
-        """Starting at a feasible point should return after one verification sweep."""
+        """Starting from a feasible point, SHAKE returns within one verification sweep."""
         common = ChainCommon(
             name="feasible",
             atoms=self._make_atoms(2),
@@ -9405,7 +10188,7 @@ class TestSatisfyConstraints:
         assert n_iter <= 1
 
     def test_idempotent_application(self):
-        """Calling the solver twice in a row should produce identical positions."""
+        """Applying SHAKE a second time leaves positions identical."""
         common = ChainCommon(
             name="idem",
             atoms=self._make_atoms(3),
@@ -9423,7 +10206,7 @@ class TestSatisfyConstraints:
         np.testing.assert_allclose(first_pass, second_pass, atol=1e-12)
 
     def test_failure_to_converge_raises(self):
-        """A pathologically tight max_iter on a hard problem must raise."""
+        """SHAKE raises RuntimeError when max_iter is too small to converge."""
         common = ChainCommon(
             name="hard",
             atoms=self._make_atoms(4),
@@ -9451,12 +10234,13 @@ class TestSatisfyConstraintsNewton:
         ]
 
     def test_no_constraints_returns_zero(self):
+        """Newton constraint solver returns 0 when there are no constraints."""
         common = ChainCommon(name="empty", atoms=self._make_atoms(3))
         state = ChainState.from_template(common, np.zeros((3, 3)))
         assert satisfy_constraints_newton(state) == 0
 
     def test_chain_converges_in_one_iteration(self):
-        """Length-only chains: linear constraint system, Newton solves exactly."""
+        """Newton solves a length-only chain in at most two iterations."""
         common = ChainCommon(
             name="chain",
             atoms=self._make_atoms(4),
@@ -9478,7 +10262,7 @@ class TestSatisfyConstraintsNewton:
         assert np.max(np.abs(phi)) < 1e-9
 
     def test_ring_constraint_converges(self):
-        """4-atom ring with 4 length constraints. Newton handles cyclic coupling."""
+        """Newton converges a four-atom ring with cyclic length coupling."""
         common = ChainCommon(
             name="ring",
             atoms=self._make_atoms(4),
@@ -9499,6 +10283,7 @@ class TestSatisfyConstraintsNewton:
         assert np.max(np.abs(phi)) < 1e-9
 
     def test_coplanar_constraint_converges(self):
+        """Newton converges a single coplanar constraint to tolerance."""
         common = ChainCommon(
             name="cop",
             atoms=self._make_atoms(4),
@@ -9513,6 +10298,7 @@ class TestSatisfyConstraintsNewton:
         assert abs(phi[0]) < 1e-9
 
     def test_mixed_constraints_converge(self):
+        """Newton simultaneously satisfies a shared length and coplanar constraint."""
         common = ChainCommon(
             name="mixed",
             atoms=self._make_atoms(4),
@@ -9528,7 +10314,7 @@ class TestSatisfyConstraintsNewton:
         assert np.max(np.abs(phi)) < 1e-9
 
     def test_failure_to_converge_raises(self):
-        """Tight max_iter on a problem that cannot be solved that fast."""
+        """Newton raises RuntimeError when max_iter is too small for a deformed ring."""
         common = ChainCommon(
             name="hard",
             atoms=self._make_atoms(4),
@@ -9558,7 +10344,7 @@ class TestSatisfyConstraintsHybrid:
         ]
 
     def test_easy_case_uses_shake_only(self):
-        """An easy chain converges in SHAKE without needing Newton."""
+        """An easy chain converges through SHAKE alone without entering the Newton phase of the hybrid solver."""
         common = ChainCommon(
             name="easy",
             atoms=self._make_atoms(3),
@@ -9575,7 +10361,7 @@ class TestSatisfyConstraintsHybrid:
         assert np.max(np.abs(phi)) < 1e-9
 
     def test_falls_back_to_newton_when_shake_stalls(self):
-        """Tight SHAKE budget forces hybrid to invoke Newton."""
+        """A tight SHAKE iteration budget forces the hybrid solver to invoke Newton and still converge constraints below tolerance."""
         common = ChainCommon(
             name="chain",
             atoms=self._make_atoms(4),
@@ -9598,6 +10384,7 @@ class TestSatisfyConstraintsHybrid:
         assert np.max(np.abs(phi)) < 1e-9
 
     def test_hybrid_no_constraints(self):
+        """The hybrid constraint solver returns zero iterations when there are no length constraints."""
         common = ChainCommon(name="empty", atoms=self._make_atoms(2))
         state = ChainState.from_template(common, np.zeros((2, 3)))
         n = satisfy_constraints_hybrid(state)
@@ -9629,7 +10416,7 @@ class TestTabulatedPotentialCubicSpline:
         )
 
     def test_value_exact_at_grid_points(self):
-        """A cubic spline must reproduce sampled values exactly at the knots."""
+        """The cubic spline reproduces sampled potential values exactly at the grid knots."""
         pot = self._make_parabola(n=11)
         # Grid points are at x = 0, 1, 2, ..., 10.
         for x in [0, 1, 4, 5, 7, 10]:
@@ -9637,8 +10424,7 @@ class TestTabulatedPotentialCubicSpline:
             assert pot.value(float(x)) == pytest.approx(v_true, abs=1e-12)
 
     def test_value_off_grid_close_to_truth(self):
-        """Off-grid spline values should be close to (though not exactly equal to)
-        the underlying smooth function. 1% tolerance is generous."""
+        """Off-grid spline values approximate the underlying smooth function to within 1% relative error."""
         pot = self._make_parabola(n=11)
         for x in [0.5, 2.5, 5.5, 7.5, 9.5]:
             v_true = (x - 5.0) ** 2
@@ -9647,7 +10433,7 @@ class TestTabulatedPotentialCubicSpline:
             assert rel_err < 0.01
 
     def test_boundary_clamping(self):
-        """Queries outside [x_min, x_max] return endpoint values and zero deriv."""
+        """Queries outside the grid range return the endpoint value and zero derivative."""
         pot = self._make_parabola(n=11)
         # Below x_min.
         assert pot.value(-1.0) == pot.values[0]
@@ -9659,13 +10445,7 @@ class TestTabulatedPotentialCubicSpline:
         assert pot.deriv(11.0) == 0.0
 
     def test_derivative_is_continuous_across_grid_points(self):
-        """The whole point of cubic interpolation: V' must not jump at grid points.
-
-        With linear interpolation, V' is piecewise-constant and jumps at every
-        grid boundary. With cubic splines, V' is continuous. Test by sampling
-        V' on either side of an interior grid point and verifying the values
-        agree to high precision.
-        """
+        """The cubic-spline derivative is continuous across interior grid points with no jump."""
         pot = self._make_parabola(n=11)
         # Grid points at integer x. Test continuity at x = 4.
         for grid_x in [2, 4, 6, 8]:
@@ -9680,7 +10460,7 @@ class TestTabulatedPotentialCubicSpline:
             )
 
     def test_derivative_close_to_truth(self):
-        """First derivative of the spline approximates the true V'(x)."""
+        """The spline first derivative approximates the true V'(x) to within tight tolerance off-grid."""
         pot = self._make_parabola(n=11)
         # On a smooth quadratic with 1.0 grid spacing, cubic spline derivative
         # is accurate to ~1% off-grid except very near boundaries.
@@ -9692,8 +10472,7 @@ class TestTabulatedPotentialCubicSpline:
             ), f"V'({x}) = {d_spline:.4f}, expected {d_true:.4f}"
 
     def test_short_table_falls_back_to_linear(self):
-        """Tables with fewer than 4 points cannot fit a cubic spline; linear
-        interpolation is used instead and should give correct results."""
+        """A table with fewer than four points falls back to linear interpolation with correct values and clamping."""
         # 3-point table: a triangle with peak at x=1.
         ys = np.array([0.0, 1.0, 0.0])
         pot = TabulatedPotential(
@@ -9714,7 +10493,7 @@ class TestTabulatedPotentialCubicSpline:
         assert pot.value(3.0) == 0.0
 
     def test_constant_potential_has_zero_derivative(self):
-        """If V is constant on the grid, V' must be zero everywhere inside."""
+        """A constant potential on the grid yields zero derivative everywhere inside."""
         ys = np.full(11, 5.0)
         pot = TabulatedPotential(
             x_min=0.0,
@@ -9771,8 +10550,7 @@ class TestCOFFDROPEndToEnd:
     """
 
     def test_loader_returns_expected_data_shape(self):
-        """Counts of residues, bonds, charges, and tabulated potentials match
-        the shipped data."""
+        """The COFFDROP loader returns the expected counts of residues, bonds, charges, and tabulated potentials."""
         params = _load_coffdrop_params()
         # These counts are intrinsic to the shipped COFFDROP files and
         # should not drift unless the data files themselves are replaced.
@@ -9784,7 +10562,7 @@ class TestCOFFDROPEndToEnd:
         assert len(params.dihedral_pots) == 10413
 
     def test_standard_amino_acids_present(self):
-        """All 20 canonical amino-acid residues appear in the mapping."""
+        """At least 19 of the 20 canonical amino-acid residues appear in the COFFDROP mapping."""
         params = _load_coffdrop_params()
         canonical = {
             "ALA",
@@ -9819,8 +10597,7 @@ class TestCOFFDROPEndToEnd:
         ), f"only {len(present)} canonical residues found: {present}"
 
     def test_pair_potential_attractive_well(self):
-        """ALA-CA / GLY-CA non-bonded pair has an attractive minimum
-        consistent with hydrophobic backbone interaction."""
+        """The ALA-CA / GLY-CA pair potential has an attractive minimum at contact and decays toward zero at large r."""
         params = _load_coffdrop_params()
         v_at_5 = params.pair_potential("ALA", "CA", "GLY", "CA", 5.0)
         v_at_8 = params.pair_potential("ALA", "CA", "GLY", "CA", 8.0)
@@ -9830,11 +10607,7 @@ class TestCOFFDROPEndToEnd:
         assert abs(v_at_8) < 0.1, f"V(r=8) should decay, got {v_at_8}"
 
     def test_pair_force_is_dV_dr(self):
-        """pair_force(r) = dV/dr to within finite-difference tolerance.
-
-        Both come from the same TabulatedPotential, so they must agree.
-        Internal consistency check on the cubic-spline implementation.
-        """
+        """pair_force(r) equals dV/dr from the same tabulated potential to within finite-difference tolerance."""
         params = _load_coffdrop_params()
         # Sample a few well-defined distances away from boundaries.
         for r in [4.5, 5.5, 6.5, 7.5]:
@@ -9850,15 +10623,7 @@ class TestCOFFDROPEndToEnd:
             )
 
     def test_pair_force_continuous_at_table_grid_boundaries(self):
-        """Force is C^1 continuous: query F at points on either side of a
-        table grid point and verify it agrees to high precision.
-
-        This is the operational definition of the cubic-spline upgrade: with
-        linear interpolation, F (= -dV/dr) is piecewise constant and has a
-        finite jump at every grid point. With cubic-spline interpolation, F
-        is continuous across grid points. The jump should be no larger than
-        the natural rate of change of F across an infinitesimal interval.
-        """
+        """The pair force is C^1 continuous across table grid points with no finite jump."""
         params = _load_coffdrop_params()
         # Choose a region away from the steep inner wall and away from the
         # table boundary, where forces vary at a moderate rate. The COFFDROP
@@ -9879,9 +10644,7 @@ class TestCOFFDROPEndToEnd:
             )
 
     def test_unknown_residue_returns_zero(self):
-        """Querying a residue or bead the loader has never seen returns 0,
-        not a crash. This is the failure mode the wildcard system protects
-        against."""
+        """Querying an unknown residue returns a finite value rather than crashing."""
         params = _load_coffdrop_params()
         # XYZ is not a known residue.
         v = params.pair_potential("XYZ", "CA", "GLY", "CA", 5.0)
@@ -9894,6 +10657,7 @@ class TestChainBDParameters:
     """Default values and post-init behavior of the parameter dataclass."""
 
     def test_defaults(self):
+        """ChainBDParameters defaults match expected values and r_escape auto-derives as 1.1 times r_start."""
         p = ChainBDParameters()
         assert p.n_trajectories == 1_000
         assert p.dt == 0.2
@@ -9907,12 +10671,12 @@ class TestChainBDParameters:
         assert abs(p.r_escape - 110.0) < 1e-9
 
     def test_explicit_r_escape_respected(self):
-        """Setting r_escape explicitly should not be overwritten by post-init."""
+        """An explicitly set r_escape is preserved and not overwritten during post-init."""
         p = ChainBDParameters(r_start=50.0, r_escape=200.0)
         assert p.r_escape == 200.0
 
     def test_r_escape_auto_uses_r_start(self):
-        """r_escape = 0 means auto-derive as 1.1 * r_start."""
+        """Leaving r_escape at 0 auto-derives it as 1.1 times r_start."""
         p = ChainBDParameters(r_start=50.0)
         assert abs(p.r_escape - 55.0) < 1e-9
 
@@ -9921,12 +10685,14 @@ class TestPlaceChain:
     """Rigid-body placement of body-frame chain coordinates."""
 
     def test_identity_orientation_zero_com_returns_body_unchanged(self):
+        """Identity orientation and zero center of mass leave body coordinates unchanged."""
         body = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
         ori = _Q(1.0, 0.0, 0.0, 0.0)
         world = place_chain(body, np.zeros(3), ori)
         np.testing.assert_allclose(world, body, atol=1e-12)
 
     def test_translation_only_shifts_all_atoms_by_com(self):
+        """Identity orientation with a nonzero center of mass shifts all atoms by that center of mass."""
         body = np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]])
         com = np.array([10.0, 20.0, 30.0])
         ori = _Q(1.0, 0.0, 0.0, 0.0)
@@ -9934,7 +10700,7 @@ class TestPlaceChain:
         np.testing.assert_allclose(world, body + com, atol=1e-12)
 
     def test_rotation_90deg_about_z(self):
-        """Rotation by 90 degrees about z: x -> y, y -> -x, z -> z."""
+        """A 90 degree rotation about z maps x to y, y to -x, and leaves z fixed."""
         body = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
         theta = np.pi / 2
         ori = _Q(np.cos(theta / 2), 0.0, 0.0, np.sin(theta / 2))
@@ -9944,7 +10710,7 @@ class TestPlaceChain:
         np.testing.assert_allclose(world[2], [0.0, 0.0, 1.0], atol=1e-12)
 
     def test_combined_rotation_and_translation(self):
-        """Apply rotation then translation: world = R @ body + com."""
+        """Combined placement applies the rotation then the center-of-mass translation."""
         body = np.array([[1.0, 0.0, 0.0]])
         theta = np.pi / 2
         ori = _Q(np.cos(theta / 2), 0.0, 0.0, np.sin(theta / 2))
@@ -9953,7 +10719,7 @@ class TestPlaceChain:
         np.testing.assert_allclose(world[0], [5.0, 1.0, 0.0], atol=1e-12)
 
     def test_com_after_placement_equals_input_com(self):
-        """If body positions are centered at origin, world CoM equals input CoM."""
+        """Placing an origin-centered body gives a world center of mass equal to the input center of mass."""
         rng = np.random.default_rng(42)
         body = rng.standard_normal((10, 3))
         body -= body.mean(axis=0)
@@ -9965,7 +10731,7 @@ class TestPlaceChain:
         np.testing.assert_allclose(world.mean(axis=0), com, atol=1e-10)
 
     def test_rigid_body_invariance_pairwise_distances(self):
-        """Pairwise distances between atoms must be preserved under rigid motion."""
+        """Rigid placement preserves all pairwise interatomic distances."""
         rng = np.random.default_rng(7)
         body = rng.standard_normal((8, 3))
         body -= body.mean(axis=0)
@@ -9985,14 +10751,14 @@ class TestInitializeBsphere:
     """B-sphere initialization: random direction + random orientation."""
 
     def test_position_has_correct_magnitude(self):
-        """|pos| should equal r_start exactly."""
+        """The initialized B-sphere position has magnitude exactly equal to r_start."""
         rng = np.random.default_rng(0)
         for _ in range(20):
             pos, _ = initialize_bsphere(rng, r_start=100.0)
             assert abs(np.linalg.norm(pos) - 100.0) < 1e-12
 
     def test_orientation_is_unit_quaternion(self):
-        """The returned quaternion should have unit norm."""
+        """The initialized B-sphere orientation is a unit quaternion."""
         rng = np.random.default_rng(0)
         for _ in range(20):
             _, ori = initialize_bsphere(rng, r_start=100.0)
@@ -10000,8 +10766,7 @@ class TestInitializeBsphere:
             assert abs(norm - 1.0) < 1e-12
 
     def test_position_direction_is_isotropic(self):
-        """Averaged over many samples, the position direction should have
-        near-zero mean (isotropic distribution)."""
+        """The initialized position directions are isotropic with near-zero mean over many samples."""
         rng = np.random.default_rng(42)
         n = 5000
         positions = np.array(
@@ -10013,7 +10778,7 @@ class TestInitializeBsphere:
         assert np.all(np.abs(mean) < 0.05), f"mean = {mean}"
 
     def test_reproducibility_with_same_seed(self):
-        """Two RNGs seeded identically must produce identical (pos, ori)."""
+        """Two RNGs seeded identically produce identical B-sphere position and orientation."""
         rng1 = np.random.default_rng(123)
         rng2 = np.random.default_rng(123)
         pos1, ori1 = initialize_bsphere(rng1, r_start=50.0)
@@ -10025,7 +10790,7 @@ class TestInitializeBsphere:
         assert ori1.z == ori2.z
 
     def test_different_r_start_scales_position(self):
-        """Same RNG seed but different r_start: pos1 / pos2 should equal r1 / r2."""
+        """Same seed with different r_start scales the position proportionally to r_start."""
         rng1 = np.random.default_rng(7)
         rng2 = np.random.default_rng(7)
         pos1, _ = initialize_bsphere(rng1, r_start=10.0)
@@ -10038,16 +10803,19 @@ class TestCheckEscape:
     """Trivial bounds check on |pos| vs r_escape."""
 
     def test_inside_returns_false(self):
+        """A position inside r_escape returns False from check_escape."""
         assert check_escape(np.array([10.0, 0.0, 0.0]), r_escape=100.0) is False
 
     def test_at_boundary_returns_true(self):
-        """|pos| == r_escape is on the boundary; treat as escaped (>=)."""
+        """A position exactly at r_escape counts as escaped and returns True."""
         assert check_escape(np.array([100.0, 0.0, 0.0]), r_escape=100.0) is True
 
     def test_outside_returns_true(self):
+        """A position outside r_escape returns True from check_escape."""
         assert check_escape(np.array([200.0, 0.0, 0.0]), r_escape=100.0) is True
 
     def test_zero_position(self):
+        """The origin position returns False from check_escape."""
         assert check_escape(np.zeros(3), r_escape=10.0) is False
 
 
@@ -10065,11 +10833,13 @@ class TestChainScratchMolecule:
         return ChainCommon(name="test_chain", atoms=atoms)
 
     def test_scratch_has_correct_atom_count(self):
+        """The scratch molecule has the same atom count as its chain template."""
         common = self._make_template(n=4)
         scratch = make_chain_scratch_molecule(common)
         assert len(scratch.atoms) == 4
 
     def test_scratch_carries_radius_and_charge(self):
+        """The scratch molecule carries each atom's radius, charge, residue name, and residue index from the template."""
         common = self._make_template(n=3)
         scratch = make_chain_scratch_molecule(common)
         for i, atom in enumerate(scratch.atoms):
@@ -10079,12 +10849,14 @@ class TestChainScratchMolecule:
             assert atom.residue_index == i
 
     def test_initial_positions_are_zero(self):
+        """All scratch-molecule atoms start at the origin."""
         common = self._make_template(n=3)
         scratch = make_chain_scratch_molecule(common)
         for atom in scratch.atoms:
             assert atom.x == 0.0 and atom.y == 0.0 and atom.z == 0.0
 
     def test_update_positions_writes_through(self):
+        """Updating scratch positions writes the new coordinates through to each atom."""
         common = self._make_template(n=3)
         scratch = make_chain_scratch_molecule(common)
         positions = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
@@ -10096,6 +10868,7 @@ class TestChainScratchMolecule:
         assert scratch.atoms[2].z == 9.0
 
     def test_update_positions_rejects_wrong_shape(self):
+        """Updating scratch positions with a wrong-shaped array raises ValueError."""
         common = self._make_template(n=3)
         scratch = make_chain_scratch_molecule(common)
         bad = np.zeros((2, 3))
@@ -10107,7 +10880,7 @@ class TestCheckChainReaction:
     """End-to-end check that the chain reaction wrapper composes correctly."""
 
     def test_no_reactions_returns_none(self):
-        """Empty PathwaySet returns None regardless of input."""
+        """An empty PathwaySet makes check_chain_reaction return None."""
         from pystarc.pathways.reaction_interface import PathwaySet
         from pystarc.simulation.coffdrop_chain import ChainAtom, ChainCommon
 
@@ -10153,8 +10926,7 @@ class TestEvaluateTargetGridForceOnChain:
         return DXGrid(origin=origin, delta=delta, data=data)
 
     def test_force_in_linear_potential(self):
-        """Linear phi = x means gradient = (1, 0, 0); force on charge q is
-        -q * (1, 0, 0). Test with charges +1 and -2."""
+        """In a linear potential phi=x the force on charge q is -q times the gradient and energy is sum of q times phi."""
         grid = self._make_linear_potential_grid()
         positions = np.array([[0.0, 0.0, 0.0], [2.0, 1.0, -1.0]])
         charges = np.array([1.0, -2.0])
@@ -10172,6 +10944,7 @@ class TestEvaluateTargetGridForceOnChain:
         assert abs(energy - (-4.0)) < 1e-10
 
     def test_zero_charge_gives_zero_force(self):
+        """A zero-charge atom feels zero grid force and contributes zero energy."""
         grid = self._make_linear_potential_grid()
         positions = np.array([[0.0, 0.0, 0.0]])
         charges = np.array([0.0])
@@ -10184,8 +10957,7 @@ class TestEvaluateTargetGridForceOnChain:
         assert abs(energy) < 1e-12
 
     def test_atoms_outside_grid_get_zero_force(self):
-        """Atoms outside the grid box should not crash and should give
-        approximately zero force (the grid routines clamp to zero)."""
+        """Atoms outside the grid box get zero force without crashing."""
         grid = self._make_linear_potential_grid()
         # Grid covers x in [-10, 10]; place an atom at x=100 (way outside).
         positions = np.array([[100.0, 0.0, 0.0]])
@@ -10199,6 +10971,7 @@ class TestEvaluateTargetGridForceOnChain:
         np.testing.assert_allclose(forces[0], [0.0, 0.0, 0.0], atol=1e-10)
 
     def test_shape_mismatch_raises(self):
+        """A mismatch between position and charge counts raises ValueError."""
         grid = self._make_linear_potential_grid()
         positions = np.zeros((3, 3))
         charges = np.zeros(2)  # wrong count
@@ -10206,6 +10979,7 @@ class TestEvaluateTargetGridForceOnChain:
             evaluate_target_grid_force_on_chain(positions, charges, grid)
 
     def test_returns_correct_shapes(self):
+        """The grid force evaluator returns forces of shape (N, 3) and a float energy."""
         grid = self._make_linear_potential_grid()
         positions = np.zeros((5, 3))
         charges = np.ones(5)
@@ -10272,9 +11046,7 @@ class TestBornForceOnChain:
         return DXGrid(origin=origin, delta=delta, data=data)
 
     def test_force_in_linear_born_potential(self):
-        """g = x => grad(g) = (1, 0, 0); F = -alpha * q^2 * (1, 0, 0).
-        Two atoms (q=+1 and q=-2): SIGN of F is the same for both because
-        F goes as q^2, unlike the electrostatic case."""
+        """In a linear Born grid g=x the force is -alpha*q^2 times the gradient, same sign for both charge signs."""
         grid = self._make_linear_born_grid(slope_x=1.0)
         positions = np.array([[0.0, 0.0, 0.0], [2.0, 1.0, -1.0]])
         charges = np.array([1.0, -2.0])
@@ -10292,7 +11064,7 @@ class TestBornForceOnChain:
         assert abs(energy - a * 8.0) < 1e-10
 
     def test_force_in_quadratic_born_potential(self):
-        """g = x^2 => F_x = -alpha * q^2 * 2x at (x, 0, 0)."""
+        """In a quadratic Born grid g=x^2 the force is -alpha*q^2*2x with energy summed over beads."""
         grid = self._make_quadratic_born_grid()
         positions = np.array([[3.0, 0.0, 0.0], [-2.0, 0.0, 0.0]])
         charges = np.array([1.5, 0.5])
@@ -10321,7 +11093,7 @@ class TestBornForceOnChain:
         assert abs(energy - a * (2.25 * 9.0 + 0.25 * 4.0)) < 1e-10
 
     def test_zero_charge_gives_zero_born_force(self):
-        """A neutral bead feels no Born force regardless of position."""
+        """A neutral bead feels zero Born force regardless of position."""
         grid = self._make_linear_born_grid()
         positions = np.array([[0.0, 0.0, 0.0]])
         charges = np.array([0.0])
@@ -10334,7 +11106,7 @@ class TestBornForceOnChain:
         assert abs(energy) < 1e-12
 
     def test_atoms_outside_grid_get_zero_force(self):
-        """Atoms far outside the grid box contribute no Born force."""
+        """Atoms far outside the grid box contribute zero Born force and energy."""
         grid = self._make_linear_born_grid()
         positions = np.array([[100.0, 0.0, 0.0]])
         charges = np.array([1.0])
@@ -10347,7 +11119,7 @@ class TestBornForceOnChain:
         assert abs(energy) < 1e-10
 
     def test_alpha_scales_force_and_energy_linearly(self):
-        """Doubling alpha doubles per-atom force and total energy."""
+        """Doubling alpha doubles the per-atom Born force and total energy."""
         grid = self._make_linear_born_grid()
         positions = np.array([[1.0, 0.0, 0.0], [-1.0, 0.5, 0.0]])
         charges = np.array([1.0, -1.5])
@@ -10367,7 +11139,7 @@ class TestBornForceOnChain:
         assert abs(e_b - 2.0 * e_a) < 1e-12
 
     def test_zero_alpha_gives_zero_force_and_energy(self):
-        """alpha = 0 turns Born off entirely."""
+        """Setting alpha to zero turns the Born force and energy off entirely."""
         grid = self._make_linear_born_grid()
         positions = np.array([[1.0, 0.0, 0.0]])
         charges = np.array([1.0])
@@ -10381,6 +11153,7 @@ class TestBornForceOnChain:
         assert abs(energy) < 1e-12
 
     def test_shape_mismatch_raises(self):
+        """A mismatch between position and charge counts raises ValueError in the Born evaluator."""
         grid = self._make_linear_born_grid()
         positions = np.zeros((3, 3))
         charges = np.zeros(2)  # wrong count
@@ -10388,6 +11161,7 @@ class TestBornForceOnChain:
             evaluate_born_force_on_chain(positions, charges, grid)
 
     def test_returns_correct_shapes(self):
+        """The Born force evaluator returns forces of shape (N, 3) and a float energy."""
         grid = self._make_linear_born_grid()
         positions = np.zeros((5, 3))
         charges = np.ones(5)
@@ -10432,6 +11206,7 @@ class TestChainBDSimulatorBornAttributes:
         return chain, positions, params, target, pathway_set
 
     def test_defaults_born_grid_to_none_and_alpha_to_default(self):
+        """ChainBDSimulator defaults born_grid to None and desolvation alpha to the default constant."""
         chain, positions, params, target, pathway_set = self._make_minimal_setup()
         sim = ChainBDSimulator(
             target=target,
@@ -10446,6 +11221,7 @@ class TestChainBDSimulatorBornAttributes:
         assert sim.desolvation_alpha == DEFAULT_DESOLVATION_ALPHA
 
     def test_stores_born_grid_and_custom_alpha(self):
+        """ChainBDSimulator stores the supplied Born grid reference and custom desolvation alpha."""
         chain, positions, params, target, pathway_set = self._make_minimal_setup()
         # Build a trivial Born grid object to confirm reference is stored.
         grid = TestBornForceOnChain._make_linear_born_grid()
@@ -10464,11 +11240,7 @@ class TestChainBDSimulatorBornAttributes:
         assert sim.desolvation_alpha == 0.123
 
     def test_routes_born_into_per_atom_external_forces(self):
-        """ChainBDSimulator with a Born grid only (no electrostatic, no
-        soft repulsion) must route Born force through
-        _compute_per_atom_external_forces. With a linear Born grid g=x,
-        the closed-form per-bead force is F_i = -alpha * q_i^2 * (1, 0, 0).
-        """
+        """With only a linear Born grid, per-atom external forces equal the closed-form -alpha*q^2*(1,0,0)."""
         chain, positions, params, target, pathway_set = self._make_minimal_setup()
         # g(x, y, z) = x  => grad(g) = (1, 0, 0)
         grid = TestBornForceOnChain._make_linear_born_grid(slope_x=1.0)
@@ -10499,11 +11271,7 @@ class TestChainBDSimulatorBornAttributes:
         np.testing.assert_allclose(forces[:, 1:], 0.0, atol=1e-10)
 
     def test_born_grid_none_does_not_perturb_existing_path(self):
-        """born_grid=None must give the same per-atom external forces as
-        before Edit 4, i.e. wiring Born must not change behavior when
-        Born is disabled. With no electrostatic, no Born, no soft rep,
-        the per-atom external force must be exactly zero.
-        """
+        """With born_grid None and no other forces, per-atom external forces are exactly zero."""
         chain, positions, params, target, pathway_set = self._make_minimal_setup()
         sim = ChainBDSimulator(
             target=target,
@@ -10520,14 +11288,7 @@ class TestChainBDSimulatorBornAttributes:
         np.testing.assert_allclose(forces, 0.0, atol=1e-12)
 
     def test_born_adds_to_electrostatic_not_replaces(self):
-        """When BOTH target_grid and born_grid are set, the per-atom
-        external force must equal electrostatic + Born (not one or the
-        other). Use a linear electrostatic potential phi=y (giving a
-        constant electrostatic force F_es = -q * (0, 1, 0)) and a linear
-        Born grid g=x (giving F_born = -alpha * q^2 * (1, 0, 0)). The
-        two contributions live on orthogonal axes so the test isolates
-        them cleanly.
-        """
+        """With both grids set, per-atom external forces equal the sum of electrostatic and Born contributions on orthogonal axes."""
         chain, positions, params, target, pathway_set = self._make_minimal_setup()
 
         # Build phi(x, y, z) = y  (electrostatic). Reuse the linear-x
@@ -10632,9 +11393,7 @@ class TestRunChainBDSimulationBorn:
             f.write("\n".join(lines) + "\n")
 
     def test_run_chain_bd_simulation_with_born_grid_dx_none_unchanged(self, tmp_path):
-        """born_grid_dx=None must give same trajectory results as the
-        pre-Edit-6 default behavior. We verify by running the existing
-        defaults and checking the result count and types are sane."""
+        """Running with born_grid_dx None produces the expected number of trajectories each with positive step counts."""
         from pystarc.simulation.coffdrop_chain import (
             chain_from_sequence,
             run_chain_bd_simulation,
@@ -10655,9 +11414,7 @@ class TestRunChainBDSimulationBorn:
             assert r.steps > 0
 
     def test_run_chain_bd_simulation_missing_born_file_raises(self, tmp_path):
-        """A bad born_grid_dx path must raise FileNotFoundError BEFORE any
-        trajectories run. Catches typos that would otherwise waste a
-        long SLURM job."""
+        """A nonexistent born_grid_dx path raises FileNotFoundError before any trajectory runs."""
         from pystarc.simulation.coffdrop_chain import (
             chain_from_sequence,
             run_chain_bd_simulation,
@@ -10681,18 +11438,7 @@ class TestRunChainBDSimulationBorn:
         self,
         tmp_path,
     ):
-        """End-to-end: write a real linear Born DX file to disk, hand its
-        path to run_chain_bd_simulation, and confirm:
-          (a) the run completes without error,
-          (b) the loaded born_grid produces the closed-form per-bead force
-              when probed via _compute_per_atom_external_forces.
-
-        We verify (b) by reconstructing the same simulator the entry point
-        would build (linear g=x grid loaded from DX file) and checking
-        per-atom external forces directly. This catches any breakage in
-        the file-load -> DXGrid.from_file -> simulator-store -> evaluator
-        path that unit tests on the function alone cannot.
-        """
+        """Loading a real linear Born DX file runs end to end and reproduces the closed-form per-bead force."""
         from pystarc.forces.electrostatic.grid_force import DXGrid
         from pystarc.simulation.coffdrop_chain import (
             chain_from_sequence,
@@ -10786,10 +11532,7 @@ class TestRunChainBDSimulationAutoDiffusion:
     """
 
     def test_default_off_uses_scalar_defaults(self):
-        """auto_diffusion defaults to False; the simulator stores scalar
-        D_trans=0.1 and D_rot=0.01 (the historical defaults). This is
-        the backward-compatibility guarantee for pre-RPY callers.
-        """
+        """With auto_diffusion off by default, the simulator runs and returns two trajectories that each take at least one step."""
         from pystarc.simulation.coffdrop_chain import (
             chain_from_sequence,
             run_chain_bd_simulation,
@@ -10813,10 +11556,7 @@ class TestRunChainBDSimulationAutoDiffusion:
             assert r.steps > 0
 
     def test_auto_diffusion_true_with_explicit_D_raises(self):
-        """auto_diffusion=True is mutually exclusive with explicit
-        D_trans or D_rot. The simulator raises ValueError; the entry
-        point should propagate that error cleanly.
-        """
+        """run_chain_bd_simulation raises ValueError when auto_diffusion=True is combined with an explicit D_trans."""
         from pystarc.simulation.coffdrop_chain import (
             chain_from_sequence,
             run_chain_bd_simulation,
@@ -10837,10 +11577,7 @@ class TestRunChainBDSimulationAutoDiffusion:
             )
 
     def test_auto_diffusion_true_runs_and_produces_trajectories(self):
-        """auto_diffusion=True runs end-to-end without error and
-        produces sensible trajectories. RPY computes (3, 3) tensors
-        from chain geometry.
-        """
+        """auto_diffusion=True runs end to end and returns two trajectories that each advance at least one step."""
         from pystarc.simulation.coffdrop_chain import (
             chain_from_sequence,
             run_chain_bd_simulation,
@@ -10862,12 +11599,7 @@ class TestRunChainBDSimulationAutoDiffusion:
             assert r.steps > 0
 
     def test_auto_diffusion_threads_through_parallel(self):
-        """run_chain_bd_parallel must pass auto_diffusion through the
-        worker tuple to each worker's run_chain_bd_simulation call.
-        Tested with n_workers=2 to actually exercise multiprocessing
-        (n_workers=1 takes the special-cased serial branch and would
-        not catch a tuple-unpacking regression).
-        """
+        """run_chain_bd_parallel forwards auto_diffusion through the worker tuple, returning all four trajectories under n_workers=2."""
         from pystarc.simulation.coffdrop_chain import (
             chain_from_sequence,
             run_chain_bd_parallel,
@@ -10910,10 +11642,7 @@ class TestRunChainBDSimulationSoftRepulsion:
     """
 
     def test_default_off_uses_hard_sphere_only(self):
-        """use_soft_repulsion defaults to False; the simulator runs
-        without invoking chain-target steric forces. Backward-compat
-        guarantee for pre-soft-rep callers.
-        """
+        """With use_soft_repulsion off by default, the simulator runs and returns two trajectories that each take at least one step."""
         from pystarc.simulation.coffdrop_chain import (
             chain_from_sequence,
             run_chain_bd_simulation,
@@ -10936,9 +11665,7 @@ class TestRunChainBDSimulationSoftRepulsion:
             assert r.steps > 0
 
     def test_use_soft_repulsion_true_runs_end_to_end(self):
-        """use_soft_repulsion=True with explicit eps=0.5 runs without
-        error and produces sensible trajectories.
-        """
+        """use_soft_repulsion=True with explicit eps=0.5 runs end to end and returns two valid trajectories."""
         from pystarc.simulation.coffdrop_chain import (
             chain_from_sequence,
             run_chain_bd_simulation,
@@ -10961,12 +11688,7 @@ class TestRunChainBDSimulationSoftRepulsion:
             assert r.steps > 0
 
     def test_soft_repulsion_threads_through_parallel(self):
-        """run_chain_bd_parallel must pass use_soft_repulsion AND
-        soft_repulsion_eps through the worker tuple. Tested with
-        n_workers=2 to exercise actual multiprocessing (n_workers=1
-        takes a special-cased serial branch and would not catch a
-        tuple-unpack regression).
-        """
+        """run_chain_bd_parallel forwards use_soft_repulsion and soft_repulsion_eps through the worker tuple under n_workers=2."""
         from pystarc.simulation.coffdrop_chain import (
             chain_from_sequence,
             run_chain_bd_parallel,
@@ -10993,16 +11715,7 @@ class TestRunChainBDSimulationSoftRepulsion:
             assert r.steps > 0
 
     def test_eps_is_not_silently_ignored(self):
-        """Critical regression test: with use_soft_repulsion=True and
-        the chain placed near the target so WCA forces are non-trivial,
-        running with two very different eps values must produce
-        different trajectories. If the kwarg is dropped somewhere in
-        the threading chain, both runs would silently use the same
-        default eps=1.0 and produce identical trajectories.
-
-        Uses the same RNG seed for both runs so trajectories diverge
-        only because of force magnitude, not Wiener noise.
-        """
+        """Two runs with the same seed but very different soft-repulsion eps produce different trajectories, so eps is not silently dropped."""
         from pystarc.simulation.coffdrop_chain import (
             chain_from_sequence,
             run_chain_bd_simulation,
@@ -11158,9 +11871,7 @@ class TestChainTargetStericVectorizedEquivalence:
         return Molecule(name="test_target", atoms=atoms)
 
     def test_simple_in_range_pairs(self):
-        """Three chain beads, two target atoms, all pairs in WCA range.
-        Vectorized output must match looped output to FP precision.
-        """
+        """The vectorized chain-target steric force matches the looped reference when all pairs lie within the WCA range."""
         from pystarc.simulation.chain_simulator import (
             chain_target_steric_forces,
         )
@@ -11184,11 +11895,7 @@ class TestChainTargetStericVectorizedEquivalence:
         np.testing.assert_allclose(F_vec, F_ref, rtol=1e-7, atol=10.0)
 
     def test_mixed_in_and_out_of_range(self):
-        """Mix of pairs: some in WCA range (r < sig), some at exactly
-        r = sig (zero force, must NOT contribute), some far outside
-        (zero force). The mask handling is the riskiest part of the
-        vectorization; this test stresses it.
-        """
+        """The vectorized force matches the reference across in-range, at-cutoff, and far pairs, with the far bead getting zero force."""
         from pystarc.simulation.chain_simulator import (
             chain_target_steric_forces,
         )
@@ -11216,9 +11923,7 @@ class TestChainTargetStericVectorizedEquivalence:
         np.testing.assert_allclose(F_vec[2], np.zeros(3), atol=1e-15)
 
     def test_with_ghost_atoms_on_both_sides(self):
-        """Ghost atoms (radius < 1e-10) on chain and target must be
-        skipped identically in both implementations.
-        """
+        """Ghost atoms with radius below 1e-10 are skipped identically by both implementations, leaving the ghost bead with zero force."""
         from pystarc.simulation.chain_simulator import (
             chain_target_steric_forces,
         )
@@ -11246,9 +11951,7 @@ class TestChainTargetStericVectorizedEquivalence:
         np.testing.assert_array_equal(F_vec[1], np.zeros(3))
 
     def test_eps_scaling(self):
-        """Force scales linearly with eps. Vectorized and looped
-        implementations must agree across multiple eps values.
-        """
+        """The chain-target steric force scales linearly with eps and matches the looped reference across several eps values."""
         from pystarc.simulation.chain_simulator import (
             chain_target_steric_forces,
         )
@@ -11273,16 +11976,7 @@ class TestChainTargetStericVectorizedEquivalence:
             )
 
     def test_random_many_pairs_simultaneously_in_range(self):
-        """Stress test with many pairs simultaneously in range: the
-        scenario where vectorized force accumulation is most likely to
-        differ from a sequential loop if the einsum index pattern or
-        the mask broadcasting has a bug.
-
-        Uses pseudorandom positions and radii in a small box so that a
-        non-trivial fraction of pairs end up inside their WCA cutoff.
-        Sizes are kept modest (20-bead chain x 50-atom target) so the
-        looped reference runs in well under a second.
-        """
+        """The vectorized force matches the looped reference on a random 20-bead chain and 50-atom target with many in-range pairs."""
         from pystarc.simulation.chain_simulator import (
             chain_target_steric_forces,
         )
@@ -11338,6 +12032,7 @@ class TestComputeChainForcesEquivalence:
         return state, fc
 
     def test_bonds_only_match_legacy(self):
+        """compute_chain_forces reproduces the legacy evaluator forces for a bonds-only chain."""
         positions = np.array([[0.0, 0.0, 0.0], [4.5, 0.5, 0.0], [9.0, 1.0, 0.0]])
         bonds = [
             ChainBond(ChainAtomRef(0), ChainAtomRef(1), r0=3.8, k_spring=100.0),
@@ -11351,6 +12046,7 @@ class TestComputeChainForcesEquivalence:
         np.testing.assert_array_equal(state.forces, F_legacy)
 
     def test_angles_only_match_legacy(self):
+        """compute_chain_forces reproduces the legacy evaluator forces for an angles-only bent chain."""
         positions = np.array(
             [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [8.0, 1.5, 0.0]]
         )  # bent angle
@@ -11371,6 +12067,7 @@ class TestComputeChainForcesEquivalence:
         np.testing.assert_array_equal(state.forces, F_legacy)
 
     def test_torsions_only_match_legacy(self):
+        """compute_chain_forces reproduces the legacy evaluator forces for a torsions-only chain."""
         positions = np.array(
             [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [8.0, 0.0, 0.0], [12.0, 1.0, 0.5]]
         )
@@ -11393,7 +12090,7 @@ class TestComputeChainForcesEquivalence:
         np.testing.assert_array_equal(state.forces, F_legacy)
 
     def test_full_chain_match_legacy(self):
-        """All three kernels firing on a 4-atom off-equilibrium chain."""
+        """compute_chain_forces reproduces the legacy evaluator forces with bonds, angles, and torsions all active."""
         positions = np.array(
             [[0.0, 0.0, 0.0], [4.5, 0.5, 0.0], [9.0, 1.0, 1.0], [13.0, 0.0, -1.0]]
         )
@@ -11456,14 +12153,14 @@ class TestComputeChainForcesProperties:
         return ChainState.from_template(common, positions)
 
     def test_no_interactions_gives_zero_forces(self):
+        """compute_chain_forces yields zero forces when the chain has no bonded interactions."""
         positions = np.array([[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]])
         state = self._make_state(positions)
         compute_chain_forces(state)
         np.testing.assert_array_equal(state.forces, np.zeros((2, 3)))
 
     def test_re_running_zeroes_first(self):
-        """Calling compute_chain_forces twice on the same state should give
-        the same result, not double the forces."""
+        """Calling compute_chain_forces twice on the same state gives identical forces rather than doubling them."""
         positions = np.array([[0.0, 0.0, 0.0], [4.5, 0.0, 0.0]])
         bonds = [
             ChainBond(ChainAtomRef(0), ChainAtomRef(1), r0=3.8, k_spring=100.0),
@@ -11476,7 +12173,7 @@ class TestComputeChainForcesProperties:
         np.testing.assert_array_equal(F_first, F_second)
 
     def test_total_force_is_zero_newtons_third_law(self):
-        """For any closed bonded system, forces must sum to zero."""
+        """The total force over a closed bonded chain sums to zero, satisfying Newton's third law."""
         positions = np.array(
             [[0.0, 0.0, 0.0], [4.5, 0.5, 0.0], [9.0, 1.0, 1.0], [13.0, 0.0, -1.0]]
         )
@@ -11512,7 +12209,7 @@ class TestComputeChainForcesProperties:
         np.testing.assert_allclose(sum_F, [0.0, 0.0, 0.0], atol=1e-10)
 
     def test_bond_at_equilibrium_gives_zero_force(self):
-        """If the bond is exactly at r0, harmonic force is zero."""
+        """A harmonic bond at exactly r0 produces zero force."""
         positions = np.array([[0.0, 0.0, 0.0], [3.8, 0.0, 0.0]])  # exactly at r0
         bonds = [
             ChainBond(ChainAtomRef(0), ChainAtomRef(1), r0=3.8, k_spring=100.0),
@@ -11549,15 +12246,7 @@ class TestChainInternalBDStep:
         return ChainState.from_template(common, positions)
 
     def test_free_diffusion_matches_stokes_einstein(self):
-        """Free pairwise diffusion: <|r_i - r_j|^2> grows as 12 D dt N (kT=1).
-
-        The pairwise displacement is invariant under CoM removal, so the
-        measurement is unaffected by the re-centering step. With equal
-        radii a, the relative diffusion coefficient is 2D = 2 / (6 pi eta a).
-
-        Run many independent trajectories of N steps each, measure the
-        mean squared displacement of one atom pair, compare to theory.
-        """
+        """Free pairwise diffusion gives a mean squared displacement matching the Stokes-Einstein prediction 12 D dt N within 10%."""
         from pystarc.motion.do_bd_step import WATER_VISCOSITY
 
         radius = 2.0
@@ -11591,7 +12280,7 @@ class TestChainInternalBDStep:
         )
 
     def test_determinism_with_seed(self):
-        """Same seed -> same trajectory."""
+        """Two inner BD chains stepped with the same seed produce identical positions."""
         rng1 = np.random.default_rng(42)
         rng2 = np.random.default_rng(42)
         s1 = self._make_free_chain(n_atoms=3)
@@ -11602,7 +12291,7 @@ class TestChainInternalBDStep:
         np.testing.assert_array_equal(s1.positions, s2.positions)
 
     def test_recenter_keeps_com_at_origin(self):
-        """After each step, the chain CoM must be at the origin."""
+        """The chain center of mass stays at the origin after each internal BD step."""
         rng = np.random.default_rng(0)
         state = self._make_free_chain(n_atoms=4)
         for _ in range(10):
@@ -11611,7 +12300,7 @@ class TestChainInternalBDStep:
             assert np.linalg.norm(com) < 1e-10
 
     def test_zero_dt_no_motion(self):
-        """dt = 0 should produce zero drift and zero noise."""
+        """An internal BD step with dt=0 produces no drift and no noise."""
         rng = np.random.default_rng(0)
         state = self._make_free_chain(n_atoms=3)
         before = state.positions.copy()
@@ -11621,7 +12310,7 @@ class TestChainInternalBDStep:
         np.testing.assert_allclose(state.positions, before, atol=1e-12)
 
     def test_constraints_satisfied_after_step(self):
-        """With a length constraint, max|phi| < tol after the step."""
+        """Length constraints stay satisfied with max|phi| below tolerance after each constrained internal BD step."""
         from pystarc.simulation.coffdrop_chain import (
             ChainAtom,
             ChainCommon,
@@ -11654,6 +12343,7 @@ class TestAggregateChainExternalForceAndTorque:
     """Net force and torque from per-atom forces."""
 
     def test_zero_forces_give_zero_net(self):
+        """Zero per-atom forces aggregate to zero net force and zero net torque."""
         positions = np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]])
         forces = np.zeros((2, 3))
         com = np.zeros(3)
@@ -11666,6 +12356,7 @@ class TestAggregateChainExternalForceAndTorque:
         np.testing.assert_array_equal(t_net, np.zeros(3))
 
     def test_uniform_forces_sum_correctly(self):
+        """Uniform forces along the position axis sum to the expected net force with canceling torque."""
         positions = np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]])
         forces = np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])  # both pull +x
         com = np.zeros(3)
@@ -11679,7 +12370,7 @@ class TestAggregateChainExternalForceAndTorque:
         np.testing.assert_allclose(t_net, [0.0, 0.0, 0.0], atol=1e-12)
 
     def test_couple_produces_torque_no_net_force(self):
-        """Equal and opposite forces on opposite sides of CoM: pure torque."""
+        """Equal and opposite forces on opposite sides of the CoM give zero net force and a pure torque of (0, 0, 2)."""
         positions = np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]])
         forces = np.array([[0.0, 1.0, 0.0], [0.0, -1.0, 0.0]])
         com = np.zeros(3)
@@ -11696,7 +12387,7 @@ class TestAggregateChainExternalForceAndTorque:
         np.testing.assert_allclose(t_net, [0.0, 0.0, 2.0], atol=1e-12)
 
     def test_com_offset_used_correctly(self):
-        """Torque is computed about the supplied CoM, not the origin."""
+        """The aggregated torque is computed about the supplied center of mass rather than the origin."""
         positions = np.array([[2.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
         forces = np.array([[0.0, 1.0, 0.0], [0.0, -1.0, 0.0]])
         com = np.array([1.0, 0.0, 0.0])  # midpoint
@@ -11709,6 +12400,7 @@ class TestAggregateChainExternalForceAndTorque:
         np.testing.assert_allclose(t_net, [0.0, 0.0, 2.0], atol=1e-12)
 
     def test_shape_mismatch_raises(self):
+        """aggregate_chain_external_force_and_torque raises ValueError when the positions and forces shapes disagree."""
         with pytest.raises(ValueError, match="does not match"):
             aggregate_chain_external_force_and_torque(
                 np.zeros((3, 3)),
@@ -11721,8 +12413,7 @@ class TestChainOuterBDStep:
     """Outer BD step: rigid-body propagation of (pos, ori) under aggregated forces."""
 
     def test_zero_forces_pure_diffusion(self):
-        """With zero forces and a fixed seed, the outer step should produce
-        a position change consistent with sqrt(2 D_trans dt) noise variance."""
+        """With zero forces and a fixed seed, the outer BD step produces a noise-driven displacement below 10 sqrt(2 D_trans dt)."""
         from pystarc.transforms.quaternion import Quaternion as Q
 
         pos = np.array([100.0, 0.0, 0.0])
@@ -11753,6 +12444,7 @@ class TestChainOuterBDStep:
         assert d < 10 * sigma, f"step displacement {d} exceeds 10*sigma={10*sigma}"
 
     def test_determinism_with_seed(self):
+        """Two outer BD steps with the same seed produce identical position and orientation quaternion."""
         from pystarc.transforms.quaternion import Quaternion as Q
 
         pos = np.array([100.0, 0.0, 0.0])
@@ -11774,11 +12466,7 @@ class TestChainOuterBDStep:
         assert o1.y == o2.y and o1.z == o2.z
 
     def test_diffusion_coefficient_matches_input(self):
-        """Run many trajectories with zero force; mean squared displacement
-        of CoM should match 6 D_trans dt N exactly (no Stokes-Einstein
-        derivation here -- we just check that bd_step_wiener applies the
-        D_trans we hand it).
-        """
+        """The force-free outer-step CoM mean squared displacement matches 6 D_trans dt N within 10%."""
         from pystarc.transforms.quaternion import Quaternion as Q
 
         D_trans = 0.5
@@ -11883,6 +12571,7 @@ class TestChainBDSimulatorRunOne:
         )
 
     def test_run_one_returns_trajectory_result(self):
+        """run_one returns a TrajectoryResult with a valid fate and non-negative steps, time, and final separation."""
         from pystarc.molsystem.system_state import Fate, TrajectoryResult
 
         sim = self._make_sim(n_atoms=2)
@@ -11894,8 +12583,7 @@ class TestChainBDSimulatorRunOne:
         assert result.final_separation >= 0.0
 
     def test_run_one_no_reactions_always_escapes(self):
-        """With no reactions and no target force, every trajectory must
-        eventually escape. Test with a small b-sphere so escape is fast."""
+        """With no reactions and no target force, run_one always escapes with final separation at or beyond r_escape."""
         from pystarc.molsystem.system_state import Fate
 
         sim = self._make_sim(n_atoms=2, r_start=10.0, r_escape=12.0, max_steps=500)
@@ -11904,8 +12592,7 @@ class TestChainBDSimulatorRunOne:
         assert result.final_separation >= 12.0
 
     def test_run_one_determinism_with_seed(self):
-        """Two simulators built with the same seed must produce identical
-        trajectories on the first run_one() call."""
+        """Two simulators built with the same seed produce identical fate, steps, time, and final separation from run_one."""
         sim1 = self._make_sim(seed=99)
         sim2 = self._make_sim(seed=99)
         r1 = sim1.run_one()
@@ -11916,7 +12603,7 @@ class TestChainBDSimulatorRunOne:
         assert abs(r1.final_separation - r2.final_separation) < 1e-12
 
     def test_run_one_with_bonded_chain_completes(self):
-        """A 3-atom bonded chain must run end-to-end without errors."""
+        """A 3-atom bonded chain runs end to end through run_one and ends with a valid fate."""
         from pystarc.molsystem.system_state import Fate
 
         sim = self._make_sim(
@@ -11935,7 +12622,7 @@ class TestChainBDSimulatorRun:
     """Multi-trajectory run() execution."""
 
     def test_run_collects_all_trajectories(self):
-        """run() should populate self.results with n_trajectories items."""
+        """run collects exactly n_trajectories results, and reacted plus escaped counts sum to that total."""
         sim = TestChainBDSimulatorRunOne._make_sim(
             n_atoms=2, n_trajectories=5, r_start=10.0, r_escape=12.0
         )
@@ -11945,7 +12632,7 @@ class TestChainBDSimulatorRun:
         assert sim.n_reacted + sim.n_escaped == 5
 
     def test_run_returns_results_list(self):
-        """run() returns the same list it stores in self.results."""
+        """run returns the same list object it stores in self.results."""
         sim = TestChainBDSimulatorRunOne._make_sim(
             n_atoms=2, n_trajectories=3, r_start=10.0, r_escape=12.0
         )
@@ -11976,7 +12663,7 @@ class TestLoadChainFromJson:
         return fh.name
 
     def test_roundtrip_minimal_chain(self):
-        """Minimum viable chain: just atoms, no bonds/angles/torsions."""
+        """Loading a minimal atoms-only chain JSON yields the correct name, two atoms, no bonded terms, and (2, 3) positions."""
         chain_dict = {
             "name": "minimal",
             "atoms": [
@@ -12011,7 +12698,7 @@ class TestLoadChainFromJson:
             os.unlink(path)
 
     def test_positions_are_centered_at_origin(self):
-        """Off-center input positions should be re-centered on load."""
+        """load_chain_from_json recenters off-center input positions to the origin while preserving pairwise distances."""
         chain_dict = {
             "name": "off_center",
             "atoms": [
@@ -12037,7 +12724,7 @@ class TestLoadChainFromJson:
             os.unlink(path)
 
     def test_atom_fields_carried_correctly(self):
-        """radius, charge, resname, resid all get parsed."""
+        """load_chain_from_json parses each atom's radius, charge, resname, and resid correctly."""
         chain_dict = {
             "name": "fields_test",
             "atoms": [
@@ -12074,7 +12761,7 @@ class TestLoadChainFromJson:
             os.unlink(path)
 
     def test_bonds_angles_torsions_loaded_correctly(self):
-        """Each bonded interaction is parsed with the right indices/params."""
+        """load_chain_from_json parses bonds, angles, and torsions with the correct counts, indices, and parameters."""
         chain_dict = {
             "name": "full",
             "atoms": [
@@ -12117,6 +12804,7 @@ class TestLoadChainFromJson:
             os.unlink(path)
 
     def test_empty_atoms_list_raises(self):
+        """load_chain_from_json raises ValueError when the atoms list is empty."""
         chain_dict = {"name": "empty", "atoms": []}
         path = self._write_chain_json(chain_dict)
         try:
@@ -12128,6 +12816,7 @@ class TestLoadChainFromJson:
             os.unlink(path)
 
     def test_wrong_position_dimension_raises(self):
+        """load_chain_from_json raises ValueError when a position has fewer than three components."""
         chain_dict = {
             "name": "wrong_dim",
             "atoms": [
@@ -12144,9 +12833,7 @@ class TestLoadChainFromJson:
             os.unlink(path)
 
     def test_loaded_chain_is_runnable_with_simulator(self):
-        """End-to-end: load a JSON chain, build a ChainBDSimulator from it,
-        run one trajectory. This is the closest thing to an integration
-        test for the loader + simulator together."""
+        """A chain loaded from JSON builds a ChainBDSimulator and runs one trajectory end to end."""
         from pystarc.molsystem.system_state import Fate
         from pystarc.pathways.reaction_interface import PathwaySet
 
@@ -12272,7 +12959,7 @@ class TestChainSimulationCLI:
         return str(chain_path), str(target_path), str(rxn_path)
 
     def test_chain_simulation_happy_path(self, tmp_path):
-        """Full successful invocation with all required args."""
+        """The chain_simulation CLI exits successfully and reports reacted, escaped, chain name, and atom count."""
         from click.testing import CliRunner
         from pystarc.cli.main import cli
 
@@ -12321,7 +13008,7 @@ class TestChainSimulationCLI:
         assert "3 atoms" in result.output
 
     def test_chain_simulation_missing_d_trans_fails(self, tmp_path):
-        """click should reject the invocation when --d-trans is missing."""
+        """The chain_simulation CLI fails and names --d-trans when that required option is missing."""
         from click.testing import CliRunner
         from pystarc.cli.main import cli
 
@@ -12352,7 +13039,7 @@ class TestChainSimulationCLI:
         assert "--d-trans" in result.output
 
     def test_chain_simulation_missing_d_rot_fails(self, tmp_path):
-        """Symmetric check for --d-rot."""
+        """The chain_simulation CLI fails and names --d-rot when that required option is missing."""
         from click.testing import CliRunner
         from pystarc.cli.main import cli
 
@@ -12382,8 +13069,7 @@ class TestChainSimulationCLI:
         assert "--d-rot" in result.output
 
     def test_chain_simulation_bad_chain_json_fails(self, tmp_path):
-        """A chain JSON with an empty atoms list should fail with a clear
-        ValueError surfaced through click."""
+        """The chain_simulation CLI fails with a non-zero exit and captured exception when the chain JSON has no atoms."""
         from click.testing import CliRunner
         from pystarc.cli.main import cli
 
@@ -12459,8 +13145,7 @@ class TestChainBDParallelMode:
         )
 
     def test_simulator_is_picklable(self):
-        """Multiprocessing requires the simulator to be picklable since
-        it's shipped to worker processes."""
+        """The simulator pickles and unpickles while preserving D_trans, n_threads, and the chain atom count."""
         import pickle
 
         sim = self._make_sim(n_trajectories=2, n_threads=2)
@@ -12471,7 +13156,7 @@ class TestChainBDParallelMode:
         assert len(restored.chain_template.atoms) == len(sim.chain_template.atoms)
 
     def test_worker_function_runs_one_trajectory(self):
-        """The top-level worker function must produce a valid TrajectoryResult."""
+        """The top-level worker function returns a valid TrajectoryResult with a reacted or escaped fate."""
         from pystarc.molsystem.system_state import Fate, TrajectoryResult
 
         sim = self._make_sim(n_trajectories=1, n_threads=1)
@@ -12480,15 +13165,14 @@ class TestChainBDParallelMode:
         assert result.fate in (Fate.ESCAPED, Fate.REACTED)
 
     def test_parallel_run_produces_correct_trajectory_count(self):
-        """run() with n_threads=2 should still produce n trajectories."""
+        """A parallel run with n_threads=2 still produces n trajectories with reacted plus escaped summing to n."""
         sim = self._make_sim(n_trajectories=4, n_threads=2)
         results = sim.run()
         assert len(results) == 4
         assert sim.n_reacted + sim.n_escaped == 4
 
     def test_parallel_run_is_deterministic(self):
-        """Two independent parallel runs with the same seed must produce
-        identical results across all trajectories."""
+        """Two parallel runs with the same seed produce identical fate, steps, and final separation across all trajectories."""
         sim1 = self._make_sim(n_trajectories=4, n_threads=2, seed=99)
         sim2 = self._make_sim(n_trajectories=4, n_threads=2, seed=99)
         r1 = sim1.run()
@@ -12500,9 +13184,7 @@ class TestChainBDParallelMode:
             assert abs(a.final_separation - b.final_separation) < 1e-12
 
     def test_serial_and_parallel_paths_both_succeed(self):
-        """Both code paths must produce well-formed results when run on
-        the same inputs (the trajectories themselves differ because of
-        different RNG seeding schemes -- this is documented behavior)."""
+        """The serial and parallel run paths both produce well-formed results with valid fates and non-negative metrics."""
         from pystarc.molsystem.system_state import Fate
 
         sim_serial = self._make_sim(n_trajectories=3, n_threads=1)
@@ -12516,10 +13198,7 @@ class TestChainBDParallelMode:
             assert r.final_separation >= 0.0
 
     def test_n_threads_one_uses_serial_path(self):
-        """n_threads=1 should not invoke the multiprocessing pool. We
-        verify this indirectly: the n_threads=1 path should produce
-        the same results as if we manually advanced self.rng (ie the
-        old serial behavior). Here we just check the run completes."""
+        """Running with n_threads=1 completes and returns the expected number of trajectories via the serial path."""
         sim = self._make_sim(n_trajectories=3, n_threads=1)
         results = sim.run()
         assert len(results) == 3
@@ -12529,7 +13208,7 @@ class TestChainSimulationCLIThreads:
     """The CLI --threads option should reach ChainBDParameters.n_threads."""
 
     def test_threads_flag_runs_in_parallel(self, tmp_path):
-        """A CLI invocation with --threads 2 should still complete."""
+        """The chain_simulation CLI with --threads 2 exits successfully and reports reacted and escaped."""
         from click.testing import CliRunner
         from pystarc.cli.main import cli
 
@@ -12585,23 +13264,21 @@ class TestRpyPairTensorAnalyticalLimits:
     """
 
     def test_self_mobility_translation_matches_stokes(self):
-        """Single-sphere translational mobility = I / (6 pi a)."""
+        """The single-sphere RPY translational self-mobility equals I / (6 pi a)."""
         a = 2.5
         mtt, _ = rpy_self_blocks(a)
         expected = np.eye(3) / (6.0 * math.pi * a)
         np.testing.assert_allclose(mtt, expected, atol=1e-15)
 
     def test_self_mobility_rotation_matches_stokes(self):
-        """Single-sphere rotational mobility = I / (8 pi a^3)."""
+        """The single-sphere RPY rotational self-mobility equals I / (8 pi a^3)."""
         a = 2.5
         _, mrr = rpy_self_blocks(a)
         expected = np.eye(3) / (8.0 * math.pi * a * a * a)
         np.testing.assert_allclose(mrr, expected, atol=1e-15)
 
     def test_far_field_mtt_matches_oseen_plus_correction(self):
-        """Non-overlapping spheres: mtt = (3/4 + a2/(2 r2))/(6 pi r) for
-        equal radii, perpendicular component. We check the well-known
-        far-field forms exactly."""
+        """The far-field mtt block for equal spheres matches the Oseen tensor plus the a²/r² correction with zero off-diagonals."""
         a = 1.0
         r = 10.0  # far field, r >> 2a
         r_ij = np.array([r, 0.0, 0.0])
@@ -12629,8 +13306,7 @@ class TestRpyPairTensorAnalyticalLimits:
                     assert abs(mtt[i, j]) < 1e-15
 
     def test_far_field_mrr_isotropic_form(self):
-        """Non-overlapping: mrr = (-I + 3 uu) / (16 pi r^3).
-        Trace check: tr(mrr) = (-3 + 3) / (16 pi r^3) = 0."""
+        """The far-field mrr block equals (-I + 3uu)/(16πr³) and is traceless."""
         a = 1.0
         r = 10.0
         r_ij = np.array([r, 0.0, 0.0])
@@ -12645,9 +13321,7 @@ class TestRpyPairTensorAnalyticalLimits:
         np.testing.assert_allclose(np.trace(mrr), 0.0, atol=1e-14)
 
     def test_far_field_cross_coupling_skew_symmetric(self):
-        """Cross-coupling blocks are skew-symmetric: m^T = -m
-        because they are eps_u (the Levi-Civita on u is antisymmetric)
-        scaled by a scalar."""
+        """The far-field cross-coupling blocks mrt and mtr are skew-symmetric and equal for equal radii."""
         a = 1.5
         r = 8.0
         r_ij = np.array([0.0, r, 0.0])
@@ -12659,9 +13333,7 @@ class TestRpyPairTensorAnalyticalLimits:
         np.testing.assert_allclose(mrt, mtr, atol=1e-15)
 
     def test_argument_swap_symmetry(self):
-        """mtt(ai, aj, r_ij) must equal mtt(aj, ai, -r_ij): the pair
-        tensor is symmetric under simultaneous swap of bead labels and
-        sign of the separation vector. Same for mrr."""
+        """The pair tensors mtt and mrr are invariant under simultaneous swap of bead labels and sign of r_ij."""
         ai, aj = 1.2, 2.3
         r_ij = np.array([3.0, 4.0, 5.0])  # arbitrary
         mtt_ij, _, _, mrr_ij = rpy_pair_blocks(ai, aj, r_ij)
@@ -12670,9 +13342,7 @@ class TestRpyPairTensorAnalyticalLimits:
         np.testing.assert_allclose(mrr_ij, mrr_ji, atol=1e-15)
 
     def test_overlap_regime_at_contact_finite_and_continuous(self):
-        """Two equal spheres exactly at contact (r = 2a, both radii a):
-        components must match BOTH formulas (far-field at r = 2a+,
-        and partial-overlap at r = 2a-) when evaluated as limits."""
+        """The far-field and partial-overlap formulas for the tt components agree continuously across contact at r = 2a."""
         a = 1.0
 
         # Slightly above contact: far-field formula.
@@ -12695,8 +13365,7 @@ class TestRpyPairTensorAnalyticalLimits:
         np.testing.assert_allclose(tt_uu_above, tt_uu_below, atol=1e-4)
 
     def test_consistent_with_existing_rpy_offdiagonal(self):
-        """The new mtt block (translation only) must match the existing
-        rpy_offdiagonal output up to the viscosity scaling factor."""
+        """The new mtt block matches rpy_offdiagonal output when the viscosity scaling factor is set to one."""
         from pystarc.hydrodynamics.rotne_prager import rpy_offdiagonal
 
         ai, aj = 2.0, 3.0
@@ -12715,9 +13384,7 @@ class TestRpyPairTensorAnalyticalLimits:
         np.testing.assert_allclose(mtt_new, mtt_existing, atol=1e-13)
 
     def test_fully_nested_sphere_returns_self_mobility(self):
-        """When r is small enough that one sphere is entirely inside
-        the other, the pair tensor reduces to single-sphere self-
-        mobility for the larger sphere."""
+        """When one sphere is fully nested inside the other, the pair tensor reduces to the larger sphere's self-mobility with zero cross terms."""
         ai, aj = 5.0, 1.0
         # r = 2: smaller sphere is fully inside (since |ai - aj| = 4 > r).
         r_ij = np.array([2.0, 0.0, 0.0])
@@ -12738,7 +13405,7 @@ class TestRpyFullMobilityMatrix:
     and consistency with the validated pair tensor."""
 
     def test_shape_for_n_beads(self):
-        """For N beads, the matrix is (6N, 6N)."""
+        """The full mobility matrix has shape (6N, 6N) and dtype float64 for several bead counts."""
         for n in [1, 2, 3, 7, 10]:
             positions = np.zeros((n, 3))
             positions[:, 0] = np.arange(n) * 5.0
@@ -12748,9 +13415,7 @@ class TestRpyFullMobilityMatrix:
             assert M.dtype == np.float64
 
     def test_symmetric_by_onsager_reciprocity(self):
-        """The full mobility matrix must be symmetric: M = M.T.
-        This is Onsager reciprocity. We fill via transpose so the
-        symmetry is exact, not approximate."""
+        """The full mobility matrix is exactly symmetric, satisfying Onsager reciprocity."""
         rng = np.random.default_rng(0)
         positions = rng.standard_normal((5, 3)) * 5.0
         radii = rng.uniform(0.8, 2.5, size=5)
@@ -12758,8 +13423,7 @@ class TestRpyFullMobilityMatrix:
         np.testing.assert_array_equal(M, M.T)
 
     def test_diagonal_blocks_match_self_mobility(self):
-        """The 6x6 diagonal block of bead i is block-diagonal with
-        mtt_self(a_i) and mrr_self(a_i); cross terms are zero."""
+        """Each bead's 6x6 diagonal block is block-diagonal with its translational and rotational self-mobilities and zero cross terms."""
         positions = np.array([[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]])
         radii = np.array([1.5, 2.5])
         M = rpy_full_mobility_matrix(positions, radii)
@@ -12788,8 +13452,7 @@ class TestRpyFullMobilityMatrix:
             )
 
     def test_off_diagonal_blocks_match_pair_tensor(self):
-        """Block (i, j) of the assembled matrix must equal what
-        rpy_pair_blocks returns for the same (a_i, a_j, r_ij)."""
+        """Each off-diagonal (i, j) block of the assembled matrix equals rpy_pair_blocks for the same radii and separation."""
         positions = np.array([[0.0, 0.0, 0.0], [4.0, 1.0, 0.0], [8.0, 0.0, 2.0]])
         radii = np.array([1.0, 1.5, 2.0])
         M = rpy_full_mobility_matrix(positions, radii)
@@ -12811,7 +13474,7 @@ class TestRpyFullMobilityMatrix:
         np.testing.assert_allclose(M[9:12, 15:18], mrr, atol=1e-15)
 
     def test_single_bead_returns_self_mobility(self):
-        """N=1: matrix is just the (6, 6) self-mobility."""
+        """For N = 1 the matrix is the (6, 6) self-mobility with zero cross-coupling blocks."""
         positions = np.array([[2.0, 3.0, 4.0]])  # arbitrary
         radii = np.array([1.5])
         M = rpy_full_mobility_matrix(positions, radii)
@@ -12824,8 +13487,7 @@ class TestRpyFullMobilityMatrix:
         np.testing.assert_array_equal(M[3:6, 0:3], np.zeros((3, 3)))
 
     def test_two_bead_full_assembly_matches_hand_built(self):
-        """For N=2, hand-build the 12x12 from rpy_self_blocks and
-        rpy_pair_blocks, compare to rpy_full_mobility_matrix."""
+        """The assembled N = 2 matrix exactly equals the 12x12 hand-built from self and pair blocks with transposed (1, 0) block."""
         positions = np.array([[0.0, 0.0, 0.0], [3.0, 4.0, 0.0]])
         radii = np.array([1.0, 1.5])
 
@@ -12861,7 +13523,7 @@ class TestRpyFullMobilityMatrix:
         np.testing.assert_array_equal(M, expected)
 
     def test_off_diagonal_far_field_decays_as_inverse_r(self):
-        """Translation-translation block falls off as 1/r at large r."""
+        """The translation-translation off-diagonal block decays as 1/r at large separation."""
         n = 2
         radii = np.array([1.0, 1.0])
         # Two distances, factor of 10 apart.
@@ -12879,7 +13541,7 @@ class TestRpyFullMobilityMatrix:
         np.testing.assert_allclose(ratio, 1.0 / 10.0, rtol=1e-3)
 
     def test_invalid_input_shapes_raise(self):
-        """Shape validation should reject obvious errors."""
+        """Wrong positions or radii shapes raise ValueError with descriptive messages."""
         # Wrong positions shape.
         with pytest.raises(ValueError, match="positions must have shape"):
             rpy_full_mobility_matrix(np.zeros(3), np.array([1.0]))
@@ -12904,7 +13566,7 @@ class TestChainRigidBodyResistance:
     """
 
     def test_single_bead_translation_matches_stokes(self):
-        """A single bead's translational A = (6 pi a) I exactly."""
+        """A single bead's translational resistance A equals 6πa I exactly."""
         a = 2.5
         positions = np.array([[1.5, -0.7, 3.2]])
         radii = np.array([a])
@@ -12912,24 +13574,21 @@ class TestChainRigidBodyResistance:
         np.testing.assert_allclose(A, 6.0 * math.pi * a * np.eye(3), atol=1e-10)
 
     def test_single_bead_hydrodynamic_center_is_position(self):
-        """For one bead, hc must equal that bead's position."""
+        """For a single bead the hydrodynamic center equals that bead's position."""
         positions = np.array([[5.0, -3.0, 7.0]])
         radii = np.array([1.5])
         _, _, hc = chain_rigid_body_resistance(positions, radii)
         np.testing.assert_allclose(hc, positions[0], atol=1e-15)
 
     def test_single_bead_C_is_zero_by_construction(self):
-        """Documented limitation: BD2's algorithm returns C = 0 for a
-        single bead because the moment arm vanishes. This test pins
-        the behavior so future refactors don't accidentally 'fix' it
-        without consulting the design choice."""
+        """A single bead yields C = 0, pinning the documented zero moment-arm behavior."""
         positions = np.array([[0.0, 0.0, 0.0]])
         radii = np.array([1.0])
         _, C, _ = chain_rigid_body_resistance(positions, radii)
         np.testing.assert_allclose(C, np.zeros((3, 3)), atol=1e-12)
 
     def test_resistance_matrices_are_symmetric(self):
-        """A and C must be symmetric (Lorentz reciprocity for resistance)."""
+        """The resistance matrices A and C are symmetric by Lorentz reciprocity."""
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((5, 3)) * 5.0
         radii = rng.uniform(0.8, 2.0, size=5)
@@ -12938,9 +13597,7 @@ class TestChainRigidBodyResistance:
         np.testing.assert_allclose(C, C.T, atol=1e-10)
 
     def test_two_equal_spheres_far_apart_anisotropic_A(self):
-        """Two equal spheres along x-axis: A_xx (parallel) < A_yy
-        (perpendicular). This is a basic chain hydrodynamics result:
-        broadside drag exceeds head-on drag."""
+        """For two equal spheres along x, parallel drag A_xx is less than perpendicular A_yy = A_zz, each within 3% of 12πa."""
         a = 1.0
         sep = 100.0
         positions = np.array([[-sep / 2, 0.0, 0.0], [sep / 2, 0.0, 0.0]])
@@ -12959,14 +13616,14 @@ class TestChainRigidBodyResistance:
             assert abs(A[i, i] - 12.0 * math.pi * a) / (12.0 * math.pi * a) < 0.03
 
     def test_two_equal_spheres_hydrodynamic_center_at_midpoint(self):
-        """Equal radii: hc is the midpoint."""
+        """For two equal beads the hydrodynamic center is the midpoint."""
         positions = np.array([[-3.0, 4.0, 0.0], [3.0, -4.0, 0.0]])
         radii = np.array([1.5, 1.5])
         _, _, hc = chain_rigid_body_resistance(positions, radii)
         np.testing.assert_allclose(hc, [0.0, 0.0, 0.0], atol=1e-15)
 
     def test_unequal_radii_hydrodynamic_center_weighted(self):
-        """Two unequal beads: hc = (a1 r1 + a2 r2) / (a1 + a2)."""
+        """For two unequal beads the hydrodynamic center is the radius-weighted mean position."""
         positions = np.array([[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]])
         radii = np.array([1.0, 3.0])  # bead 2 is 3x larger
         _, _, hc = chain_rigid_body_resistance(positions, radii)
@@ -12974,9 +13631,7 @@ class TestChainRigidBodyResistance:
         np.testing.assert_allclose(hc, [7.5, 0.0, 0.0], atol=1e-15)
 
     def test_linear_chain_C_matrix_anisotropic(self):
-        """Linear chain along x-axis: rotation about x has very low
-        resistance (no moment arm to the chain axis), rotation about y
-        or z has high resistance. So C_xx < C_yy = C_zz."""
+        """For a linear chain along x, rotational resistance C_xx is near zero while C_yy = C_zz are large."""
         a = 1.0
         positions = np.array(
             [
@@ -12996,8 +13651,7 @@ class TestChainRigidBodyResistance:
         np.testing.assert_allclose(C[1, 1], C[2, 2], atol=1e-10)
 
     def test_translation_invariance(self):
-        """A and C should be invariant under bulk translation of the
-        chain. hc shifts with the chain, A and C don't change."""
+        """A and C are invariant under bulk translation while the hydrodynamic center shifts with the chain."""
         rng = np.random.default_rng(1)
         positions = rng.standard_normal((4, 3)) * 5.0
         radii = rng.uniform(0.8, 2.0, size=4)
@@ -13011,8 +13665,7 @@ class TestChainRigidBodyResistance:
         np.testing.assert_allclose(hc2 - hc1, shift, atol=1e-12)
 
     def test_rotational_invariance_under_chain_rotation(self):
-        """Rotating the chain rigidly should rotate A and C together
-        (similarity transform): A' = R A R^T and same for C."""
+        """Rotating the chain transforms A and C as second-rank tensors, A' = R A Rᵀ."""
         rng = np.random.default_rng(2)
         positions = rng.standard_normal((4, 3)) * 5.0
         radii = rng.uniform(0.8, 2.0, size=4)
@@ -13031,7 +13684,7 @@ class TestChainRigidBodyResistance:
         np.testing.assert_allclose(C2, R @ C1 @ R.T, atol=1e-9)
 
     def test_input_validation(self):
-        """Shape errors should raise clear ValueError."""
+        """Wrong positions or radii shapes raise ValueError with descriptive messages."""
         with pytest.raises(ValueError, match="positions must have shape"):
             chain_rigid_body_resistance(np.zeros(3), np.array([1.0]))
         with pytest.raises(ValueError, match="radii must have shape"):
@@ -13048,8 +13701,7 @@ class TestChainDiffusionTensors:
     """
 
     def test_single_bead_recovers_stokes_einstein(self):
-        """N=1 should give D_trans = 1/(6 pi eta a) and
-        D_rot = 1/(8 pi eta a^3) -- standard Stokes-Einstein."""
+        """For N = 1 the diffusion tensors recover the Stokes-Einstein values 1/(6πηa) and 1/(8πηa³)."""
         from pystarc.motion.do_bd_step import WATER_VISCOSITY
 
         a = 2.0
@@ -13071,8 +13723,7 @@ class TestChainDiffusionTensors:
         )
 
     def test_diffusion_tensors_symmetric(self):
-        """D_trans and D_rot are inverses of symmetric A and C, so they
-        themselves must be symmetric."""
+        """D_trans and D_rot are symmetric since they invert symmetric A and C."""
         rng = np.random.default_rng(11)
         positions = rng.standard_normal((4, 3)) * 5.0
         radii = rng.uniform(0.8, 2.0, size=4)
@@ -13081,9 +13732,7 @@ class TestChainDiffusionTensors:
         np.testing.assert_allclose(D_rot, D_rot.T, atol=1e-9)
 
     def test_anisotropic_chain_D_trans_x_greater_than_y(self):
-        """Linear-ish chain (small perturbation off x-axis): D_trans_xx
-        must exceed D_trans_yy (less resistance along the chain axis
-        means greater mobility along that axis)."""
+        """For a near-linear chain along x, D_trans_xx exceeds D_trans_yy with D_trans_yy approximately equal to D_trans_zz."""
         positions = np.array(
             [
                 [-3.0, 0.0, 0.0],
@@ -13099,7 +13748,7 @@ class TestChainDiffusionTensors:
         np.testing.assert_allclose(D_trans[1, 1], D_trans[2, 2], rtol=1e-3)
 
     def test_kT_and_viscosity_scaling(self):
-        """D_trans and D_rot must scale linearly in kT and inversely in viscosity."""
+        """D_trans and D_rot scale linearly in kT and inversely in viscosity."""
         positions = np.array([[0.0, 0.0, 0.0]])
         radii = np.array([2.0])
 
@@ -13130,9 +13779,7 @@ class TestChainDiffusionTensors:
         np.testing.assert_allclose(D_r3, 0.5 * D_r1, rtol=1e-12)
 
     def test_singular_C_raises_clear_error(self):
-        """Perfectly collinear chain: C is singular, must raise a clear
-        LinAlgError mentioning the geometry issue rather than a generic
-        numpy message."""
+        """A perfectly collinear chain gives singular C and raises a LinAlgError mentioning the geometry."""
         positions = np.array(
             [
                 [-3.0, 0.0, 0.0],
@@ -13146,8 +13793,7 @@ class TestChainDiffusionTensors:
             chain_diffusion_tensors(positions, radii)
 
     def test_realistic_chain_diffusion_values_reasonable(self):
-        """4-bead bent chain: D_trans entries are positive, D_rot entries
-        positive, and D_trans is on the order of 1/(N * 6 pi eta a)."""
+        """A bent 4-bead chain yields positive D_trans and D_rot diagonals with D_trans bounded by the single-bead Stokes value."""
         from pystarc.motion.do_bd_step import WATER_VISCOSITY
 
         positions = np.array(
@@ -13187,8 +13833,7 @@ class TestBDStepTensor:
     """
 
     def test_isotropic_tensor_matches_scalar_bit_for_bit(self):
-        """The strongest test: scalar bd_step_wiener with D=d must give
-        bit-identical output to bd_step_wiener_tensor with D = d * I."""
+        """Scalar bd_step_wiener and tensor bd_step_wiener_tensor with D = d I agree to within floating-point roundoff."""
         from pystarc.motion.do_bd_step import bd_step_wiener
         from pystarc.transforms.quaternion import Quaternion as Q
 
@@ -13241,7 +13886,7 @@ class TestBDStepTensor:
                 )
 
     def test_anisotropic_drift_along_principal_axes(self):
-        """Diagonal D_trans gives drift d_x = D_xx * F_x * dt, etc."""
+        """Diagonal D_trans produces drift d_i = D_ii F_i dt along each principal axis."""
         pos = np.zeros(3)
         force = np.array([1.0, 1.0, 1.0])
         D = np.diag([2.0, 1.0, 0.5])
@@ -13256,8 +13901,7 @@ class TestBDStepTensor:
         np.testing.assert_allclose(new_pos, [0.2, 0.1, 0.05], atol=1e-15)
 
     def test_off_diagonal_D_couples_drift(self):
-        """Off-diagonal D_trans couples drift across components: a force
-        along x produces motion along y if D_xy is nonzero."""
+        """Off-diagonal D_trans couples drift so a force along x produces displacement along y."""
         pos = np.zeros(3)
         force = np.array([1.0, 0.0, 0.0])
         D = np.array([[1.0, 0.5, 0.0], [0.5, 1.0, 0.0], [0.0, 0.0, 1.0]])
@@ -13273,9 +13917,7 @@ class TestBDStepTensor:
         np.testing.assert_allclose(new_pos, [1.0, 0.5, 0.0], atol=1e-15)
 
     def test_noise_covariance_matches_2_D_dt(self):
-        """Empirical noise covariance over many samples matches 2 D dt
-        within statistical tolerance. This validates the Cholesky-based
-        noise scaling for the anisotropic case."""
+        """The empirical displacement covariance over many zero-force samples matches 2 D dt within statistical tolerance."""
         D = np.array([[2.0, 0.3, 0.0], [0.3, 1.0, 0.0], [0.0, 0.0, 0.5]])
         dt = 0.1
         n_samples = 5000
@@ -13303,7 +13945,7 @@ class TestBDStepTensor:
         )
 
     def test_non_pd_diffusion_raises(self):
-        """A non-positive-definite D_trans must raise a clear LinAlgError."""
+        """A non-positive-definite D_trans raises a LinAlgError stating it is not positive-definite."""
         D = np.diag([1.0, -0.5, 1.0])  # negative eigenvalue
         with pytest.raises(np.linalg.LinAlgError, match="not positive-definite"):
             ermak_mccammon_translation_tensor(
@@ -13315,7 +13957,7 @@ class TestBDStepTensor:
             )
 
     def test_wrong_shape_raises(self):
-        """D_trans / D_rot must be (3, 3); other shapes raise ValueError."""
+        """A D tensor that is not (3, 3) raises ValueError about the required shape."""
         with pytest.raises(ValueError, match="must have shape"):
             ermak_mccammon_translation_tensor(
                 np.zeros(3),
@@ -13326,8 +13968,7 @@ class TestBDStepTensor:
             )
 
     def test_rng_fallback_works(self):
-        """Passing an RNG instead of a pre-drawn dW should work, mirroring
-        the scalar function's dual-mode behavior."""
+        """Passing an RNG instead of a pre-drawn dW works and yields noise of order sqrt(2 dt)."""
         rng = np.random.default_rng(0)
         result = ermak_mccammon_translation_tensor(
             np.zeros(3),
@@ -13342,7 +13983,7 @@ class TestBDStepTensor:
         assert np.linalg.norm(result) < 5.0 * math.sqrt(2.0 * 0.05)
 
     def test_zero_force_zero_dW_returns_position(self):
-        """No force, no noise -> position unchanged."""
+        """With zero force and zero noise the position is returned unchanged."""
         pos = np.array([1.0, 2.0, 3.0])
         new_pos = ermak_mccammon_translation_tensor(
             pos,
@@ -13372,8 +14013,7 @@ class TestChainOuterBDStepTensor:
         return pos, ori, positions, forces, 0.05
 
     def test_isotropic_tensor_matches_scalar(self):
-        """D_trans = d * I and D_rot = d * I produce the same trajectory
-        as scalar inputs of d."""
+        """Scalar D inputs and isotropic tensor inputs D = d I produce the same chain step trajectory."""
         pos, ori, positions, forces, dt = self._setup()
         D_t, D_r = 0.5, 0.1
 
@@ -13404,9 +14044,7 @@ class TestChainOuterBDStepTensor:
             assert abs(getattr(o_s, attr) - getattr(o_t, attr)) < 1e-13
 
     def test_tensor_path_gives_anisotropic_drift(self):
-        """With D_trans = diag(2, 1, 0.5) and force along x, drift is
-        twice as large along x as it would be along y for the same
-        component of force."""
+        """With anisotropic D_trans and a shared seed, the drift difference between x and y forces equals D F dt componentwise."""
         from pystarc.transforms.quaternion import Quaternion as Q
 
         pos = np.zeros(3)
@@ -13452,7 +14090,7 @@ class TestChainOuterBDStepTensor:
         )
 
     def test_tensor_mode_is_deterministic_with_seed(self):
-        """Two runs with same seed produce identical (pos, ori) in tensor mode."""
+        """Two tensor-mode runs with the same seed produce identical position and orientation."""
         pos, ori, positions, forces, dt = self._setup()
         D_trans = np.diag([2.0, 1.0, 0.5])
         D_rot = np.diag([0.3, 0.3, 0.3])
@@ -13484,7 +14122,7 @@ class TestChainOuterBDStepTensor:
             assert getattr(o1, attr) == getattr(o2, attr)
 
     def test_mixed_scalar_and_tensor_raises(self):
-        """Mixing scalar D_trans with tensor D_rot (or vice versa) raises."""
+        """Mixing scalar and tensor D_trans and D_rot raises a ValueError about same kind."""
         pos, ori, positions, forces, dt = self._setup()
         rng = np.random.default_rng(0)
         with pytest.raises(ValueError, match="same kind"):
@@ -13511,10 +14149,7 @@ class TestChainOuterBDStepTensor:
             )
 
     def test_tensor_with_real_chain_diffusion_tensors(self):
-        """End-to-end smoke: compute D_trans/D_rot from a real chain
-        geometry via chain_diffusion_tensors, pass them through
-        chain_outer_bd_step. This exercises the integration of
-        Edit RPY-7 + Edit BD-3."""
+        """D tensors from chain_diffusion_tensors feed through chain_outer_bd_step, giving a step of order sqrt(2 D_trans dt)."""
         from pystarc.hydrodynamics.rotne_prager import (
             chain_diffusion_tensors,
         )
@@ -13606,7 +14241,7 @@ class TestChainBDSimulatorAutoDiffusion:
         return body_pos - body_pos.mean(axis=0)
 
     def test_scalar_mode_stores_scalar_D(self):
-        """Default scalar path stores D as floats; auto_diffusion=False."""
+        """The default scalar path stores float D_trans and D_rot with auto_diffusion False."""
         from pystarc.simulation.chain_simulator import ChainBDSimulator
 
         sim = ChainBDSimulator(
@@ -13623,7 +14258,7 @@ class TestChainBDSimulatorAutoDiffusion:
         assert sim.auto_diffusion is False
 
     def test_auto_diffusion_produces_tensors(self):
-        """auto_diffusion=True produces (3, 3) tensors from chain geometry."""
+        """auto_diffusion=True produces (3, 3) D tensors that are positive-definite and symmetric."""
         from pystarc.simulation.chain_simulator import ChainBDSimulator
 
         sim = ChainBDSimulator(
@@ -13645,8 +14280,7 @@ class TestChainBDSimulatorAutoDiffusion:
         np.testing.assert_allclose(sim.D_rot, sim.D_rot.T, atol=1e-12)
 
     def test_auto_diffusion_matches_chain_diffusion_tensors(self):
-        """The auto-computed D should match what chain_diffusion_tensors
-        returns when called directly on the same geometry."""
+        """The auto-computed D tensors equal chain_diffusion_tensors called directly on the same geometry."""
         from pystarc.simulation.chain_simulator import ChainBDSimulator
         from pystarc.hydrodynamics.rotne_prager import (
             chain_diffusion_tensors,
@@ -13668,7 +14302,7 @@ class TestChainBDSimulatorAutoDiffusion:
         np.testing.assert_array_equal(sim.D_rot, D_r_direct)
 
     def test_explicit_tensor_mode_stores_user_tensors(self):
-        """User can pass pre-computed (3, 3) tensors directly."""
+        """User-supplied (3, 3) D_trans and D_rot are stored as given with auto_diffusion False."""
         from pystarc.simulation.chain_simulator import ChainBDSimulator
 
         D_t = np.diag([0.5, 0.3, 0.3])
@@ -13687,7 +14321,7 @@ class TestChainBDSimulatorAutoDiffusion:
         assert sim.auto_diffusion is False
 
     def test_auto_with_explicit_D_raises(self):
-        """auto_diffusion=True AND any explicit D_trans/D_rot is an error."""
+        """Combining auto_diffusion=True with any explicit D_trans or D_rot raises ValueError."""
         from pystarc.simulation.chain_simulator import ChainBDSimulator
 
         for kw in ({"D_trans": 0.5}, {"D_rot": 0.1}, {"D_trans": 0.5, "D_rot": 0.1}):
@@ -13703,7 +14337,7 @@ class TestChainBDSimulatorAutoDiffusion:
                 )
 
     def test_no_D_no_auto_raises(self):
-        """Neither auto nor explicit D supplied -> error."""
+        """Supplying neither auto_diffusion nor explicit D raises a ValueError prompting auto_diffusion=True."""
         from pystarc.simulation.chain_simulator import ChainBDSimulator
 
         with pytest.raises(ValueError, match="auto_diffusion=True"):
@@ -13716,7 +14350,7 @@ class TestChainBDSimulatorAutoDiffusion:
             )
 
     def test_partial_D_raises(self):
-        """Supplying only one of D_trans, D_rot is also an error."""
+        """Supplying only one of D_trans or D_rot raises ValueError."""
         from pystarc.simulation.chain_simulator import ChainBDSimulator
 
         with pytest.raises(ValueError):
@@ -13739,8 +14373,7 @@ class TestChainBDSimulatorAutoDiffusion:
             )
 
     def test_collinear_chain_in_auto_mode_raises(self):
-        """A perfectly collinear chain has singular C; auto_diffusion
-        propagates the LinAlgError from chain_diffusion_tensors."""
+        """A collinear chain in auto mode propagates the singular-C LinAlgError from chain_diffusion_tensors."""
         from pystarc.simulation.chain_simulator import ChainBDSimulator
 
         collinear_pos = np.array(
@@ -13777,7 +14410,7 @@ class TestChainSimulationCLIAutoDiffusion:
         return CliRunner(), cli
 
     def test_no_d_no_auto_raises_usage_error(self):
-        """Without --auto-diffusion, both --d-trans and --d-rot are required."""
+        """Without --auto-diffusion, omitting both --d-trans and --d-rot fails with a required-options error."""
         runner, cli = self._runner()
         result = runner.invoke(
             cli,
@@ -13795,7 +14428,7 @@ class TestChainSimulationCLIAutoDiffusion:
         assert "Both --d-trans and --d-rot are required" in result.output
 
     def test_partial_d_raises_usage_error(self):
-        """Supplying only --d-trans (or only --d-rot) is also an error."""
+        """Supplying only --d-trans fails with the both-options-required error."""
         runner, cli = self._runner()
         result = runner.invoke(
             cli,
@@ -13815,7 +14448,7 @@ class TestChainSimulationCLIAutoDiffusion:
         assert "Both --d-trans and --d-rot are required" in result.output
 
     def test_auto_with_d_trans_raises(self):
-        """--auto-diffusion combined with --d-trans is incompatible."""
+        """Combining --auto-diffusion with --d-trans fails as incompatible."""
         runner, cli = self._runner()
         result = runner.invoke(
             cli,
@@ -13836,7 +14469,7 @@ class TestChainSimulationCLIAutoDiffusion:
         assert "--auto-diffusion cannot be combined" in result.output
 
     def test_auto_with_d_rot_raises(self):
-        """--auto-diffusion combined with --d-rot is incompatible."""
+        """Combining --auto-diffusion with --d-rot fails as incompatible."""
         runner, cli = self._runner()
         result = runner.invoke(
             cli,
@@ -13857,7 +14490,7 @@ class TestChainSimulationCLIAutoDiffusion:
         assert "--auto-diffusion cannot be combined" in result.output
 
     def test_help_documents_auto_diffusion_flag(self):
-        """--help should mention --auto-diffusion and link it to RPY."""
+        """The --help output mentions --auto-diffusion and the Rotne-Prager method."""
         runner, cli = self._runner()
         result = runner.invoke(cli, ["chain_simulation", "--help"])
         assert result.exit_code == 0
@@ -13866,8 +14499,7 @@ class TestChainSimulationCLIAutoDiffusion:
         assert "Rotne-Prager" in result.output
 
     def test_help_documents_d_trans_now_optional(self):
-        """The --d-trans help should reflect that it's no longer required
-        (since --auto-diffusion provides an alternative)."""
+        """The --help output indicates --d-trans is conditionally required via auto-diffusion."""
         runner, cli = self._runner()
         result = runner.invoke(cli, ["chain_simulation", "--help"])
         # The phrasing should make it clear --d-trans is conditionally required.
@@ -13949,7 +14581,7 @@ class TestChainOutputWriter:
         )
 
     def test_files_are_written(self, tmp_path):
-        """Both results.json and trajectories.csv should exist after write."""
+        """Writing chain results creates both results.json and trajectories.csv on disk."""
         from pystarc.pipeline.chain_output_writer import write_chain_results
 
         sim = self._build_minimal_sim()
@@ -13962,8 +14594,7 @@ class TestChainOutputWriter:
         assert (tmp_path / "trajectories.csv").exists()
 
     def test_results_json_structure_auto_mode(self, tmp_path):
-        """results.json has the expected top-level keys and the
-        diffusion block reflects auto_diffusion mode with 3x3 tensors."""
+        """results.json carries summary, diffusion, chain, and params blocks, with auto_diffusion mode giving 3x3 tensors."""
         import json
         from pystarc.pipeline.chain_output_writer import write_chain_results
 
@@ -14006,8 +14637,7 @@ class TestChainOutputWriter:
         assert p["seed"] == 42
 
     def test_results_json_scalar_mode_emits_scalars(self, tmp_path):
-        """In scalar D mode, the diffusion block emits float D_trans/D_rot,
-        not 3x3 arrays."""
+        """In scalar D mode the diffusion block emits float D_trans and D_rot rather than 3x3 arrays."""
         import json
         from pystarc.pipeline.chain_output_writer import write_chain_results
 
@@ -14022,7 +14652,7 @@ class TestChainOutputWriter:
         assert d["D_rot"] == 0.005
 
     def test_trajectories_csv_row_count_matches(self, tmp_path):
-        """One CSV row per trajectory, plus the header."""
+        """trajectories.csv has one row per trajectory plus a header with the expected columns."""
         from pystarc.pipeline.chain_output_writer import write_chain_results
 
         sim = self._build_minimal_sim(n_traj=8)
@@ -14046,7 +14676,7 @@ class TestChainOutputWriter:
             assert col in header
 
     def test_trajectories_csv_fate_strings_correct(self, tmp_path):
-        """CSV rows have string fate names matching Fate enum values."""
+        """Each trajectories.csv row carries a fate string matching a Fate enum name."""
         from pystarc.pipeline.chain_output_writer import write_chain_results
         from pystarc.molsystem.system_state import Fate
 
@@ -14061,7 +14691,7 @@ class TestChainOutputWriter:
             assert fate_name in valid_fates
 
     def test_reaction_counts_appear_when_reactions_fire(self, tmp_path):
-        """When trajectories react, the summary records per-reaction counts."""
+        """The summary records per-reaction counts when trajectories react."""
         import json
         from pystarc.pipeline.chain_output_writer import write_chain_results
         from pystarc.molsystem.system_state import Fate, TrajectoryResult
@@ -14080,7 +14710,7 @@ class TestChainOutputWriter:
         assert rc == {"rxn_A": 2, "rxn_B": 1}
 
     def test_no_reaction_counts_when_no_reactions(self, tmp_path):
-        """If no trajectory reacted, the summary omits reaction_counts."""
+        """The summary omits reaction_counts when no trajectory reacted."""
         import json
         from pystarc.pipeline.chain_output_writer import write_chain_results
 
@@ -14092,7 +14722,7 @@ class TestChainOutputWriter:
         assert "reaction_counts" not in data["summary"]
 
     def test_writer_creates_missing_directory(self, tmp_path):
-        """work_dir is created if it doesn't exist."""
+        """The writer creates a missing nested work_dir and writes results.json into it."""
         from pystarc.pipeline.chain_output_writer import write_chain_results
 
         sim = self._build_minimal_sim()
@@ -14114,6 +14744,7 @@ class TestChainSimulationCLIOutput:
         return CliRunner(), cli
 
     def test_help_documents_output_dir(self):
+        """The chain_simulation help text documents --output-dir and its chain_bd_results default."""
         runner, cli = self._runner()
         result = runner.invoke(cli, ["chain_simulation", "--help"])
         assert result.exit_code == 0
@@ -14121,8 +14752,7 @@ class TestChainSimulationCLIOutput:
         assert "chain_bd_results" in result.output  # default
 
     def test_output_dir_flag_parses(self):
-        """The CLI accepts --output-dir + --auto-diffusion together
-        and gets past flag parsing (eventually fails on missing files)."""
+        """The CLI parses --output-dir with --auto-diffusion and fails only on missing input files, not flag parsing."""
         runner, cli = self._runner()
         result = runner.invoke(
             cli,
@@ -14180,7 +14810,7 @@ class TestAdaptiveDtZone:
         return PathwaySet(reactions=[rxn])
 
     def test_min_reaction_distance_with_no_reactions(self):
-        """Helper returns 0.0 (default) for empty PathwaySet."""
+        """_min_reaction_distance returns 0.0 for an empty PathwaySet."""
         from pystarc.simulation.chain_simulator import (
             _min_reaction_distance,
         )
@@ -14190,7 +14820,7 @@ class TestAdaptiveDtZone:
         assert _min_reaction_distance(empty) == 0.0
 
     def test_min_reaction_distance_with_none(self):
-        """Helper handles pathway_set=None gracefully."""
+        """_min_reaction_distance returns 0.0 when pathway_set is None."""
         from pystarc.simulation.chain_simulator import (
             _min_reaction_distance,
         )
@@ -14198,8 +14828,7 @@ class TestAdaptiveDtZone:
         assert _min_reaction_distance(None) == 0.0
 
     def test_min_reaction_distance_picks_smallest(self):
-        """Helper returns the smallest distance_cutoff across all
-        reactions and pairs."""
+        """_min_reaction_distance returns the smallest distance_cutoff across all reactions and pairs."""
         from pystarc.simulation.chain_simulator import (
             _min_reaction_distance,
         )
@@ -14238,8 +14867,7 @@ class TestAdaptiveDtZone:
         assert _min_reaction_distance(ps) == 3.0
 
     def test_simulator_caches_rxn_min(self):
-        """ChainBDSimulator caches _rxn_min in __init__ from the
-        provided pathway_set. We don't recompute per-step."""
+        """ChainBDSimulator caches _rxn_min in __init__ as the minimum reaction distance, or 0.0 when empty."""
         from pystarc.simulation.chain_simulator import (
             ChainBDSimulator,
             ChainBDParameters,
@@ -14296,16 +14924,7 @@ class TestAdaptiveDtZone:
         assert sim._rxn_min == 5.0
 
     def test_dt_zone_activates_near_reaction_surface(self):
-        """When chain CoM is within 1.5 * rxn_min, the simulator uses
-        params.dt_rxn for the outer step. We test this by running with
-        params.dt very different from params.dt_rxn and verifying that
-        the *time per step* in the reaction zone matches dt_rxn.
-
-        Specifically: with r_start = 5.0 and rxn_min = 10.0, the
-        chain starts inside the dt_rxn zone (5.0 < 1.5 * 10 = 15) and
-        stays there at least for the first few steps. Mean time per
-        step must equal params.dt_rxn, not params.dt.
-        """
+        """Inside 1.5 times rxn_min the simulator uses params.dt_rxn so mean time per step equals dt_rxn."""
         from pystarc.simulation.chain_simulator import (
             ChainBDSimulator,
             ChainBDParameters,
@@ -14377,10 +14996,7 @@ class TestAdaptiveDtZone:
         )
 
     def test_dt_zone_does_not_activate_in_bulk(self):
-        """When chain CoM is well outside 1.5 * rxn_min, the simulator
-        uses params.dt. With r_start = 100 and rxn_min = 5, the chain
-        starts in the bulk zone and the time per step matches params.dt.
-        """
+        """Well outside 1.5 times rxn_min the simulator uses params.dt so mean time per step equals dt."""
         from pystarc.simulation.chain_simulator import (
             ChainBDSimulator,
             ChainBDParameters,
@@ -14448,14 +15064,7 @@ class TestAdaptiveDtZone:
         )
 
     def test_elapsed_time_correctly_accumulated(self):
-        """Backward-compat sanity: with empty PathwaySet, the smoke
-        scenario produces the same mean simulated time as the
-        pre-adaptive code (~1675 ps for 20-trajectory smoke setup).
-
-        This is more of an invariant pin than a unit test: any future
-        change that breaks the empty-PathwaySet equivalence should
-        surface here.
-        """
+        """With an empty PathwaySet the smoke run reproduces the pre-adaptive mean simulated time of about 1675 ps."""
         from pystarc.simulation.chain_simulator import (
             ChainBDSimulator,
             ChainBDParameters,
@@ -14606,16 +15215,14 @@ class TestForceChangeBackstep:
         return sim
 
     def test_parameter_default_is_on(self):
-        """force_change_backstep defaults to True (correctness over backward
-        compat -- subdivision is a real correctness improvement)."""
+        """ChainBDParameters.force_change_backstep defaults to True."""
         from pystarc.simulation.chain_simulator import ChainBDParameters
 
         p = ChainBDParameters()
         assert p.force_change_backstep is True
 
     def test_effective_hydro_radius_auto_mode(self):
-        """In auto_diffusion mode, the cached radius derives from the
-        trace of D_trans via Stokes-Einstein."""
+        """In auto_diffusion mode the effective hydrodynamic radius derives from the trace of D_trans via Stokes-Einstein."""
         import math
         from pystarc.simulation.chain_simulator import (
             ChainBDSimulator,
@@ -14652,8 +15259,7 @@ class TestForceChangeBackstep:
         assert abs(sim._effective_hydro_radius - expected) < 1e-12
 
     def test_effective_hydro_radius_scalar_mode(self):
-        """In scalar/explicit mode, the cached radius is the largest
-        bead radius."""
+        """In scalar mode the effective hydrodynamic radius equals the largest bead radius."""
         from pystarc.simulation.chain_simulator import (
             ChainBDSimulator,
             ChainBDParameters,
@@ -14690,8 +15296,7 @@ class TestForceChangeBackstep:
         assert sim._effective_hydro_radius == 2.5
 
     def test_chain_outer_bd_step_wiener_matches_chain_outer_bd_step(self):
-        """The Wiener sibling produces identical output to the regular
-        version when fed the same Wiener increments."""
+        """chain_outer_bd_step_wiener matches chain_outer_bd_step when fed equivalent Wiener increments."""
         import math
         from pystarc.simulation.chain_simulator import (
             chain_outer_bd_step,
@@ -14752,10 +15357,7 @@ class TestForceChangeBackstep:
         )
 
     def test_zero_forces_never_trigger_backstep(self):
-        """When external forces are zero, dF=0 and the criterion's
-        safety check fires; backstep is not triggered. Result is
-        identical to running with force_change_backstep=False.
-        """
+        """With zero external forces the force-change backstep never fires, matching the flag-off trajectory exactly."""
         sim_on = self._make_sim(force_change_backstep=True)
         sim_off = self._make_sim(force_change_backstep=False)
         # Both have target_grid=None, so per-atom forces always zero.
@@ -14767,15 +15369,7 @@ class TestForceChangeBackstep:
         assert abs(r_on.final_separation - r_off.final_separation) < 1e-9
 
     def test_backstep_fires_with_steep_force_gradient(self):
-        """Directly exercise the force-change subdivision criterion
-        (backstep_due_to_force). The criterion fires when
-        dt > FORCE_CHANGE_ALPHA * |6*pi*mu * dx^2 / ((1/a) * dF.dx)|.
-        Values below are verified against the function. A full-trajectory
-        version is unreliable here: the minimal synthetic chain wedges
-        against the target (overlap rejection), so dx~0 and the criterion
-        can never trigger -- the pure function is the correct unit under
-        test.
-        """
+        """backstep_due_to_force fires only when dt exceeds the force-change threshold and never at the dt floor."""
         from pystarc.motion.do_bd_step import backstep_due_to_force
 
         zero = np.zeros(3)
@@ -14816,10 +15410,7 @@ class TestForceChangeBackstep:
         ), "criterion must not fire at the dt floor"
 
     def test_backstep_skipped_in_dt_rxn_zone(self):
-        """When the chain is inside the dt_rxn zone (close to reaction
-        surface), the dt is already at the floor and we don't subdivide
-        further. The flag is irrelevant in this regime.
-        """
+        """Inside the dt_rxn zone dt is already at the floor so force-change subdivision does not occur."""
         from pystarc.simulation.chain_simulator import (
             ChainBDSimulator,
             ChainBDParameters,
@@ -14977,15 +15568,14 @@ class TestHardSphereRejection:
         return Molecule(name="target", atoms=atoms)
 
     def test_parameter_default_is_on(self):
-        """use_hard_sphere defaults to True (only excluded-volume
-        mechanism in production chain BD path)."""
+        """ChainBDParameters.use_hard_sphere defaults to True."""
         from pystarc.simulation.chain_simulator import ChainBDParameters
 
         p = ChainBDParameters()
         assert p.use_hard_sphere is True
 
     def test_overlap_helper_chain_target(self):
-        """Returns True when a chain bead overlaps a target atom."""
+        """_check_chain_overlap returns True when a chain bead overlaps a target atom."""
         from pystarc.simulation.chain_simulator import _check_chain_overlap
 
         target = self._build_target([(0.0, 0.0, 0.0, 2.0)])
@@ -14996,7 +15586,7 @@ class TestHardSphereRejection:
         assert _check_chain_overlap(target, chain_pos, chain_r, set())
 
     def test_overlap_helper_no_overlap_when_separated(self):
-        """Returns False when bead is well outside target atom."""
+        """_check_chain_overlap returns False when a bead is well separated from the target atom."""
         from pystarc.simulation.chain_simulator import _check_chain_overlap
 
         target = self._build_target([(0.0, 0.0, 0.0, 2.0)])
@@ -15006,7 +15596,7 @@ class TestHardSphereRejection:
         assert not _check_chain_overlap(target, chain_pos, chain_r, set())
 
     def test_overlap_helper_intra_chain_bead_pair(self):
-        """Returns True when two non-bonded chain beads overlap."""
+        """_check_chain_overlap returns True when two non-bonded chain beads overlap."""
         from pystarc.simulation.chain_simulator import _check_chain_overlap
 
         # Two beads with radius 1.5 at distance 2.0 -> overlap.
@@ -15021,7 +15611,7 @@ class TestHardSphereRejection:
         assert _check_chain_overlap(None, chain_pos, chain_r, set())
 
     def test_overlap_helper_bonded_pair_is_skipped(self):
-        """Bonded neighbors that are close are NOT flagged as overlap."""
+        """_check_chain_overlap does not flag overlap between close bonded neighbors."""
         from pystarc.simulation.chain_simulator import _check_chain_overlap
 
         chain_pos = np.array(
@@ -15036,7 +15626,7 @@ class TestHardSphereRejection:
         assert not _check_chain_overlap(None, chain_pos, chain_r, bonded)
 
     def test_overlap_helper_ghost_atoms_skipped(self):
-        """Ghost atoms (radius < 1e-10) never trigger overlap."""
+        """_check_chain_overlap skips ghost atoms with radius below 1e-10 so they never trigger overlap."""
         from pystarc.simulation.chain_simulator import _check_chain_overlap
 
         target = self._build_target([(0.0, 0.0, 0.0, 0.0)])  # ghost
@@ -15047,8 +15637,7 @@ class TestHardSphereRejection:
         assert not _check_chain_overlap(target, chain_pos, chain_r, set())
 
     def test_simulator_caches_bonded_pairs_and_radii(self):
-        """ChainBDSimulator extracts bonded pairs (both orderings) and
-        bead radii from the chain template at __init__."""
+        """ChainBDSimulator caches bead radii and bonded pairs in both orderings from the chain template."""
         from pystarc.simulation.chain_simulator import (
             ChainBDSimulator,
             ChainBDParameters,
@@ -15099,10 +15688,7 @@ class TestHardSphereRejection:
         assert (1, 2) not in sim._bonded_pairs
 
     def test_rejection_fires_with_overlap_prone_geometry(self):
-        """Place a chain right next to a target atom so trajectories
-        will frequently produce overlap. With rejection ON, expect
-        meaningfully different mean time vs OFF.
-        """
+        """Hard-sphere rejection on versus off yields meaningfully different mean times for overlap-prone geometry."""
         from pystarc.simulation.chain_simulator import (
             ChainBDSimulator,
             ChainBDParameters,
@@ -15183,10 +15769,7 @@ class TestHardSphereRejection:
         )
 
     def test_rejection_off_matches_pre_adt3(self):
-        """With use_hard_sphere=False, behavior matches ADT-2 (the
-        smoke value at ~1675 ps with auto_diffusion+empty PathwaySet,
-        before hard-sphere rejection was added).
-        """
+        """With use_hard_sphere=False the run reproduces the pre-ADT3 smoke value of about 1675 ps."""
         from pystarc.simulation.chain_simulator import (
             ChainBDSimulator,
             ChainBDParameters,
@@ -15267,7 +15850,7 @@ class TestSoftRepulsion:
     """
 
     def test_intra_chain_force_is_repulsive(self):
-        """Two chain beads inside sigma should be pushed apart."""
+        """chain_intra_nonbonded_forces pushes two beads inside sigma apart with equal and opposite forces."""
         from pystarc.simulation.coffdrop_chain import (
             ChainAtom,
             ChainCommon,
@@ -15296,7 +15879,7 @@ class TestSoftRepulsion:
         np.testing.assert_allclose(F[0], -F[2], atol=1e-12)
 
     def test_intra_chain_force_zero_outside_cutoff(self):
-        """At r >= 2^(1/6)*sigma (WCA cutoff at LJ minimum), force is zero."""
+        """chain_intra_nonbonded_forces is zero at r at or beyond the WCA cutoff 2^(1/6) sigma."""
         from pystarc.simulation.coffdrop_chain import (
             ChainAtom,
             ChainCommon,
@@ -15319,9 +15902,7 @@ class TestSoftRepulsion:
         np.testing.assert_allclose(F[2], [0.0, 0.0, 0.0], atol=1e-12)
 
     def test_intra_chain_force_magnitude_correct(self):
-        """At r = sigma/2 (deeply inside), the WCA force magnitude
-        matches the textbook value 4 eps (12 sig^12/r^14 - 6 sig^6/r^8) * r.
-        """
+        """chain_intra_nonbonded_forces magnitude at r = sigma/2 matches the textbook WCA value 4 eps (12 sigma^12/r^13 minus 6 sigma^6/r^7)."""
         import math
         from pystarc.simulation.coffdrop_chain import (
             ChainAtom,
@@ -15354,7 +15935,7 @@ class TestSoftRepulsion:
         ), f"magnitude mismatch: expected {expected_mag}, got {actual_mag}"
 
     def test_intra_chain_skips_bonded_pairs(self):
-        """Bonded pairs are excluded even when geometrically inside sigma."""
+        """chain_intra_nonbonded_forces excludes bonded pairs even when they sit inside sigma."""
         from pystarc.simulation.coffdrop_chain import (
             ChainAtom,
             ChainAtomRef,
@@ -15390,7 +15971,7 @@ class TestSoftRepulsion:
         np.testing.assert_allclose(F[2], [0.0, 0.0, 0.0], atol=1e-12)
 
     def test_intra_chain_skips_ghost_atoms(self):
-        """Ghost beads (radius < 1e-10) never produce force."""
+        """chain_intra_nonbonded_forces produces no force from or on ghost beads with radius below 1e-10."""
         from pystarc.simulation.coffdrop_chain import (
             ChainAtom,
             ChainCommon,
@@ -15418,7 +15999,7 @@ class TestSoftRepulsion:
         np.testing.assert_allclose(F[2], [0.0, 0.0, 0.0], atol=1e-12)
 
     def test_target_steric_force_is_repulsive(self):
-        """A chain bead inside sigma of a target atom is pushed away."""
+        """chain_target_steric_forces pushes a chain bead inside sigma away from the target atom."""
         from pystarc.simulation.chain_simulator import (
             chain_target_steric_forces,
         )
@@ -15447,7 +16028,7 @@ class TestSoftRepulsion:
         assert F[0, 0] > 0, f"bead not repelled by target: {F[0]}"
 
     def test_target_steric_force_zero_outside_sigma(self):
-        """At r >= sig, no target steric force."""
+        """chain_target_steric_forces is zero when the bead lies at or beyond sigma from the target atom."""
         from pystarc.simulation.chain_simulator import (
             chain_target_steric_forces,
         )
@@ -15475,7 +16056,7 @@ class TestSoftRepulsion:
         np.testing.assert_allclose(F[0], [0.0, 0.0, 0.0], atol=1e-12)
 
     def test_target_steric_skips_ghost_target_atoms(self):
-        """Ghost target atoms (radius < 1e-10) produce no force."""
+        """chain_target_steric_forces produces no force from ghost target atoms with radius below 1e-10."""
         from pystarc.simulation.chain_simulator import (
             chain_target_steric_forces,
         )
@@ -15503,7 +16084,7 @@ class TestSoftRepulsion:
         np.testing.assert_allclose(F[0], [0.0, 0.0, 0.0], atol=1e-12)
 
     def test_target_steric_handles_none_target(self):
-        """target=None returns zero force without crashing."""
+        """chain_target_steric_forces returns zero force when target is None without crashing."""
         from pystarc.simulation.chain_simulator import (
             chain_target_steric_forces,
         )
@@ -15514,8 +16095,7 @@ class TestSoftRepulsion:
         np.testing.assert_allclose(F[0], [0.0, 0.0, 0.0], atol=1e-12)
 
     def test_simulator_default_use_soft_repulsion_off(self):
-        """ChainBDParameters.use_soft_repulsion defaults to False (eps=1
-        is not physical for arbitrary chains; opt-in by design)."""
+        """ChainBDParameters.use_soft_repulsion defaults to False with soft_repulsion_eps of 1.0."""
         from pystarc.simulation.chain_simulator import ChainBDParameters
 
         p = ChainBDParameters()
@@ -15523,10 +16103,7 @@ class TestSoftRepulsion:
         assert p.soft_repulsion_eps == 1.0
 
     def test_soft_repulsion_changes_trajectories(self):
-        """Run a chain near a target with use_soft_repulsion on vs off;
-        trajectories should differ when the bead is close enough to
-        feel the WCA force.
-        """
+        """Toggling use_soft_repulsion changes trajectories when a bead is close enough to feel the WCA force."""
         from pystarc.simulation.chain_simulator import (
             ChainBDSimulator,
             ChainBDParameters,
@@ -15681,7 +16258,7 @@ class TestBrownianBridge:
         return target, ps
 
     def test_compute_pair_distances_basic(self):
-        """compute_pair_distances returns correct distances."""
+        """compute_pair_distances returns the correct per-reaction, per-pair distances."""
         from pystarc.simulation.chain_simulator import (
             compute_pair_distances,
         )
@@ -15694,7 +16271,7 @@ class TestBrownianBridge:
         np.testing.assert_allclose(out[0][0], 5.0, atol=1e-12)
 
     def test_compute_pair_distances_empty(self):
-        """No pathway_set -> empty list. None target -> empty list."""
+        """compute_pair_distances returns an empty list when pathway_set or target is None."""
         from pystarc.simulation.chain_simulator import (
             compute_pair_distances,
         )
@@ -15705,7 +16282,7 @@ class TestBrownianBridge:
         assert compute_pair_distances(None, chain_pos, ps) == []
 
     def test_endpoint_fired_below_cutoff(self):
-        """When new distance < cutoff, reaction fires regardless of bridge."""
+        """check_reaction_with_bridge fires the reaction when the new distance drops below the cutoff."""
         from pystarc.simulation.chain_simulator import (
             check_reaction_with_bridge,
         )
@@ -15726,8 +16303,7 @@ class TestBrownianBridge:
         assert rxn == "rxn0", f"endpoint fire missed: got {rxn}"
 
     def test_bridge_fires_with_high_p_cross(self):
-        """When both x0, x1 > 0 and p_cross is essentially 1, bridge
-        should fire on every reasonable RNG draw."""
+        """check_reaction_with_bridge fires via the bridge when both endpoints stay just outside the cutoff and p_cross is near 1."""
         from pystarc.simulation.chain_simulator import (
             check_reaction_with_bridge,
         )
@@ -15750,9 +16326,7 @@ class TestBrownianBridge:
         assert rxn == "rxn0", f"high-p_cross bridge did not fire: got {rxn}"
 
     def test_bridge_no_fire_with_low_p_cross(self):
-        """When both x0, x1 are large positive and D*dt is small,
-        p_cross is essentially 0; bridge should not fire even with
-        unfavourable RNG."""
+        """check_reaction_with_bridge does not fire when both endpoints are far outside the cutoff and p_cross is near 0."""
         from pystarc.simulation.chain_simulator import (
             check_reaction_with_bridge,
         )
@@ -15774,8 +16348,7 @@ class TestBrownianBridge:
         assert rxn is None, f"low-p_cross bridge fired anyway: got {rxn}"
 
     def test_and_logic_multi_pair_all_fire(self):
-        """A reaction with two contact pairs, n_needed=-1 (ALL), should
-        only fire when both pairs fire."""
+        """With n_needed=-1 (ALL), a two-pair reaction does not fire when only one pair fires."""
         from pystarc.simulation.chain_simulator import (
             check_reaction_with_bridge,
         )
@@ -15865,17 +16438,14 @@ class TestBrownianBridge:
         ), f"AND-logic did not fire when both pairs satisfied: got {result2}"
 
     def test_default_use_brownian_bridge_is_true(self):
-        """ChainBDParameters.use_brownian_bridge defaults to True (real
-        correctness improvement; bridge code path harmless when no
-        reactions are present)."""
+        """ChainBDParameters.use_brownian_bridge defaults to True."""
         from pystarc.simulation.chain_simulator import ChainBDParameters
 
         p = ChainBDParameters()
         assert p.use_brownian_bridge is True
 
     def test_bridge_off_matches_endpoint_only(self):
-        """With use_brownian_bridge=False, run_one falls back to
-        endpoint-only check; bit-identical to the prior behavior."""
+        """With use_brownian_bridge=False run_one falls back to the endpoint-only check and returns all results."""
         from pystarc.simulation.chain_simulator import (
             ChainBDSimulator,
             ChainBDParameters,
@@ -15917,15 +16487,7 @@ class TestBrownianBridge:
         assert len(results) == 4, f"unexpected n results: {len(results)}"
 
     def test_bridge_changes_reaction_count_with_real_geometry(self):
-        """Run trajectories where the chain comes close to a target with
-        a contact-pair reaction. Bridge ON must produce >= bridge OFF
-        reactions (strict monotonicity).
-
-        Bridge sampling uses an independent rng_bb stream, so the main
-        trajectory rng is identical between runs. Endpoint-fired set
-        is identical; bridge can only ADD firings. Strict monotonicity
-        is provable.
-        """
+        """Brownian bridge on yields at least as many reactions as bridge off for the same trajectories."""
         from pystarc.simulation.chain_simulator import (
             ChainBDSimulator,
             ChainBDParameters,
@@ -16149,7 +16711,7 @@ class TestNAMBrownianBridge:
         assert p.use_brownian_bridge is True
 
     def test_mol2_positions_extracts_xyz(self):
-        """_mol2_positions returns (n_atoms, 3) array from Atom.x/y/z."""
+        """_mol2_positions returns an (n_atoms, 3) array of atom x, y, z coordinates."""
         from pystarc.simulation.nam_simulator import _mol2_positions
         from pystarc.structures.molecules import Molecule, Atom
 
@@ -16186,30 +16748,19 @@ class TestNAMBrownianBridge:
         np.testing.assert_allclose(out[1], [4.0, 5.0, 6.0])
 
     def test_bridge_off_serial_runs_without_error(self):
-        """Serial NAM run with bridge OFF works (sanity check)."""
+        """A serial NAM run with the bridge off completes and returns the requested number of trajectories."""
         sim = self._build_nam_sim(use_bb=False, n_threads=1, n_traj=5)
         result = sim.run()
         assert result.n_trajectories == 5
 
     def test_bridge_on_serial_runs_without_error(self):
-        """Serial NAM run with bridge ON works."""
+        """A serial NAM run with the bridge on completes and returns the requested number of trajectories."""
         sim = self._build_nam_sim(use_bb=True, n_threads=1, n_traj=5)
         result = sim.run()
         assert result.n_trajectories == 5
 
     def test_bridge_monotonicity_serial(self):
-        """With the bridge on, every trajectory that reacts with the bridge off
-        must also react, and the total can only be greater or equal.
-
-        Each trajectory is run from its own identically seeded main rng in both
-        the bridge-off and bridge-on runs, while the bridge draws its crossing
-        samples from a separate rng_bb stream. The two runs therefore follow the
-        same main trajectory, so the bridge can only add a reaction (by catching
-        a mid-step crossing), never remove one. Seeding per trajectory avoids the
-        shared continuous serial rng, whose consumption otherwise differs between
-        the two runs once the bridge ends a trajectory early, which would
-        desynchronise all later trajectories.
-        """
+        """In serial NAM, every trajectory reacting with the bridge off also reacts with it on, and the total can only grow."""
         import numpy as np
         from pystarc.molsystem.system_state import Fate
 
@@ -16234,13 +16785,7 @@ class TestNAMBrownianBridge:
         assert on_count >= off_count, f"on={on_count}, off={off_count}"
 
     def test_bridge_monotonicity_parallel(self):
-        """Parallel path (_run_trajectory_worker, n_threads=2): bridge
-        ON must produce at least as many reactions as bridge OFF.
-
-        Same monotonicity argument as the serial test. The parallel
-        worker also uses an independent rng_bb stream so trajectories
-        are identical between bridge_on and bridge_off.
-        """
+        """In the parallel NAM worker, bridge on produces at least as many reactions as bridge off."""
         sim_off = self._build_nam_sim(use_bb=False, n_threads=2, n_traj=20, seed=7)
         sim_on = self._build_nam_sim(use_bb=True, n_threads=2, n_traj=20, seed=7)
         res_off = sim_off.run()
@@ -16264,12 +16809,7 @@ class TestSmoluchowskiValidation:
     """
 
     def test_k_on_within_60_percent_of_analytical(self):
-        """Sim k_on must be within +/- 60% of 4 pi D R.
-
-        Tolerance is intentionally loose: with N=100 statistical error
-        is large, but if the plumbing is broken we'll see ratios way
-        outside 0.4-1.6.
-        """
+        """NAM sim k_on lies within plus or minus 60% of the analytic 4 pi D R."""
         import math
         from pystarc.simulation.nam_simulator import (
             NAMSimulator,
@@ -16390,12 +16930,7 @@ class TestChainBDSmoluchowskiValidation:
     """
 
     def test_k_on_within_60_percent_of_analytical(self):
-        """Chain BD sim k_on must be within +/- 60% of 4 pi D R.
-
-        With N=50, statistical error is large; tolerance loose to
-        catch egregious regressions (especially: LMZ being broken)
-        without flaking on stochastic noise.
-        """
+        """Chain BD sim k_on lies within plus or minus 60% of the analytic 4 pi D R."""
         import math
         import numpy as np
         from pystarc.simulation.chain_simulator import (
@@ -16537,6 +17072,7 @@ class TestCOFFDROPTabulatedForces:
         )
 
     def test_angle_tabulated_branch_fires_and_differs_from_harmonic(self, params):
+        """The tabulated angle branch fires, giving nonzero forces that differ from the harmonic result and conserve momentum."""
         from pystarc.simulation.coffdrop_chain import (
             ChainCommon,
             ChainAtom,
@@ -16603,6 +17139,7 @@ class TestCOFFDROPTabulatedForces:
     def test_torsion_tabulated_branch_fires_and_differs_from_cosine_series(
         self, params
     ):
+        """The tabulated torsion branch fires, giving nonzero forces that differ from the cosine-series result."""
         from pystarc.simulation.coffdrop_chain import (
             ChainCommon,
             ChainAtom,
@@ -16674,6 +17211,7 @@ class TestCOFFDROPTabulatedForces:
         assert np.linalg.norm(state_t.forces.sum(axis=0)) < 1e-10
 
     def test_pair_tabulated_branch_matches_spline_derivative(self, params):
+        """The tabulated pair force magnitude equals |dV/dr| from the spline, obeys Newton's third law, and stays zero for unpaired atoms."""
         from pystarc.simulation.coffdrop_chain import (
             ChainCommon,
             ChainAtom,
@@ -16714,10 +17252,7 @@ class TestCOFFDROPTabulatedForces:
         assert np.allclose(F[0] + F[2], 0, atol=1e-12)
 
     def test_default_path_unchanged_when_params_none(self, params):
-        """Sanity: when coffdrop_params is None, all branches use the
-        harmonic fallback, regardless of type_idx values. This protects
-        against accidental cross-talk where setting type_idx without
-        params would silently fail."""
+        """Bonded interactions fall back to harmonic forces when coffdrop_params is None despite a set type_idx."""
         from pystarc.simulation.coffdrop_chain import (
             ChainCommon,
             ChainAtom,
@@ -16776,15 +17311,7 @@ class TestCOFFDROPTabulatedForces:
         ), "type_idx without params must fall back to harmonic"
 
     def test_build_chain_common_from_coffdrop_5ala_end_to_end(self, params):
-        """Build a 5-ALA chain via the helper and verify the full
-        compute_chain_forces pipeline produces sensible forces.
-
-        Checks:
-          - All bonded interactions have type_idx properly populated
-          - pair_lookups has expected number of entries
-          - compute_chain_forces produces nonzero forces
-          - Forces conserve momentum (Newton's 3rd law)
-        """
+        """build_chain_common_from_coffdrop on ALA5 yields the expected topology counts, populated type_idx values, and finite momentum-conserving forces."""
         from pystarc.simulation.coffdrop_chain import (
             build_chain_common_from_coffdrop,
             ChainState,
@@ -16838,10 +17365,7 @@ class TestCOFFDROPTabulatedForces:
 
     @pytest.mark.parametrize("geometry_id", ["straight", "zigzag", "spiral", "compact"])
     def test_force_conservation_across_geometries(self, params, geometry_id):
-        """Net force must be zero (Newton's 3rd law) for any geometry.
-        Tests several non-degenerate configurations to catch any
-        sign error or asymmetric force application.
-        """
+        """Net force is zero and all forces are finite across straight, zigzag, spiral, and compact ALA5 geometries."""
         from pystarc.simulation.coffdrop_chain import (
             build_chain_common_from_coffdrop,
             ChainState,
@@ -16898,15 +17422,7 @@ class TestCOFFDROPTabulatedForces:
         ), f"{geometry_id}: net force norm {force_sum_norm} should be zero"
 
     def test_homopolymer_reversal_symmetry(self, params):
-        """For a homopolymer, reversing positions must reverse forces.
-
-        Build an ALA-5 chain at a non-symmetric geometry. Compute forces
-        F. Reverse positions to get positions[::-1]. Compute forces F'.
-        Verify F'[i] == F[n-1-i] (same physics, just relabeled atoms).
-
-        This is a strong sanity check on indexing through every force
-        function. Asymmetric handling of either end would break this.
-        """
+        """Reversing the positions of a homopolymer reverses the per-atom forces, so F'[i] equals F[n-1-i]."""
         from pystarc.simulation.coffdrop_chain import (
             build_chain_common_from_coffdrop,
             ChainState,
@@ -16942,11 +17458,7 @@ class TestCOFFDROPTabulatedForces:
             )
 
     def test_translational_invariance(self, params):
-        """Forces depend only on relative positions, not absolute.
-        Translating all atoms by a constant vector must leave forces
-        unchanged. Catches bugs where forces depend on absolute
-        position (e.g., accidental reference to a global origin).
-        """
+        """Translating all atoms by a constant vector leaves the forces unchanged."""
         from pystarc.simulation.coffdrop_chain import (
             build_chain_common_from_coffdrop,
             ChainState,
@@ -16976,9 +17488,7 @@ class TestCOFFDROPTabulatedForces:
         ), "translational invariance violated: forces differ after position shift"
 
     def test_rotational_equivariance(self, params):
-        """Rotating all atoms by R must rotate every force vector by R.
-        Catches frame-dependent bugs (e.g., forces computed with
-        respect to a fixed lab axis instead of locally)."""
+        """Rotating all atoms by R rotates every force vector by the same R."""
         from pystarc.simulation.coffdrop_chain import (
             build_chain_common_from_coffdrop,
             ChainState,
@@ -17013,12 +17523,7 @@ class TestCOFFDROPTabulatedForces:
         ), "rotational equivariance violated: forces don't rotate with positions"
 
     def test_heteropolymer_5_residue_chain(self, params):
-        """Build a heteropolymer (mixed residues) chain, verify forces
-        are finite and conserve momentum. The forward angle/torsion
-        lookup convention is documented as an assumption -- this test
-        confirms heteropolymer chains complete without error and have
-        sensible force properties.
-        """
+        """A mixed-residue heteropolymer chain builds and computes finite, momentum-conserving forces."""
         from pystarc.simulation.coffdrop_chain import (
             build_chain_common_from_coffdrop,
             ChainState,
@@ -17054,16 +17559,7 @@ class TestCOFFDROPTabulatedForces:
         ), f"heteropolymer net force norm {force_sum_norm} should be zero"
 
     def test_short_force_driven_integration_stable(self, params):
-        """Run 100 steps of deterministic force-driven Euler integration
-        on a 5-ALA chain. No thermal noise. Verify positions stay finite
-        and bond lengths stay reasonable (forces don't blow up).
-
-        This is a quick end-to-end smoke test of the force pipeline:
-        if forces produce stable short-time integration, the COFFDROP
-        machinery is usable in real BD simulation. We use a tiny dt
-        (1e-5) and a damping factor to avoid spurious instabilities
-        from huge initial forces (e.g., torsions can be very stiff).
-        """
+        """100 steps of damped Euler force-driven integration on an ALA5 chain keep positions finite and bond lengths bounded."""
         from pystarc.simulation.coffdrop_chain import (
             build_chain_common_from_coffdrop,
             ChainState,
@@ -17114,10 +17610,7 @@ class TestCOFFDROPTabulatedForces:
         ), f"force exploded: start={max_force_history[0]}, end={max_force_history[-1]}"
 
     def test_sidechain_helper_topology_and_forces(self, params):
-        """Build a 5-residue heteropolymer chain WITH sidechain beads.
-        Verify topology counts, bonded structure, and that
-        compute_chain_forces produces finite, momentum-conserving
-        forces at a relaxed geometry."""
+        """A heteropolymer chain with sidechain beads has the expected topology counts, populated type_idx values, and finite momentum-conserving forces."""
         from pystarc.simulation.coffdrop_chain import (
             build_chain_common_with_sidechains_from_coffdrop,
             ChainState,
@@ -17203,18 +17696,7 @@ class TestCOFFDROPTabulatedForces:
         )
 
     def test_cys_sidechain_uses_sb_not_cb(self, params):
-        """Regression: CYS uses SB (not CB) as its sidechain bead.
-
-        Before this fix, the helper hardcoded "CB" so CYS sidechain
-        angles and torsions were silently skipped. After fix, the
-        first-sidechain-bead lookup uses the actual bead name.
-
-        ALA-CYS-ALA should produce 5 angles:
-          - 1 backbone CA-CA-CA
-          - 2 ALA-CB-CA-CA (forward + backward, residues 0 and 2)
-          - 2 CYS-SB-CA-CA (forward + backward at residue 1)
-        All 5 should have populated type_idx.
-        """
+        """CYS uses SB rather than CB as its sidechain bead, so ALA-CYS-ALA yields five fully populated angles including two SB-anchored ones."""
         from pystarc.simulation.coffdrop_chain import (
             build_chain_common_with_sidechains_from_coffdrop,
             ChainState,
@@ -17243,16 +17725,7 @@ class TestCOFFDROPTabulatedForces:
         ), f"expected 2 CYS:SB-anchored angles, got {len(sb_ca_angles)}"
 
     def test_long_heteropolymer_stable_integration(self, params):
-        """End-to-end stability test for production-like usage.
-
-        Builds a 10-residue heteropolymer with sidechain beads, runs
-        100 deterministic Euler integration steps, verifies the
-        chain doesn't blow up. Forces, angles, torsions, and pair
-        interactions all exercise their tabulated branches.
-
-        Geometry: backbone CAs at 3.8 A spacing, sidechains projected
-        outward. Damped Euler step with small dt.
-        """
+        """A 10-residue heteropolymer with sidechains stays stable over 100 damped Euler integration steps."""
         from pystarc.simulation.coffdrop_chain import (
             build_chain_common_with_sidechains_from_coffdrop,
             ChainState,
@@ -17330,12 +17803,7 @@ class TestCOFFDROPTabulatedForces:
             )
 
     def test_deriv_array_matches_scalar_deriv(self, params):
-        """TabulatedPotential.deriv_array must give numerically
-        identical results to a Python loop over scalar deriv() calls.
-        Locks down the vectorized fast path so regressions are caught.
-        Tests across pair pots, angle pots, and dihedral pots covering
-        in-range and out-of-range x values.
-        """
+        """TabulatedPotential.deriv_array matches scalar deriv() across pair, angle, and dihedral pots for in-range and out-of-range x."""
         # Test 5 representative pots from each table
         for pots, name in [
             (params.pair_pots[:5], "pair"),
@@ -17355,15 +17823,7 @@ class TestCOFFDROPTabulatedForces:
                 )
 
     def test_sidechain_dihedral_force_conservation(self, params):
-        """Cross-residue and sidechain-extending dihedrals must conserve
-        momentum. Tests with a chain that exercises:
-          - CB-CA-CA-CB cross-residue dihedrals (ARG-LEU has both CBs)
-          - SC2-SC1-CA-CA sidechain-extending dihedrals
-            (LEU has CG, ARG has NG, both adjacent to CA-bearing neighbors)
-
-        At any non-degenerate geometry, sum of forces over all atoms
-        must be ~0 within machine precision.
-        """
+        """Cross-residue and sidechain-extending dihedrals give finite forces that conserve momentum."""
         from pystarc.simulation.coffdrop_chain import (
             build_chain_common_with_sidechains_from_coffdrop,
             ChainState,
@@ -17395,12 +17855,7 @@ class TestCOFFDROPTabulatedForces:
         ), f"net force should be zero, got norm {force_sum_norm}"
 
     def test_sidechain_dihedral_rotational_equivariance(self, params):
-        """Sidechain-extending dihedrals must be rotationally
-        equivariant (forces rotate by R when positions do).
-        This is the strongest physical-correctness check applied
-        specifically to chains with CG/NG dihedrals exercising
-        the new SC2-SC1-CA-CA force code.
-        """
+        """Sidechain-extending dihedral forces rotate by R when the positions are rotated by R."""
         from pystarc.simulation.coffdrop_chain import (
             build_chain_common_with_sidechains_from_coffdrop,
             ChainState,
@@ -17432,9 +17887,7 @@ class TestCOFFDROPTabulatedForces:
         ), "rotational equivariance violated for sidechain-rich chain"
 
     def test_chain_from_sequence_all_formats(self):
-        """User-facing factory must accept single-letter, 3-letter dash,
-        and 3-letter space sequence formats and produce equivalent chains.
-        """
+        """chain_from_sequence accepts single-letter, dash-separated, and space-separated 3-letter formats and produces equivalent chains."""
         from pystarc.simulation.coffdrop_chain import chain_from_sequence
 
         # Single-letter
@@ -17455,7 +17908,7 @@ class TestCOFFDROPTabulatedForces:
             assert a1.resname == a2.resname == a3.resname
 
     def test_chain_from_sequence_sidechains_flag(self):
-        """sidechains=False produces a CA-only backbone chain."""
+        """chain_from_sequence with sidechains=False produces a CA-only backbone chain with the expected bond, angle, and torsion counts."""
         from pystarc.simulation.coffdrop_chain import chain_from_sequence
 
         # 5-residue chain, CA-only
@@ -17470,7 +17923,7 @@ class TestCOFFDROPTabulatedForces:
         assert len(chain.torsions) == 2
 
     def test_chain_from_sequence_validation_errors(self):
-        """Invalid input must raise ValueError with informative message."""
+        """chain_from_sequence raises ValueError with an informative message for invalid codes, bad tokens, and empty input."""
         from pystarc.simulation.coffdrop_chain import chain_from_sequence
 
         # Invalid single-letter code
@@ -17497,11 +17950,7 @@ class TestCOFFDROPTabulatedForces:
             ), f"error message should mention 'empty': {e}"
 
     def test_place_relaxed_geometry(self):
-        """place_relaxed_geometry must produce positions where:
-        - bond lengths exactly match each bond's eq length
-        - momentum conservation still holds
-        - forces are bounded (not exploding from clashes)
-        """
+        """place_relaxed_geometry produces finite positions with exact bond lengths and finite momentum-conserving forces."""
         from pystarc.simulation.coffdrop_chain import (
             chain_from_sequence,
             place_relaxed_geometry,
@@ -17540,8 +17989,7 @@ class TestCOFFDROPTabulatedForces:
             ), f"{seq}: net force should be zero, got {sum_F_norm}"
 
     def test_chain_from_pdb_single_chain(self, tmp_path):
-        """chain_from_pdb on a single-chain PDB extracts the sequence
-        and builds an equivalent chain to chain_from_sequence."""
+        """chain_from_pdb on a single-chain PDB builds a chain with topology identical to chain_from_sequence."""
         from pystarc.simulation.coffdrop_chain import (
             chain_from_pdb,
             chain_from_sequence,
@@ -17568,7 +18016,7 @@ class TestCOFFDROPTabulatedForces:
             assert a_pdb.resname == a_seq.resname
 
     def test_chain_from_pdb_multi_chain_requires_id(self, tmp_path):
-        """If PDB has multiple chains, chain_id must be specified."""
+        """chain_from_pdb raises on a multi-chain PDB without chain_id and extracts the requested chain when chain_id is given."""
         from pystarc.simulation.coffdrop_chain import chain_from_pdb
 
         pdb = tmp_path / "multi.pdb"
@@ -17593,7 +18041,7 @@ class TestCOFFDROPTabulatedForces:
         assert chain_b.n_atoms == 7  # TRP(4) + LEU(3)
 
     def test_chain_from_pdb_error_handling(self, tmp_path):
-        """File-not-found and bad-chain-id errors raise correctly."""
+        """chain_from_pdb raises FileNotFoundError for a missing file and ValueError for a PDB with no ATOM records."""
         from pystarc.simulation.coffdrop_chain import chain_from_pdb
 
         # Missing file
@@ -17612,7 +18060,7 @@ class TestCOFFDROPTabulatedForces:
             assert "no atom" in str(e).lower()
 
     def test_caps_topology_ace_nme(self):
-        """Capped chain has correct number of atoms, bonds, angles, torsions."""
+        """ACE and NME caps each add one atom and one bond, with cap atoms carrying resid -1 and the expected resnames."""
         from pystarc.simulation.coffdrop_chain import chain_from_sequence
 
         # Uncapped ARWGL: 13 atoms, 12 bonds
@@ -17640,7 +18088,7 @@ class TestCOFFDROPTabulatedForces:
         assert cap_names == ["ACE:CN", "NME:CC"]
 
     def test_caps_force_lookups_populated(self):
-        """Cap-flanking angles, dihedrals, and pair lookups have valid type_idx."""
+        """Cap-flanking angles, torsions, and pair lookups receive valid populated type_idx values from COFFDROP."""
         from pystarc.simulation.coffdrop_chain import chain_from_sequence
 
         chain = chain_from_sequence("ARWGL", caps=("ACE", "NME"))
@@ -17688,8 +18136,7 @@ class TestCOFFDROPTabulatedForces:
         ), "no cap-involved pair_lookups; flanking residue logic broken"
 
     def test_caps_force_evaluation_finite(self):
-        """compute_chain_forces on a capped chain produces finite, momentum-
-        conserving forces."""
+        """compute_chain_forces on an ACE/NME-capped chain produces finite, momentum-conserving forces."""
         import numpy as np
         from pystarc.simulation.coffdrop_chain import (
             chain_from_sequence,
@@ -17712,7 +18159,7 @@ class TestCOFFDROPTabulatedForces:
         ), f"momentum conservation broken for capped chain: {sum_F_norm}"
 
     def test_caps_validation(self):
-        """Invalid cap names raise ValueError; CA-only + caps raises."""
+        """Invalid cap names raise ValueError, as does requesting caps on a CA-only chain."""
         from pystarc.simulation.coffdrop_chain import chain_from_sequence
 
         # Wrong cap name
@@ -17730,13 +18177,7 @@ class TestCOFFDROPTabulatedForces:
             assert "sidechains" in str(e).lower() or "ca-only" in str(e).lower()
 
     def test_run_chain_bd_with_target_pqr(self, tmp_path):
-        """run_chain_bd_simulation accepts a target PQR and produces
-        sensible BD trajectories with no numerical-instability warnings.
-
-        Hard-sphere overlap-rejection warnings (F2.3) are filtered out
-        because they are an expected diagnostic when the chain wedges
-        near the target, not a numerical-robustness signal.
-        """
+        """run_chain_bd_simulation with a target PQR completes trajectories with sensible state and no numerical-instability warnings."""
         import warnings
         from pystarc.simulation.coffdrop_chain import (
             chain_from_sequence,
@@ -17788,7 +18229,7 @@ class TestCOFFDROPTabulatedForces:
         )
 
     def test_run_chain_bd_target_validation(self, tmp_path):
-        """Missing PQR or empty PQR raises informative errors."""
+        """run_chain_bd_simulation raises FileNotFoundError for a missing PQR and ValueError for an empty one."""
         from pystarc.simulation.coffdrop_chain import (
             chain_from_sequence,
             run_chain_bd_simulation,
@@ -17832,7 +18273,7 @@ class TestChainBDInputXML:
     """
 
     def test_chain_block_parses_with_all_fields(self, tmp_path):
-        """A complete <chain> block populates ChainConfig with all values."""
+        """A complete <chain> XML block populates every field of ChainConfig with the parsed values."""
         from pystarc.pipeline.input_parser import parse
 
         xml = """<?xml version="1.0"?>
@@ -17878,7 +18319,7 @@ class TestChainBDInputXML:
         assert cfg.chain.chain_steps_per_outer == 8
 
     def test_chain_block_minimal_uses_defaults(self, tmp_path):
-        """Only required fields specified; the rest fall back to defaults."""
+        """A minimal <chain> block populates required fields and leaves the rest at their defaults."""
         from pystarc.pipeline.input_parser import parse
 
         xml = """<?xml version="1.0"?>
@@ -17909,8 +18350,7 @@ class TestChainBDInputXML:
         assert cfg.chain.chain_steps_per_outer == 4
 
     def test_legacy_xml_chain_is_none(self, tmp_path):
-        """An input.xml without a <chain> block produces cfg.chain=None
-        (backward compatibility for rigid-body simulations)."""
+        """An input.xml without a <chain> block yields cfg.chain equal to None."""
         from pystarc.pipeline.input_parser import parse
 
         xml = """<?xml version="1.0"?>
@@ -17924,7 +18364,7 @@ class TestChainBDInputXML:
         assert cfg.chain is None
 
     def test_chain_mode_missing_chain_json_raises(self, tmp_path):
-        """Validation rejects chain mode when chain_json is missing."""
+        """Parsing raises ValueError mentioning chain_json when chain mode omits chain_json."""
         from pystarc.pipeline.input_parser import parse
 
         xml = """<?xml version="1.0"?>
@@ -17943,7 +18383,7 @@ class TestChainBDInputXML:
             assert "chain_json" in str(e)
 
     def test_chain_mode_missing_receptor_pqr_raises(self, tmp_path):
-        """Validation rejects chain mode when receptor_pqr is missing."""
+        """Parsing raises ValueError mentioning receptor_pqr when chain mode omits receptor_pqr."""
         from pystarc.pipeline.input_parser import parse
 
         xml = """<?xml version="1.0"?>
@@ -17962,7 +18402,7 @@ class TestChainBDInputXML:
             assert "receptor_pqr" in str(e)
 
     def test_run_chain_requires_chain_config(self):
-        """run_chain() raises immediately when config.chain is None."""
+        """run_chain raises ValueError mentioning config.chain when the chain config is None."""
         from pystarc.pipeline.chain_pipeline import run_chain
         from pystarc.pipeline.input_parser import PySTARCConfig
 
@@ -17974,8 +18414,7 @@ class TestChainBDInputXML:
             assert "config.chain" in str(e)
 
     def test_load_reaction_pairs_json_round_trip(self, tmp_path):
-        """_load_reaction_pairs_json correctly parses the canonical
-        list-of-tuples JSON format."""
+        """_load_reaction_pairs_json parses the list-of-tuples JSON format into the expected tuples."""
         import json
         from pystarc.pipeline.chain_pipeline import _load_reaction_pairs_json
 
@@ -17985,8 +18424,7 @@ class TestChainBDInputXML:
         assert pairs == [(100, 0, 7.0), (200, 5, 6.5)]
 
     def test_load_reaction_pairs_json_missing_file_raises(self):
-        """_load_reaction_pairs_json raises FileNotFoundError for
-        nonexistent paths."""
+        """_load_reaction_pairs_json raises FileNotFoundError for a nonexistent path."""
         from pystarc.pipeline.chain_pipeline import _load_reaction_pairs_json
 
         try:
@@ -17996,8 +18434,7 @@ class TestChainBDInputXML:
             pass
 
     def test_load_reaction_pairs_json_wrong_length_raises(self, tmp_path):
-        """_load_reaction_pairs_json raises ValueError when an entry has
-        the wrong number of elements (must be 3)."""
+        """_load_reaction_pairs_json raises ValueError when an entry does not have exactly three elements."""
         import json
         from pystarc.pipeline.chain_pipeline import _load_reaction_pairs_json
 
@@ -18010,8 +18447,7 @@ class TestChainBDInputXML:
             assert "length 2" in str(e) or "expected 3" in str(e)
 
     def test_build_pathway_set_creates_one_reaction_with_all_pairs(self):
-        """_build_pathway_set produces a single 'association' reaction
-        containing all input contact pairs and the requested n_needed."""
+        """_build_pathway_set produces one association reaction holding all contact pairs and the requested n_needed."""
         from pystarc.pipeline.chain_pipeline import _build_pathway_set
 
         ps = _build_pathway_set([(10, 0, 7.0), (20, 1, 6.5), (30, 2, 5.0)], n_needed=2)
@@ -18032,7 +18468,7 @@ class TestChainBDInstrumentation:
     """Sub-stage 2a: TrajectoryResult diagnostic fields + outputs param plumbing."""
 
     def test_trajectory_result_default_optional_fields_are_none(self):
-        """Rigid-body-style positional construction leaves all new fields None."""
+        """Positional TrajectoryResult construction leaves all optional diagnostic fields set to None."""
         from pystarc.molsystem.system_state import Fate, TrajectoryResult
 
         r = TrajectoryResult(Fate.ESCAPED, 100, 1.0, 50.0)
@@ -18050,7 +18486,7 @@ class TestChainBDInstrumentation:
         assert r.contact_counts is None
 
     def test_trajectory_result_accepts_diagnostic_fields(self):
-        """Chain-style construction with diagnostic fields round-trips."""
+        """TrajectoryResult round-trips the diagnostic fields supplied by chain-style keyword construction."""
         import numpy as np
         from pystarc.molsystem.system_state import Fate, TrajectoryResult
 
@@ -18077,7 +18513,7 @@ class TestChainBDInstrumentation:
         assert r.contact_counts is None
 
     def test_chainbd_simulator_init_signature_has_outputs(self):
-        """ChainBDSimulator.__init__ accepts an `outputs` kwarg with default None."""
+        """ChainBDSimulator.__init__ exposes an outputs keyword argument defaulting to None."""
         import inspect
         from pystarc.simulation.chain_simulator import ChainBDSimulator
 
@@ -18086,7 +18522,7 @@ class TestChainBDInstrumentation:
         assert sig.parameters["outputs"].default is None
 
     def test_write_chain_results_signature_accepts_outputs(self):
-        """write_chain_results signature accepts outputs= kwarg (unused in 2a)."""
+        """write_chain_results exposes an outputs keyword argument defaulting to None."""
         import inspect
         from pystarc.pipeline.chain_output_writer import write_chain_results
 
@@ -18155,6 +18591,7 @@ class TestChainBDWriters:
         return [r0, r1, r2]
 
     def test_write_encounters_csv(self, tmp_path):
+        """write_encounters_csv writes one data row per REACTED trajectory with the expected header and fields."""
         from pystarc.pipeline.chain_output_writer import write_encounters_csv
 
         results = self._make_results()
@@ -18170,6 +18607,7 @@ class TestChainBDWriters:
         assert "rxn1" in lines[1]
 
     def test_write_near_misses_csv(self, tmp_path):
+        """write_near_misses_csv writes one row per ESCAPED trajectory with populated near-miss data including the near-miss distance."""
         from pystarc.pipeline.chain_output_writer import write_near_misses_csv
 
         results = self._make_results()
@@ -18184,6 +18622,7 @@ class TestChainBDWriters:
         assert "10.000" in lines[1]  # near_miss_dist
 
     def test_write_fpt_distribution_csv(self, tmp_path):
+        """write_fpt_distribution_csv writes a header plus n_bins rows whose total count equals the number of REACTED trajectories."""
         from pystarc.pipeline.chain_output_writer import write_fpt_distribution_csv
 
         results = self._make_results()
@@ -18198,6 +18637,7 @@ class TestChainBDWriters:
         assert sum(counts) == 1
 
     def test_write_contact_frequency_csv(self, tmp_path):
+        """write_contact_frequency_csv aggregates per-pair contact totals and trajectory counts, sorted descending by total."""
         from pystarc.pipeline.chain_output_writer import write_contact_frequency_csv
 
         results = self._make_results()
@@ -18213,6 +18653,7 @@ class TestChainBDWriters:
         assert lines[2] == "12,1,1,1"
 
     def test_write_energetics_npz(self, tmp_path):
+        """write_energetics_npz stores per-snapshot traj_id, step, and energy arrays with the expected shapes and column labels."""
         import numpy as np
         from pystarc.pipeline.chain_output_writer import write_energetics_npz
 
@@ -18229,7 +18670,7 @@ class TestChainBDWriters:
             assert (data["traj_id"][3:7] == 1).all()
 
     def test_write_chain_results_gates_on_outputs(self, tmp_path):
-        """Test that flags in OutputConfig gate which writers run."""
+        """OutputConfig flags gate which optional writers run, while results.json and trajectories.csv are always written."""
         from pystarc.pipeline.chain_output_writer import write_chain_results
         from pystarc.pipeline.input_parser import OutputConfig
 
@@ -18353,6 +18794,7 @@ class TestChainBDWritersHeavy:
         return [r0, r1, r2]
 
     def test_write_paths_npz(self, tmp_path):
+        """write_paths_npz stores per-snapshot traj_id, step, com, q, and radial arrays with the expected shapes and values."""
         import numpy as np
         from pystarc.pipeline.chain_output_writer import write_paths_npz
 
@@ -18374,6 +18816,7 @@ class TestChainBDWritersHeavy:
             assert data["radial"][3] == 40.0
 
     def test_write_radial_density_csv(self, tmp_path):
+        """write_radial_density_csv bins all snapshots into n_bins rows with non-negative densities and counts summing to the snapshot total."""
         from pystarc.pipeline.chain_output_writer import write_radial_density_csv
 
         results = self._make_results()
@@ -18391,6 +18834,7 @@ class TestChainBDWritersHeavy:
         assert all(d >= 0 for d in densities)
 
     def test_write_angular_map_npz(self, tmp_path):
+        """write_angular_map_npz produces a theta-by-phi count grid with edges spanning [0, π] and counts summing to the snapshot total."""
         import numpy as np
         from pystarc.pipeline.chain_output_writer import write_angular_map_npz
 
@@ -18409,7 +18853,7 @@ class TestChainBDWritersHeavy:
             assert abs(float(data["theta_edges"][-1]) - float(np.pi)) < 1e-9
 
     def test_write_chain_results_includes_2c_outputs(self, tmp_path):
-        """write_chain_results emits paths.npz / radial_density.csv / angular_map.npz when flags are set."""
+        """write_chain_results emits the 2c outputs paths.npz, radial_density.csv, and angular_map.npz in the correct order when their flags are set."""
         from pystarc.pipeline.chain_output_writer import write_chain_results
         from pystarc.pipeline.input_parser import OutputConfig
 
@@ -18503,6 +18947,7 @@ class TestChainBDMilestoneFlux:
         return [r0, r1, r2]
 
     def test_write_milestone_flux_csv_known_crossings(self, tmp_path):
+        """write_milestone_flux_csv reports one outward and zero inward crossings per shell at the expected shell radii."""
         from pystarc.pipeline.chain_output_writer import write_milestone_flux_csv
 
         results = self._make_results_with_known_crossings()
@@ -18529,7 +18974,7 @@ class TestChainBDMilestoneFlux:
             assert abs(got - want) < 1e-6, f"shell radius mismatch: {got} vs {want}"
 
     def test_write_milestone_flux_returns_none_when_no_data(self, tmp_path):
-        """Empty/None radial_trace -> writer returns None (no file written)."""
+        """write_milestone_flux_csv returns None and writes no file when no trajectory has radial-trace data."""
         from pystarc.molsystem.system_state import Fate, TrajectoryResult
         from pystarc.pipeline.chain_output_writer import write_milestone_flux_csv
 
@@ -18546,7 +18991,7 @@ class TestChainBDMilestoneFlux:
         assert not (tmp_path / "milestone_flux.csv").exists()
 
     def test_milestone_flux_in_chain_results(self, tmp_path):
-        """Integration: milestone_flux.csv lands when flag is True, in correct order."""
+        """milestone_flux.csv is written between contact_frequency and energetics when its output flag is enabled."""
         from pystarc.pipeline.chain_output_writer import write_chain_results
         from pystarc.pipeline.input_parser import OutputConfig
 
@@ -18602,10 +19047,7 @@ class TestChainBDDeferredOutputs:
     """
 
     def test_deferred_flags_are_silent_noop(self, tmp_path):
-        """Setting p_commit, transition_matrix, pose_clusters to True should
-        NOT crash write_chain_results, and should NOT produce those files.
-        The 11 implemented outputs should all land normally.
-        """
+        """Enabling the deferred p_commit, transition_matrix, and pose_clusters flags is a silent no-op that does not crash or emit those files."""
         import numpy as np
         from pystarc.molsystem.system_state import Fate, TrajectoryResult
         from pystarc.pipeline.chain_output_writer import write_chain_results
@@ -18769,7 +19211,7 @@ class TestChainIORoundTrip:
         )
 
     def test_save_then_load_preserves_topology(self, tmp_path):
-        """Round-trip preserves atoms, bonds, angles, torsions, parameters."""
+        """Saving then loading a chain to JSON preserves atom, bond, angle, and torsion parameters and the centered positions."""
         import numpy as np
         from pystarc.structures.chain_io import (
             save_chain_to_json,
@@ -18818,8 +19260,7 @@ class TestChainIORoundTrip:
         np.testing.assert_array_almost_equal(loaded_positions, positions)
 
     def test_save_load_centers_uncentered_positions(self, tmp_path):
-        """Save preserves verbatim; load centers. Save un-centered ->
-        load returns input minus its mean."""
+        """save_chain_to_json stores positions verbatim while load_chain_from_json centers them to zero mean."""
         import numpy as np
         from pystarc.structures.chain_io import (
             save_chain_to_json,
@@ -18843,7 +19284,7 @@ class TestChainIORoundTrip:
         np.testing.assert_array_almost_equal(loaded_positions.mean(axis=0), np.zeros(3))
 
     def test_save_validates_positions_shape(self, tmp_path):
-        """Wrong-shape positions array raises ValueError."""
+        """save_chain_to_json raises ValueError for positions arrays with wrong rows, columns, or dimensions."""
         import numpy as np
         import pytest
         from pystarc.structures.chain_io import save_chain_to_json
@@ -18884,7 +19325,7 @@ class TestChainBDEquilibration:
         assert c.n_equilibration_steps == 0
 
     def test_n_equilibration_xml_parsing(self, tmp_path):
-        """<n_equilibration_steps> in input.xml chain block is parsed."""
+        """parse reads n_equilibration_steps from the chain block of input.xml."""
         from pystarc.pipeline.input_parser import parse
 
         xml = """<?xml version="1.0"?>
@@ -18915,8 +19356,7 @@ class TestForceSanity:
     """
 
     def test_wca_force_at_contact_is_repulsive(self):
-        """At r = sigma (touching), WCA force is non-zero, repulsive,
-        magnitude 24*eps/sigma. Directly tests the WCA cutoff fix."""
+        """At r = sigma the WCA force is repulsive, axial, with magnitude 24*eps/sigma."""
         import numpy as np
         from pystarc.simulation.chain_simulator import chain_target_steric_forces
         from pystarc.structures.molecules import Molecule, Atom
@@ -18949,7 +19389,7 @@ class TestForceSanity:
         np.testing.assert_allclose(np.linalg.norm(F[0]), expected, rtol=1e-6)
 
     def test_wca_force_zero_at_cutoff(self):
-        """At r = 2^(1/6) * sigma (LJ minimum), WCA force is exactly 0."""
+        """At r = 2^(1/6)*sigma the WCA force is exactly zero."""
         import numpy as np
         from pystarc.simulation.chain_simulator import chain_target_steric_forces
         from pystarc.structures.molecules import Molecule, Atom
@@ -18978,7 +19418,7 @@ class TestForceSanity:
         np.testing.assert_allclose(F[0], np.zeros(3), atol=1e-10)
 
     def test_wca_force_zero_outside_cutoff(self):
-        """At r >> 2^(1/6) sigma, WCA force is exactly 0."""
+        """Beyond the 2^(1/6)*sigma cutoff the WCA force is exactly zero."""
         import numpy as np
         from pystarc.simulation.chain_simulator import chain_target_steric_forces
         from pystarc.structures.molecules import Molecule, Atom
@@ -19005,7 +19445,7 @@ class TestForceSanity:
         np.testing.assert_array_equal(F[0], np.zeros(3))
 
     def test_bond_force_zero_at_equilibrium(self):
-        """Harmonic bond at r = r0 produces zero force."""
+        """A harmonic bond at r = r0 produces zero force on both atoms."""
         import numpy as np
         from pystarc.simulation.coffdrop_chain import (
             ChainAtom,
@@ -19032,7 +19472,7 @@ class TestForceSanity:
         np.testing.assert_allclose(state.forces, np.zeros((2, 3)), atol=1e-10)
 
     def test_bond_force_restores_to_equilibrium(self):
-        """Stretched bond pulls atoms back; F = k(r-r0), Newton 3rd law."""
+        """A stretched bond pulls atoms together with magnitude k(r-r0) obeying Newton's third law."""
         import numpy as np
         from pystarc.simulation.coffdrop_chain import (
             ChainAtom,
@@ -19070,8 +19510,7 @@ class TestForceSanity:
         )
 
     def test_compute_chain_forces_obey_newton_third_law(self):
-        """For isolated chain (no external), sum of internal forces over
-        all atoms is zero (translational invariance)."""
+        """For an isolated chain the sum of internal forces over all atoms is zero."""
         import numpy as np
         from pystarc.simulation.coffdrop_chain import (
             ChainAtom,
@@ -19166,8 +19605,7 @@ class TestChainGBSelfBorn:
     # =========================================================
 
     def test_obc_R_eff_isolated_atom_returns_rho_tilde(self):
-        """Single-atom system has no descreening: I_i = 0, tanh(0) = 0,
-        so R_eff = rho_tilde = intrinsic - offset exactly."""
+        """A single isolated atom has R_eff equal to intrinsic minus the OBC offset."""
         from pystarc.forces.chain_gb import (
             obc_effective_radii,
             DEFAULT_OBC_OFFSET,
@@ -19180,8 +19618,7 @@ class TestChainGBSelfBorn:
         assert np.allclose(R_eff, expected, atol=1e-12)
 
     def test_obc_R_eff_translation_invariance(self):
-        """Rigid translation leaves R_eff unchanged for every atom
-        (R_eff depends only on relative geometry)."""
+        """OBC effective radii are invariant under rigid translation of all positions."""
         from pystarc.forces.chain_gb import obc_effective_radii
 
         positions, _, intrinsic = self._config()
@@ -19191,9 +19628,7 @@ class TestChainGBSelfBorn:
         assert np.allclose(R_eff, R_eff_shifted, atol=1e-12)
 
     def test_obc_R_eff_burial_monotonicity(self):
-        """Bringing a neighbor closer must monotonically increase the
-        target's R_eff (more descreening = larger effective radius).
-        Tests across the case_outside <-> case_overlap boundary."""
+        """Bringing a neighbor closer monotonically increases the target atom's R_eff."""
         from pystarc.forces.chain_gb import obc_effective_radii
 
         intrinsic = np.array([1.5, 1.5])
@@ -19208,9 +19643,7 @@ class TestChainGBSelfBorn:
             prev_R0 = R_eff[0]
 
     def test_gb_self_born_energy_zero_when_eps_out_equals_eps_in(self):
-        """With eps_out = eps_in the dielectric factor cf vanishes, so
-        self-Born and off-diagonal GB energies must be exactly zero
-        regardless of geometry or charges."""
+        """With eps_out = eps_in both self-Born and off-diagonal GB energies are exactly zero."""
         from pystarc.forces.chain_gb import (
             gb_self_born_energy,
             gb_offdiagonal_energy,
@@ -19227,8 +19660,7 @@ class TestChainGBSelfBorn:
         assert E_off == 0.0
 
     def test_gb_offdiagonal_energy_zero_for_neutral_partner(self):
-        """A pair with q_j = 0 contributes nothing to the off-diagonal
-        cross-term (linearity in charge product)."""
+        """A partner with charge zero contributes nothing to the off-diagonal GB energy."""
         from pystarc.forces.chain_gb import gb_offdiagonal_energy
 
         positions = np.array([[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]])
@@ -19242,7 +19674,7 @@ class TestChainGBSelfBorn:
     # =========================================================
 
     def test_chain_vacuum_coulomb_force_matches_finite_difference(self):
-        """F_vacCoulomb = -d(E_vacCoulomb)/dr, agreement to FD numerical floor."""
+        """The analytic vacuum Coulomb force matches the finite-difference gradient of its energy."""
         from pystarc.forces.chain_gb import (
             chain_vacuum_coulomb_force,
             gb_vacuum_coulomb_energy,
@@ -19258,7 +19690,7 @@ class TestChainGBSelfBorn:
         assert rel < 1e-5
 
     def test_chain_self_born_diagonal_force_matches_finite_difference(self):
-        """F_self = -d(E_self)/dr, including OBC chain-rule R_eff dependence."""
+        """The analytic self-Born force matches the finite-difference gradient including OBC R_eff dependence."""
         from pystarc.forces.chain_gb import (
             chain_self_born_diagonal_force,
             gb_self_born_energy,
@@ -19279,8 +19711,7 @@ class TestChainGBSelfBorn:
         assert rel < 1e-5
 
     def test_chain_offdiagonal_gb_force_matches_finite_difference(self):
-        """F_offdiag = -d(E_offdiag)/dr, with both direct r-dependence in
-        f_GB and indirect R_eff-dependence via OBC chain rule."""
+        """The analytic off-diagonal GB force matches the finite-difference gradient of its energy."""
         from pystarc.forces.chain_gb import (
             chain_offdiagonal_gb_force,
             gb_offdiagonal_energy,
@@ -19301,8 +19732,7 @@ class TestChainGBSelfBorn:
         assert rel < 1e-5
 
     def test_chain_full_gb_force_matches_finite_difference(self):
-        """Full GB (self + off-diagonal + vacuum Coulomb) force matches
-        FD of the summed energy. End-to-end consistency of the composer."""
+        """The full GB force matches the finite-difference gradient of the summed GB energy."""
         from pystarc.forces.chain_gb import (
             chain_full_gb_force,
             gb_self_born_energy,
@@ -19337,8 +19767,7 @@ class TestChainGBSelfBorn:
     # =========================================================
 
     def test_chain_full_gb_force_translation_invariance(self):
-        """Forces are unchanged under rigid translation; sum of forces = 0
-        (Newton's 3rd / total momentum conservation)."""
+        """Full GB forces are translation invariant and sum to zero."""
         from pystarc.forces.chain_gb import chain_full_gb_force
 
         positions, charges, intrinsic = self._config()
@@ -19351,7 +19780,7 @@ class TestChainGBSelfBorn:
         assert np.allclose(F.sum(axis=0), 0.0, atol=1e-9)
 
     def test_chain_full_gb_force_rotation_covariance(self):
-        """Forces transform covariantly under rigid rotation: F'_k = R F_k."""
+        """Full GB forces transform covariantly under a rigid rotation, with F' = R F."""
         from pystarc.forces.chain_gb import chain_full_gb_force
 
         positions, charges, intrinsic = self._config()
@@ -19370,8 +19799,7 @@ class TestChainGBSelfBorn:
         assert np.allclose(F_rot, F @ Rmat.T, atol=1e-9)
 
     def test_chain_full_gb_force_atom_permutation_covariance(self):
-        """Permuting atom indices (positions, charges, radii consistently)
-        permutes the forces in lockstep: F'[i] = F[perm[i]]."""
+        """Permuting atom indices permutes the full GB forces in lockstep."""
         from pystarc.forces.chain_gb import chain_full_gb_force
 
         positions, charges, intrinsic = self._config()
@@ -19390,9 +19818,7 @@ class TestChainGBSelfBorn:
     # =========================================================
 
     def test_path_b_dispatch_with_coffdrop_active_equals_diagonal_only(self):
-        """coffdrop_active=True restricts GB to diagonal self-Born only.
-        Result must be bit-exact equal to chain_self_born_diagonal_force,
-        and energy decomposition must show offdiag=coulomb=0."""
+        """With coffdrop_active=True the full GB force equals the diagonal self-Born only, with offdiag and Coulomb zero."""
         from pystarc.forces.chain_gb import (
             chain_full_gb_force,
             chain_self_born_diagonal_force,
@@ -19425,9 +19851,7 @@ class TestChainGBSelfBorn:
     # =========================================================
 
     def test_chain_config_and_chain_bd_parameters_gb_defaults_consistent(self):
-        """ChainConfig and ChainBDParameters must agree on all 7 GB-related
-        defaults. If either side drifts (e.g., one is updated without the
-        other), this test fails - catches schema-coupling regressions."""
+        """ChainConfig and ChainBDParameters agree on all seven GB-related defaults."""
         from pystarc.pipeline.input_parser import ChainConfig
         from pystarc.simulation.chain_simulator import ChainBDParameters
 
@@ -19461,9 +19885,7 @@ class TestChainGBEdgeCases:
     """
 
     def test_single_atom_chain_full_gb_force(self):
-        """n=1 chain has no pairs: forces are zero, off-diagonal and Coulomb
-        energies are zero, but self-Born contributes -cf*q^2/(2*rho_tilde)
-        analytically. Validates the empty-pair-sum boundary."""
+        """A single-atom chain has zero forces and Coulomb, with self-Born equal to -cf*q^2/(2*rho_tilde)."""
         from pystarc.forces.chain_gb import (
             chain_full_gb_force,
             COULOMB_K_KBT_A,
@@ -19501,9 +19923,7 @@ class TestChainGBEdgeCases:
             assert E["total"] == E["self"]
 
     def test_all_neutral_chain_full_gb_force(self):
-        """All charges = 0 makes every q^2 and q_i*q_j factor vanish.
-        All forces and energy components must be exactly zero, regardless
-        of geometry. Tests both Path B branches."""
+        """An all-neutral chain has zero GB forces and zero energy components in both Path B branches."""
         from pystarc.forces.chain_gb import chain_full_gb_force
 
         positions = np.array(
@@ -19536,10 +19956,7 @@ class TestChainGBEdgeCases:
             assert E["total"] == 0.0
 
     def test_obc_effective_radii_raises_on_nonpositive_rho_tilde(self):
-        """rho_tilde = intrinsic - offset must be strictly positive. Both
-        intrinsic < offset (negative rho_tilde) and intrinsic = offset
-        (zero rho_tilde) must raise ValueError to fail-fast at construction
-        rather than silently producing 1/0 in 1/R_eff downstream."""
+        """obc_effective_radii raises ValueError when rho_tilde is zero or negative."""
         from pystarc.forces.chain_gb import (
             obc_effective_radii,
             DEFAULT_OBC_OFFSET,
@@ -19556,11 +19973,7 @@ class TestChainGBEdgeCases:
             obc_effective_radii(positions, np.array([DEFAULT_OBC_OFFSET]))
 
     def test_close_contact_chain_gb_force_finite(self):
-        """Atoms at r=0.1 A (close contact, before hard-sphere rejection
-        would fire). All GB forces and energies must be finite (no NaN,
-        no Inf), even though vacuum Coulomb becomes large in magnitude.
-        Validates that the case_engulf branch in HCT integrand handles
-        near-coincident atoms without blow-up."""
+        """GB forces and energies stay finite for atoms in close contact at r = 0.1 angstrom."""
         from pystarc.forces.chain_gb import chain_full_gb_force
 
         positions = np.array([[0.0, 0.0, 0.0], [0.1, 0.0, 0.0]])
@@ -19586,12 +19999,7 @@ class TestChainGBEdgeCases:
                 )
 
     def test_overlapping_atoms_path_b_finite(self):
-        """Two atoms at exactly the same position (degenerate r=0). With
-        Path B (coffdrop_active=True), only the diagonal self-Born is
-        evaluated; off-diagonal and vacuum Coulomb are skipped. Self-Born
-        must remain finite: at r=0, both atoms are mutually engulfed
-        (rho_tilde > r + rho_S), so the HCT integrand and its derivative
-        are zero, leaving R_eff = rho_tilde and force = 0."""
+        """Path B self-Born stays finite for two coincident atoms, with offdiag and Coulomb zero and self-energy attractive."""
         from pystarc.forces.chain_gb import chain_full_gb_force
 
         positions = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
@@ -19642,9 +20050,7 @@ class TestChainBDSafetyGuards:
         return chain, state
 
     def test_bond_force_no_op_on_nan_position(self):
-        """_bond_force_state guard at L553: when one of the bonded atoms'
-        position contains NaN, the function must return early without
-        propagating NaN into state.forces."""
+        """_bond_force_state returns early without propagating NaN when a bonded atom position is NaN."""
         from pystarc.simulation.coffdrop_chain import _bond_force_state
 
         chain, state = self._make_state(4)
@@ -19657,9 +20063,7 @@ class TestChainBDSafetyGuards:
         ), f"NaN leaked through bond guard: {state.forces}"
 
     def test_bond_force_no_op_on_zero_distance(self):
-        """_bond_force_state guard at L559: when bonded atoms are coincident
-        (r < 1e-8), the function must avoid divide-by-zero and not produce
-        NaN/Inf."""
+        """_bond_force_state avoids divide-by-zero and produces no NaN when bonded atoms coincide."""
         from pystarc.simulation.coffdrop_chain import _bond_force_state
 
         chain, state = self._make_state(4)
@@ -19672,9 +20076,7 @@ class TestChainBDSafetyGuards:
         assert np.all(np.isfinite(state.forces))
 
     def test_angle_force_no_op_on_collinear_atoms(self):
-        """_angle_force_state guards at L591/L599: collinear atoms
-        (sin(theta) ~= 0) must trigger the divide-by-zero guard before
-        1/sin(theta) blows up. theta = pi geometry exercises both guards."""
+        """_angle_force_state stays finite for collinear atoms where sin(theta) approaches zero."""
         from pystarc.simulation.coffdrop_chain import _angle_force_state
 
         chain, state = self._make_state(4)
@@ -19690,9 +20092,7 @@ class TestChainBDSafetyGuards:
         assert np.all(np.isfinite(state.forces))
 
     def test_torsion_force_no_op_on_nan_position(self):
-        """_torsion_force_state guard at L641-644: when any of the four
-        atoms has NaN coordinates, the function must return early without
-        propagating NaN."""
+        """_torsion_force_state returns early without propagating NaN when any of the four atoms is NaN."""
         from pystarc.simulation.coffdrop_chain import _torsion_force_state
 
         chain, state = self._make_state(4)
@@ -19703,9 +20103,7 @@ class TestChainBDSafetyGuards:
         assert np.all(np.isfinite(state.forces))
 
     def test_dxgrid_force_finite_for_atom_outside_box(self):
-        """DXGrid out-of-bounds guard: queries outside the grid bounding
-        box must return finite force (zero or near-zero) rather than NaN
-        or raising. Tests both single-point and batch APIs."""
+        """DXGrid returns finite force for query points outside the grid box in both single and batch APIs."""
         from pystarc.forces.electrostatic.grid_force import DXGrid
 
         np.random.seed(0)
@@ -19756,6 +20154,7 @@ class TestMinimumCoreDtFloor:
     """
 
     def test_field_exists_on_nam_parameters(self):
+        """NAMParameters exposes minimum_core_dt and minimum_core_reaction_dt attributes."""
         from pystarc.simulation.nam_simulator import NAMParameters
         p = NAMParameters()
         assert hasattr(p, "minimum_core_dt"), (
@@ -19765,12 +20164,14 @@ class TestMinimumCoreDtFloor:
         assert hasattr(p, "minimum_core_reaction_dt")
 
     def test_default_is_zero(self):
+        """NAMParameters defaults minimum_core_dt and minimum_core_reaction_dt to 0.0."""
         from pystarc.simulation.nam_simulator import NAMParameters
         p = NAMParameters()
         assert p.minimum_core_dt == 0.0
         assert p.minimum_core_reaction_dt == 0.0
 
     def test_nonzero_floor_is_preserved(self):
+        """NAMParameters preserves nonzero minimum_core_dt and minimum_core_reaction_dt floors."""
         from pystarc.simulation.nam_simulator import NAMParameters
         p = NAMParameters(minimum_core_dt=0.123, minimum_core_reaction_dt=0.045)
         assert p.minimum_core_dt == 0.123
@@ -19780,12 +20181,14 @@ class TestMinimumCoreDtFloor:
         # gpu_batch_simulator does getattr(self.params, "minimum_core_dt", 0.0).
         # If the field is ever removed, this would silently return 0.0 instead
         # of the user-set value. Pin the behaviour explicitly.
+        """getattr on NAMParameters returns the stored core-dt floors rather than the fallback default."""
         from pystarc.simulation.nam_simulator import NAMParameters
         p = NAMParameters(minimum_core_dt=0.25, minimum_core_reaction_dt=0.075)
         assert getattr(p, "minimum_core_dt", 999.0) == 0.25
         assert getattr(p, "minimum_core_reaction_dt", 999.0) == 0.075
 
     def test_pystarc_config_parses_floor_from_xml(self, tmp_path):
+        """parse reads minimum_core_dt and minimum_core_reaction_dt from input.xml."""
         from pystarc.pipeline.input_parser import parse
         xml = (
             '<?xml version="1.0" ?>\n'
@@ -19811,6 +20214,7 @@ class TestRunChainSmoke:
     """
 
     def test_run_chain_raises_when_chain_config_missing(self, tmp_path):
+        """run_chain raises ValueError when config.chain is missing."""
         from pystarc.pipeline.chain_pipeline import run_chain
         from pystarc.pipeline.input_parser import PySTARCConfig
         cfg = PySTARCConfig(
@@ -19822,13 +20226,7 @@ class TestRunChainSmoke:
             run_chain(cfg)
 
     def test_run_chain_minimal_end_to_end(self, tmp_path):
-        """Run a 3-atom chain BD trajectory end-to-end. Tiny so it runs fast.
-
-        Uses a non-collinear 3-atom chain because rigid-body rotational
-        resistance is singular for any perfectly collinear chain (zero
-        moment of inertia about the chain axis). 3 non-collinear atoms
-        are the minimum for a well-defined 3-DOF rigid rotor.
-        """
+        """run_chain completes a minimal three-atom chain BD trajectory end-to-end."""
         import json
         from pathlib import Path
         from pystarc.pipeline.chain_pipeline import run_chain
@@ -19888,6 +20286,7 @@ class TestPQRChainIdDialect:
     """
 
     def test_pqr_with_chain_id_column(self, tmp_path):
+        """parse_pqr reads coordinates, charges, and radii from a PQR file with a chain-ID column."""
         from pystarc.structures.pqr_io import parse_pqr
         import math
         pqr_text = (
@@ -19906,6 +20305,7 @@ class TestPQRChainIdDialect:
         assert math.isclose(a0.radius, 2.0, abs_tol=1e-6)
 
     def test_pqr_without_chain_id_still_parses(self, tmp_path):
+        """parse_pqr still parses all atoms from a PQR file lacking a chain-ID column."""
         from pystarc.structures.pqr_io import parse_pqr
         pqr_text = (
             "ATOM      1  CA  GLY     1       0.000   0.000   0.000  0.500  2.000\n"
@@ -19917,6 +20317,7 @@ class TestPQRChainIdDialect:
         assert len(mol.atoms) == 2
 
     def test_multi_chain_pqr_round_trip(self, tmp_path):
+        """Multi-chain PQR survives a parse, write, parse round trip preserving coordinates, charges, and radii."""
         from pystarc.structures.pqr_io import parse_pqr, write_pqr
         import math
         pqr_text = (
@@ -19950,6 +20351,7 @@ class TestLJForceFiniteDifference:
 
     @pytest.mark.parametrize("r_over_sigma", [0.9, 1.0, 1.1, 1.5, 2.0])
     def test_lj_force_matches_finite_difference(self, r_over_sigma):
+        """The LJ pair force equals the finite-difference derivative of its potential."""
         import numpy as np
         from pystarc.forces.lj import lj_pair_force
         sigma, eps = 3.0, 0.5
@@ -19966,10 +20368,7 @@ class TestLJForceFiniteDifference:
         np.testing.assert_allclose(F_along, dV_dr, rtol=1e-4, atol=1e-6)
 
     def test_lj_force_direction_at_short_range_repulsive(self):
-        """Audit C7 pin: at r < sigma, force on a must point AWAY from b.
-        With a at origin and b at +x, this means F_a[0] < 0.
-        Prior to the fix, the function returned F_a in +x (attractive)
-        at short range, which is physically wrong."""
+        """At r < sigma the LJ force on a points away from b and the potential is positive."""
         import numpy as np
         from pystarc.forces.lj import lj_pair_force
         sigma, eps = 3.0, 1.0
@@ -19980,8 +20379,7 @@ class TestLJForceFiniteDifference:
         assert V > 0, f"potential at r<sigma must be repulsive (V>0); got V={V}"
 
     def test_lj_force_direction_at_long_range_attractive(self):
-        """Past the LJ minimum (sigma < r), force on a should point
-        TOWARD b. With a at origin and b at +x, F_a[0] > 0."""
+        """Past the LJ minimum the force on a points toward b and the potential is negative."""
         import numpy as np
         from pystarc.forces.lj import lj_pair_force
         sigma, eps = 3.0, 1.0
@@ -19993,6 +20391,7 @@ class TestLJForceFiniteDifference:
         assert V < 0, f"potential past LJ minimum must be attractive (V<0); got V={V}"
 
     def test_wca_force_zero_outside_cutoff(self):
+        """Beyond the 2^(1/6)*sigma cutoff the WCA pair force and potential are zero."""
         import numpy as np
         from pystarc.forces.lj import lj_pair_force
         sigma = 3.0
@@ -20005,6 +20404,7 @@ class TestLJForceFiniteDifference:
 
     @pytest.mark.parametrize("r_over_sigma", [0.85, 0.95, 1.0, 1.1])
     def test_wca_force_matches_finite_difference_inside_cutoff(self, r_over_sigma):
+        """Inside the cutoff the WCA pair force matches the finite-difference derivative of its potential."""
         import numpy as np
         from pystarc.forces.lj import lj_pair_force
         sigma, eps = 3.0, 1.0
@@ -20034,6 +20434,7 @@ class TestDebyeHuckelForceFiniteDifference:
         (+1.0, +1.0, 15.0, 10.0),
     ])
     def test_dh_force_matches_finite_difference(self, q1, q2, r, lam):
+        """The Debye-Huckel force equals minus the finite-difference derivative of its energy."""
         import numpy as np
         from pystarc.forces.electrostatic.grid_force import (
             debye_huckel_energy, debye_huckel_force,
@@ -20048,18 +20449,21 @@ class TestDebyeHuckelForceFiniteDifference:
         np.testing.assert_allclose(F_along, -dV_dr, rtol=1e-3, atol=1e-8)
 
     def test_dh_force_zero_at_zero_separation(self):
+        """The Debye-Huckel force is exactly zero at zero separation."""
         import numpy as np
         from pystarc.forces.electrostatic.grid_force import debye_huckel_force
         F = debye_huckel_force(1.0, 1.0, np.array([0.0, 0.0, 0.0]))
         np.testing.assert_array_equal(F, np.zeros(3))
 
     def test_dh_force_repulsive_for_like_charges(self):
+        """The Debye-Huckel force is repulsive for like charges."""
         import numpy as np
         from pystarc.forces.electrostatic.grid_force import debye_huckel_force
         F = debye_huckel_force(1.0, 1.0, np.array([5.0, 0.0, 0.0]))
         assert F[0] > 0
 
     def test_dh_force_attractive_for_opposite_charges(self):
+        """The Debye-Huckel force is attractive for opposite charges."""
         import numpy as np
         from pystarc.forces.electrostatic.grid_force import debye_huckel_force
         F = debye_huckel_force(1.0, -1.0, np.array([5.0, 0.0, 0.0]))
@@ -20087,6 +20491,7 @@ class TestDXGridForceFiniteDifference:
         (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0), (0.5, -0.7, 1.3),
     ])
     def test_gradient_of_linear_grid_is_constant(self, a, b, c):
+        """The gradient of a linear-field grid is the constant slope vector everywhere."""
         import numpy as np
         grid = self._make_linear_grid(a, b, c)
         for pt in [
@@ -20098,6 +20503,7 @@ class TestDXGridForceFiniteDifference:
             np.testing.assert_allclose(g, [a, b, c], atol=1e-6)
 
     def test_force_on_charge_is_minus_q_gradient(self):
+        """The grid force on a charge equals minus q times the field gradient."""
         import numpy as np
         grid = self._make_linear_grid(0.5, -0.7, 1.3)
         pt = np.array([1.0, 1.0, 1.0])
@@ -20110,10 +20516,7 @@ class TestDXGridForceFiniteDifference:
         np.testing.assert_allclose(F_neg, +1.0 * g, atol=1e-12)
 
     def test_gradient_matches_fd_of_interpolate_on_quadratic(self):
-        """Quadratic V(x,y,z) = 0.5*(x^2+y^2+z^2) -> gradient = (x,y,z).
-        FD of trilinear-interpolated V matches analytic gradient at interior
-        points. Tolerance set by interpolation error on coarse grid.
-        """
+        """The grid gradient matches the finite-difference gradient of the interpolated quadratic field."""
         import numpy as np
         from pystarc.forces.electrostatic.grid_force import DXGrid
         n, spacing = 41, 0.5
@@ -20164,6 +20567,7 @@ class TestInputParserChainBlockNegative:
         return p
 
     def test_missing_chain_json_raises(self, tmp_path):
+        """parse raises ValueError when chain_json is missing from the chain block."""
         from pystarc.pipeline.input_parser import parse
         xml_path = self._write_chain_xml(
             tmp_path,
@@ -20173,6 +20577,7 @@ class TestInputParserChainBlockNegative:
             parse(xml_path)
 
     def test_missing_receptor_pqr_raises(self, tmp_path):
+        """parse raises ValueError when receptor_pqr is missing."""
         from pystarc.pipeline.input_parser import parse
         xml_path = self._write_chain_xml(
             tmp_path,
@@ -20199,6 +20604,7 @@ class TestInputParserChainBlockNegative:
         ("n_workers",              "0", "n_workers"),
     ])
     def test_chain_numeric_validation_raises(self, tmp_path, tag, bad_value, err_match):
+        """parse raises ValueError for out-of-range numeric chain parameter values."""
         from pystarc.pipeline.input_parser import parse
         chain_inner = (
             "    <chain_json>fake_chain.json</chain_json>\n"
@@ -20210,6 +20616,7 @@ class TestInputParserChainBlockNegative:
             parse(xml_path)
 
     def test_gb_eps_in_greater_than_eps_out_raises(self, tmp_path):
+        """parse raises ValueError when gb_eps_in exceeds gb_eps_out."""
         from pystarc.pipeline.input_parser import parse
         chain_inner = (
             "    <chain_json>fake_chain.json</chain_json>\n"
@@ -20222,6 +20629,7 @@ class TestInputParserChainBlockNegative:
             parse(xml_path)
 
     def test_valid_chain_xml_parses(self, tmp_path):
+        """parse accepts a valid chain XML and sets cfg.chain with dt_chain equal to 0.05."""
         from pystarc.pipeline.input_parser import parse
         chain_inner = (
             "    <chain_json>fake_chain.json</chain_json>\n"
@@ -20247,6 +20655,7 @@ class TestBoundedHardSphereSafeguardPresent:
     """
 
     def test_safeguard_code_present_in_chain_simulator(self):
+        """chain_simulator source retains the MAX_HS_ATTEMPTS constant, overlap diagnostic string, and RuntimeWarning emission of the hard-sphere safeguard."""
         import inspect
         from pystarc.simulation import chain_simulator
 
@@ -20269,6 +20678,7 @@ class TestBoundedHardSphereSafeguardPresent:
         # The actual bound value: defends against an accidental change to
         # an unbounded retry (which on GPU would stall the batch) or a
         # zero-attempt no-op (which would defeat the safeguard).
+        """MAX_HS_ATTEMPTS is assigned an integer within the bounded range [1, 10]."""
         import inspect
         import re
         from pystarc.simulation import chain_simulator
@@ -20284,9 +20694,7 @@ class TestBoundedHardSphereSafeguardPresent:
 
 
 def test_prepare_bd_surface_pqr_roundtrip_4char_names():
-    """B5 regression: prepare_bd_surface.write_pqr must preserve 4-char Amber
-    atom names through round-trip via read_pqr (which delegates to the
-    strict-column parser in pystarc.structures.pqr_io)."""
+    """write_pqr preserves 4-character Amber atom names and coordinates through a read_pqr round trip."""
     import tempfile, os
     from pystarc.pipeline.prepare_bd_surface import PQRAtom, write_pqr, read_pqr
 
@@ -20319,10 +20727,7 @@ def test_prepare_bd_surface_pqr_roundtrip_4char_names():
 
 
 def test_hydrophobic_attractive_force_direction():
-    """C7b regression: hydrophobic SASA force with default (negative) beta
-    must be attractive -- force on a points TOWARD b. With a at origin
-    and b at +x in the contact range (a < r+radius < b), F_a[0] > 0
-    and the integrated energy is negative."""
+    """Hydrophobic SASA force with default negative β is attractive, pointing a toward b with negative energy."""
     import numpy as np
     from pystarc.forces.lj import hydrophobic_sasa_force, HydrophobicParams
     hp = HydrophobicParams()  # default beta = -0.025 -> fac < 0
@@ -20334,8 +20739,7 @@ def test_hydrophobic_attractive_force_direction():
 
 
 def test_hydrophobic_repulsive_force_direction():
-    """C7b regression: with positive beta the SASA interaction is
-    repulsive -- F on a points AWAY from b (-x direction)."""
+    """Hydrophobic SASA force with positive β is repulsive, pointing a away from b with positive energy."""
     import numpy as np
     from pystarc.forces.lj import hydrophobic_sasa_force, HydrophobicParams
     hp = HydrophobicParams(beta=+0.025)  # flip sign -> repulsive
@@ -20354,7 +20758,7 @@ def test_hydrophobic_repulsive_force_direction():
 # ============================================================
 
 def test_chain_from_sequence_default_works_outside_pystarc_tree(tmp_path, monkeypatch):
-    """chain_from_sequence with default coffdrop_dir works from arbitrary cwd."""
+    """chain_from_sequence with the default coffdrop_dir builds a chain from an arbitrary working directory."""
     from pystarc.simulation.coffdrop_chain import chain_from_sequence
     monkeypatch.chdir(tmp_path)
     chain = chain_from_sequence("ALA")
@@ -20362,7 +20766,7 @@ def test_chain_from_sequence_default_works_outside_pystarc_tree(tmp_path, monkey
 
 
 def test_chain_from_sequence_bad_coffdrop_dir_raises_clear_error():
-    """Bad coffdrop_dir gives clear FileNotFoundError, not cryptic XML error."""
+    """chain_from_sequence with a bad coffdrop_dir raises a clear FileNotFoundError."""
     import pytest
     from pystarc.simulation.coffdrop_chain import chain_from_sequence
     with pytest.raises(FileNotFoundError, match="COFFDROP data directory not found"):
@@ -20377,7 +20781,7 @@ def test_chain_from_sequence_bad_coffdrop_dir_raises_clear_error():
 # ============================================================
 
 def test_resname_match_tleap_variants():
-    """_resname_match_tleap treats TLEAP-renamed pairs as equivalent."""
+    """_resname_match_tleap treats TLEAP-renamed residue variants as equivalent and distinct residues as unequal."""
     from pystarc.structures.chain_io import _resname_match_tleap
     assert _resname_match_tleap("HIS", "HIE")
     assert _resname_match_tleap("HIE", "HID")
@@ -20393,7 +20797,7 @@ def test_resname_match_tleap_variants():
 
 
 def test_parse_coffdrop_map_simple_known_entries():
-    """_parse_coffdrop_map_simple reproduces known COFFDROP bead definitions."""
+    """_parse_coffdrop_map_simple reproduces known COFFDROP bead-to-atom definitions from map.xml."""
     from pathlib import Path
     import pystarc
     from pystarc.structures.chain_io import _parse_coffdrop_map_simple
@@ -20409,7 +20813,7 @@ def test_parse_coffdrop_map_simple_known_entries():
 
 
 def test_pdb_to_bead_positions_on_1brs_chain_d():
-    """barstar chain (1BRS chain D) reproduces our manual setup.py output."""
+    """pdb_to_bead_positions on 1BRS chain D reproduces the expected barstar bead bounding box."""
     import os
     import numpy as np
     pdb = "/mnt/home/aojha/ceph/PySTARC_simulations_/barnase_barstar_chainbd/1BRS.pdb"
@@ -20429,7 +20833,7 @@ def test_pdb_to_bead_positions_on_1brs_chain_d():
 
 
 def test_pdb_to_bead_positions_strict_mode_raises_on_disorder():
-    """fallback='strict' raises on the disordered GLN61 sidechain in 1BRS chain D."""
+    """pdb_to_bead_positions with fallback='strict' raises on the disordered GLN61 sidechain in 1BRS chain D."""
     import os
     pdb = "/mnt/home/aojha/ceph/PySTARC_simulations_/barnase_barstar_chainbd/1BRS.pdb"
     if not os.path.exists(pdb):
@@ -20444,7 +20848,7 @@ def test_pdb_to_bead_positions_strict_mode_raises_on_disorder():
 
 
 def test_pdb_to_bead_positions_bad_fallback_raises():
-    """Bad fallback value raises ValueError immediately."""
+    """pdb_to_bead_positions raises ValueError on an unrecognized fallback value."""
     import os
     pdb = "/mnt/home/aojha/ceph/PySTARC_simulations_/barnase_barstar_chainbd/1BRS.pdb"
     if not os.path.exists(pdb):
@@ -20467,7 +20871,7 @@ def test_pdb_to_bead_positions_bad_fallback_raises():
 # ============================================================
 
 def test_build_robust_solver_spd_uses_plain_cholesky():
-    """Well-conditioned SPD matrix uses Cholesky, no regularization."""
+    """_build_robust_solver uses plain Cholesky without regularization on a well-conditioned SPD matrix."""
     import numpy as np
     from pystarc.hydrodynamics.rotne_prager import _build_robust_solver
     M = np.array([[2.0, 0.5, 0.0], [0.5, 2.0, 0.5], [0.0, 0.5, 2.0]])
@@ -20480,8 +20884,7 @@ def test_build_robust_solver_spd_uses_plain_cholesky():
 
 
 def test_build_robust_solver_indefinite_falls_back_to_eigendecomp():
-    """A truly indefinite matrix (negative eigenvalue) falls through to
-    eigendecomposition with eigenvalue clipping."""
+    """_build_robust_solver falls back to eigendecomposition with eigenvalue clipping on an indefinite matrix."""
     import numpy as np
     from pystarc.hydrodynamics.rotne_prager import _build_robust_solver
     # Diagonal matrix with one negative eigenvalue: Cholesky always fails,
@@ -20496,8 +20899,7 @@ def test_build_robust_solver_indefinite_falls_back_to_eigendecomp():
 
 
 def test_chain_rigid_body_resistance_handles_barstar_230_bead():
-    """Regression: 230-bead barstar chain used to raise LinAlgError on M_tt
-    Cholesky. Now completes without error (potentially with regularization)."""
+    """chain_rigid_body_resistance completes on the 230-bead barstar chain with finite outputs and no LinAlgError."""
     import json, os, numpy as np
     chain_json = "/mnt/home/aojha/ceph/PySTARC_simulations_/barnase_barstar_chainbd/chain.json"
     if not os.path.exists(chain_json):
@@ -20515,12 +20917,7 @@ def test_chain_rigid_body_resistance_handles_barstar_230_bead():
 
 
 def test_gpu_yukawa_multipole_force_matches_potential_gradient():
-    """The GPU screened multipole far-field force must equal minus the gradient
-    of the potential it returns, F = -q grad(phi), for the full monopole,
-    dipole, and quadrupole expansion. This matters most for net-neutral hosts,
-    where the monopole and dipole vanish and the quadrupole term carries the
-    steering. The check finite-differences the returned energy and compares it to
-    the returned force."""
+    """The GPU screened multipole force equals minus the gradient of its potential for the full monopole, dipole, and quadrupole expansion."""
     import types
     import numpy as np
     import pystarc.forces.gpu_batch_engine as gbe
@@ -20568,11 +20965,7 @@ def test_gpu_yukawa_multipole_force_matches_potential_gradient():
 
 
 def test_nam_parallel_worker_uses_run_one_with_recycling():
-    """The multiprocessing worker must run the same physics as the serial
-    run_one, including the Luty-McCammon-Zhou outer-region recycling. Driving the
-    worker in-process, each trajectory must match run_one reseeded with the same
-    per-trajectory seed, so any worker that skips recycling or uses a different
-    integrator would diverge from run_one and fail this check."""
+    """The multiprocessing trajectory worker matches serial run_one including Luty-McCammon-Zhou recycling for each seed."""
     import numpy as np
     from pystarc.simulation.nam_simulator import (
         NAMParameters as _NAMParameters,
@@ -20611,9 +21004,7 @@ def test_nam_parallel_worker_uses_run_one_with_recycling():
 
 
 def test_effective_charges_browndye2_point_charge_layout():
-    """EffectiveCharges.from_xml must read the BrownDye2 test-charge layout,
-    where each <point> holds <x>, <y>, <z> directly and the signed charge in
-    <charge>. The positions and signed charges must come back exactly."""
+    """EffectiveCharges.from_xml reads the BrownDye2 point-charge layout, returning exact positions and signed charges."""
     import os
     import tempfile
     import numpy as np
@@ -20646,9 +21037,7 @@ def test_effective_charges_browndye2_point_charge_layout():
 
 
 def test_effective_charges_browndye2_lumped_layout():
-    """EffectiveCharges.from_xml must read the BrownDye2 lumped-charge layout,
-    where each <point> nests its coordinates in <pos> and stores the magnitude
-    in <q>."""
+    """EffectiveCharges.from_xml reads the BrownDye2 lumped layout with nested <pos> coordinates and <q> magnitudes."""
     import os
     import tempfile
     import numpy as np
@@ -20678,9 +21067,7 @@ def test_effective_charges_browndye2_lumped_layout():
 
 
 def test_effective_charges_all_zero_layout_raises():
-    """A charge file whose layout yields no readable magnitudes must raise a
-    ValueError, since an effective-charge set that is entirely zero is physically
-    meaningless."""
+    """EffectiveCharges.from_xml raises ValueError when no charge magnitudes are readable, giving an all-zero set."""
     import os
     import tempfile
     import pytest
@@ -20704,9 +21091,7 @@ def test_effective_charges_all_zero_layout_raises():
 
 
 def test_run_cmd_output_path_writes_captured_stdout(tmp_path):
-    """run_cmd must send a command's standard output to output_path. This is the
-    safe, shell-free way to capture a tool's output to a file (the ambpdb step
-    relies on it to write the combined PQR)."""
+    """run_cmd writes a command's captured stdout to output_path and also returns that text."""
     import shlex
     import sys
     from pystarc.pipeline.prepare_bd_surface import run_cmd
@@ -20721,9 +21106,7 @@ def test_run_cmd_output_path_writes_captured_stdout(tmp_path):
 
 
 def test_run_cmd_does_not_interpret_shell_redirection(tmp_path):
-    """run_cmd runs with shell=False, so a greater-than sign in the command is a
-    literal argument and never redirects to a file. Capturing output must go
-    through output_path instead."""
+    """run_cmd runs with shell=False, so a greater-than sign is a literal argument and never redirects to a file."""
     import shlex
     import sys
     from pystarc.pipeline.prepare_bd_surface import run_cmd
@@ -20737,11 +21120,7 @@ def test_run_cmd_does_not_interpret_shell_redirection(tmp_path):
 
 
 def test_combine_concat_csv_offsets_keep_traj_ids_unique(tmp_path):
-    """When concatenating multi-row-per-trajectory shard tables, the trajectory
-    id of each shard must be offset by the number of trajectories run by the
-    earlier shards, not by the number of rows already written, so ids stay unique
-    and consistent across files even when a shard contributes several rows per
-    trajectory."""
+    """Concatenating shard CSVs offsets each trajectory id by the prior shards' trajectory counts, keeping ids unique."""
     import csv
 
     d0 = tmp_path / "bd_0"
@@ -20773,8 +21152,7 @@ def test_combine_concat_csv_offsets_keep_traj_ids_unique(tmp_path):
 
 
 def test_combine_concat_npz_reindexes_traj_id_column(tmp_path):
-    """_concat_npz must offset the traj_id column by the per-shard trajectory
-    count so the archive ids match the combined CSV tables."""
+    """_concat_npz offsets the traj_id column by the per-shard trajectory count to match the combined CSV tables."""
     d0 = tmp_path / "bd_0"
     d1 = tmp_path / "bd_1"
     d0.mkdir()
@@ -20794,9 +21172,7 @@ def test_combine_concat_npz_reindexes_traj_id_column(tmp_path):
 
 
 def test_combine_sum_npz_transition_matrix_keys(tmp_path):
-    """The pooled transition matrix must sum the count matrices stored under the
-    writer's keys (bins and counts), rather than keys that do not exist in the
-    file (which would silently drop the output)."""
+    """_sum_npz pools transition matrices by summing the counts stored under the writer's actual keys."""
     d0 = tmp_path / "bd_0"
     d1 = tmp_path / "bd_1"
     d0.mkdir()
@@ -20815,9 +21191,7 @@ def test_combine_sum_npz_transition_matrix_keys(tmp_path):
 
 
 def test_combine_pool_p_commit_uses_count_pooling(tmp_path):
-    """The pooled commitment probability must be the summed reacted count divided
-    by the summed sample count across shards, not an average of the per-shard
-    probabilities."""
+    """The pooled commitment probability is the summed reacted count over the summed sample count, not a probability average."""
     d0 = tmp_path / "bd_0"
     d1 = tmp_path / "bd_1"
     d0.mkdir()
@@ -20838,10 +21212,7 @@ def test_combine_pool_p_commit_uses_count_pooling(tmp_path):
 
 
 def test_we_rate_constant_uses_nam_unit_convention():
-    """The weighted-ensemble k_on must use the same A^3/ps to M^-1 s^-1 factor
-    (6.022e8) as the single-trajectory pipeline, so it equals
-    6.022e8 * (4 pi D r) * P_rxn / (1 - P_rxn (1 - r_start/r_escape)) and lands in
-    a physical range rather than three orders of magnitude too large."""
+    """The weighted-ensemble k_on uses the 6.022e8 A^3/ps to M^-1 s^-1 factor and lands in a physical range."""
     import math
     from pystarc.simulation.we_simulator import WEResult
 

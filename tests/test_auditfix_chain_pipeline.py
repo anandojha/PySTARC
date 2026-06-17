@@ -113,8 +113,7 @@ def _patch_pipeline_seams(monkeypatch, captured):
 
 
 def test_default_config_resolves_diffusion_defaults(tmp_path, monkeypatch):
-    """A default chain config maps D=0 to the documented scalar defaults and
-    builds the simulator with auto_diffusion off."""
+    """A default chain config with D=0 forwards the scalar defaults D_trans=0.1 and D_rot=0.01 with auto_diffusion off."""
     captured = {}
     _patch_pipeline_seams(monkeypatch, captured)
 
@@ -133,7 +132,7 @@ def test_default_config_resolves_diffusion_defaults(tmp_path, monkeypatch):
 
 
 def test_explicit_diffusion_is_preserved(tmp_path, monkeypatch):
-    """Explicit non-zero D_trans and D_rot pass through unchanged."""
+    """Explicit non-zero D_trans and D_rot pass through to the simulator unchanged."""
     captured = {}
     _patch_pipeline_seams(monkeypatch, captured)
 
@@ -149,7 +148,7 @@ def test_explicit_diffusion_is_preserved(tmp_path, monkeypatch):
 
 
 def test_auto_diffusion_does_not_set_scalar_d(tmp_path, monkeypatch):
-    """When auto_diffusion is enabled, no scalar D is forwarded."""
+    """With auto_diffusion enabled, no scalar D_trans or D_rot is forwarded to the simulator."""
     captured = {}
     _patch_pipeline_seams(monkeypatch, captured)
 
@@ -163,8 +162,7 @@ def test_auto_diffusion_does_not_set_scalar_d(tmp_path, monkeypatch):
 
 
 def test_run_chain_forwards_outputs(tmp_path, monkeypatch):
-    """The parsed OutputConfig reaches write_chain_results so user <outputs>
-    flags are honored rather than overridden by a default OutputConfig."""
+    """The parsed OutputConfig is forwarded to write_chain_results so user output flags are honored."""
     captured = {}
     _patch_pipeline_seams(monkeypatch, captured)
 
@@ -181,8 +179,7 @@ def test_run_chain_forwards_outputs(tmp_path, monkeypatch):
 
 
 def test_born_grid_without_target_grid_raises(tmp_path):
-    """A config that sets born_grid_dx but leaves target_grid_dx empty raises a
-    clear ValueError instead of failing later on a missing file."""
+    """Setting born_grid_dx without target_grid_dx raises a ValueError naming target_grid_dx."""
     cfg = _make_config(
         tmp_path,
         chain_overrides=dict(
@@ -195,7 +192,7 @@ def test_born_grid_without_target_grid_raises(tmp_path):
 
 
 def test_no_grids_is_a_noop(tmp_path):
-    """With neither grid path set, grid generation is skipped quietly."""
+    """With neither grid path set, APBS grid generation is skipped and returns None."""
     cfg = _make_config(tmp_path)
     assert cfg.chain.target_grid_dx == ""
     assert cfg.chain.born_grid_dx == ""

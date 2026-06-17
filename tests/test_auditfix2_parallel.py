@@ -45,8 +45,7 @@ def _empty_pathways():
 
 
 def test_max_steps_reports_full_step_count_and_time():
-    """Trajectories that run out the clock report steps=max_steps and the
-    matching time, mirroring the serial MAX_STEPS fate."""
+    """Trajectories that exhaust the clock report fate MAX_STEPS, steps equal to max_steps, and time_ps equal to max_steps times dt."""
     mol1, mol2 = _make_molecules()
     mob = _make_mobility()
     ps = _empty_pathways()
@@ -99,9 +98,7 @@ def _replicate_single_step_positions(mol2, mob, params, force_vec):
 
 
 def test_force_enters_as_ermak_mccammon_drift():
-    """A constant force biases the single-step displacement by exactly
-    D_trans * F * dt, matching the Ermak-McCammon drift used by the serial
-    runner and the BrownDye2 reference (dpos = mobility * force * dt)."""
+    """A constant force shifts the single-step displacement by the Ermak-McCammon drift D_trans*F*dt, differing from the zero-force run."""
     mol1, mol2 = _make_molecules()
     mob = _make_mobility()
     ps = _empty_pathways()
@@ -142,8 +139,7 @@ def test_force_enters_as_ermak_mccammon_drift():
 
 
 def test_zero_force_path_is_unchanged_by_drift_term():
-    """With zero_force the drift term vanishes and the batch result is identical
-    to a run that supplies an explicit all-zero force function."""
+    """The zero_force sentinel produces results identical to an explicit all-zero force function."""
     mol1, mol2 = _make_molecules()
     mob = _make_mobility()
     ps = _empty_pathways()

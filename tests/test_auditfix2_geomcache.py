@@ -32,7 +32,7 @@ def _cache_files(pqr_path: Path):
 
 
 def test_different_n_mc_use_different_cache_files(tmp_path):
-    """Two analyses differing only in n_mc write to distinct cache files."""
+    """Two analyses differing only in n_mc write to distinct cache files tagged with their n_mc values."""
     pqr = tmp_path / "mol.pqr"
     _write_pqr(pqr, _PQR_BODY)
 
@@ -46,7 +46,7 @@ def test_different_n_mc_use_different_cache_files(tmp_path):
 
 
 def test_changed_n_mc_does_not_reuse_stale_value(tmp_path, monkeypatch):
-    """The second call with a new n_mc recomputes rather than reading the cache."""
+    """Repeating a call with the same n_mc reuses the cache while a changed n_mc forces recomputation."""
     pqr = tmp_path / "mol.pqr"
     _write_pqr(pqr, _PQR_BODY)
 
@@ -70,7 +70,7 @@ def test_changed_n_mc_does_not_reuse_stale_value(tmp_path, monkeypatch):
 
 
 def test_edited_structure_uses_different_cache_file(tmp_path):
-    """Editing the atom coordinates yields a distinct cache file."""
+    """Editing the atom coordinates produces a separate second cache file rather than reusing the first."""
     pqr = tmp_path / "mol.pqr"
     _write_pqr(pqr, _PQR_BODY)
     analyse_molecule(pqr, use_mc_hydro=True, n_mc=2000)

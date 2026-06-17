@@ -45,11 +45,7 @@ def _make_traj(weight, bin_idx=0):
 
 
 def test_split_reaches_target_count_with_even_weights_power_of_two():
-    """
-    Splitting a single trajectory up to a power-of-two target yields exactly
-    that many trajectories, all of equal weight, with the total weight
-    conserved.
-    """
+    """Splitting one trajectory to a power-of-two target yields that many equal-weight trajectories with the total weight conserved."""
     sim = _bare_simulator(n_per_bin=4)
     w0 = 1.0
     out = sim._resample([_make_traj(w0)])
@@ -60,10 +56,7 @@ def test_split_reaches_target_count_with_even_weights_power_of_two():
 
 
 def test_split_eight_from_one_is_uniform():
-    """
-    A single trajectory split up to eight produces eight trajectories of equal
-    weight, confirming the even split for a larger power-of-two target.
-    """
+    """Splitting one trajectory up to eight yields eight equal-weight trajectories conserving the total weight."""
     sim = _bare_simulator(n_per_bin=8)
     w0 = 0.4
     out = sim._resample([_make_traj(w0)])
@@ -74,13 +67,7 @@ def test_split_eight_from_one_is_uniform():
 
 
 def test_split_non_power_of_two_is_balanced_not_geometric():
-    """
-    For a target that is not a power of two the split yields a balanced binary
-    distribution rather than a degenerate geometric cascade. Splitting one
-    trajectory up to three gives weights w/2, w/4, w/4: the spread between the
-    heaviest and lightest is only a factor of two, far from the geometric
-    sequence w/2, w/4, w/8 that an un-rebalanced cascade would produce.
-    """
+    """Splitting one trajectory to three gives balanced weights w/2, w/4, w/4 with a heaviest-to-lightest ratio of 2, not a geometric cascade."""
     sim = _bare_simulator(n_per_bin=3)
     w0 = 0.6
     out = sim._resample([_make_traj(w0)])
@@ -94,11 +81,7 @@ def test_split_non_power_of_two_is_balanced_not_geometric():
 
 
 def test_split_multiple_starting_trajectories_conserves_and_balances():
-    """
-    Splitting from several starting trajectories of unequal weight still
-    reaches the target count, conserves the total weight, and keeps the weight
-    spread bounded rather than letting one trajectory dominate.
-    """
+    """Splitting several unequal starting trajectories reaches the target count, conserves total weight, and bounds the weight spread."""
     sim = _bare_simulator(n_per_bin=6)
     start = [_make_traj(0.5), _make_traj(0.3), _make_traj(0.2)]
     total0 = sum(t.weight for t in start)
@@ -114,11 +97,7 @@ def test_split_multiple_starting_trajectories_conserves_and_balances():
 
 
 def test_split_clones_are_independent_objects():
-    """
-    Each clone produced by the split is a distinct trajectory object whose later
-    mutation does not change any other trajectory, so the ensemble can evolve
-    the copies independently.
-    """
+    """Each split clone is a distinct object whose mutation does not affect the others."""
     sim = _bare_simulator(n_per_bin=4)
     out = sim._resample([_make_traj(1.0)])
     assert len({id(t) for t in out}) == 4
@@ -127,11 +106,7 @@ def test_split_clones_are_independent_objects():
 
 
 def test_resample_full_run_conserves_total_weight():
-    """
-    Across a full resampling pass over an ensemble spanning several bins the
-    total probability weight is conserved, so splitting and merging together
-    leave the normalisation untouched.
-    """
+    """A full resampling pass over bins of uneven occupancy conserves the total weight and brings under-target bins up to the per-bin target."""
     sim = _bare_simulator(n_per_bin=3)
     sim.params = WEParameters(n_per_bin=3, n_bins=4)
     rng = np.random.default_rng(123)
