@@ -206,20 +206,20 @@ class GPUBatchForceEngine:
                 f"(fine ±{_fine_ext:.0f}Å -> coarse ±{_coarse_ext:.0f}Å)"
                 + ("  + Yukawa far-field" if self._has_yukawa else "")
             )
-        # Diagnostic: revert the retention of the coarse Born grid. At b-sphere
-        # distance the coarse Born grid produces an outward force roughly 60×
-        # larger than the electrostatic force, which prevents trajectories from
-        # approaching. Until we determine whether the coarse APBS Born grid is
-        # physical or an artifact, we drop it and use the finest grid only.
-        # This restores the Born behavior from before fix #8.
+        # Only the finest Born grid is retained. Near the b-surface the coarse
+        # APBS Born grid produces an outward desolvation force far larger than
+        # the screened electrostatic force at the same separation. Born
+        # desolvation is a short-range penalty that is negligible at that
+        # distance, so the large coarse-grid force is a low-resolution far-field
+        # artifact, not physical. Keeping only the finest grid removes it.
         if len(self._born_grids_gpu) > 1:
             _finest_born = self._born_grids_gpu[0]
             _fineb_ext = float(
                 max(abs(_finest_born["lo"][0]), abs(_finest_born["hi"][0]))
             )
             print(
-                f"  Born: using finest grid only (±{_fineb_ext:.0f}Å) "
-                f"[DIAGNOSTIC: coarse grid dropped to test fix #8 hypothesis]"
+                f"  Born: finest grid only (±{_fineb_ext:.0f}Å); coarse Born grid "
+                f"excluded as a low-resolution far-field artifact"
             )
             self._born_grids_gpu = [_finest_born]
         # The call core_desolvation_force_on_1(state0, state1) gives the
