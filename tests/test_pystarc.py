@@ -8571,7 +8571,7 @@ class TestWESimulatorConstruction:
         assert 0 <= idx < 5
 
     def test_we_bin_of_outside(self):
-        """_bin_of returns -1 for separations beyond the outer edge or below the inner edge."""
+        """_bin_of returns -1 beyond the outer edge and clamps a separation below the inner edge to the innermost bin 0."""
         mol1, mol2 = self._make_simple_molecules()
         mob = MobilityTensor.from_radii(10.0, 5.0)
         criteria = ReactionCriteria(
@@ -8586,7 +8586,8 @@ class TestWESimulatorConstruction:
 
         sim = WESimulator(mol1, mol2, mob, ps, params)
         assert sim._bin_of(200.0) == -1
-        assert sim._bin_of(0.1) == -1
+        # A separation below the inner edge now clamps to the innermost bin.
+        assert sim._bin_of(0.1) == 0
 
     def test_we_place_mol2(self):
         """_place_mol2 positions mol2 so its atom sits at the requested displacement."""

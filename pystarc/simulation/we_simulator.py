@@ -51,7 +51,17 @@ result provides the rate constant through result.rate_constant(D_rel).
 """
 
 from __future__ import annotations
-from pystarc.simulation.nam_simulator import ForceFunction, zero_force, SimulationResult
+from pystarc.simulation.nam_simulator import (
+    ForceFunction,
+    zero_force,
+    SimulationResult,
+    _check_hard_sphere_overlap,
+    _mol2_positions,
+)
+from pystarc.simulation.chain_simulator import (
+    compute_pair_distances,
+    check_reaction_with_bridge,
+)
 from pystarc.transforms.quaternion import Quaternion, random_quaternion
 from pystarc.molsystem.system_state import Fate, TrajectoryResult
 from pystarc.motion.do_bd_step import bd_step, bd_step_adaptive
@@ -95,6 +105,17 @@ class WEParameters:
     steps_per_iteration: int = 100  # BD steps per weighted ensemble iteration before resampling
     bin_scheme: str = "log"  # spacing of the bins, either 'log' or 'linear'
     verbose: bool = False
+    # When use_brownian_bridge is True the reaction check supplements the
+    # endpoint test with the closed-form Brownian-bridge crossing probability
+    # for every contact pair whose distance lies above its cutoff both before
+    # and after a step, the same test the NAM path applies in run_one. This
+    # catches reactions that occur between discrete BD steps so that the
+    # weighted ensemble counts reactive flux the same way NAM does. With an
+    # empty PathwaySet the bridge code path is simply skipped.
+    use_brownian_bridge: bool = True
+    # When use_hard_sphere is True a step that produces a hard-sphere overlap
+    # is rejected and the displacement is redrawn, matching the NAM path.
+    use_hard_sphere: bool = True
 
     def __post_init__(self):
         if self.r_escape == 0.0:
@@ -119,6 +140,15 @@ class WETrajectory:
     bin_idx: int  # index of the bin currently occupied
     steps: int = 0  # total number of BD steps taken
     time_ps: float = 0.0  # total simulation time in picoseconds
+    # Brownian-bridge state carried from the previous step, used to evaluate the
+    # path-crossing probability on the current step. The fields hold the contact
+    # pair distances captured at the top of the previous step, the dt actually
+    # used on that step, and the relative diffusion at the start of that step.
+    # They are None or zero until the first step has been taken, in which case
+    # the bridge check falls back to the endpoint-only test.
+    prev_pair_dists: "Optional[list]" = None
+    prev_dt: float = 0.0
+    prev_D_eff: float = 0.0
 
     def copy(self) -> "WETrajectory":
         return WETrajectory(
@@ -133,6 +163,13 @@ class WETrajectory:
             bin_idx=self.bin_idx,
             steps=self.steps,
             time_ps=self.time_ps,
+            prev_pair_dists=(
+                [d.copy() for d in self.prev_pair_dists]
+                if self.prev_pair_dists is not None
+                else None
+            ),
+            prev_dt=self.prev_dt,
+            prev_D_eff=self.prev_D_eff,
         )
 
 
@@ -218,6 +255,18 @@ class WESimulator:
         self.params = params
         self.force_fn = force_fn or zero_force
         self.rng = np.random.default_rng(params.seed)
+        # A separate RNG stream is used for the Brownian bridge sampling, offset
+        # by 0xBB. Keeping bridge sampling off the main rng means the bridge acts
+        # as a purely additive operator on the trajectory, the same convention
+        # the NAM simulator uses.
+        _bb_seed = (params.seed if params.seed is not None else 0) + 0xBB
+        self.rng_bb = np.random.default_rng(_bb_seed)
+        # The Brownian bridge code path runs only when use_brownian_bridge is set
+        # and the pathway set has reactions to track. With an empty PathwaySet it
+        # is skipped, matching the NAM path.
+        self._bb_active = bool(params.use_brownian_bridge) and bool(
+            pathway_set is not None and len(pathway_set.reactions) > 0
+        )
         # Cache the ligand atom positions relative to its centroid so it can
         # be placed quickly during the simulation.
         c0 = mol2.centroid()
@@ -278,10 +327,20 @@ class WESimulator:
         return bins
 
     def _bin_of(self, r: float) -> int:
-        """Return the bin index for separation r, or -1 if r lies outside all bins."""
+        """Return the bin index for separation r.
+
+        A separation below the innermost edge r_lo is clamped to bin 0, the
+        innermost bin, because a walker that drifts past r_lo has moved deeper
+        into the reaction zone and belongs in the innermost bin rather than
+        being pinned to its previous bin. A separation at or beyond the
+        outermost edge r_hi lies in the escape region and returns -1, since
+        those walkers are handled by the escape test rather than by a bin.
+        """
         idx = int(np.searchsorted(self._bins, r, side="right")) - 1
-        if idx < 0 or idx >= self.params.n_bins:
-            return -1
+        if idx < 0:
+            return 0  # below r_lo, clamp to the innermost bin
+        if idx >= self.params.n_bins:
+            return -1  # at or beyond r_hi, the escape region
         return idx
 
     # Placement of the mobile ligand
@@ -321,11 +380,49 @@ class WESimulator:
         the pair (updated_traj, outcome), where the outcome is 'ongoing',
         'reacted', or 'escaped'.
         """
-        D_t = self.mobility.relative_translational_diffusion()
+        # The relative translational diffusion is evaluated at the current pair
+        # separation so the Rotne-Prager-Yamakawa position dependence is applied,
+        # matching the NAM path. Without the position the bare D0 would be used
+        # even when use_rpy is True. The pair separation vector is the ligand
+        # centroid position relative to the receptor fixed at the origin.
+        D_t = self.mobility.relative_translational_diffusion(traj.position)
         D_r = self.mobility.relative_rotational_diffusion()
         mol2_placed = self._place_mol2(traj.position, traj.orientation)
-        # Check whether the trajectory has reacted.
-        rxn = self.pathway_set.check_all(self.mol1, mol2_placed, self.rng)
+        # Compute the current contact pair distances when the bridge is active so
+        # the reaction check can evaluate the path-crossing probability.
+        if self._bb_active:
+            cur_pair_dists = compute_pair_distances(
+                self.mol1,
+                _mol2_positions(mol2_placed),
+                self.pathway_set,
+            )
+        else:
+            cur_pair_dists = None
+        # Check whether the trajectory has reacted. The check is bridge-aware
+        # when prior-step state is available, using the closed-form crossing
+        # probability P = exp(-x0 * x1 / (D_eff * dt)) for every pair that stayed
+        # above its cutoff at both endpoints, exactly as NAM run_one does.
+        # Otherwise it falls back to the endpoint-only test.
+        if (
+            self._bb_active
+            and traj.prev_pair_dists is not None
+            and cur_pair_dists is not None
+            and traj.prev_dt > 0.0
+            and traj.prev_D_eff > 0.0
+        ):
+            rxn = check_reaction_with_bridge(
+                self.mol1,
+                mol2_placed,
+                self.pathway_set,
+                traj.prev_pair_dists,
+                cur_pair_dists,
+                traj.prev_D_eff,
+                traj.prev_dt,
+                self.rng,
+                rng_bb=self.rng_bb,
+            )
+        else:
+            rxn = self.pathway_set.check_all(self.mol1, mol2_placed, self.rng)
         if rxn is not None:
             return traj, "reacted"
         # Check whether the trajectory has escaped.
@@ -362,6 +459,35 @@ class WESimulator:
             )
             dt_used = self.params.dt
 
+        # Reject the step if it produces a hard-sphere overlap, then redraw a
+        # fresh displacement from the previous position and keep redrawing until
+        # the new position is free of overlap, up to a fixed number of attempts.
+        # This mirrors the NAM run_one rejection. The diffusion D_t was already
+        # evaluated at traj.position, which is the start of the redrawn step.
+        if self.params.use_hard_sphere:
+            mol2_trial = self._place_mol2(new_pos, new_ori)
+            if _check_hard_sphere_overlap(self.mol1, mol2_trial):
+                HS_MAX_REDRAWS = 5
+                for _ in range(HS_MAX_REDRAWS):
+                    pos_try, ori_try = bd_step(
+                        traj.position,
+                        traj.orientation,
+                        force,
+                        torque,
+                        D_t,
+                        D_r,
+                        dt_used,
+                        self.rng,
+                    )
+                    mol2_try = self._place_mol2(pos_try, ori_try)
+                    if not _check_hard_sphere_overlap(self.mol1, mol2_try):
+                        new_pos, new_ori = pos_try, ori_try
+                        break
+                else:
+                    # No overlap-free redraw was found within the attempt cap, so
+                    # the ligand stays at the previous non-overlapping position.
+                    new_pos, new_ori = traj.position, traj.orientation
+
         new_r = float(np.linalg.norm(new_pos))
         new_bin = self._bin_of(new_r)
         new_traj = WETrajectory(
@@ -372,6 +498,15 @@ class WESimulator:
             steps=traj.steps + 1,
             time_ps=traj.time_ps + dt_used,
         )
+        # Save the bridge state for the next step. The pair distances in
+        # cur_pair_dists were captured before this step, dt_used is the time step
+        # actually applied, and D_t is the relative diffusion at the start of the
+        # step (at traj.position), which is the correct bridge diffusion over the
+        # interval from traj.position to new_pos.
+        if self._bb_active:
+            new_traj.prev_pair_dists = cur_pair_dists
+            new_traj.prev_dt = float(dt_used)
+            new_traj.prev_D_eff = float(D_t)
         return new_traj, "ongoing"
 
     # Splitting and merging, the weighted ensemble resampling step
