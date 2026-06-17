@@ -423,12 +423,29 @@ class NAMSimulator:
             if self.params.use_hard_sphere:
                 mol2_trial = self._place_mol2(pos, ori)
                 if _check_hard_sphere_overlap(self.mol1, mol2_trial):
-                    dW_t2 = math.sqrt(dt) * self.rng.standard_normal(3)
-                    dW_r2 = math.sqrt(dt) * self.rng.standard_normal(3)
+                    # Redraw a fresh displacement from the previous position and
+                    # keep redrawing until the new position is free of overlap,
+                    # up to a fixed number of attempts. The diffusion is
+                    # evaluated at the previous position, which is the start of
+                    # the redrawn step.
                     D_t_old = self.mobility.relative_translational_diffusion(pos_old)
-                    pos, ori = bd_step_wiener(
-                        pos_old, ori_old, force, torque, D_t_old, D_r, dt, dW_t2, dW_r2
-                    )
+                    HS_MAX_REDRAWS = 5
+                    pos_try, ori_try = pos_old, ori_old
+                    for _ in range(HS_MAX_REDRAWS):
+                        dW_t2 = math.sqrt(dt) * self.rng.standard_normal(3)
+                        dW_r2 = math.sqrt(dt) * self.rng.standard_normal(3)
+                        pos_try, ori_try = bd_step_wiener(
+                            pos_old, ori_old, force, torque, D_t_old, D_r, dt, dW_t2, dW_r2
+                        )
+                        mol2_try = self._place_mol2(pos_try, ori_try)
+                        if not _check_hard_sphere_overlap(self.mol1, mol2_try):
+                            pos, ori = pos_try, ori_try
+                            break
+                    else:
+                        # No overlap-free redraw was found within the attempt
+                        # cap, so the molecule stays at the previous
+                        # non-overlapping position.
+                        pos, ori = pos_old, ori_old
             # Save the state for the next iteration's Brownian bridge check.
             # The pair distances in cur_pair_dists were captured before this
             # step. The effective dt is whatever the dt controller actually
