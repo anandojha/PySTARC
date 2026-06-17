@@ -552,11 +552,15 @@ class SimulationResult:
         The argument D_rel is the relative translational diffusion coefficient
         in Å²/ps. The argument k_db is the LMZ rate from
         outer_propagator.relative_rate(b_sphere) in internal units; when it is
-        0.0 the Smoluchowski form is used instead.
+        0.0 the stored self.k_db is used, and the Smoluchowski form applies only
+        when that is also 0.0.
         """
         P = self.reaction_probability
         if P == 0.0:
             return 0.0
+
+        if k_db == 0.0:
+            k_db = self.k_db
 
         if k_db > 0.0:
             # Here k_on = conv_factor × k_db × P. The conversion factor
