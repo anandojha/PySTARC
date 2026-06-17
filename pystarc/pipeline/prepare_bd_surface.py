@@ -396,6 +396,13 @@ def compute_grid_params(
     rounded up to an odd number. The grid centre is the heavy-atom centroid.
     """
     atoms_real = [a for a in atoms if a.name != "GHO"]
+    if not atoms_real:
+        raise ValueError(
+            "compute_grid_params received no real atoms. The atom list is "
+            "empty or contains only GHO ghost atoms, so the grid centre and "
+            "grid lengths cannot be computed. Provide a molecule with at least "
+            "one non-GHO atom."
+        )
     coords = np.array([[a.x, a.y, a.z] for a in atoms_real])
     gcent = coords.mean(axis=0).tolist()
     # Fine grid length per axis, large enough to enclose every atom together
@@ -503,11 +510,13 @@ def run_apbs(in_files: List[Path], work_dir: Path):
             raise RuntimeError(
                 f"APBS failed on {in_file.name}:\n{result.stdout[-2000:]}"
             )
-        # APBS sometimes writes the DX potential map to the current directory
-        # rather than the working directory, so move it into place if needed.
-        dx_name = in_file.stem.replace(".in", "") + ".dx"
+        # APBS sometimes writes the DX potential map under a name that differs
+        # from the expected one, so locate it inside the working directory (the
+        # directory APBS ran in) and move it into place if needed. Path.stem
+        # already strips the .in suffix, so no further stripping is required.
+        dx_name = in_file.stem + ".dx"
         if not (work_dir / dx_name).exists():
-            for candidate in Path(".").glob(f"{in_file.stem}*.dx"):
+            for candidate in work_dir.glob(f"{in_file.stem}*.dx"):
                 shutil.move(str(candidate), work_dir / candidate.name)
 
 
