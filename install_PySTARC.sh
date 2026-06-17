@@ -51,7 +51,7 @@ conda install -c openeye openeye-toolkits -y || echo "  WARNING: OpenEye install
 # 5. GPU + pip dependencies
 echo ""
 echo "[5/7] Installing pip dependencies (cupy, matplotlib, pdb2pqr)."
-"$ENV_PY" -m pip install cupy-cuda12x matplotlib pdb2pqr pytest-cov
+"$ENV_PY" -m pip install cupy-cuda12x matplotlib pdb2pqr pytest-cov pytest-sugar
 echo "pip dependencies installed"
 # 6. Install PySTARC
 echo ""
