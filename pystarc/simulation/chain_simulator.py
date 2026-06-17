@@ -1877,7 +1877,6 @@ class ChainBDSimulator:
                 self._record(result)
                 if self.params.verbose and (i % report_every == 0 or i == n):
                     print(
-                        f"  Progress: {i}/{n} trajectories "
-                        f"({100*i/n:.0f}%)",
+                        f"  Progress: {i}/{n} trajectories " f"({100*i/n:.0f}%)",
                         flush=True,
                     )

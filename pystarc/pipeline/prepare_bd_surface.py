@@ -97,9 +97,13 @@ class BDSurfaceConfig:
     """Every parameter that controls the b-surface preparation pipeline."""
 
     # Input files. These are required and must be set for the system at hand.
-    pdb: Path = Path("complex.pdb")  # PDB file; water is fine and is stripped automatically
+    pdb: Path = Path(
+        "complex.pdb"
+    )  # PDB file; water is fine and is stripped automatically
     parm7: Path = Path("complex.parm7")  # AMBER topology
-    receptor_resname: str = ""  # 3-letter receptor residue name, for example "MGO" or "HSP"
+    receptor_resname: str = (
+        ""  # 3-letter receptor residue name, for example "MGO" or "HSP"
+    )
     ligand_resname: str = ""  # 3-letter ligand residue name, for example "APN" or "BEN"
     # Output
     work_dir: Path = Path("b_surface")
@@ -120,8 +124,12 @@ class BDSurfaceConfig:
     ion_type: str = "NaCl"
     debye_length: float = 0.0  # a value of 0.0 means compute it from the concentration
     # Reaction criterion
-    bd_milestone_radius: float = 30.0  # b-sphere radius in Å, chosen ≥ 3×(r_rec + r_lig)
-    bd_milestone_radius_inner: float = 12.0  # inner milestone radius in Å; 0.0 disables it
+    bd_milestone_radius: float = (
+        30.0  # b-sphere radius in Å, chosen ≥ 3×(r_rec + r_lig)
+    )
+    bd_milestone_radius_inner: float = (
+        12.0  # inner milestone radius in Å; 0.0 disables it
+    )
     # Brownian-dynamics simulation
     n_trajectories: int = 10000
     max_n_steps: int = 100000000
@@ -145,7 +153,9 @@ class BDSurfaceConfig:
         if self.debye_length > 0:
             return self.debye_length
         if self.ion_concentration <= 0:
-            return 1.79769e308  # effectively infinite, meaning no electrostatic screening
+            return (
+                1.79769e308  # effectively infinite, meaning no electrostatic screening
+            )
         # For a 1:1 electrolyte such as NaCl or KCl, λ_D = 3.04 / sqrt(c) Å at 298 K.
         # The factor sqrt(T / 298.15) corrects for temperatures away from 298.15 K.
         t_factor = math.sqrt(self.temperature / 298.15)
@@ -356,7 +366,9 @@ def pqr_to_xml(atoms: List[PQRAtom], path: Path):
     """
     lines = ["<roottag>\n"]
     # Group atoms by residue number.
-    for resid, group in groupby(sorted(atoms, key=lambda a: a.resid), key=lambda a: a.resid):
+    for resid, group in groupby(
+        sorted(atoms, key=lambda a: a.resid), key=lambda a: a.resid
+    ):
         group = list(group)
         resname = group[0].resname
         lines.append(f"  <residue>\n")
@@ -662,7 +674,9 @@ def write_input_xml(
 
 
 # The main pipeline driver and its helpers.
-def run_cmd(cmd: str, cwd: Path = None, step: str = "", output_path: Path = None) -> str:
+def run_cmd(
+    cmd: str, cwd: Path = None, step: str = "", output_path: Path = None
+) -> str:
     """
     Run a command without a shell and raise RuntimeError on a non-zero exit.
 
@@ -673,7 +687,9 @@ def run_cmd(cmd: str, cwd: Path = None, step: str = "", output_path: Path = None
     which is the safe equivalent of a shell redirection, and is also returned.
     When output_path is None the standard output is only returned.
     """
-    result = subprocess.run(shlex.split(cmd), shell=False, cwd=cwd, capture_output=True, text=True)
+    result = subprocess.run(
+        shlex.split(cmd), shell=False, cwd=cwd, capture_output=True, text=True
+    )
     if result.returncode != 0:
         raise RuntimeError(
             f"Step '{step}' failed:\n  cmd: {cmd}\n"

@@ -576,9 +576,7 @@ def _pool_p_commit(dirs, filename, out_dir):
             r_bins = npz["r_bins"]
     if n_total is None:
         return
-    pooled = np.divide(
-        reacted, n_total, out=np.zeros_like(reacted), where=n_total > 0
-    )
+    pooled = np.divide(reacted, n_total, out=np.zeros_like(reacted), where=n_total > 0)
     out_path = os.path.join(out_dir, filename)
     save_dict = {"p_commit": pooled, "n_samples": n_total}
     if r_bins is not None:

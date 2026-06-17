@@ -19,7 +19,9 @@ import os
 def _run(cmd: str, cwd: Path, step: str):
     """Run a shell command and raise a clear error if it fails."""
     print(f"    $ {cmd}")
-    result = subprocess.run(shlex.split(cmd), shell=False, cwd=cwd, capture_output=True, text=True)
+    result = subprocess.run(
+        shlex.split(cmd), shell=False, cwd=cwd, capture_output=True, text=True
+    )
     if result.returncode != 0:
         raise RuntimeError(
             f"Step '{step}' failed (exit {result.returncode}):\n"

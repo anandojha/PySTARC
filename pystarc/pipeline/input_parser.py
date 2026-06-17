@@ -17,23 +17,45 @@ from pathlib import Path
 class OutputConfig:
     """Controls what output files PySTARC writes to bd_sims/."""
 
-    results_json: bool = True  # results.json holds k_on, P_rxn, the confidence interval, and related summary numbers.
-    trajectories_csv: bool = True  # trajectories.csv records the outcome of each individual trajectory.
-    encounters_csv: bool = True  # encounters.csv records position and orientation at the moment of reaction.
+    results_json: bool = (
+        True  # results.json holds k_on, P_rxn, the confidence interval, and related summary numbers.
+    )
+    trajectories_csv: bool = (
+        True  # trajectories.csv records the outcome of each individual trajectory.
+    )
+    encounters_csv: bool = (
+        True  # encounters.csv records position and orientation at the moment of reaction.
+    )
     near_misses_csv: bool = (
         True  # near_misses.csv records position and orientation at the closest approach.
     )
-    full_paths: bool = True  # paths.npz stores position and quaternion every save_interval steps.
-    radial_density: bool = True  # radial_density.csv stores the radial density histogram ρ(r).
+    full_paths: bool = (
+        True  # paths.npz stores position and quaternion every save_interval steps.
+    )
+    radial_density: bool = (
+        True  # radial_density.csv stores the radial density histogram ρ(r).
+    )
     angular_map: bool = True  # angular_map.npz stores the (θ, φ) occupancy heatmap.
-    fpt_distribution: bool = True  # fpt_distribution.csv stores the first-passage times.
-    contact_frequency: bool = True  # contact_frequency.csv stores the per-pair contact counts.
-    milestone_flux: bool = True  # milestone_flux.csv stores the flux through concentric shells.
+    fpt_distribution: bool = (
+        True  # fpt_distribution.csv stores the first-passage times.
+    )
+    contact_frequency: bool = (
+        True  # contact_frequency.csv stores the per-pair contact counts.
+    )
+    milestone_flux: bool = (
+        True  # milestone_flux.csv stores the flux through concentric shells.
+    )
     p_commit: bool = True  # p_commit.npz stores the commitment probability map.
-    transition_matrix: bool = True  # transition_matrix.npz stores Markov state transitions.
+    transition_matrix: bool = (
+        True  # transition_matrix.npz stores Markov state transitions.
+    )
     energetics: bool = True  # energetics.npz stores force and energy traces.
-    pose_clusters: bool = True  # pose_clusters.csv stores clustered encounter orientations.
-    save_interval: int = 10  # Record full paths every N steps. A value of 0 saves endpoints only.
+    pose_clusters: bool = (
+        True  # pose_clusters.csv stores clustered encounter orientations.
+    )
+    save_interval: int = (
+        10  # Record full paths every N steps. A value of 0 saves endpoints only.
+    )
 
 
 @dataclass
@@ -49,28 +71,46 @@ class ChainConfig:
     """
 
     # Input files.
-    chain_json: str = ""  # Path to chain.json, which holds the topology and the initial positions.
+    chain_json: str = (
+        ""  # Path to chain.json, which holds the topology and the initial positions.
+    )
     reaction_pairs_json: str = (
         ""  # Path to reaction_pairs.json, a list of [target_atom_idx, chain_atom_idx, distance_A] triplets.
     )
-    target_grid_dx: str = ""  # Path to the electrostatic DX grid. An empty string means no field is applied.
-    born_grid_dx: str = ""  # Path to the Born desolvation DX grid. An empty string means no Born term is applied.
+    target_grid_dx: str = (
+        ""  # Path to the electrostatic DX grid. An empty string means no field is applied.
+    )
+    born_grid_dx: str = (
+        ""  # Path to the Born desolvation DX grid. An empty string means no Born term is applied.
+    )
 
     # Geometry.
-    r_escape: float = 0.0  # Escape sphere radius in angstrom. A value of 0 means 2.0 × bd_milestone_radius.
-    reaction_n_needed: int = 3  # Minimum number of contact pairs that must be satisfied for a reaction.
+    r_escape: float = (
+        0.0  # Escape sphere radius in angstrom. A value of 0 means 2.0 × bd_milestone_radius.
+    )
+    reaction_n_needed: int = (
+        3  # Minimum number of contact pairs that must be satisfied for a reaction.
+    )
 
     # Inner integration, the internal-coordinate dynamics taken within each outer step.
     dt_chain: float = 0.05  # Inner internal-coordinate timestep in picoseconds.
-    chain_steps_per_outer: int = 4  # Number of inner steps taken per outer rigid-body step.
+    chain_steps_per_outer: int = (
+        4  # Number of inner steps taken per outer rigid-body step.
+    )
     n_equilibration_steps: int = (
         0  # Number of pre-equilibration steps for the chain internal coordinates. A value of 0 means none.
     )
 
     # Diffusion model.
-    auto_diffusion: bool = False  # If True, build RPY tensors from the geometry. If False, use a scalar diffusion coefficient.
-    D_trans: float = 0.0  # Translational diffusion coefficient in Å²/ps. A value of 0 uses the default of 0.1.
-    D_rot: float = 0.0  # Rotational diffusion coefficient in rad²/ps. A value of 0 uses the default of 0.01.
+    auto_diffusion: bool = (
+        False  # If True, build RPY tensors from the geometry. If False, use a scalar diffusion coefficient.
+    )
+    D_trans: float = (
+        0.0  # Translational diffusion coefficient in Å²/ps. A value of 0 uses the default of 0.1.
+    )
+    D_rot: float = (
+        0.0  # Rotational diffusion coefficient in rad²/ps. A value of 0 uses the default of 0.01.
+    )
 
     # Soft repulsion using the WCA potential.
     use_soft_repulsion: bool = False  # If True, add a WCA chain-target steering layer.
@@ -83,16 +123,22 @@ class ChainConfig:
     gb_obc_alpha: float = 1.0  # OBC2 set-II coefficient.
     gb_obc_beta: float = 0.8  # OBC2 set-II coefficient.
     gb_obc_gamma: float = 4.85  # OBC2 set-II coefficient.
-    coffdrop_active: bool = False  # If True, use diagonal-only generalized Born (Path B with COFFDROP).
+    coffdrop_active: bool = (
+        False  # If True, use diagonal-only generalized Born (Path B with COFFDROP).
+    )
 
     # Parallelism.
-    n_workers: int = 1  # Number of parallel workers for trajectory dispatch. A value of 1 runs serially.
+    n_workers: int = (
+        1  # Number of parallel workers for trajectory dispatch. A value of 1 runs serially.
+    )
 
 
 @dataclass
 class PySTARCConfig:
     # System.
-    pdb: Path = None  # Input PDB file. Optional when both receptor_pqr and ligand_pqr are provided.
+    pdb: Path = (
+        None  # Input PDB file. Optional when both receptor_pqr and ligand_pqr are provided.
+    )
     ligand_resname: str = ""  # Residue name of the ligand, for example 'BEN'.
     ligand_charge: int = 0  # Net formal charge of the ligand.
     work_dir: Path = Path("bd_sims")  # Directory where all output files are written.
@@ -111,9 +157,15 @@ class PySTARCConfig:
     # Milestone and b-surface settings. A trajectory counts as a reaction when the
     # GHO-GHO distance falls below bd_milestone_radius (the b-surface), and the escape
     # sphere sits at twice bd_milestone_radius.
-    bd_milestone_radius: float = 30.0  # b-sphere starting radius in angstrom. Should be at least 3 × (r_rec + r_lig).
-    bd_milestone_radius_inner: float = 0.0  # Inner milestone radius in angstrom. A value of 0 disables it.
-    r_escape: float = 0.0  # Escape sphere radius in angstrom. A value of 0 means 2.0 × bd_milestone_radius.
+    bd_milestone_radius: float = (
+        30.0  # b-sphere starting radius in angstrom. Should be at least 3 × (r_rec + r_lig).
+    )
+    bd_milestone_radius_inner: float = (
+        0.0  # Inner milestone radius in angstrom. A value of 0 disables it.
+    )
+    r_escape: float = (
+        0.0  # Escape sphere radius in angstrom. A value of 0 means 2.0 × bd_milestone_radius.
+    )
     # State-machine reactions track multiple reactions per trajectory. When False,
     # all reactions are flattened and the first distance match ends the trajectory.
     # When True, a trajectory carries a state label and reactions fire only when the
@@ -123,23 +175,37 @@ class PySTARCConfig:
     # Otherwise this is a list of [rec_idx, lig_idx, cutoff_ang] triplets.
     ghost_atoms: str = "auto"
     rxns_xml: str = ""  # Path to the rxns XML used for automatic GHO injection.
-    receptor_pqr: str = ""  # Pre-computed receptor PQR. Supplying it skips AmberTools and tleap.
-    ligand_pqr: str = ""  # Pre-computed ligand PQR. Supplying it skips AmberTools and tleap.
+    receptor_pqr: str = (
+        ""  # Pre-computed receptor PQR. Supplying it skips AmberTools and tleap.
+    )
+    ligand_pqr: str = (
+        ""  # Pre-computed ligand PQR. Supplying it skips AmberTools and tleap.
+    )
     desolvation_alpha: float = (
         0.07957747  # Born desolvation parameter, equal to 1/(4π) ≈ 0.0796.
     )
     max_steps: int = 1000000  # Maximum number of BD steps per trajectory.
-    debye_length: float = 7.858  # Debye screening length in angstrom (about 150 mM NaCl at 298 K).
+    debye_length: float = (
+        7.858  # Debye screening length in angstrom (about 150 mM NaCl at 298 K).
+    )
     ion_concentration: float = 0.150  # Salt concentration in molar (150 mM NaCl).
     ion_radius_pos: float = 0.95  # Positive ion radius in angstrom (Na⁺ is 0.95 Å).
     ion_radius_neg: float = 1.81  # Negative ion radius in angstrom (Cl⁻ is 1.81 Å).
-    apbs_cglen: float = 0.0  # APBS coarse grid length in angstrom. A value of 0 derives it automatically from the formula.
-    apbs_fglen: float = 0.0  # APBS fine grid length in angstrom. A value of 0 derives it automatically from the formula.
+    apbs_cglen: float = (
+        0.0  # APBS coarse grid length in angstrom. A value of 0 derives it automatically from the formula.
+    )
+    apbs_fglen: float = (
+        0.0  # APBS fine grid length in angstrom. A value of 0 derives it automatically from the formula.
+    )
     apbs_dime: int = (
         129  # APBS grid dimension. 129 is standard and 257 is high-resolution for large proteins.
     )
-    apbs_coarse_dime: int = 0  # APBS coarse grid dimension. A value of 0 uses the global apbs_dime.
-    apbs_fine_dime: int = 0  # APBS fine grid dimension. A value of 0 uses the global apbs_dime.
+    apbs_coarse_dime: int = (
+        0  # APBS coarse grid dimension. A value of 0 uses the global apbs_dime.
+    )
+    apbs_fine_dime: int = (
+        0  # APBS fine grid dimension. A value of 0 uses the global apbs_dime.
+    )
     gpu_force_batch: int = (
         0  # Trajectories per GPU force batch. A value of 0 chooses automatically from the ligand size and a 4 GB target.
     )
@@ -148,23 +214,41 @@ class PySTARCConfig:
     srad: float = 1.5  # Solvent probe radius in angstrom (standard water probe).
     temperature: float = 298.15  # Temperature in kelvin.
     dt: float = 0.2  # Maximum time step in picoseconds (reference minimum_core_dt).
-    hydrodynamic_interactions: bool = False  # Flag that enables hydrodynamic interactions.
-    r_hydro_rec: float = 0.0  # Receptor hydrodynamic radius. A value of 0 computes it from the PQR.
-    r_hydro_lig: float = 0.0  # Ligand hydrodynamic radius. A value of 0 computes it from the PQR.
-    minimum_core_dt: float = 0.0  # Minimum core timestep. A value of 0 imposes no floor.
+    hydrodynamic_interactions: bool = (
+        False  # Flag that enables hydrodynamic interactions.
+    )
+    r_hydro_rec: float = (
+        0.0  # Receptor hydrodynamic radius. A value of 0 computes it from the PQR.
+    )
+    r_hydro_lig: float = (
+        0.0  # Ligand hydrodynamic radius. A value of 0 computes it from the PQR.
+    )
+    minimum_core_dt: float = (
+        0.0  # Minimum core timestep. A value of 0 imposes no floor.
+    )
     minimum_core_reaction_dt: float = (
         0.0  # Timestep floor near the reaction surface. A value of 0 imposes no floor. The SEEKR2 default is 0.05.
     )
     max_dt: float = 0.0  # Ceiling on the timestep. A value of 0 imposes no cap.
     # Physics extensions.
     overlap_check: bool = True  # Prevent the ligand from entering the receptor volume.
-    multipole_fallback: bool = True  # Use a dipole and quadrupole far-field expansion beyond the APBS grid.
-    lj_forces: bool = False  # Apply WCA repulsive forces from the PQR radii to handle tight contact.
-    enable_born2_torque: bool = True  # BORN2 reciprocal torque (ligand Born acting on receptor atoms). This is about 3% of the total torque and roughly 50× slower for proteins.
+    multipole_fallback: bool = (
+        True  # Use a dipole and quadrupole far-field expansion beyond the APBS grid.
+    )
+    lj_forces: bool = (
+        False  # Apply WCA repulsive forces from the PQR radii to handle tight contact.
+    )
+    enable_born2_torque: bool = (
+        True  # BORN2 reciprocal torque (ligand Born acting on receptor atoms). This is about 3% of the total torque and roughly 50× slower for proteins.
+    )
     # Checkpointing and convergence.
-    checkpoint_interval: int = 0  # Save a checkpoint every N completed trajectories. A value of 0 disables checkpointing.
+    checkpoint_interval: int = (
+        0  # Save a checkpoint every N completed trajectories. A value of 0 disables checkpointing.
+    )
     convergence_interval: int = 10  # Print the live k_on every N% of completion.
-    convergence_check: bool = True  # Run convergence analysis after the BD run completes.
+    convergence_check: bool = (
+        True  # Run convergence analysis after the BD run completes.
+    )
     convergence_tol: float = 0.05  # Relative standard-error threshold (0.05 means 5%).
     # Outputs.
     outputs: OutputConfig = None

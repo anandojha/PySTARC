@@ -20,7 +20,9 @@ class ReactionInterface:
 
     name: str
     criteria: ReactionCriteria
-    probability: float = 1.0  # Probability that the reaction fires once all contacts are met.
+    probability: float = (
+        1.0  # Probability that the reaction fires once all contacts are met.
+    )
     # Labels for the state machine, used only when state_machine_reactions is True.
     # When both default to None, the simulator follows the flattened-reactions path instead.
     state_before: "Optional[str]" = None

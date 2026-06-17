@@ -71,10 +71,7 @@ class AtomRecord:
         # 1e-9' to actually take effect. That is a behavior change (it would
         # flag any uncharged atom as a ghost) and needs physics validation
         # before it can be reinstated.
-        return (
-            self.name.strip().upper() == "GHO"
-            or self.radius < 1e-6
-        )
+        return self.name.strip().upper() == "GHO" or self.radius < 1e-6
 
 
 @dataclass
@@ -355,7 +352,11 @@ def compute_geometry(
         f"ghost={lig.n_ghost}"
     )
     print(f"  b-surface (milestone) : {r_start:.1f} Å")
-    _esc_note = "= 2 × b-surface" if abs(r_escape - 2.0 * r_start) < 1e-9 else "user-set r_escape"
+    _esc_note = (
+        "= 2 × b-surface"
+        if abs(r_escape - 2.0 * r_start) < 1e-9
+        else "user-set r_escape"
+    )
     print(f"  Escape sphere         : {r_escape:.1f} Å  ({_esc_note})")
     return SystemGeometry(
         receptor=rec,

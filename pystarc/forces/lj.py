@@ -76,7 +76,9 @@ class HydrophobicParams:
     a: float = 3.1  # inner edge of the contact shell in angstrom
     b: float = 4.35  # outer edge of the contact shell in angstrom
     c: float = 0.5  # dimensionless scaling coefficient
-    beta: float = -0.025  # surface tension in kcal/mol/angstrom^2; a negative value is attractive
+    beta: float = (
+        -0.025
+    )  # surface tension in kcal/mol/angstrom^2; a negative value is attractive
 
     @property
     def factor(self) -> float:
@@ -199,10 +201,18 @@ class LJForceEngine:
         positions2: np.ndarray,  # atom positions of molecule 2, shape (N2, 3), in angstrom
         type_ids1: List[int],  # Lennard-Jones type index for each atom in molecule 1
         type_ids2: List[int],  # Lennard-Jones type index for each atom in molecule 2
-        radii1: Optional[np.ndarray] = None,  # van der Waals radii for molecule 1, shape (N1,), in angstrom, used for SASA
-        radii2: Optional[np.ndarray] = None,  # van der Waals radii for molecule 2, shape (N2,), in angstrom, used for SASA
-        sasa1: Optional[np.ndarray] = None,  # per-atom SASA for molecule 1, shape (N1,), in angstrom^2
-        sasa2: Optional[np.ndarray] = None,  # per-atom SASA for molecule 2, shape (N2,), in angstrom^2
+        radii1: Optional[
+            np.ndarray
+        ] = None,  # van der Waals radii for molecule 1, shape (N1,), in angstrom, used for SASA
+        radii2: Optional[
+            np.ndarray
+        ] = None,  # van der Waals radii for molecule 2, shape (N2,), in angstrom, used for SASA
+        sasa1: Optional[
+            np.ndarray
+        ] = None,  # per-atom SASA for molecule 1, shape (N1,), in angstrom^2
+        sasa2: Optional[
+            np.ndarray
+        ] = None,  # per-atom SASA for molecule 2, shape (N2,), in angstrom^2
     ) -> Tuple[np.ndarray, np.ndarray, float]:
         """
         Compute the total Lennard-Jones and hydrophobic forces on both molecules.

@@ -73,8 +73,16 @@ def run(cfg: PySTARCConfig):
         else cfg.bd_milestone_radius
     )
     print(f"  Reaction (q)  : {rxn_r:.1f} Å  (reaction sphere)")
-    _resc = cfg.r_escape if getattr(cfg, "r_escape", 0.0) > 0 else cfg.bd_milestone_radius * 2
-    _resc_note = "= 2 × b-surface" if _resc == cfg.bd_milestone_radius * 2 else "user-set r_escape"
+    _resc = (
+        cfg.r_escape
+        if getattr(cfg, "r_escape", 0.0) > 0
+        else cfg.bd_milestone_radius * 2
+    )
+    _resc_note = (
+        "= 2 × b-surface"
+        if _resc == cfg.bd_milestone_radius * 2
+        else "user-set r_escape"
+    )
     print(f"  Escape sphere : {_resc:.1f} Å  ({_resc_note})")
     print(f"  Trajectories  : {cfg.n_trajectories:,}")
     print(f"  Threads       : {cfg.n_threads}")

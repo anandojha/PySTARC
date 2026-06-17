@@ -58,7 +58,9 @@ from typing import Optional, Tuple
 DEFAULT_OBC_ALPHA = 1.0
 DEFAULT_OBC_BETA = 0.8
 DEFAULT_OBC_GAMMA = 4.85
-DEFAULT_OBC_OFFSET = 0.09  # Offset between the van der Waals and intrinsic radius, in angstrom.
+DEFAULT_OBC_OFFSET = (
+    0.09  # Offset between the van der Waals and intrinsic radius, in angstrom.
+)
 DEFAULT_HCT_SCALE = 0.85  # Uniform Hawkins-Cramer-Truhlar scaling factor.
 
 # Coulomb constant k_e e^2 / kBT expressed in angstrom at T = 300.15 K. The value is

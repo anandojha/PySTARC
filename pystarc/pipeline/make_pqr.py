@@ -21,7 +21,9 @@ import shutil
 
 def _run(cmd: str, cwd: Path, step: str):
     print(f"    $ {cmd}")
-    result = subprocess.run(shlex.split(cmd), shell=False, cwd=cwd, capture_output=True, text=True)
+    result = subprocess.run(
+        shlex.split(cmd), shell=False, cwd=cwd, capture_output=True, text=True
+    )
     if result.returncode != 0:
         # tleap writes its errors to leap.log rather than stderr, so read that file.
         leap_log = ""

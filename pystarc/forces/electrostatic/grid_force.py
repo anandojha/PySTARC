@@ -85,7 +85,9 @@ def debye_huckel_force(
         return np.zeros(3)
     E = debye_huckel_energy(q1, q2, r, debye_length, bjerrum_length)
     dE_dr = E * (-1.0 / r - 1.0 / debye_length)
-    return -dE_dr * r_vec / r  # F = -dE/dr times the unit vector r_hat, with the sign set by the convention above.
+    return (
+        -dE_dr * r_vec / r
+    )  # F = -dE/dr times the unit vector r_hat, with the sign set by the convention above.
 
 
 # Reader for the OpenDX volumetric grid format.
@@ -178,7 +180,9 @@ class DXGrid:
     def _to_fractional(self, point: np.ndarray) -> np.ndarray:
         """Convert a coordinate in Å to a fractional grid index."""
         diff = point - self.origin
-        return diff * self._inv_dx  # Element-wise division, valid for an orthogonal grid.
+        return (
+            diff * self._inv_dx
+        )  # Element-wise division, valid for an orthogonal grid.
 
     def interpolate(self, point: np.ndarray) -> float:
         """Trilinear interpolation of the potential at a given coordinate in Å."""

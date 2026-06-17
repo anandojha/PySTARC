@@ -196,7 +196,9 @@ class TabulatedPotential:
         if x <= self.x_min or x >= self.x_max:
             return 0.0
         if self._spline is not None:
-            return float(self._spline(x, 1))  # the second argument 1 selects the first derivative
+            return float(
+                self._spline(x, 1)
+            )  # the second argument 1 selects the first derivative
         # Fall back to linear differences for short tables.
         t = (x - self.x_min) / self._dx
         i = int(math.floor(t))

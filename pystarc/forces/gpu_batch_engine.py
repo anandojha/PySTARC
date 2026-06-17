@@ -198,9 +198,7 @@ class GPUBatchForceEngine:
             _fine = self._elec_grids_gpu[0]
             _coarse = self._elec_grids_gpu[-1]
             _fine_ext = float(max(abs(_fine["lo"][0]), abs(_fine["hi"][0])))
-            _coarse_ext = float(
-                max(abs(_coarse["lo"][0]), abs(_coarse["hi"][0]))
-            )
+            _coarse_ext = float(max(abs(_coarse["lo"][0]), abs(_coarse["hi"][0])))
             print(
                 f"  Elec: {len(self._elec_grids_gpu)} grids retained "
                 f"(fine ±{_fine_ext:.0f}Å -> coarse ±{_coarse_ext:.0f}Å)"
@@ -476,7 +474,9 @@ class GPUBatchForceEngine:
             fpe = self._mp_four_pi_eps
             lam = debye
             # Dipole potential: φ_1 = (p · r̂) / (4πε r²) × (1 + r/λ) × exp(-r/λ).
-            p_dot_r = cp.sum(r_hat * p_gpu[None, None, :], axis=2)  # shape (N_traj, N_atoms)
+            p_dot_r = cp.sum(
+                r_hat * p_gpu[None, None, :], axis=2
+            )  # shape (N_traj, N_atoms)
             p_mag = float(cp.linalg.norm(p_gpu))
             if p_mag > 1e-9:
                 phi_dip = p_dot_r / (fpe * safe_r**2) * (1.0 + safe_r / lam) * exp_term
@@ -682,7 +682,9 @@ class GPUBatchForceEngine:
         torques = cp.zeros((N_traj, 3), dtype=cp.float64)
         energies = cp.zeros((N_traj,), dtype=cp.float64)
         if self._call_count < 3:
-            r_mag = cp.linalg.norm(lig_positions[:, 0, :], axis=1)  # radial distance of the centroid
+            r_mag = cp.linalg.norm(
+                lig_positions[:, 0, :], axis=1
+            )  # radial distance of the centroid
             print(
                 f"    [ENGINE call#{self._call_count}] N_traj={N_traj} N_atoms={N_atoms}  "
                 f"r_centroid: mean={float(r_mag.mean()):.3f} "

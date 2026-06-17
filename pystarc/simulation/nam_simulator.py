@@ -111,11 +111,17 @@ class NAMParameters:
     )
     max_steps: int = 1_000_000  # Maximum number of steps per trajectory.
     r_start: float = 100.0  # b-sphere radius in Å.
-    r_escape: float = 0.0  # Escape radius in Å. 0 selects the automatic value of 2 × r_start.
+    r_escape: float = (
+        0.0  # Escape radius in Å. 0 selects the automatic value of 2 × r_start.
+    )
     seed: Optional[int] = None
     n_threads: int = 1
-    use_hard_sphere: bool = True  # Reject steps in which atoms overlap. This is the default.
-    hydrodynamic_interactions: bool = False  # Include Rotne-Prager hydrodynamic interactions.
+    use_hard_sphere: bool = (
+        True  # Reject steps in which atoms overlap. This is the default.
+    )
+    hydrodynamic_interactions: bool = (
+        False  # Include Rotne-Prager hydrodynamic interactions.
+    )
     # When use_brownian_bridge is True, the reaction check supplements the
     # endpoint test by evaluating the path-crossing probability for every
     # contact pair whose distance lies above its cutoff both before and after a
@@ -245,7 +251,9 @@ class NAMSimulator:
             kT = params.temperature_kT
             viscosity = params.viscosity
             dielectric = params.dielectric
-            vacuum_perm = 1.0 / (4 * math.pi * 332.0636)  # Vacuum permittivity in e²/(kcal·Å).
+            vacuum_perm = 1.0 / (
+                4 * math.pi * 332.0636
+            )  # Vacuum permittivity in e²/(kcal·Å).
             debye_len = params.debye_length
             max_mol_r = max(mol1.bounding_radius(), mol2.bounding_radius())
             self._outer_prop = OuterPropagator(
@@ -365,9 +373,7 @@ class NAMSimulator:
                     z=float(ori_arr[3]),
                 )
                 if not reached_b:
-                    return TrajectoryResult(
-                        Fate.ESCAPED, step, elapsed_ps, r
-                    )
+                    return TrajectoryResult(Fate.ESCAPED, step, elapsed_ps, r)
                 # The particle returned to the b-sphere, so continue the BD
                 # propagation.
                 continue
@@ -445,7 +451,15 @@ class NAMSimulator:
                         dW_t2 = math.sqrt(dt) * self.rng.standard_normal(3)
                         dW_r2 = math.sqrt(dt) * self.rng.standard_normal(3)
                         pos_try, ori_try = bd_step_wiener(
-                            pos_old, ori_old, force, torque, D_t_old, D_r, dt, dW_t2, dW_r2
+                            pos_old,
+                            ori_old,
+                            force,
+                            torque,
+                            D_t_old,
+                            D_r,
+                            dt,
+                            dW_t2,
+                            dW_r2,
                         )
                         mol2_try = self._place_mol2(pos_try, ori_try)
                         if not _check_hard_sphere_overlap(self.mol1, mol2_try):
@@ -518,9 +532,7 @@ class NAMSimulator:
             self.params,
             self.force_fn,
         )
-        with mp.Pool(
-            n_workers, initializer=_worker_init, initargs=init_args
-        ) as pool:
+        with mp.Pool(n_workers, initializer=_worker_init, initargs=init_args) as pool:
             for result in pool.map(_run_trajectory_worker, range(n)):
                 self._record(result)
 
@@ -620,7 +632,9 @@ class SimulationResult:
             # propagator. Here k_D = 4π × D × b in Å³/ps is converted to
             # M⁻¹ s⁻¹. The factor is N_A [/mol] × 1e-30 [m³/Å³] / 1e-12 [s/ps]
             # / 1e-3 [m³/L] = 6.022e23 × 1e-30 / 1e-12 / 1e-3 = 6.022e8.
-            CONV_A3ps = 6.022e23 * 1e-30 / 1e-12 / 1e-3  # Equals 6.022e8, converting Å³/ps to M⁻¹ s⁻¹.
+            CONV_A3ps = (
+                6.022e23 * 1e-30 / 1e-12 / 1e-3
+            )  # Equals 6.022e8, converting Å³/ps to M⁻¹ s⁻¹.
             k_D = 4.0 * math.pi * D_rel * self.r_start  # In Å³/ps.
             beta = self.r_start / self.r_escape
             denom = 1.0 - P * (1.0 - beta)
@@ -666,7 +680,9 @@ def _reaction_probability_ci(self, confidence: float = 0.95):
 def _k_from_P(self, P: float, D_rel: float) -> float:
     if P <= 0.0:
         return 0.0
-    CONV_A3ps = 6.022e23 * 1e-30 / 1e-12 / 1e-3  # Equals 6.022e8, converting Å³/ps to M⁻¹ s⁻¹.
+    CONV_A3ps = (
+        6.022e23 * 1e-30 / 1e-12 / 1e-3
+    )  # Equals 6.022e8, converting Å³/ps to M⁻¹ s⁻¹.
     if self.k_db > 0.0:
         return CONV_A3ps * self.k_db * P
     k_D = 4.0 * math.pi * D_rel * self.r_start  # In Å³/ps.

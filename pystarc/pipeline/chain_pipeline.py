@@ -141,14 +141,13 @@ def _ensure_chain_apbs_grids(config: PySTARCConfig) -> None:
 
     src_pqr = Path(config.receptor_pqr)
     if not src_pqr.exists():
-        raise FileNotFoundError(
-            f"receptor_pqr not found: {src_pqr} (needed for APBS)"
-        )
+        raise FileNotFoundError(f"receptor_pqr not found: {src_pqr} (needed for APBS)")
     dst_pqr = apbs_work_dir / src_pqr.name
     shutil.copy(str(src_pqr), str(dst_pqr))
 
     print(f"APBS DX grids missing; generating in {apbs_work_dir}/ ...")
     from pystarc.pipeline.run_apbs import run_apbs
+
     run_apbs(
         pqr_path=src_pqr,
         mol_name=mol_name,

@@ -228,9 +228,7 @@ class GPUBatchSimulator:
         )  # (N_lig,)
         # Outer propagator (LMZ) parameters, computed once before run().
         self._return_prob = 0.0  # Set in run(): P(return to b | at trigger_r).
-        self._k_b = (
-            0.0  # Set in run(): the Romberg k_b, the encounter rate from the Romberg integral.
-        )
+        self._k_b = 0.0  # Set in run(): the Romberg k_b, the encounter rate from the Romberg integral.
         self._qb_factor = 1.1  # Trigger at 1.1 × b_sphere (the standard qb_factor).
         self._bradius_cover = 0.0  # Set in run(): the cover-zone boundary.
         self._use_hi = getattr(params, "hydrodynamic_interactions", False)
@@ -446,9 +444,7 @@ class GPUBatchSimulator:
         else:
             _p_sq = 0.0
             _Tr_Q_sq = 0.0
-        _has_multipole_force = (
-            abs(q_lig) > 1e-9 and (_p_sq > 1e-18 or _Tr_Q_sq > 1e-18)
-        )
+        _has_multipole_force = abs(q_lig) > 1e-9 and (_p_sq > 1e-18 or _Tr_Q_sq > 1e-18)
         # Stash these for the diagnostic print in run().
         self._kb_multipole_active = bool(_has_multipole_force)
         self._kb_mp_p_sq = _p_sq
@@ -471,9 +467,11 @@ class GPUBatchSimulator:
             # Boltzmann-weighted correctly at the actual run temperature.
             e_rl = math.exp(-r / debye)
             g1 = e_rl * (1.0 + r / debye) / (fpe * r * r)
-            g2 = e_rl * (
-                1.0 + r / debye + r * r / (3.0 * debye * debye)
-            ) / (fpe * r * r * r)
+            g2 = (
+                e_rl
+                * (1.0 + r / debye + r * r / (3.0 * debye * debye))
+                / (fpe * r * r * r)
+            )
             V1_sq = (q_lig * q_lig) * (_p_sq / 3.0) * g1 * g1
             V2_sq = (q_lig * q_lig) * (2.0 / 15.0) * _Tr_Q_sq * g2 * g2
             return V0 - 0.5 * (V1_sq + V2_sq) / _kT_scale
@@ -496,7 +494,9 @@ class GPUBatchSimulator:
 
         def intgd_romberg(s):
             if s == 0.0:
-                return 1.0 / D_t  # The same value with or without hydrodynamic interactions.
+                return (
+                    1.0 / D_t
+                )  # The same value with or without hydrodynamic interactions.
             r = 1.0 / s
             v = U(r) / _kT_scale  # Scale V to kBT_T units.
             if use_hi:
@@ -736,9 +736,13 @@ class GPUBatchSimulator:
             _save_interval = max(getattr(_output_cfg, "save_interval", 10), 1)
         _start_pos = cp.asnumpy(pos.copy())  # (N, 3)
         _start_q = cp.asnumpy(q.copy())  # (N, 4)
-        _min_dist = np.full(N, 1e30, dtype=np.float64)  # Closest approach per trajectory.
+        _min_dist = np.full(
+            N, 1e30, dtype=np.float64
+        )  # Closest approach per trajectory.
         _step_at_min = np.zeros(N, dtype=np.int64)
-        _total_time = np.zeros(N, dtype=np.float64)  # Accumulated simulation time in ps.
+        _total_time = np.zeros(
+            N, dtype=np.float64
+        )  # Accumulated simulation time in ps.
         _n_returns = np.zeros(N, dtype=np.int64)
         _bb_triggered = np.zeros(N, dtype=np.int64)
         _prev_r = cp.linalg.norm(pos, axis=1)  # Used to detect milestone crossings.
@@ -1038,7 +1042,9 @@ class GPUBatchSimulator:
                     )
                     # Build a small pos_lig holding only the GHO atoms for the
                     # reaction check.
-                    reacted = self._check_reactions_gpu_gho(_gho_pos)  # (N_run,) boolean.
+                    reacted = self._check_reactions_gpu_gho(
+                        _gho_pos
+                    )  # (N_run,) boolean.
                     del _gho_pos
                 else:
                     reacted = cp.zeros(len(run_idx), dtype=cp.bool_)
@@ -1093,9 +1099,7 @@ class GPUBatchSimulator:
                             q_esc_np = cp.asnumpy(q[new_ret])
                             dq_np = np.empty_like(q_esc_np)
                             for _i in range(n_ret):
-                                dq_np[_i] = diffusional_rotation(
-                                    rng, tau_return
-                                )
+                                dq_np[_i] = diffusional_rotation(rng, tau_return)
                             # Hamilton product q_new = dq × q_escape in
                             # (w, x, y, z) order, which applies dq from the left.
                             w1 = dq_np[:, 0]
@@ -1115,9 +1119,7 @@ class GPUBatchSimulator:
                                 ],
                                 axis=1,
                             )
-                            q_new_np /= np.linalg.norm(
-                                q_new_np, axis=1, keepdims=True
-                            )
+                            q_new_np /= np.linalg.norm(q_new_np, axis=1, keepdims=True)
                             q[new_ret] = cp.asarray(q_new_np)
                         # When tau_return is 0 the rotation is degenerate, so q
                         # is left unchanged.
@@ -1364,9 +1366,7 @@ class GPUBatchSimulator:
                 # 200 GB even with lig_chunk = 1.
                 _max_bytes_ov = 2 * 1024 * 1024 * 1024  # 2 GB.
                 _bytes_per_traj_per_lig = N_rec_ov * 41
-                _sr_chunk = max(
-                    1, int(_max_bytes_ov / max(1, _bytes_per_traj_per_lig))
-                )
+                _sr_chunk = max(1, int(_max_bytes_ov / max(1, _bytes_per_traj_per_lig)))
                 _sr_chunk = min(_sr_chunk, N_sr_ov)
                 _inside_all = cp.zeros(N_sr_ov, dtype=cp.bool_)
                 for _it0 in range(0, N_sr_ov, _sr_chunk):
@@ -1388,12 +1388,10 @@ class GPUBatchSimulator:
                             _r_l[:, None] + self._mol1_radii_overlap[None, :]
                         )  # (nc, N_rec)
                         _thresh_sq = _thresh * _thresh
-                        _overlap_chunk = (
-                            _dist_sq < _thresh_sq[None, :, :]
-                        ).any(axis=(1, 2))
-                        _inside_all[_it0:_it1] = (
-                            _inside_all[_it0:_it1] | _overlap_chunk
+                        _overlap_chunk = (_dist_sq < _thresh_sq[None, :, :]).any(
+                            axis=(1, 2)
                         )
+                        _inside_all[_it0:_it1] = _inside_all[_it0:_it1] | _overlap_chunk
                         del _diff, _dist_sq, _overlap_chunk
                 if cp.any(_inside_all):
                     _inside_idx = cp.where(_inside_all)[0]
@@ -1607,7 +1605,9 @@ class GPUBatchSimulator:
                             _sr_np.astype(np.float64),
                             np.full(len(_sr_np), step, dtype=np.float64),
                             cp.asnumpy(pos[sr_idx]),
-                            cp.asnumpy(q[sr_idx])[:, :3],  # Store q0, q1, q2. The component q3 is recovered from the norm.
+                            cp.asnumpy(q[sr_idx])[
+                                :, :3
+                            ],  # Store q0, q1, q2. The component q3 is recovered from the norm.
                         ]
                     )  # (n_running, 8)
                     _path_data.append(_snap)

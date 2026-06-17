@@ -31,7 +31,9 @@ class GHOAtom:
     """
 
     atom_index: int
-    pos_rel: np.ndarray  # position in Å as a length-3 vector, relative to the hydrodynamic centre
+    pos_rel: (
+        np.ndarray
+    )  # position in Å as a length-3 vector, relative to the hydrodynamic centre
 
 
 @dataclass
@@ -169,8 +171,6 @@ def gho_criterion_distance(
     p1 = gho_world_position(gho1, rot1, trans1)
     p2 = gho_world_position(gho2, rot2, trans2)
     return float(np.linalg.norm(p2 - p1))
-
-
 
 
 def inject_gho_from_manual(

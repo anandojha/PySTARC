@@ -102,7 +102,9 @@ class WEParameters:
     r_escape: float = 0.0  # escape radius in angstrom (0 means choose automatically)
     seed: Optional[int] = None
     adaptive_dt: bool = True
-    steps_per_iteration: int = 100  # BD steps per weighted ensemble iteration before resampling
+    steps_per_iteration: int = (
+        100  # BD steps per weighted ensemble iteration before resampling
+    )
     bin_scheme: str = "log"  # spacing of the bins, either 'log' or 'linear'
     verbose: bool = False
     # When use_brownian_bridge is True the reaction check supplements the
@@ -317,7 +319,9 @@ class WESimulator:
         for rxn in self.pathway_set.reactions:
             for pair in rxn.criteria.pairs:
                 r_contact = min(r_contact, pair.distance_cutoff)
-        r_lo = max(r_contact * 0.9, 1.0)  # place the lower edge just below the reaction cutoff
+        r_lo = max(
+            r_contact * 0.9, 1.0
+        )  # place the lower edge just below the reaction cutoff
         r_hi = self.params.r_start
         n = self.params.n_bins + 1  # n bins require n+1 edges
         if self.params.bin_scheme == "log":
@@ -647,8 +651,12 @@ class WESimulator:
                     f"bins_occupied={n_bins_occupied}/{self.params.n_bins}"
                 )
         # Compute the flux as the accumulated weight per unit of simulation time.
-        flux_rxn = self.weight_reacted / self.total_time_ps if self.total_time_ps > 0 else 0.0
-        flux_esc = self.weight_escaped / self.total_time_ps if self.total_time_ps > 0 else 0.0
+        flux_rxn = (
+            self.weight_reacted / self.total_time_ps if self.total_time_ps > 0 else 0.0
+        )
+        flux_esc = (
+            self.weight_escaped / self.total_time_ps if self.total_time_ps > 0 else 0.0
+        )
         return WEResult(
             n_iterations=self.params.n_iterations,
             n_per_bin=self.params.n_per_bin,

@@ -83,17 +83,33 @@ class TrajectoryResult:
     # Per-trajectory diagnostics. Chain BD fills these in, whereas rigid-body BD
     # leaves them as None so that existing rigid-body construction sites are
     # unaffected.
-    encounter_pos: Optional[np.ndarray] = None  # Center-of-mass position (3,) at the reaction.
-    encounter_q: Optional[np.ndarray] = None  # Orientation quaternion (4,) at the reaction.
-    near_miss_pos: Optional[np.ndarray] = None  # Center-of-mass position (3,) at closest approach.
-    near_miss_dist: Optional[float] = None  # Closest separation reached during the trajectory.
-    path_steps: Optional[np.ndarray] = None  # Step numbers (n_snap,) of the saved snapshots.
-    path_com: Optional[np.ndarray] = None  # Center-of-mass positions (n_snap, 3) along the path.
-    path_q: Optional[np.ndarray] = None  # Orientation quaternions (n_snap, 4) along the path.
+    encounter_pos: Optional[np.ndarray] = (
+        None  # Center-of-mass position (3,) at the reaction.
+    )
+    encounter_q: Optional[np.ndarray] = (
+        None  # Orientation quaternion (4,) at the reaction.
+    )
+    near_miss_pos: Optional[np.ndarray] = (
+        None  # Center-of-mass position (3,) at closest approach.
+    )
+    near_miss_dist: Optional[float] = (
+        None  # Closest separation reached during the trajectory.
+    )
+    path_steps: Optional[np.ndarray] = (
+        None  # Step numbers (n_snap,) of the saved snapshots.
+    )
+    path_com: Optional[np.ndarray] = (
+        None  # Center-of-mass positions (n_snap, 3) along the path.
+    )
+    path_q: Optional[np.ndarray] = (
+        None  # Orientation quaternions (n_snap, 4) along the path.
+    )
     energy_steps: Optional[np.ndarray] = (
         None  # Energies (n_snap, 4) as total, electrostatic, Born, and steric.
     )
-    radial_trace: Optional[np.ndarray] = None  # Separation magnitudes (n_snap,) along the path.
+    radial_trace: Optional[np.ndarray] = (
+        None  # Separation magnitudes (n_snap,) along the path.
+    )
     contact_counts: Optional[Dict[Tuple[int, int], int]] = None
 
     @property

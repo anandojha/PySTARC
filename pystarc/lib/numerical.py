@@ -10,6 +10,7 @@ from typing import Callable, List, Optional, Tuple
 import numpy as np
 import math
 
+
 class CubicSpline:
     """
     Natural cubic spline interpolation through a set of data points.

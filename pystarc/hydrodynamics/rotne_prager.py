@@ -518,7 +518,6 @@ def _translation_only_mobility(positions, radii):
     return M_tt
 
 
-
 def _build_robust_solver(M):
     """Build a callable solver(v) for M @ x = v that is robust to a
     near-singular M.
@@ -544,9 +543,11 @@ def _build_robust_solver(M):
     # First strategy, a plain Cholesky factorization.
     try:
         L = np.linalg.cholesky(M)
+
         def solver_chol(v, L=L):
             y = np.linalg.solve(L, v)
             return np.linalg.solve(L.T, y)
+
         return solver_chol, False, "cholesky"
     except np.linalg.LinAlgError:
         pass
@@ -557,9 +558,11 @@ def _build_robust_solver(M):
         eps = eps_factor * max(abs(trace_avg), 1.0)
         try:
             L_jit = np.linalg.cholesky(M + eps * np.eye(n))
+
             def solver_jit(v, L=L_jit):
                 y = np.linalg.solve(L, v)
                 return np.linalg.solve(L.T, y)
+
             return solver_jit, True, f"cholesky+jitter(eps={eps:.3e})"
         except np.linalg.LinAlgError:
             continue
@@ -570,8 +573,10 @@ def _build_robust_solver(M):
     floor = max(float(abs(eigvals).max()), 1.0) * 1e-10
     eigvals_clipped = np.maximum(eigvals, floor)
     eigvals_inv = 1.0 / eigvals_clipped
+
     def solver_eig(v, Q=eigvecs, di=eigvals_inv):
         return Q @ (di * (Q.T @ v))
+
     info = f"eigendecomp(min_eig={float(eigvals.min()):.3e}, clipped_to={floor:.3e})"
     return solver_eig, True, info
 

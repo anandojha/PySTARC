@@ -309,11 +309,13 @@ def _parse_pdb_chain_for_beads(
             res_key = (ch, resid, icode)
             if res_key != last_key:
                 last_key = res_key
-                residues.append({
-                    "resname": resname,
-                    "resid": resid,
-                    "atoms": {},
-                })
+                residues.append(
+                    {
+                        "resname": resname,
+                        "resid": resid,
+                        "atoms": {},
+                    }
+                )
             # For a repeated atom name within one residue (alternate
             # conformers), keep the first one seen, which is the primary
             # conformer (altLoc A) in a conventionally ordered PDB.
@@ -337,6 +339,7 @@ def _parse_coffdrop_map_simple(map_xml_path) -> Dict[str, Dict[str, List[str]]]:
     names.
     """
     import xml.etree.ElementTree as ET
+
     tree = ET.parse(str(map_xml_path))
     root = tree.getroot()
     mapping: Dict[str, Dict[str, List[str]]] = {}
@@ -413,9 +416,7 @@ def pdb_to_bead_positions(
     >>> save_chain_to_json(chain, positions, "chain.json")
     """
     if fallback not in {"auto", "cb", "ca", "strict"}:
-        raise ValueError(
-            f"fallback must be one of auto/cb/ca/strict; got {fallback!r}"
-        )
+        raise ValueError(f"fallback must be one of auto/cb/ca/strict; got {fallback!r}")
 
     # Fall back to the bundled COFFDROP data directory when none is given.
     if coffdrop_dir is None:

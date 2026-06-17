@@ -56,7 +56,9 @@ AVOGADRO: float = 6.02214076e23
 # Conversion factors
 ANG_TO_M: float = 1.0e-10  # Å to m
 PS_TO_S: float = 1.0e-12  # ps to s
-KCAL_TO_J: float = 4184.0  # kcal/mol to J/mol (divide by AVOGADRO for a single molecule)
+KCAL_TO_J: float = (
+    4184.0  # kcal/mol to J/mol (divide by AVOGADRO for a single molecule)
+)
 KCAL_PER_MOL_TO_KBT: float = 1.0 / KBT_KCAL  # kcal/mol to kBT
 # Ion properties (default NaCl)
 DEFAULT_IONIC_STRENGTH: float = 0.15  # mol/L
