@@ -265,6 +265,36 @@ def write_pqr(atoms: List[PQRAtom], path: Path):
         f.write("END\n")
 
 
+def split_receptor_ligand(
+    atoms: List[PQRAtom], receptor_resname: str, ligand_resname: str
+) -> Tuple[List[PQRAtom], List[PQRAtom]]:
+    """Partition a combined atom list into receptor and ligand atoms by residue name.
+
+    Atoms whose residue name equals receptor_resname form the receptor list, and
+    atoms whose residue name equals ligand_resname form the ligand list. Both
+    selections must be non-empty; if either residue name matches no atoms a
+    ValueError is raised that names the residue name that matched nothing and
+    lists the residue names actually present in the combined atom list.
+    """
+    rec_atoms = [a for a in atoms if a.resname == receptor_resname]
+    lig_atoms = [a for a in atoms if a.resname == ligand_resname]
+    if not rec_atoms or not lig_atoms:
+        present = sorted({a.resname for a in atoms})
+        present_str = ", ".join(present) if present else "(none)"
+        missing = []
+        if not rec_atoms:
+            missing.append(f"receptor_resname '{receptor_resname}'")
+        if not lig_atoms:
+            missing.append(f"ligand_resname '{ligand_resname}'")
+        raise ValueError(
+            f"{' and '.join(missing)} matched no atoms in the PQR. "
+            f"Residue names present in the PQR are: {present_str}. "
+            f"Check that receptor_resname and ligand_resname use the exact "
+            f"residue names from the structure."
+        )
+    return rec_atoms, lig_atoms
+
+
 def centroid(atoms: List[PQRAtom]) -> np.ndarray:
     coords = np.array([[a.x, a.y, a.z] for a in atoms if a.name != "GHO"])
     return coords.mean(axis=0)
@@ -728,8 +758,9 @@ def prepare_bd_surface(cfg: BDSurfaceConfig, input_xml_dir: Path):
     # Step 4: split the combined PQR into separate receptor and ligand atom lists.
     print("\n[4] Splitting PQR into receptor and ligand ...")
     all_atoms = read_pqr(combined_pqr)
-    rec_atoms = [a for a in all_atoms if a.resname == cfg.receptor_resname]
-    lig_atoms = [a for a in all_atoms if a.resname == cfg.ligand_resname]
+    rec_atoms, lig_atoms = split_receptor_ligand(
+        all_atoms, cfg.receptor_resname, cfg.ligand_resname
+    )
     print(f"  Receptor ({cfg.receptor_resname}): {len(rec_atoms)} atoms")
     print(f"  Ligand   ({cfg.ligand_resname}):   {len(lig_atoms)} atoms")
     # Step 5: centre each molecule on the origin.

@@ -399,14 +399,18 @@ class WESimulator:
                 new_trajs.extend(keep)
 
             else:
-                # Split, following Huber and Kim. Clone the lightest trajectory
-                # and halve its weight, repeating until the bin holds n_target
-                # trajectories. Because the clone receives w/2 while the
-                # original keeps w/2, the total weight is conserved.
-                group.sort(key=lambda t: t.weight)
+                # Split, following Huber and McCammon. Repeatedly take the
+                # heaviest trajectory in the bin, clone it, and divide its
+                # weight evenly between the original and the clone, until the
+                # bin holds n_target trajectories. Re-selecting the current
+                # heaviest trajectory on each split distributes the cloning
+                # across the trajectories carrying the most weight, so the bin
+                # ends with n_target trajectories of nearly even weight rather
+                # than a geometric spread. Because the clone receives w/2 while
+                # the original keeps w/2, the total weight is conserved.
                 while len(group) < n_target:
-                    # Clone the lightest trajectory and halve the weight on both copies.
-                    t = group[0]
+                    heaviest = max(range(len(group)), key=lambda i: group[i].weight)
+                    t = group[heaviest]
                     clone = t.copy()
                     clone.weight = t.weight / 2.0
                     t.weight = t.weight / 2.0

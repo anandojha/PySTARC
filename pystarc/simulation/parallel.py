@@ -159,14 +159,17 @@ def _run_numpy_batch(
     complete. The array fate has shape (N,) and holds the outcome codes. The
     array steps has shape (N,) and holds the step count.
 
+    The force function is evaluated once per step for each active trajectory on
+    its placed ligand, and the resulting force and torque enter the step as the
+    Ermak-McCammon drift. The zero_force sentinel returns zeros, so the step
+    reduces to pure diffusion in that case.
+
     This runner has a few limitations compared with the single-trajectory
     runner. It does not use an adaptive Δt, so the time step is fixed
-    throughout, which is left as a future improvement. The force function must
-    be zero_force or some other vectorisable function, since StandardForceEngine
-    is not currently vectorised. All N trajectories run to max_steps even when
-    most finish early, because the early-finish mask is applied but the memory
-    stays allocated. This runner is best suited to large numbers of
-    trajectories with zero or simple forces.
+    throughout, which is left as a future improvement. All N trajectories run to
+    max_steps even when most finish early, because the early-finish mask is
+    applied but the memory stays allocated. This runner is best suited to large
+    numbers of trajectories with zero or simple forces.
     """
     N = params.n_trajectories
     rng = np.random.default_rng(params.seed)
@@ -183,11 +186,20 @@ def _run_numpy_batch(
     pos = v * params.r_start  # positions, shape (N, 3)
     # Draw random orientations as quaternions, stored as an (N, 4) array.
     ori_arr = np.array([random_quaternion(rng).to_array() for _ in range(N)])
-    # Arrays that track the outcome of each trajectory.
+    # Arrays that track the outcome of each trajectory. The step count is
+    # initialised to max_steps so that any trajectory which never reacts or
+    # escapes carries the full step count of the MAX_STEPS fate, matching the
+    # serial runner. The REACTED and ESCAPED branches overwrite this with the
+    # step at which the trajectory finished.
     done = np.zeros(N, dtype=bool)
     fates = np.full(N, Fate.MAX_STEPS)
-    steps = np.zeros(N, dtype=int)
+    steps = np.full(N, params.max_steps, dtype=int)
     rxn_names = [None] * N
+    # Per-trajectory force and torque on the ligand, refreshed each step from
+    # force_fn for the trajectories that are still active. These drive the
+    # Ermak-McCammon drift in the vectorised step below.
+    forces = np.zeros((N, 3))
+    torques = np.zeros((N, 3))
     # Cache the ligand atom positions, centred on the ligand centroid.
     c0 = mol2.centroid()
     mol2_pos0 = mol2.positions_array() - c0  # shape (M, 3), M = atoms in mol2
@@ -227,18 +239,31 @@ def _run_numpy_batch(
                 fates[i] = Fate.ESCAPED
                 steps[i] = step
                 continue
+            # Evaluate the total force and torque on the placed ligand. With the
+            # zero_force sentinel this returns zeros and the step below reduces
+            # to pure diffusion; with a real force function it supplies the
+            # Ermak-McCammon drift for this trajectory at the current step.
+            f_i, t_i, _ = force_fn(mol1, mol2_scratch)
+            forces[i] = f_i
+            torques[i] = t_i
         # Take the vectorised Brownian-dynamics step for every trajectory that
         # is still active.
         still_active = np.where(~done)[0]
         if len(still_active) == 0:
             break
         # Translational update, vectorised across all active trajectories. The
-        # force is zero on this zero_force path. A non-zero force would require
-        # a per-trajectory call.
+        # Ermak-McCammon drift D_t × F × Δt (in units where kBT = 1) is applied
+        # first, then the thermal noise √(2 D_t Δt) × W. With the zero_force
+        # sentinel the drift term is zero and this reduces to pure diffusion.
+        drift_t = D_t * forces[still_active] * dt
         noise_t = sigma_t * rng.standard_normal((len(still_active), 3))
-        pos[still_active] += noise_t
-        # Rotational update as a vectorised small-angle rotation.
-        noise_r = sigma_r * rng.standard_normal((len(still_active), 3))
+        pos[still_active] += drift_t + noise_t
+        # Rotational update as a vectorised small-angle rotation. The total
+        # rotation vector combines the Ermak-McCammon drift D_r × τ × Δt with the
+        # thermal noise √(2 D_r Δt) × W, mirroring the translational update. With
+        # the zero_force sentinel the torque is zero and only the noise remains.
+        drift_r = D_r * dt * torques[still_active]
+        noise_r = drift_r + sigma_r * rng.standard_normal((len(still_active), 3))
         norms = np.linalg.norm(noise_r, axis=1, keepdims=True)
         mask = (norms > 1e-14).ravel()
         if mask.any():

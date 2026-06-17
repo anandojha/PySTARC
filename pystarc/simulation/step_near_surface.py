@@ -23,6 +23,7 @@ step_near_absorbing_surface.hh, lines 37 to 38.
 from __future__ import annotations
 from scipy.special import erfinv as _scipy_erfinv
 from typing import Tuple
+import warnings
 import numpy as np
 import math
 
@@ -72,6 +73,7 @@ def step_near_absorbing_surface(
         # rejection sampling, with the no-flux distribution as the proposal.
         E = math.erf((x0 - bt) / st2)
         x = 0.0
+        last_proposal = None  # Most recent non-negative no-flux proposal draw.
         found = False
         max_attempts = 10000
         for _ in range(max_attempts):
@@ -82,6 +84,7 @@ def step_near_absorbing_surface(
             x = 2.0 * st * _inv_erf(iearg) - bt + x0
             if x < 0.0:
                 continue  # Reject and try again.
+            last_proposal = x
             t4 = 4.0 * tau
             p0 = math.exp(-((x - x0 + bt) ** 2) / t4)
             p1 = math.exp(b * x0 - ((x + x0 + bt) ** 2) / t4)
@@ -95,7 +98,24 @@ def step_near_absorbing_surface(
             if found:
                 break
         if not found:
-            x = max(x0, 0.001)  # Fallback if rejection sampling did not converge.
+            # The acceptance ratio of this rejection step is bounded by one, so
+            # for a well-posed survival distribution the loop terminates after a
+            # finite number of draws. Reaching the attempt cap indicates a
+            # degenerate, over-constrained configuration where the survival
+            # density is effectively unsupported. Make this rare case visible
+            # and return the most recent valid proposal draw, which is itself a
+            # sample of the no-flux distribution truncated to x >= 0, rather
+            # than a fixed deterministic value.
+            warnings.warn(
+                "step_near_absorbing_surface: survival rejection sampling did "
+                "not converge within {0} attempts for x0={1!r}, F={2!r}, "
+                "D={3!r}; returning the last no-flux proposal draw.".format(
+                    max_attempts, x0, F, D
+                ),
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            x = last_proposal if last_proposal is not None else max(x0, 0.001)
         new_x = max(0.0, x)
         time = tau / D
         return True, new_x, time
@@ -125,10 +145,28 @@ def step_near_absorbing_surface(
             pmax = 1e-30
         # Rejection sampling for the absorption time.
         tau_samp = 0.0
-        for _ in range(10000):
+        accepted = False
+        max_attempts = 10000
+        for _ in range(max_attempts):
             tau_samp = tau * rng.random()
             p_samp = pmax * rng.random()
             if p_samp < pt(tau_samp):
+                accepted = True
                 break
+        if not accepted:
+            # The proposal envelope pmax bounds the absorption-time density, so
+            # for a well-posed density the loop terminates after a finite number
+            # of draws. Reaching the attempt cap indicates a degenerate
+            # configuration; make this rare case visible and return the last
+            # candidate time rather than silently treating it as accepted.
+            warnings.warn(
+                "step_near_absorbing_surface: absorption-time rejection "
+                "sampling did not converge within {0} attempts for x0={1!r}, "
+                "F={2!r}, D={3!r}; returning the last candidate time.".format(
+                    max_attempts, x0, F, D
+                ),
+                RuntimeWarning,
+                stacklevel=2,
+            )
         time = tau_samp / D
         return False, 0.0, time
