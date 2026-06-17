@@ -265,7 +265,7 @@ class TestConstants:
         assert 6.5 < BJERRUM_LENGTH < 8.0  # ~7.1 Å in water at 298K
 
     def test_eps_water(self):
-        assert abs(EPS_WATER - 78.54) < 0.1
+        assert abs(EPS_WATER - 78.0) < 0.1
 
     def test_avogadro(self):
         assert abs(AVOGADRO - 6.022e23) < 1e20

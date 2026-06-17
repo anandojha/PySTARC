@@ -46,10 +46,11 @@ EPS0_SI: float = 8.8541878128e-12  # C² / (N·m²)
 VACUUM_PERMITTIVITY_KBT: float = 0.000142  # e²/(kBT·Å)
 # Bjerrum length in water at 298 K, in Å. It is defined by
 #     l_B = e² / (4π ε₀ ε_r k_B T)
-# with ε_r = 78.54, and equals 1/(4π × EPS_WATER × VACUUM_PERMITTIVITY_KBT).
+# with ε_r = 78.0, and equals 1/(4π × EPS_WATER × VACUUM_PERMITTIVITY_KBT).
 BJERRUM_LENGTH: float = 7.1846760153  # Å
-# Dielectric constant of water
-EPS_WATER: float = 78.54
+# Relative permittivity of water, matching the Bjerrum length above and the
+# solvent dielectric (sdie = 78.0) used in the production electrostatics.
+EPS_WATER: float = 78.0
 # Avogadro's number
 AVOGADRO: float = 6.02214076e23
 # Conversion factors
