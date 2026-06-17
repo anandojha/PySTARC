@@ -75,17 +75,17 @@ def _hct_integrand(r, rho_tilde_i, rho_S_j):
     broadcast-compatible with each other, and the integrand is returned at the
     given separation r.
 
-    The geometry falls into three regimes. When rho_tilde_i is at least r + rho_S_j,
+    The geometry falls into two regimes. When rho_tilde_i is at least r + rho_S_j,
     atom j sits entirely inside atom i's volume, so it cannot descreen and the
-    integrand is zero. When rho_tilde_i is at least r - rho_S_j but j is not fully
-    engulfed, atom j overlaps the surface of atom i, and the integration runs from
-    L = rho_tilde_i to U = r + rho_S_j. Otherwise j lies fully outside atom i, and
-    the integration runs from L = r - rho_S_j to U = r + rho_S_j.
+    integrand is zero. Otherwise the integration runs from a lower limit
+    L = max(rho_tilde_i, abs(r - rho_S_j)) to an upper limit U = r + rho_S_j. The
+    lower limit equals rho_tilde_i when atom j overlaps the surface of atom i, equals
+    r - rho_S_j when atom j lies fully outside atom i, and equals rho_S_j - r when
+    atom i sits inside the volume of the larger atom j.
     """
     case_engulf = rho_tilde_i >= r + rho_S_j
-    case_overlap = (rho_tilde_i >= r - rho_S_j) & ~case_engulf
 
-    L = np.where(case_engulf, 1.0, np.where(case_overlap, rho_tilde_i, r - rho_S_j))
+    L = np.where(case_engulf, 1.0, np.maximum(rho_tilde_i, np.abs(r - rho_S_j)))
     U = np.where(case_engulf, 1.0, r + rho_S_j)
 
     L = np.maximum(L, 1e-10)
@@ -314,22 +314,26 @@ def _hct_integrand_deriv(r, rho_tilde_i, rho_S_j):
 
     The routine returns d(integrand)/dr and is vector-safe and broadcast-compatible.
 
-    The three branches mirror those of _hct_integrand. In the engulfed regime the
-    integrand is constant, so the derivative is zero. In the overlap regime the lower
-    limit L = rho_tilde_i is constant in r while the upper limit U = r + rho_S_j varies,
-    so dL/dr = 0 and dU/dr = 1. In the outside regime both limits L = r - rho_S_j and
-    U = r + rho_S_j vary with r, so dL/dr = 1 and dU/dr = 1.
+    The branches mirror those of _hct_integrand. In the engulfed regime the integrand
+    is constant, so the derivative is zero. Otherwise the lower limit is
+    L = max(rho_tilde_i, abs(r - rho_S_j)) and the upper limit is U = r + rho_S_j. The
+    upper limit always varies with r, so dU/dr = 1. The lower limit is constant in r
+    when rho_tilde_i is the larger of the two, giving dL/dr = 0, and otherwise tracks
+    abs(r - rho_S_j), giving dL/dr = sign(r - rho_S_j).
     """
     case_engulf = rho_tilde_i >= r + rho_S_j
-    case_overlap = (rho_tilde_i >= r - rho_S_j) & ~case_engulf
+    abs_r_minus_S = np.abs(r - rho_S_j)
+    rho_tilde_wins = rho_tilde_i >= abs_r_minus_S
 
-    L = np.where(case_engulf, 1.0, np.where(case_overlap, rho_tilde_i, r - rho_S_j))
+    L = np.where(case_engulf, 1.0, np.maximum(rho_tilde_i, abs_r_minus_S))
     U = np.where(case_engulf, 1.0, r + rho_S_j)
     L = np.maximum(L, 1e-10)
     U = np.maximum(U, 1e-10)
     r_safe = np.maximum(r, 1e-10)
 
-    dL_dr = np.where(case_overlap, 0.0, 1.0)  # 0 in overlap, 1 in outside
+    # dL/dr is 0 when L is fixed at rho_tilde_i, and is sign(r - rho_S_j) when
+    # L tracks abs(r - rho_S_j).
+    dL_dr = np.where(rho_tilde_wins, 0.0, np.sign(r - rho_S_j))
     dU_dr = np.ones_like(r)  # always 1 in non-engulf
 
     inv_L = 1.0 / L
