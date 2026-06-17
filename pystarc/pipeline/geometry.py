@@ -355,7 +355,8 @@ def compute_geometry(
         f"ghost={lig.n_ghost}"
     )
     print(f"  b-surface (milestone) : {r_start:.1f} Å")
-    print(f"  Escape sphere         : {r_escape:.1f} Å  (= 2 × b-surface)")
+    _esc_note = "= 2 × b-surface" if abs(r_escape - 2.0 * r_start) < 1e-9 else "user-set r_escape"
+    print(f"  Escape sphere         : {r_escape:.1f} Å  ({_esc_note})")
     return SystemGeometry(
         receptor=rec,
         ligand=lig,
