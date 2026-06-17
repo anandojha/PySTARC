@@ -1,4 +1,10 @@
-click
-cupy-cuda12x
 numpy
 scipy
+click
+numba
+matplotlib
+pdb2pqr
+rdkit
+cupy-cuda12x
+pytest
+pytest-cov
