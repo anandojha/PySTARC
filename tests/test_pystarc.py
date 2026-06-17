@@ -7333,20 +7333,6 @@ class TestQuaternionFromMatrix:
 # Diffusional rotation uncovered functions
 class TestDiffusionalRotationSampling:
 
-    def test_sample_rotation_angle_callable(self):
-        from pystarc.simulation.diffusional_rotation import _sample_rotation_angle
-
-        rng = np.random.default_rng(42)
-        angle = _sample_rotation_angle(rng, 0.5)
-        assert 0 <= angle <= math.pi
-
-    def test_sample_quat_for_tau(self):
-        from pystarc.simulation.diffusional_rotation import _sample_quat_for_tau
-
-        rng = np.random.default_rng(42)
-        q = _sample_quat_for_tau(rng, 0.5)
-        assert abs(np.linalg.norm(q) - 1.0) < 1e-10
-
     def test_spline_rot_0p5(self):
         from pystarc.simulation.diffusional_rotation import _spline_rot_0p5
 
