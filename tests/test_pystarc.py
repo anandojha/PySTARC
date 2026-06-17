@@ -24723,3 +24723,44 @@ def test_parse_reads_r_escape_override(tmp_path):
     inj = base.replace("</pystarc>", "  <r_escape>40.0</r_escape>\n</pystarc>")
     (dst / "input_resc.xml").write_text(inj)
     assert parse(dst / "input_resc.xml").r_escape == 40.0
+
+
+def test_dx_gradient_is_central_difference_and_more_accurate():
+    """DXGrid.gradient uses the second-order central difference matching the GPU path, and is more accurate than the first-order gradient_of_cube on a curved field."""
+    import numpy as np
+    from pystarc.forces.electrostatic.grid_force import DXGrid
+
+    lam, h, n = 7.86, 0.5, 81
+    origin = np.array([-20.0, -20.0, -20.0])
+    delta = np.diag([h, h, h]).astype(float)
+    ax = origin[0] + h * np.arange(n)
+    X, Y, Z = np.meshgrid(ax, ax, ax, indexing="ij")
+    R = np.sqrt(X**2 + Y**2 + Z**2)
+    R = np.where(R < 1e-6, 1e-6, R)
+    g = DXGrid(origin, delta, np.exp(-R / lam) / R)
+    pts = np.array([[8.0, 1.0, -2.0], [5.0, -4.0, 3.0], [11.0, 2.0, 6.0]])
+
+    # gradient() must equal the central-difference batch operator point by point.
+    for p in pts:
+        np.testing.assert_allclose(
+            g.gradient(p), g.batch_gradient(p.reshape(1, 3))[0], atol=1e-12
+        )
+
+    # gradient_of_cube is preserved and differs from the central difference here.
+    assert max(np.linalg.norm(g.gradient(p) - g.gradient_of_cube(p)) for p in pts) > 1e-6
+
+    # The central difference is closer to the true analytic gradient.
+    def analytic(p):
+        r = np.linalg.norm(p)
+        return -np.exp(-r / lam) * (1.0 / (lam * r) + 1.0 / r**2) * (p / r)
+
+    err_cd = np.mean(
+        [np.linalg.norm(g.gradient(p) - analytic(p)) / np.linalg.norm(analytic(p)) for p in pts]
+    )
+    err_gc = np.mean(
+        [
+            np.linalg.norm(g.gradient_of_cube(p) - analytic(p)) / np.linalg.norm(analytic(p))
+            for p in pts
+        ]
+    )
+    assert err_cd < err_gc

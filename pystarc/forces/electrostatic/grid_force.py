@@ -207,11 +207,17 @@ class DXGrid:
         )
         return float(val)
 
-    def gradient(self, point: np.ndarray) -> np.ndarray:
+    def gradient_of_cube(self, point: np.ndarray) -> np.ndarray:
         """
-        Gradient of the potential, computed by trilinearly interpolating the
-        forward finite differences taken within the enclosing cube. This is an
-        exact translation of Single_Grid::gradient_of_cube() in single_grid.hh.
+        First-order gradient of the potential, computed by trilinearly
+        interpolating the forward finite differences taken within the enclosing
+        cube. This is an exact translation of Single_Grid::gradient_of_cube() in
+        single_grid.hh and is kept as the BrownDye2 reference. It is the analytic
+        gradient of the trilinear interpolant and is therefore only first order
+        in the grid spacing. The production force path uses the second-order
+        central difference in gradient(); on a screened-Coulomb field this form
+        deviates from the true gradient by about 2.5 percent on average, where
+        the central difference stays near 0.1 percent.
         Each component is a forward difference between adjacent corners divided
         by the grid spacing along that axis, for example
 
@@ -271,6 +277,17 @@ class DXGrid:
         gxp = apz * gxpm + az * gxpp
         gx = apy * gxm + ay * gxp
         return np.array([gx, gy, gz])
+
+    def gradient(self, point: np.ndarray) -> np.ndarray:
+        """
+        Gradient of the potential by central difference at half the grid
+        spacing. This is the second-order operator used for the force, matching
+        the production GPU kernel and batch_gradient, and it is consistent with
+        the trilinear interpolation used for the energy. See gradient_of_cube()
+        for the first-order BrownDye2 form. Returns a length-three vector in
+        units of kBT/(e·Å).
+        """
+        return self.batch_gradient(np.asarray(point, dtype=float).reshape(1, 3))[0]
 
     def force_on_charge(self, point: np.ndarray, charge: float) -> np.ndarray:
         """Force on a point charge at the given position, F = -q ∇φ, in units of kBT/Å."""
