@@ -63,6 +63,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import math
 import copy
+import warnings
 
 
 # Weighted ensemble parameters
@@ -250,6 +251,17 @@ class WESimulator:
         the reaction zone. Any trajectory that drifts past r_escape is
         terminated.
         """
+        # Warn when there are no reactions defined. In that case the loop below
+        # never updates r_contact, so the bins collapse to the narrow interval
+        # [0.9 * r_start, r_start] and provide no resolution in the reaction
+        # zone. The bins themselves are left unchanged.
+        if not self.pathway_set.reactions:
+            warnings.warn(
+                "PathwaySet has no reactions; weighted ensemble bins span only "
+                "[0.9 * r_start, r_start] and provide no reaction-zone "
+                "resolution.",
+                stacklevel=2,
+            )
         # Find the smallest reaction cutoff across all criteria, falling back
         # to r_start if there are none.
         r_contact = self.params.r_start  # fallback
