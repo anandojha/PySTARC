@@ -296,15 +296,18 @@ def compute_geometry(
     srad: float = 0.0,
     r_hydro_rec: float = 0.0,
     r_hydro_lig: float = 0.0,
+    r_escape: float = 0.0,
 ) -> SystemGeometry:
     """
     Compute the full system geometry for the Brownian dynamics setup.
 
     The b-sphere radius is bd_milestone_radius, the outermost SEEKR milestone,
     which is user-defined. The escape sphere radius is 2 × the b-sphere radius,
-    following the Luty-McCammon-Zhou convention. When r_hydro_rec or r_hydro_lig
-    are greater than zero, they override the Monte Carlo hydrodynamic radii and
-    match the values in the reference hydro_params.xml exactly.
+    following the Luty-McCammon-Zhou convention, unless r_escape is given as a
+    positive value, in which case that value is used. When r_hydro_rec or
+    r_hydro_lig are greater than zero, they override the Monte Carlo
+    hydrodynamic radii and match the values in the reference hydro_params.xml
+    exactly.
     """
     print("\n[5] Computing system geometry ...")
     rec = analyse_molecule(receptor_pqr, srad=srad)
@@ -340,7 +343,7 @@ def compute_geometry(
             total_charge=lig.total_charge,
         )
     r_start = bd_milestone_radius
-    r_escape = 2.0 * r_start
+    r_escape = r_escape if r_escape > 0.0 else 2.0 * r_start
     print(
         f"  Receptor : {rec.n_atoms:5d} atoms  q={rec.total_charge:+.2f} e  "
         f"r_hydro={rec.hydrodynamic_r:.3f} Å  "

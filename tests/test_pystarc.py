@@ -24674,3 +24674,52 @@ def test_nonempty_reactions_no_warning():
     assert not any("no reactions" in m for m in messages), messages
     # The lower bin edge follows the reaction cutoff (0.9 * 5.0), not r_start.
     assert np.isclose(sim._bins[0], max(5.0 * 0.9, 1.0))
+
+
+def test_compute_geometry_escape_radius_override(tmp_path, monkeypatch):
+    """compute_geometry uses 2 times the b-sphere radius by default and uses a positive r_escape when one is given."""
+    import numpy as np
+    import pystarc.pipeline.geometry as geom_mod
+    from pystarc.pipeline.geometry import compute_geometry, MoleculeGeometry
+
+    # The escape-radius resolution does not depend on the molecular analysis, so
+    # the heavy Monte Carlo hydrodynamic-radius step is replaced with a fixed
+    # single-atom geometry to keep the test fast.
+    def fake_analyse(pqr_path, srad=0.0):
+        return MoleculeGeometry(
+            n_atoms=1, n_charged=1, n_ghost=0,
+            centroid=np.zeros(3), max_radius=1.0, hydrodynamic_r=1.0,
+            ghost_indices=[], ghost_positions=[], total_charge=1.0,
+        )
+
+    monkeypatch.setattr(geom_mod, "analyse_molecule", fake_analyse)
+    rec = tmp_path / "rec.pqr"
+    lig = tmp_path / "lig.pqr"
+    rec.write_text("x")
+    lig.write_text("x")
+
+    g_default = compute_geometry(rec, lig, bd_milestone_radius=10.0)
+    assert g_default.r_start == 10.0
+    assert g_default.r_escape == 20.0  # 2 times the b-sphere radius
+
+    g_over = compute_geometry(rec, lig, bd_milestone_radius=10.0, r_escape=55.0)
+    assert g_over.r_start == 10.0
+    assert g_over.r_escape == 55.0
+
+
+def test_parse_reads_r_escape_override(tmp_path):
+    """The input parser reads the r_escape tag, defaulting to the 0 sentinel when the tag is absent."""
+    import shutil
+    from pathlib import Path
+    from pystarc.pipeline.input_parser import parse
+
+    src = Path("examples/two_charged_spheres")
+    if not src.is_dir():
+        pytest.skip("two_charged_spheres example inputs not present")
+    dst = tmp_path / "tcs"
+    shutil.copytree(src, dst)
+    base = (dst / "input.xml").read_text()
+    assert parse(dst / "input.xml").r_escape == 0.0
+    inj = base.replace("</pystarc>", "  <r_escape>40.0</r_escape>\n</pystarc>")
+    (dst / "input_resc.xml").write_text(inj)
+    assert parse(dst / "input_resc.xml").r_escape == 40.0

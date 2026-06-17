@@ -113,6 +113,7 @@ class PySTARCConfig:
     # sphere sits at twice bd_milestone_radius.
     bd_milestone_radius: float = 30.0  # b-sphere starting radius in angstrom. Should be at least 3 × (r_rec + r_lig).
     bd_milestone_radius_inner: float = 0.0  # Inner milestone radius in angstrom. A value of 0 disables it.
+    r_escape: float = 0.0  # Escape sphere radius in angstrom. A value of 0 means 2.0 × bd_milestone_radius.
     # State-machine reactions track multiple reactions per trajectory. When False,
     # all reactions are flattened and the first distance match ends the trajectory.
     # When True, a trajectory carries a state label and reactions fire only when the
@@ -313,6 +314,7 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
         bd_milestone_radius_inner=get(
             "bd_milestone_radius_inner", default=0.0, cast=float
         ),
+        r_escape=get("r_escape", default=0.0, cast=float),
         state_machine_reactions=get(
             "state_machine_reactions", default=False, cast=bool
         ),

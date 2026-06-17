@@ -185,6 +185,7 @@ def run(cfg: PySTARCConfig):
         srad=getattr(cfg, "srad", 0.0),
         r_hydro_rec=getattr(cfg, "r_hydro_rec", 0.0),
         r_hydro_lig=getattr(cfg, "r_hydro_lig", 0.0),
+        r_escape=getattr(cfg, "r_escape", 0.0),
     )
     rxn_result = auto_detect_reactions(
         geom,
