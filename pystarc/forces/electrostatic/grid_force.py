@@ -1,40 +1,40 @@
 """
-APBS grid force interpolation
-==============================
+Interpolation of electrostatic forces from an APBS potential grid.
 
-Background
--------------------
-APBS solves the linearized Poisson-Boltzmann equation on a 3D grid,
-producing a volumetric potential map φ(x,y,z) in kBT/e units.
+APBS solves the linearized Poisson-Boltzmann equation on a three-dimensional
+grid, producing a volumetric potential map φ(x,y,z) in units of kBT/e. To
+compute the electrostatic force on an atom at position r we use
 
-To compute the electrostatic force on an atom at position r:
     F = -q × ∇φ(r),
-we need the gradient of the potential at arbitrary (off-grid) points.
 
-This is done by trilinear interpolation.
-  1. Locate the grid cell containing the atom
-  2. Compute fractional coordinates (fx, fy, fz) within the cell
-  3. Interpolate the 8 corner values using trilinear weights:
-     φ(r) = Σ w_ijk × φ_ijk
-     where w = (1-fx)(1-fy)(1-fz), fx(1-fy)(1-fz), etc.
-  4. Compute the gradient by central differences at half-spacing:
-     ∂φ/∂x ≈ [φ(x+h/2) - φ(x-h/2)] / h
+which requires the gradient of the potential at arbitrary off-grid points. Here
+q is the atomic charge and ∇φ is the gradient of the potential at r.
 
-Grid boundary
---------------
-APBS boundary conditions (Debye-Hückel) are only approximate.
-Atoms within 3 grid spacings of the boundary receive forces from
-the Yukawa multipole fallback instead, avoiding artifacts.
+We obtain off-grid values by trilinear interpolation. First we locate the grid
+cell containing the atom and compute the fractional coordinates (fx, fy, fz) of
+the atom within that cell. The potential is then a weighted sum over the eight
+corners of the cell,
 
-Grid selection
---------------
-APBS produces two grids per molecule.
-1. Coarse - Large domain, low resolution (for APBS boundary conditions)
-2. Fine - Small domain, high resolution (for force evaluation)
+    φ(r) = Σ w_ijk × φ_ijk,
 
-At runtime, only the fine grid is used for forces.  The coarse grid
-exists solely to provide accurate boundary conditions to APBS and
-is dropped before the BD simulation begins.
+where the weights are products of the fractional coordinates such as
+(1-fx)(1-fy)(1-fz) for one corner and fx(1-fy)(1-fz) for the next. The gradient
+is taken by central differences at half the grid spacing,
+
+    ∂φ/∂x ≈ [φ(x+h/2) - φ(x-h/2)] / h,
+
+where h is the grid spacing along the axis.
+
+The APBS boundary conditions (Debye-Hückel) are only approximate, so atoms
+within three grid spacings of the grid boundary receive their forces from the
+Yukawa multipole fallback instead, which avoids boundary artifacts.
+
+APBS produces two grids per molecule. The coarse grid covers a large domain at
+low resolution and supplies the boundary conditions for APBS. The fine grid
+covers a small domain at high resolution and is the one used for force
+evaluation. At runtime only the fine grid is used for forces. The coarse grid
+serves only to give APBS accurate boundary conditions and is dropped before the
+Brownian-dynamics simulation begins.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ import numpy as np
 import math
 
 
-# Screened Coulomb (Debye-Hückel)
+# Screened-Coulomb (Debye-Hückel) interaction.
 def debye_huckel_energy(
     q1: float,
     q2: float,
@@ -54,11 +54,14 @@ def debye_huckel_energy(
     bjerrum_length: float = BJERRUM_LENGTH,
 ) -> float:
     """
-    E = q1 q2 l_B exp(-r / λ_D) / r    [kBT]
-    Parameters
-    ----------
-    q1, q2 : charges in elementary charge units
-    r      : separation in Å
+    Screened-Coulomb (Debye-Hückel) interaction energy between two point
+    charges, returned in units of kBT,
+
+        E = q1 q2 l_B exp(-r / λ_D) / r.
+
+    Here q1 and q2 are the charges in units of the elementary charge, r is their
+    separation in Å, l_B is the Bjerrum length, and λ_D is the Debye screening
+    length.
     """
     if r < 1e-10:
         return 0.0
@@ -73,24 +76,25 @@ def debye_huckel_force(
     bjerrum_length: float = BJERRUM_LENGTH,
 ) -> np.ndarray:
     """
-    F = -∇E  in the direction of r_vec.
-    Returns force on particle 1 (pointing away from particle 2 if same sign).
+    Screened-Coulomb force on particle 1, F = -∇E, taken along the direction of
+    r_vec, the vector from particle 2 to particle 1. For charges of the same
+    sign the force points away from particle 2.
     """
     r = float(np.linalg.norm(r_vec))
     if r < 1e-10:
         return np.zeros(3)
     E = debye_huckel_energy(q1, q2, r, debye_length, bjerrum_length)
     dE_dr = E * (-1.0 / r - 1.0 / debye_length)
-    return -dE_dr * r_vec / r  # force = -dE/dr * r_hat ... but sign from convention
+    return -dE_dr * r_vec / r  # F = -dE/dr times the unit vector r_hat, with the sign set by the convention above.
 
 
-# DX grid reader
+# Reader for the OpenDX volumetric grid format.
 
 
 class DXGrid:
     """
-    Volumetric potential grid loaded from an APBS .dx file.
-    Provides trilinear interpolation of potential and gradient.
+    A volumetric potential grid loaded from an APBS .dx file. It provides
+    trilinear interpolation of the potential and its gradient.
     """
 
     def __init__(
@@ -98,12 +102,12 @@ class DXGrid:
         origin: np.ndarray,
         delta: np.ndarray,  # (3,3) matrix of grid spacings
         data: np.ndarray,
-    ):  # (nx, ny, nz) potential in kBT/e
+    ):  # (nx, ny, nz) array of potential values in kBT/e
         self.origin = np.asarray(origin, dtype=float)
         self.delta = np.asarray(delta, dtype=float)  # (3,3)
         self.data = np.asarray(data, dtype=float)
         self.shape = np.array(self.data.shape)
-        # inverse delta for fast index computation (assumes orthogonal grid)
+        # Inverse grid spacing along each axis, used for fast index lookup. This assumes an orthogonal grid.
         self._inv_dx = 1.0 / np.diag(self.delta)
 
     @classmethod
@@ -121,7 +125,7 @@ class DXGrid:
                 if line.startswith("#") or not line:
                     continue
                 if line.startswith("object 1"):
-                    # object 1 class gridpositions counts nx ny nz
+                    # This line has the form "object 1 class gridpositions counts nx ny nz".
                     parts = line.split()
                     shape[:] = int(parts[-3]), int(parts[-2]), int(parts[-1])
                     continue
@@ -145,18 +149,18 @@ class DXGrid:
         return cls(origin, delta, data)
 
     def _to_fractional(self, point: np.ndarray) -> np.ndarray:
-        """Convert Å coordinate to fractional grid index."""
+        """Convert a coordinate in Å to a fractional grid index."""
         diff = point - self.origin
-        return diff * self._inv_dx  # element-wise for orthogonal grid
+        return diff * self._inv_dx  # Element-wise division, valid for an orthogonal grid.
 
     def interpolate(self, point: np.ndarray) -> float:
-        """Trilinear interpolation of potential at given Å coordinate."""
+        """Trilinear interpolation of the potential at a given coordinate in Å."""
         idx = self._to_fractional(point)
         ix, iy, iz = idx[0], idx[1], idx[2]
         i0 = int(math.floor(ix))
         j0 = int(math.floor(iy))
         k0 = int(math.floor(iz))
-        # bounds check
+        # Return zero if the point falls outside the grid.
         nx, ny, nz = self.data.shape
         if not (0 <= i0 < nx - 1 and 0 <= j0 < ny - 1 and 0 <= k0 < nz - 1):
             return 0.0
@@ -178,13 +182,18 @@ class DXGrid:
 
     def gradient(self, point: np.ndarray) -> np.ndarray:
         """
-        Gradient of potential using the exact method:
-        trilinear interpolation of forward finite differences within the cube.
-        Exact translation of Single_Grid::gradient_of_cube() in single_grid.hh:
-          gz = (v[i,j,k+1] - v[i,j,k]) / hz   (then trilinearly interpolated)
-          gy = (v[i,j+1,k] - v[i,j,k]) / hy
-          gx = (v[i+1,j,k] - v[i,j,k]) / hx
-        Returns (3,) vector in kBT/(e·Å).
+        Gradient of the potential, computed by trilinearly interpolating the
+        forward finite differences taken within the enclosing cube. This is an
+        exact translation of Single_Grid::gradient_of_cube() in single_grid.hh.
+        Each component is a forward difference between adjacent corners divided
+        by the grid spacing along that axis, for example
+
+            gz = (v[i,j,k+1] - v[i,j,k]) / hz,
+            gy = (v[i,j+1,k] - v[i,j,k]) / hy,
+            gx = (v[i+1,j,k] - v[i,j,k]) / hx,
+
+        and these differences are then interpolated trilinearly across the cube.
+        Returns a length-three vector in units of kBT/(e·Å).
         """
         idx = self._to_fractional(point)
         ix = int(math.floor(idx[0]))
@@ -201,7 +210,7 @@ class DXGrid:
         apz = 1.0 - az
         d = self.data
         hx, hy, hz = self.delta[0, 0], self.delta[1, 1], self.delta[2, 2]
-        # 8 cube corners: [ix+dx, iy+dy, iz+dz] for dx,dy,dz in {0,1}
+        # The eight cube corners at [ix+dx, iy+dy, iz+dz] for dx, dy, dz each in {0, 1}.
         vmmm = float(d[ix, iy, iz])
         vmmp = float(d[ix, iy, iz + 1])
         vmpm = float(d[ix, iy + 1, iz])
@@ -210,7 +219,7 @@ class DXGrid:
         vpmp = float(d[ix + 1, iy, iz + 1])
         vppm = float(d[ix + 1, iy + 1, iz])
         vppp = float(d[ix + 1, iy + 1, iz + 1])
-        # z-component: gz = (vmmp-vmmm)/hz trilinearly weighted (the reference implementation exact)
+        # z-component: the forward difference (vmmp - vmmm)/hz weighted trilinearly, matching the reference implementation exactly.
         gzmm = (vmmp - vmmm) / hz
         gzmp = (vmpp - vmpm) / hz
         gzpm = (vpmp - vpmm) / hz
@@ -218,7 +227,7 @@ class DXGrid:
         gzm = apy * gzmm + ay * gzmp
         gzp = apy * gzpm + ay * gzpp
         gz = apx * gzm + ax * gzp
-        # y-component
+        # y-component.
         gymm = (vmpm - vmmm) / hy
         gymp = (vmpp - vmmp) / hy
         gypm = (vppm - vpmm) / hy
@@ -226,7 +235,7 @@ class DXGrid:
         gym = apz * gymm + az * gymp
         gyp = apz * gypm + az * gypp
         gy = apx * gym + ax * gyp
-        # x-component
+        # x-component.
         gxmm = (vpmm - vmmm) / hx
         gxmp = (vpmp - vmmp) / hx
         gxpm = (vppm - vmpm) / hx
@@ -237,29 +246,25 @@ class DXGrid:
         return np.array([gx, gy, gz])
 
     def force_on_charge(self, point: np.ndarray, charge: float) -> np.ndarray:
-        """Force on a point charge at given position: F = -q ∇φ  [kBT/Å]."""
+        """Force on a point charge at the given position, F = -q ∇φ, in units of kBT/Å."""
         return -charge * self.gradient(point)
 
-    # Vectorised batch methods (50-100× faster than per-atom loops)
+    # Vectorised batch methods, roughly 50 to 100 times faster than per-atom loops.
     def batch_interpolate(self, points: np.ndarray) -> np.ndarray:
         """
-        Trilinear interpolation for N points at once.
-        Parameters
-        ----------
-        points : (N, 3) array of Å coordinates
-        Returns
-        -------
-        (N,) array of potential values  [kBT/e]
+        Trilinear interpolation of the potential at N points at once. The input
+        points is an (N, 3) array of coordinates in Å, and the result is a
+        length-N array of potential values in units of kBT/e.
         """
         pts = np.asarray(points, dtype=float)  # (N,3)
-        idx = (pts - self.origin) * self._inv_dx  # (N,3) fractional
-        # Defensive NaN/inf handling. Upstream BD propagators can transiently
-        # produce non-finite chain positions when WCA forces are large;
-        # those positions correspond to non-physical states that the
-        # caller will reject on the next step. We pre-filter non-finite
-        # entries so the cast itself is clean (no RuntimeWarning spam in
-        # SLURM logs), and the valid mask below additionally catches
-        # out-of-bounds indices.
+        idx = (pts - self.origin) * self._inv_dx  # (N,3) fractional indices
+        # Defensive handling of NaN and infinite values. The upstream Brownian-
+        # dynamics propagators can transiently produce non-finite chain
+        # positions when the WCA forces are large. Those positions correspond to
+        # non-physical states that the caller rejects on the next step. We
+        # pre-filter the non-finite entries so the cast below is clean and does
+        # not flood the SLURM logs with RuntimeWarnings. The valid mask further
+        # down additionally catches out-of-bounds indices.
         finite_mask = np.isfinite(idx).all(axis=1)
         idx_safe = np.where(finite_mask[:, None], idx, 0.0)
         with np.errstate(invalid="ignore"):
@@ -275,9 +280,9 @@ class DXGrid:
             & (k0 >= 0)
             & (k0 < nz - 1)
         )
-        # Use idx_safe (zero-padded at non-finite positions) so fx/fy/fz
-        # remain finite; non-finite entries are masked out below anyway
-        # via the `valid` mask, so their numeric value doesn't matter.
+        # Use idx_safe, which is zero-padded at the non-finite positions, so that
+        # fx, fy, and fz stay finite. The non-finite entries are masked out below
+        # by the valid mask, so their numeric value does not matter.
         fx = idx_safe[:, 0] - i0
         fy = idx_safe[:, 1] - j0
         fz = idx_safe[:, 2] - k0
@@ -298,13 +303,11 @@ class DXGrid:
 
     def batch_gradient(self, points: np.ndarray) -> np.ndarray:
         """
-        Central-difference gradient for N points at once.
-        Returns
-        -------
-        (N, 3) array of gradient vectors  [kBT/(e·Å)]
+        Central-difference gradient of the potential at N points at once.
+        Returns an (N, 3) array of gradient vectors in units of kBT/(e·Å).
         """
         pts = np.asarray(points, dtype=float)
-        h = np.diag(self.delta) * 0.5  # half-step per axis
+        h = np.diag(self.delta) * 0.5  # Half the grid spacing along each axis.
         grad = np.zeros_like(pts)
         for i in range(3):
             dp = pts.copy()
@@ -320,17 +323,13 @@ class DXGrid:
         self, points: np.ndarray, charges: np.ndarray
     ) -> np.ndarray:
         """
-        Force on N point charges: F_i = -q_i ∇φ(r_i).
-        Parameters
-        ----------
-        points  : (N, 3) positions  [Å]
-        charges : (N,)  charges     [e]
-        Returns
-        -------
-        (N, 3) force array  [kBT/Å]
+        Force on N point charges, F_i = -q_i ∇φ(r_i). The input points is an
+        (N, 3) array of positions in Å and charges is a length-N array of
+        charges in units of the elementary charge. The result is an (N, 3) array
+        of forces in units of kBT/Å.
         """
-        grad = self.batch_gradient(points)  # (N,3)
-        return -charges[:, None] * grad  # (N,3)
+        grad = self.batch_gradient(points)  # (N,3) gradient vectors
+        return -charges[:, None] * grad  # (N,3) forces
 
     def __repr__(self) -> str:
         nx, ny, nz = self.data.shape

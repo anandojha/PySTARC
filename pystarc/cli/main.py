@@ -27,7 +27,7 @@ def cli():
     pass
 
 
-# nam_simulation
+# Run a NAM (Northrup-Allison-McCammon) Brownian dynamics simulation.
 @cli.command("nam_simulation")
 @click.option("--mol1", required=True, help="PQR file for molecule 1")
 @click.option("--mol2", required=True, help="PQR file for molecule 2")
@@ -48,18 +48,21 @@ def nam_simulation(mol1, mol2, rxn, n, dt, r_start, dx, seed, verbose, output):
     click.echo(f"  mol2: {m2}")
     pathways = parse_reaction_xml(rxn)
     click.echo(f"  reactions: {pathways}")
-    # Mobility from bounding radii
+    # Build the mobility tensor from the bounding radii of the two molecules.
     r1 = m1.bounding_radius()
     r2 = m2.bounding_radius()
     mobility = MobilityTensor.from_radii(r1, r2)
     click.echo(f"  mobility: {mobility}")
-    # Load DX grids if provided
+    # Load the APBS .dx electrostatic grids, if any were supplied.
     grids = []
     for dx_file in dx:
         g = DXGrid.from_file(dx_file)
         grids.append(g)
         click.echo(f"  loaded grid: {g}")
-    # Build force function
+    # Build the force function the simulation will call at each step. If grids
+    # are present, the force and energy come from the screened-Coulomb
+    # interaction of molecule 2's charges with the target's grid potential.
+    # Otherwise the molecules feel no external force and move by pure diffusion.
     if grids:
 
         def force_fn(mol_1, mol_2):
@@ -73,7 +76,9 @@ def nam_simulation(mol1, mol2, rxn, n, dt, r_start, dx, seed, verbose, output):
                     f = grid.force_on_charge(atom.position, atom.charge)
                     force += f
                     energy += grid.interpolate(atom.position) * atom.charge
-                    # torque = r × f
+                    # The torque is the cross product r × f, where r is the
+                    # atom position relative to the molecule centroid and f is
+                    # the force on the atom.
                     r = atom.position - mol_2.centroid()
                     torque += np.cross(r, f)
             return force, torque, energy
@@ -101,7 +106,7 @@ def nam_simulation(mol1, mol2, rxn, n, dt, r_start, dx, seed, verbose, output):
     click.echo(f"{'-'*50}")
 
 
-# bounding_box
+# Print the bounding box of a PQR molecule.
 @cli.command("bounding_box")
 @click.argument("pqr_file")
 @click.option("--padding", default=5.0, show_default=True, help="Padding in Å")
@@ -117,7 +122,7 @@ def bounding_box_cmd(pqr_file, padding):
     click.echo(f"  size:   {bb.size}")
 
 
-# pqr_to_xml
+# Convert a PQR file to the PySTARC molecule XML format.
 @cli.command("pqr_to_xml")
 @click.argument("pqr_file")
 @click.option("--output", "-o", default=None, help="Output XML file")
@@ -150,7 +155,7 @@ def main():
     cli()
 
 
-# chain_simulation
+# Run a flexible-chain Brownian dynamics simulation against a rigid target.
 @cli.command("chain_simulation")
 @click.option(
     "--chain",
@@ -259,14 +264,14 @@ def chain_simulation(
 ):
     """Run a chain Brownian dynamics simulation against a rigid target.
 
-    Loads the flexible chain from a JSON file (atoms, bonds, angles,
-    torsions, initial body-frame positions) and the target from a PQR
-    file. The target's electrostatic environment can be supplied via
-    one or more APBS .dx grids; without them the chain experiences
-    only its internal bonded forces and pure diffusion.
+    The flexible chain is loaded from a JSON file giving its atoms, bonds,
+    angles, torsions, and initial body-frame positions, and the target is
+    loaded from a PQR file. The target's electrostatic environment may be
+    supplied through one or more APBS .dx grids. Without them the chain feels
+    only its internal bonded forces and moves by pure diffusion.
     """
-    # Validate the diffusion-coefficient mode before doing any work,
-    # so the user sees the error immediately rather than after IO.
+    # Validate the diffusion-coefficient mode before doing any work, so the
+    # user sees the error immediately rather than after reading the inputs.
     if auto_diffusion:
         if d_trans is not None or d_rot is not None:
             raise click.UsageError(
@@ -356,7 +361,7 @@ def chain_simulation(
     results = sim.run()
     _wall = _time.time() - _t0
     click.echo(f"  done: {len(results)} trajectories in {_wall:.2f}s")
-    # Write summary + per-trajectory CSV.
+    # Write the summary results and the per-trajectory CSV.
     output_path = Path(output_dir)
     written = write_chain_results(
         output_path,

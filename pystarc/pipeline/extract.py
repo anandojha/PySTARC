@@ -1,17 +1,17 @@
 """
-PySTARC pipeline - Step 1: Extract ligand and receptor
-=====================================================
+PySTARC pipeline, step 1: extract the ligand and the receptor.
 
-Reads complex PDB (protein + ligand together) and splits into:
-  - ligand.pdb    : just the ligand atoms (by residue name)
-  - receptor.pdb  : just the protein atoms (no water, no ligand, no ions)
+This module reads a complex PDB file containing the protein and the ligand
+together and splits it into two files. The file ligand.pdb holds just the
+ligand atoms, selected by residue name. The file receptor.pdb holds just the
+protein atoms, with water, the ligand, and ions removed.
 """
 
 from __future__ import annotations
 from typing import List, Tuple
 from pathlib import Path
 
-# Residue names that are never part of the receptor protein
+# Residue names that are never part of the receptor protein.
 _SOLVENT_RESIDUES = {
     "WAT",
     "HOH",
@@ -44,7 +44,7 @@ def _is_atom_line(line: str) -> bool:
 
 
 def _residue_name(line: str) -> str:
-    """Extract residue name from PDB ATOM/HETATM line (cols 17-20)."""
+    """Return the residue name from a PDB ATOM or HETATM line, which sits in columns 17 to 20."""
     return line[17:20].strip()
 
 
@@ -54,15 +54,11 @@ def extract(
     """
     Split a complex PDB into receptor.pdb and ligand.pdb.
 
-    Parameters
-    ----------
-    pdb_path       : path to the combined PDB (protein + ligand)
-    ligand_resname : 3-letter residue name of the ligand (e.g. 'BEN')
-    work_dir       : output directory
-
-    Returns
-    -------
-    (receptor_pdb, ligand_pdb) paths
+    The argument pdb_path is the path to the combined PDB holding the protein
+    and the ligand. The argument ligand_resname is the three-letter residue
+    name of the ligand, for example 'BEN'. The argument work_dir is the output
+    directory. The function returns the paths to receptor.pdb and ligand.pdb as
+    a pair.
     """
     pdb_path = Path(pdb_path)
     work_dir = Path(work_dir)

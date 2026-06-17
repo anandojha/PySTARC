@@ -1,15 +1,14 @@
 """
-PySTARC pipeline - Step 3: Build PQR files
-=========================================
+PySTARC pipeline, Step 3: build the PQR files.
 
-No solvation needed for BD. We build a gas-phase (no water) complex,
-convert to PQR, then split into receptor.pqr and ligand.pqr.
-Steps:
-  3a. tleap (no solvent) - load protein ff + ligand lib + complex.pdb
-                         -> complex.prmtop + complex.pdb
-  3b. ambpdb             -> complex.pqr  (charges + radii on every atom)
-  3c. split              -> receptor.pqr (protein only)
-                           ligand.pqr   (ligand only, each atom own residue)
+Brownian dynamics does not need explicit solvent, so we build a gas-phase
+complex with no water, convert it to PQR, and then split it into a receptor
+file and a ligand file. The three sub-steps are as follows. Step 3a runs tleap
+with no solvent, loading the protein force field, the ligand library, and the
+complex PDB, and writes complex.prmtop together with complex.pdb. Step 3b runs
+ambpdb to produce complex.pqr, which carries a charge and a radius on every
+atom. Step 3c splits that file into receptor.pqr, holding the protein only, and
+ligand.pqr, holding the ligand only with each atom placed in its own residue.
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ def _run(cmd: str, cwd: Path, step: str):
     print(f"    $ {cmd}")
     result = subprocess.run(shlex.split(cmd), shell=False, cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
-        # tleap writes errors to leap.log, not stderr - read it
+        # tleap writes its errors to leap.log rather than stderr, so read that file.
         leap_log = ""
         for log_name in ["leap.log", "leap.out"]:
             log_path = cwd / log_name
@@ -49,7 +48,7 @@ def _check_tool(name: str):
         )
 
 
-# tleap (gas phase, no solvent)
+# Build the gas-phase complex with tleap, using no solvent.
 def build_complex(
     pdb_path: Path,
     mol2_path: Path,
@@ -61,16 +60,18 @@ def build_complex(
     ligand_ff: str = "gaff",
 ) -> Tuple[Path, Path]:
     """
-    Build gas-phase complex with tleap (no water, no ions - BD does not need them).
-    Returns (prmtop_path, complex_pdb_path).
+    Build the gas-phase complex with tleap. No water and no ions are added,
+    because Brownian dynamics does not need them. Returns the pair
+    (prmtop_path, complex_pdb_path).
     """
     _check_tool("tleap")
     ligand_resname = ligand_resname.strip().upper()
     prmtop_path = work_dir / "complex.prmtop"
     complex_pdb = work_dir / "complex.pdb"
-    # Strip water/ions before passing to tleap - BD is gas-phase.
-    # tleap cannot type WAT residues without a water force field loaded,
-    # and solvation is unnecessary for Brownian dynamics preprocessing.
+    # Strip water and ions before handing the structure to tleap, since the
+    # Brownian dynamics build is gas-phase. tleap cannot assign atom types to
+    # WAT residues unless a water force field is loaded, and solvation is
+    # unnecessary for Brownian dynamics preprocessing anyway.
     SOLVENT = {"WAT", "HOH", "TIP", "TIP3", "SOL", "TP3", "SPC"}
     stripped_pdb = work_dir / "complex_nowater.pdb"
     kept = 0
@@ -109,23 +110,23 @@ def build_complex(
         + "\n".join(f"      {l}" for l in tleap_script.read_text().splitlines())
     )
     _run(f"tleap -f {tleap_script.name}", cwd=work_dir, step="tleap-complex")
-    # cleanup
+    # Remove the intermediate files tleap leaves behind.
     (work_dir / "complex.inpcrd").unlink(missing_ok=True)
     for f in work_dir.glob("leap.log"):
         f.unlink(missing_ok=True)
     return prmtop_path, complex_pdb
 
 
-# ambpdb -> combined PQR
+# Run ambpdb to produce the combined PQR file.
 def make_combined_pqr(prmtop_path: Path, complex_pdb: Path, work_dir: Path) -> Path:
     """
-    Run ambpdb to produce a PQR file (charges + radii for every atom).
-    Returns path to combined PQR.
+    Run ambpdb to produce a PQR file that carries a charge and a radius for
+    every atom. Returns the path to the combined PQR file.
     """
     _check_tool("ambpdb")
     _check_tool("cpptraj")
     combined_pqr = work_dir / "complex.pqr"
-    # First generate inpcrd from pdb using cpptraj
+    # First use cpptraj to generate an inpcrd file from the PDB.
     cpptraj_in = work_dir / "get_inpcrd.cpptraj"
     cpptraj_in.write_text(
         f"parm {prmtop_path.name}\n"
@@ -145,13 +146,13 @@ def make_combined_pqr(prmtop_path: Path, complex_pdb: Path, work_dir: Path) -> P
         cwd=work_dir,
         step="ambpdb",
     )
-    # cleanup intermediates
+    # Remove the intermediate files.
     for f in [cpptraj_in, inpcrd]:
         f.unlink(missing_ok=True)
     return combined_pqr
 
 
-# Split PQR into receptor + ligand
+# Split the combined PQR into a receptor file and a ligand file.
 _SKIP_RESIDUES = {
     "WAT",
     "HOH",
@@ -169,12 +170,13 @@ _SKIP_RESIDUES = {
 
 
 def _pqr_residue(line: str) -> str:
-    """Extract residue name from a single PQR line (cols 17-21 range).
+    """Extract the residue name from a single PQR line, reading columns 17 to 21.
 
-    Uses the same column window as the canonical PQR parser so that
-    4-character Amber residue names (NTHR, CLYS) are preserved whether
-    they extend left (col 17 non-space) or right (col 21 non-space)
-    of the standard 18-20 field.
+    This uses the same column window as the canonical PQR parser so that
+    four-character Amber residue names such as NTHR and CLYS are preserved
+    whether they extend to the left (a non-space character in column 17) or to
+    the right (a non-space character in column 21) of the standard field in
+    columns 18 to 20.
     """
     return line[16:21].strip().upper()
 
@@ -183,13 +185,12 @@ def split_pqr(
     combined_pqr: Path, ligand_resname: str, work_dir: Path
 ) -> Tuple[Path, Path]:
     """
-    Split combined PQR into receptor.pqr and ligand.pqr.
+    Split the combined PQR into receptor.pqr and ligand.pqr.
 
-    For the ligand: renumber each atom so it gets its own unique residue
-    number (the pqr_resid_for_each_atom step). This makes each atom an
-    independent point charge in BD, which improves accuracy for small
-    molecules.
-    Returns (receptor_pqr, ligand_pqr).
+    For the ligand, each atom is renumbered so that it gets its own unique
+    residue number (the pqr_resid_for_each_atom step). This makes every atom an
+    independent point charge in the Brownian dynamics run, which improves
+    accuracy for small molecules. Returns the pair (receptor_pqr, ligand_pqr).
     """
     ligand_resname = ligand_resname.strip().upper()
     rec_lines: List[str] = []
@@ -207,15 +208,15 @@ def split_pqr(
         raise ValueError(
             f"No ligand atoms (resname='{ligand_resname}') found in {combined_pqr}"
         )
-    # Write receptor.pqr
+    # Write the receptor file.
     receptor_pqr = work_dir / "receptor.pqr"
     receptor_pqr.write_text("".join(rec_lines) + "END\n")
-    # Renumber ligand: each atom gets its own residue number
-    # This is the pqr_resid_for_each_atom step from seekrtools.
-    # PQR format: cols 23-26 are residue sequence number (right-justified)
+    # Renumber the ligand so that each atom gets its own residue number. This
+    # is the pqr_resid_for_each_atom step from seekrtools. In the PQR format the
+    # residue sequence number sits in columns 23 to 26, right-justified.
     renumbered = []
     for idx, line in enumerate(lig_lines, start=1):
-        # Overwrite residue number field (cols 22-25, 0-based)
+        # Overwrite the residue-number field, which is columns 22 to 25 in zero-based indexing.
         new_line = line[:22] + f"{idx:4d}" + line[26:]
         renumbered.append(new_line)
     ligand_pqr = work_dir / "ligand.pqr"

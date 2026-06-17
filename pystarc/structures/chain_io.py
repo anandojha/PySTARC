@@ -1,18 +1,19 @@
 """
-PySTARC chain I/O
+PySTARC chain input and output.
 
-Load and save chain topologies (atoms, bonds, angles, torsions) plus
-initial body-frame positions to and from a JSON format.
+This module loads and saves chain topologies (atoms, bonds, angles, and
+torsions) together with the initial body-frame positions, using a JSON
+format.
 
-The JSON schema is intentionally minimal: a top-level object with
-"name" (str), "atoms" (list of atom dicts), and optional lists for
-"bonds", "angles", "torsions". Each atom carries radius, charge,
-resname, resid, and a 3-component position. Bonded interactions
-reference atoms by integer index into the atoms list.
+The JSON schema is intentionally minimal. It is a top-level object with a
+"name" (a string), an "atoms" list of atom dictionaries, and optional lists
+for "bonds", "angles", and "torsions". Each atom carries a radius, a charge,
+a residue name, a residue identifier, and a three-component position. Bonded
+interactions reference atoms by their integer index into the atoms list.
 
-Positions on disk may be in any frame; this module centers them at
-the origin on load (subtracts the mean) so the resulting body-frame
-positions are immediately consumable by ChainBDSimulator.
+Positions on disk may be expressed in any frame. This module centers them at
+the origin on load by subtracting the mean, so that the resulting body-frame
+positions can be consumed directly by ChainBDSimulator.
 """
 
 from __future__ import annotations
@@ -33,16 +34,13 @@ import json
 def load_chain_from_json(path: str | Path) -> Tuple[ChainCommon, np.ndarray]:
     """Load a chain topology and initial positions from a JSON file.
 
-    Parameters
-    ----------
-    path : path to JSON file matching the schema documented at the
-           module top.
+    The path argument is the path to a JSON file matching the schema
+    documented at the top of this module.
 
-    Returns
-    -------
-    common : ChainCommon with the parsed atoms, bonds, angles, torsions.
-    body_positions : (n_atoms, 3) array, centered at the origin so the
-                     mean of all atom positions is exactly zero.
+    This function returns two objects. The first is a ChainCommon holding
+    the parsed atoms, bonds, angles, and torsions. The second is the
+    body-frame positions, an array of shape (n_atoms, 3) centered at the
+    origin so that the mean of all atom positions is exactly zero.
     """
     path = Path(path)
     with open(path) as fh:
@@ -115,9 +113,11 @@ def load_chain_from_json(path: str | Path) -> Tuple[ChainCommon, np.ndarray]:
 
 
 def _atom_ref_to_int(ref) -> int:
-    """Extract integer index from a ChainAtomRef regardless of internal
-    representation. Supports int subclass / __int__, dataclass with a
-    .value/.idx/.index attribute, and NamedTuple fallback.
+    """Extract the integer atom index from a ChainAtomRef regardless of how it
+    is represented internally. This handles a ChainAtomRef that is an int
+    subclass or otherwise supports __int__, one that is a dataclass with a
+    value, idx, index, or atom_idx attribute, and as a final fallback one that
+    is a NamedTuple whose first field holds the index.
     """
     try:
         return int(ref)
@@ -139,26 +139,24 @@ def save_chain_to_json(
 ) -> Path:
     """Save a chain topology and body-frame positions to a JSON file.
 
-    The output schema mirrors what load_chain_from_json consumes: a
-    top-level object with "name", "atoms" (list of {radius, charge,
-    resname, resid, position}), and optional "bonds", "angles",
-    "torsions" lists referencing atoms by integer index.
+    The output schema mirrors what load_chain_from_json consumes. It is a
+    top-level object with a "name", an "atoms" list whose entries hold a
+    radius, charge, resname, resid, and position, and optional "bonds",
+    "angles", and "torsions" lists that reference atoms by integer index.
 
-    Note: load_chain_from_json centers positions at the origin on load;
-    save_chain_to_json writes positions verbatim. As a consequence,
-    save -> load is centering-equivalent, while load -> save -> load is
-    fully idempotent.
+    Note that load_chain_from_json centers positions at the origin on load,
+    whereas save_chain_to_json writes positions verbatim. As a consequence, a
+    save followed by a load is equivalent up to centering, while a load
+    followed by a save followed by a load is fully idempotent.
 
-    Parameters
-    ----------
-    common         : ChainCommon with atoms, bonds, angles, torsions
-    body_positions : (n_atoms, 3) array of atom positions
-    path           : output path (parent directory created if missing)
-    indent         : JSON indent (default 2; pass None for compact)
+    The common argument is a ChainCommon holding the atoms, bonds, angles, and
+    torsions. The body_positions argument is an array of shape (n_atoms, 3)
+    giving the atom positions. The path argument is the output path, and its
+    parent directory is created if it does not already exist. The indent
+    argument sets the JSON indentation (the default is 2, and passing None
+    produces compact output).
 
-    Returns
-    -------
-    Path object pointing at the written file.
+    The function returns a Path object pointing at the written file.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -226,17 +224,15 @@ def save_chain_to_json(
     return path
 
 
-# ============================================================
-# PDB -> bead position mapping
-# ============================================================
+# Mapping from PDB atoms to COFFDROP beads.
 #
-# Helpers for deriving body-frame positions of a COFFDROP chain from
-# atomic coordinates in a PDB. Encapsulates the centroid mapping
-# (per COFFDROP map.xml: e.g. LYS:NG = centroid(CE, NZ)), CB->CA
-# fallback for disordered sidechains, and TLEAP-renamed-residue
-# variants (HIS/HIE/HID/HIP, CYS/CYX, ASP/ASH, GLU/GLH, LYS/LYN).
-# Eliminates the need for end-user setup.py scripts to reimplement
-# this every time chain BD is set up from a real PDB.
+# These helpers derive the body-frame positions of a COFFDROP chain from the
+# atomic coordinates in a PDB. They encapsulate the centroid mapping defined in
+# the COFFDROP map.xml (for example, the LYS:NG bead is the centroid of CE and
+# NZ), the fallback from CB to CA for disordered sidechains, and the
+# TLEAP-renamed residue variants (HIS/HIE/HID/HIP, CYS/CYX, ASP/ASH, GLU/GLH,
+# and LYS/LYN). Collecting this logic here means end-user setup.py scripts no
+# longer have to reimplement it every time chain BD is set up from a real PDB.
 
 _TLEAP_VARIANT_GROUPS = (
     frozenset({"HIS", "HIE", "HID", "HIP"}),
@@ -248,11 +244,12 @@ _TLEAP_VARIANT_GROUPS = (
 
 
 def _resname_match_tleap(r1: str, r2: str) -> bool:
-    """Match residue names allowing TLEAP-renamed variants.
+    """Match residue names while allowing TLEAP-renamed variants.
 
-    Tleap renames histidine/cysteine/etc. based on protonation or
-    disulfide state (HIS->HIE, CYS->CYX, ...); raw PDBs use the
-    canonical name. This matcher treats variant pairs as equal.
+    Tleap renames residues such as histidine and cysteine according to their
+    protonation or disulfide state, so that HIS becomes HIE and CYS becomes CYX,
+    and so on. Raw PDBs instead use the canonical name. This matcher treats such
+    variant pairs as equal.
     """
     if r1 == r2:
         return True
@@ -278,10 +275,11 @@ def _parse_pdb_chain_for_beads(
     pdb_path,
     chain_id: Optional[str] = None,
 ) -> List[dict]:
-    """Parse heavy atoms from one chain in a PDB.
+    """Parse the heavy atoms of one chain in a PDB.
 
-    Returns a list of residue dicts in N-to-C order:
-        [{"resname": str, "resid": int, "atoms": {atom_name: np.ndarray, ...}}, ...]
+    The function returns a list of residue dictionaries in N-to-C order. Each
+    dictionary has a "resname" string, a "resid" integer, and an "atoms" entry
+    mapping each atom name to its coordinate array.
     """
     residues: List[dict] = []
     chains_seen: set = set()
@@ -328,7 +326,10 @@ def _parse_pdb_chain_for_beads(
 
 
 def _parse_coffdrop_map_simple(map_xml_path) -> Dict[str, Dict[str, List[str]]]:
-    """Parse COFFDROP map.xml into {resname: {bead_name: [atom_names]}}."""
+    """Parse the COFFDROP map.xml into a nested dictionary that maps each
+    residue name to a dictionary mapping each bead name to its list of atom
+    names.
+    """
     import xml.etree.ElementTree as ET
     tree = ET.parse(str(map_xml_path))
     root = tree.getroot()
@@ -361,51 +362,42 @@ def pdb_to_bead_positions(
 ) -> np.ndarray:
     """Derive body-frame positions for a COFFDROP chain from PDB coordinates.
 
-    Maps each chain bead to the centroid of PDB atoms specified by the
-    COFFDROP map.xml convention (e.g. LYS:NG = centroid(CE, NZ),
-    GLU:OG = centroid(CD, OE1, OE2), ASN:CG = centroid(CG, OD1, ND2)).
-    When the expected sidechain atoms are missing in the crystal
-    (disordered residues), falls back through CB then CA.
+    Each chain bead is mapped to the centroid of the PDB atoms named by the
+    COFFDROP map.xml convention. For example, the LYS:NG bead is the centroid
+    of CE and NZ, the GLU:OG bead is the centroid of CD, OE1, and OE2, and the
+    ASN:CG bead is the centroid of CG, OD1, and ND2. When the expected
+    sidechain atoms are missing in the crystal structure, as happens for
+    disordered residues, the mapping falls back first to CB and then to CA.
 
-    Use this AFTER chain_from_pdb to start a chain BD trajectory in
-    the bound-state configuration rather than at place_relaxed_geometry.
+    Call this after chain_from_pdb to start a chain BD trajectory in the
+    bound-state configuration rather than at place_relaxed_geometry.
 
-    Parameters
-    ----------
-    common : ChainCommon
-        Chain topology, typically from chain_from_pdb(pdb_path, chain_id=...).
-    pdb_path : str or Path
-        PDB file whose heavy-atom positions seed the bead coordinates.
-    chain_id : str, optional
-        Chain identifier. Required if the PDB has multiple chains.
-    coffdrop_dir : str, optional
-        Path to the COFFDROP data directory containing map.xml. If None
-        (default), uses the data bundled with the pystarc package.
-    fallback : str
-        Fallback strategy for missing distal sidechain atoms:
-          - "auto" (default): try CB, then CA, then raise
-          - "cb": only CB, else raise
-          - "ca": only CA, else raise
-          - "strict": never fall back; raise on any missing atom
+    The common argument is the ChainCommon topology, typically produced by
+    chain_from_pdb(pdb_path, chain_id=...). The pdb_path argument is the PDB
+    file whose heavy-atom positions seed the bead coordinates. The chain_id
+    argument is the chain identifier, which is required when the PDB contains
+    more than one chain. The coffdrop_dir argument is the path to the COFFDROP
+    data directory containing map.xml; when it is None, which is the default,
+    the data bundled with the pystarc package is used.
 
-    Returns
-    -------
-    np.ndarray
-        Shape (common.n_atoms, 3) body-frame positions.
+    The fallback argument chooses the strategy for missing distal sidechain
+    atoms. The default "auto" tries CB, then CA, then raises. The value "cb"
+    uses only CB and otherwise raises. The value "ca" uses only CA and
+    otherwise raises. The value "strict" never falls back and raises on any
+    missing atom.
 
-    Raises
-    ------
-    ValueError
-        Chain residue count doesn't match the PDB; or resname mismatch.
-    KeyError
-        Bead resname or bead atom-name not in the COFFDROP map.
-    RuntimeError
-        Bead cannot be mapped under the chosen fallback mode.
-    FileNotFoundError
-        coffdrop_dir does not contain map.xml.
+    The function returns an array of shape (common.n_atoms, 3) holding the
+    body-frame positions.
 
-    Examples
-    --------
+    A ValueError is raised when the chain residue count does not match the PDB,
+    or when a residue name does not match. A KeyError is raised when a bead
+    residue name or a bead atom name is absent from the COFFDROP map. A
+    RuntimeError is raised when a bead cannot be mapped under the chosen
+    fallback mode. A FileNotFoundError is raised when coffdrop_dir does not
+    contain map.xml.
+
+    Example usage is as follows.
+
     >>> from pystarc.simulation.coffdrop_chain import chain_from_pdb
     >>> from pystarc.structures.chain_io import (
     ...     pdb_to_bead_positions, save_chain_to_json,
@@ -419,7 +411,7 @@ def pdb_to_bead_positions(
             f"fallback must be one of auto/cb/ca/strict; got {fallback!r}"
         )
 
-    # Resolve coffdrop_dir default
+    # Fall back to the bundled COFFDROP data directory when none is given.
     if coffdrop_dir is None:
         coffdrop_dir = str(Path(__file__).parent.parent / "coffdrop_data")
     map_xml_path = Path(coffdrop_dir) / "map.xml"
@@ -432,7 +424,7 @@ def pdb_to_bead_positions(
     residues = _parse_pdb_chain_for_beads(pdb_path, chain_id=chain_id)
     bead_mapping = _parse_coffdrop_map_simple(str(map_xml_path))
 
-    # Map chain residue indexing -> 0..N-1 sequence position
+    # Map the chain residue identifiers to sequence positions 0 to N-1.
     unique_resids: List[int] = []
     for bead in common.atoms:
         if not unique_resids or unique_resids[-1] != bead.resid:
@@ -477,7 +469,7 @@ def pdb_to_bead_positions(
             positions[i] = np.mean(coords, axis=0)
             continue
 
-        # Fallback hierarchy for missing distal atoms
+        # Apply the fallback hierarchy when the distal atoms are missing.
         if fallback == "strict":
             raise RuntimeError(
                 f"Bead {i} ({bead.resname}) at PDB residue "

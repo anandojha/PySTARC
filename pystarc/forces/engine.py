@@ -1,25 +1,21 @@
 """
-PySTARC unified force engine
-==========================
+PySTARC unified force engine.
 
-One engine. GPU when available, best CPU otherwise.
+This module provides a single force engine that runs on the GPU when one is
+available and otherwise picks the fastest CPU path. It selects the finest grid
+first for each atom, evaluates forces per atom, includes Born desolvation, and
+supports an adaptive time step.
 
-- Finest-grid-first DX selection
-- Per-atom force evaluation
-- Born desolvation
-- Adaptive time step
+The backend is chosen automatically in order of preference. CuPy runs on an
+NVIDIA GPU through CUDA. Numba is a just-in-time compiled CPU path that is about
+9 times faster than pure Python. NumPy is the pure-Python CPU path and is always
+available.
 
-Backend selection (automatic, in priority order).
-1. CuPy   - NVIDIA GPU (CUDA).
-2. Numba  - CPU JIT, ~9x faster than pure Python
-3. NumPy  - CPU Python, always available
-
-Usage
------
-    from pystarc.forces.engine import PySTARCEngine, load_dx_directory
-    engine = load_dx_directory("/path/to/b_surface_trp/")
-    print(f"Backend: {engine.backend}")   # cupy / numba / numpy
-    force, torque, energy = engine(mol_receptor, mol_ligand)
+To use the engine, load a run directory and call the engine with the two
+molecules. For example, build an engine with
+load_dx_directory("/path/to/b_surface_trp/"), inspect engine.backend to see
+whether it is running on cupy, numba, or numpy, and then call
+engine(mol_receptor, mol_ligand) to obtain the force, torque, and energy.
 """
 
 from __future__ import annotations
@@ -38,18 +34,17 @@ try:
     from numba import njit as _njit
     import numba
 except ImportError:
-    # Defensive fallback: numba may be missing or version-incompatible.
-    # Without this stub, line `@_njit(cache=True, ...)` in the kernels
-    # below would crash with TypeError at module import. The stub
-    # decorator returns the function unchanged, letting the module load
-    # so callers can fall back to the pure-NumPy code path. The actual
-    # production environment has numba; this only matters in test
-    # sandboxes, partial installs, or fresh clusters where numba is not
-    # yet available.
+    # Defensive fallback in case numba is missing or version-incompatible.
+    # Without this stub, the line "@_njit(cache=True, ...)" in the kernels below
+    # would crash with a TypeError at module import. The stub decorator returns
+    # the function unchanged, which lets the module load so that callers can fall
+    # back to the pure-NumPy code path. The production environment has numba, so
+    # this only matters in test sandboxes, partial installs, or fresh clusters
+    # where numba is not yet available.
     def _njit(*args, **kwargs):
-        # Two call patterns to support:
-        #   1. @_njit  (no parens) -> args = (function,), return function
-        #   2. @_njit(cache=True, fastmath=True) -> return decorator
+        # Support two call patterns. The first is "@_njit" with no parentheses,
+        # where args is (function,) and we return the function itself. The second
+        # is "@_njit(cache=True, fastmath=True)", where we return a decorator.
         if len(args) == 1 and callable(args[0]) and not kwargs:
             return args[0]
 
@@ -65,16 +60,15 @@ except ImportError:
     cp = None
 
 
-# Backend detection
 def _detect_backend() -> str:
-    """Return best available backend: 'cupy', 'numba', or 'numpy'."""
+    """Return the best available backend, one of 'cupy', 'numba', or 'numpy'."""
     try:
-        cp.array([1.0])  # triggers GPU access
+        cp.array([1.0])  # forces an attempt to access the GPU
         return "cupy"
     except Exception:
         pass
     try:
-        # The import is the test; ImportError below means numba is
+        # The import itself is the test. An ImportError here means numba is
         # unavailable and we fall through to the numpy fallback.
         import numba  # noqa: F401
 
@@ -84,11 +78,10 @@ def _detect_backend() -> str:
     return "numpy"
 
 
-# Compiled grid - pre-extracted arrays for GPU/Numba kernels
 class _Grid:
     """
-    DXGrid with pre-extracted contiguous arrays.
-    Numba and CuPy cannot access Python objects so we pull the
+    A DXGrid with its arrays pre-extracted into contiguous form for the GPU and
+    Numba kernels. Numba and CuPy cannot access Python objects, so we pull the
     raw arrays out once at construction time.
     """
 
@@ -100,19 +93,19 @@ class _Grid:
         self.spacing = np.array([g.delta[i, i] for i in range(3)], dtype=np.float64)
         self.inv_spacing = 1.0 / self.spacing
         nx, ny, nz = self.data.shape
-        self.lo = self.origin + self.spacing  # 1-cell margin
+        self.lo = self.origin + self.spacing  # leave a one-cell margin
         self.hi = self.origin + np.array([nx - 2, ny - 2, nz - 2]) * self.spacing
 
     def contains(self, point: np.ndarray) -> bool:
         return bool(np.all(point > self.lo) and np.all(point < self.hi))
 
 
-# Numba inner loop
+# The following block defines the Numba-compiled inner loops.
 try:
 
     @_njit(cache=True, fastmath=True)
     def _interp(data, origin, inv_sp, point):
-        """Trilinear interpolation - Numba compiled."""
+        """Trilinear interpolation of the grid at a point, Numba compiled."""
         nx = data.shape[0]
         ny = data.shape[1]
         nz = data.shape[2]
@@ -140,7 +133,7 @@ try:
 
     @_njit(cache=True, fastmath=True)
     def _grad(data, origin, inv_sp, sp, point):
-        """Central-difference gradient."""
+        """Gradient of the interpolated grid by central differences."""
         g = np.zeros(3)
         for d in range(3):
             h = sp[d] * 0.5
@@ -156,15 +149,15 @@ try:
     @_njit(cache=True, fastmath=True)
     def _atom_loop(positions, charges, data, origin, inv_sp, sp, alpha, is_born):
         """
-        Core force accumulation loop.
-        Iterates over atoms, accumulates force + torque + energy.
-        Ghost atoms (charge=0) contribute exactly zero.
+        Core force accumulation loop. It iterates over the atoms and accumulates
+        the net force, torque, and energy. Ghost atoms with zero charge
+        contribute exactly nothing.
         """
         N = positions.shape[0]
         force = np.zeros(3)
         torque = np.zeros(3)
         energy = 0.0
-        # centroid of charged atoms (for torque)
+        # Centroid of the charged atoms, used as the reference point for torque.
         cx = 0.0
         cy = 0.0
         cz = 0.0
@@ -211,7 +204,7 @@ try:
 except ImportError:
     _NUMBA = False
 
-    # Pure-NumPy fallbacks
+    # Pure-NumPy versions of the same routines, used when numba is unavailable.
     def _interp(data, origin, inv_sp, point):
         nx, ny, nz = data.shape
         ix = (point[0] - origin[0]) * inv_sp[0]
@@ -269,18 +262,18 @@ except ImportError:
         return force, torque, energy
 
 
-# CuPy GPU kernel
+# Holds the compiled CuPy GPU kernel once it has been built.
 _CUPY_KERNEL = None
 
 
 def _build_cupy_kernel():
     """
-    Build the CUDA kernel for trilinear interpolation + gradient.
-    Called once on first GPU use.
+    Build the CUDA kernel that performs the trilinear interpolation and gradient
+    on the GPU. It is called once on the first use of the GPU.
     """
     global _CUPY_KERNEL
     try:
-        # Raw CUDA C kernel: one thread per atom
+        # Raw CUDA C kernel that assigns one thread per atom.
         _CUPY_KERNEL = cp.RawKernel(
             r"""
 extern "C" __global__
@@ -348,7 +341,7 @@ void atom_force_kernel(
 def _cupy_eval(
     positions: np.ndarray, charges: np.ndarray, g: _Grid, alpha: float, is_born: bool
 ) -> Tuple[np.ndarray, np.ndarray, float]:
-    """Evaluate force for all atoms on GPU using the CUDA kernel."""
+    """Evaluate the force on all atoms on the GPU using the CUDA kernel."""
     N = positions.shape[0]
     pos_gpu = cp.asarray(positions, dtype=cp.float64)
     chg_gpu = cp.asarray(charges, dtype=cp.float64)
@@ -382,32 +375,33 @@ def _cupy_eval(
         ),
     )
     cp.cuda.Stream.null.synchronize()
-    forces_np = forces_gpu.get()  # (N,3)
-    energies_np = energies_gpu.get()  # (N,)
-    # Sum over atoms
+    forces_np = forces_gpu.get()  # per-atom forces, shape (N, 3)
+    energies_np = energies_gpu.get()  # per-atom energies, shape (N,)
+    # Sum the per-atom contributions to get the net force and energy.
     force = forces_np.sum(axis=0)
     energy = float(energies_np.sum())
-    # Torque: (r_i - centroid) x F_i
+    # Torque about the centroid, summing (r_i - centroid) x F_i over the atoms.
     mask = np.abs(charges) > 1e-9
     if mask.any():
         c = positions[mask].mean(axis=0)
-        r = positions - c  # (N,3)
+        r = positions - c  # position relative to the centroid, shape (N, 3)
         torque = np.cross(r, forces_np).sum(axis=0)
     else:
         torque = np.zeros(3)
     return force, torque, energy
 
 
-# GridStack - finest-grid-first selection
 class _GridStack:
     """
-    A set of DX grids sorted finest-first (smallest spacing first).
-    For each atom, returns the potential from the finest grid containing it.
-    This exactly mirrors the grid selection logic.
+    A set of DX grids sorted from finest to coarsest, that is with the smallest
+    spacing first. For each atom it returns the potential from the finest grid
+    that contains the atom. This reproduces the grid selection logic of the
+    reference implementation exactly.
     """
 
     def __init__(self, grids: List[DXGrid]):
-        # Sort finest first - smallest spacing = highest resolution
+        # Sort from finest to coarsest, since the smallest spacing gives the
+        # highest resolution.
         sorted_grids = sorted(grids, key=lambda g: float(g.delta[0, 0]))
         self._grids = [_Grid(g) for g in sorted_grids]
 
@@ -418,7 +412,7 @@ class _GridStack:
         return len(self._grids)
 
     def finest_for(self, point: np.ndarray) -> Optional[_Grid]:
-        """Return finest grid containing point, or None."""
+        """Return the finest grid that contains the point, or None if none do."""
         for g in self._grids:
             if g.contains(point):
                 return g
@@ -433,9 +427,9 @@ class _GridStack:
         backend: str,
     ) -> Tuple[np.ndarray, np.ndarray, float]:
         """
-        Evaluate force on all atoms using finest-grid-first selection.
-        Each atom is assigned to the finest grid that contains it.
-        Atoms outside all grids contribute zero (negligible far-field).
+        Evaluate the force on all atoms, assigning each atom to the finest grid
+        that contains it. Atoms that fall outside every grid contribute zero,
+        since their far-field contribution is negligible.
         """
         if not self._grids:
             return np.zeros(3), np.zeros(3), 0.0
@@ -445,7 +439,7 @@ class _GridStack:
         N = positions.shape[0]
         assigned = np.zeros(N, dtype=bool)
         if backend == "cupy" and _CUPY_KERNEL is not None:
-            # GPU path: group atoms by grid, send each group to GPU
+            # GPU path. Group the atoms by grid and send each group to the GPU.
             for g in self._grids:
                 idx = []
                 for i in range(N):
@@ -466,7 +460,8 @@ class _GridStack:
                 total_torque += t
                 total_energy += e
         else:
-            # CPU path: per-grid atom groups, run Numba/NumPy inner loop
+            # CPU path. Group the atoms by grid and run the Numba or NumPy inner
+            # loop on each group.
             for g in self._grids:
                 idx = []
                 for i in range(N):
@@ -494,29 +489,27 @@ class _GridStack:
         return total_force, total_torque, total_energy
 
 
-# PySTARCEngine - the single unified engine
 class PySTARCEngine:
     """
-    PySTARC unified force engine.
-    Implements all force terms from the reference implementation:
-      1. Electrostatic (APBS DX grids, finest-grid-first, per-atom)
-      2. Born desolvation (*_born.dx grids, per-atom)
-    Backend selected automatically:
-      cupy  -> NVIDIA GPU (CUDA)
-      numba -> CPU JIT compiled
-      numpy -> CPU pure Python
-    Ghost atoms (charge=0) contribute exactly zero to all terms.
-    Parameters
-    ----------
-    elec_mol1 : DX grids for molecule 1 electrostatics (receptor)
-    elec_mol2 : DX grids for molecule 2 electrostatics (ligand)
-    born_mol1 : DX grids for molecule 1 Born desolvation
-    born_mol2 : DX grids for molecule 2 Born desolvation
-    debye_length      : Debye screening length in Å (from solvent file)
-    desolvation_alpha : Born desolvation parameter   (from solvent file)
+    PySTARC unified force engine. It implements all of the force terms from the
+    reference implementation. The first term is the electrostatic interaction,
+    evaluated per atom from APBS DX grids using finest-grid-first selection. The
+    second term is Born desolvation, evaluated per atom from the *_born.dx grids.
+
+    The backend is selected automatically. The cupy backend runs on an NVIDIA GPU
+    through CUDA, the numba backend is just-in-time compiled on the CPU, and the
+    numpy backend is pure Python on the CPU. Ghost atoms with zero charge
+    contribute exactly nothing to any term.
+
+    The constructor takes the following parameters. elec_mol1 and elec_mol2 are
+    the electrostatic DX grids for molecule 1 (the receptor) and molecule 2 (the
+    ligand). born_mol1 and born_mol2 are the corresponding Born desolvation
+    grids. debye_length is the Debye screening length in Å, taken from the
+    solvent file. desolvation_alpha is the Born desolvation parameter, also taken
+    from the solvent file.
     """
 
-    _numba_warmed: bool = False  # compile once per process
+    _numba_warmed: bool = False  # compile the Numba kernels once per process
 
     def __init__(
         self,
@@ -536,20 +529,21 @@ class PySTARCEngine:
         self._elec2 = _GridStack(elec_mol2 or [])
         self._born1 = _GridStack(born_mol1 or [])
         self._born2 = _GridStack(born_mol2 or [])
-        # Effective charges - long-range fallback when outside all grids
+        # Effective charges, used as a long-range fallback when a point lies
+        # outside all of the grids.
         self._eff1 = eff_charges_mol1
         self._debye = debye_length
-        # LJ and hydrophobic forces (optional)
+        # Optional Lennard-Jones and hydrophobic forces.
         self._lj_engine = None
         if lj_params is not None or hydrophobic_params is not None:
             self._lj_engine = LJForceEngine(lj_params, hydrophobic_params)
-        # Build CuPy kernel if on GPU
+        # Build the CuPy kernel when running on the GPU.
         if self.backend == "cupy":
             _build_cupy_kernel()
             if _CUPY_KERNEL is None:
                 warnings.warn("CuPy kernel failed. Falling back to Numba/NumPy.")
                 self.backend = "numba" if _NUMBA else "numpy"
-        # Warm up Numba JIT
+        # Warm up the Numba just-in-time compiler so the first real call is fast.
         if self.backend == "numba" and not PySTARCEngine._numba_warmed:
             self._warmup_numba()
             PySTARCEngine._numba_warmed = True
@@ -569,13 +563,11 @@ class PySTARCEngine:
         self, mol1: Molecule, mol2: Molecule
     ) -> Tuple[np.ndarray, np.ndarray, float]:
         """
-        Compute total force and torque on mol2 from mol1's fields.
-        This is called once per BD step.
-        Returns
-        -------
-        force  : (3,) net force on mol2  [kBT/Å]
-        torque : (3,) torque on mol2     [kBT]
-        energy : float total energy      [kBT]
+        Compute the total force and torque on mol2 from the fields of mol1. This
+        is called once per Brownian-dynamics step. It returns the net force on
+        mol2 as a length-3 array in units of kBT/Å, the torque on mol2 as a
+        length-3 array in units of kBT, and the total energy as a float in units
+        of kBT.
         """
         force = np.zeros(3)
         torque = np.zeros(3)
@@ -584,15 +576,17 @@ class PySTARCEngine:
         chg2 = np.ascontiguousarray(mol2.charges_array(), dtype=np.float64)
         pos1 = np.ascontiguousarray(mol1.positions_array(), dtype=np.float64)
         chg1 = np.ascontiguousarray(mol1.charges_array(), dtype=np.float64)
-        # Electrostatic: mol2 atoms in mol1's field
+        # Electrostatic term, evaluating the mol2 atoms in the field of mol1.
         if self._elec1:
             f, t, e = self._elec1.eval_atoms(pos2, chg2, 0.0, False, self.backend)
             force += f
             torque += t
             energy += e
         elif self._eff1 is not None:
-            # Long-range fallback: effective charges when outside all DX grids.
-            # Centroid c2 is loop-invariant (depends only on pos2/chg2); hoisted.
+            # Long-range fallback that uses effective charges when the atoms lie
+            # outside all of the DX grids. The centroid c2 is loop-invariant
+            # because it depends only on pos2 and chg2, so it is hoisted out of
+            # the loop.
             c2 = (
                 pos2[np.abs(chg2) > 1e-9].mean(axis=0)
                 if np.any(np.abs(chg2) > 1e-9)
@@ -605,27 +599,31 @@ class PySTARCEngine:
                 force += f_i
                 energy += q * self._eff1.potential(p)
                 torque += np.cross(p - c2, f_i)
-        # Born desolvation: mol2 atoms in mol1's born field
+        # Born desolvation term, evaluating the mol2 atoms in the Born field of
+        # mol1.
         if self._born1:
             f, t, e = self._born1.eval_atoms(pos2, chg2, self.alpha, True, self.backend)
             force += f
             torque += t
             energy += e
-        # Born desolvation: mol1 atoms in mol2's born field (BD2 parity).
-        # Distinct physical contribution, not N3-conjugate of born1.
-        # Verified against Browndye2 forces_impl.hh:add_core_forces.
+        # Born desolvation term, evaluating the mol1 atoms in the Born field of
+        # mol2, to match the BD2 reference. This is a distinct physical
+        # contribution and not the Newton's third law conjugate of the born1
+        # term. It has been verified against Browndye2 in
+        # forces_impl.hh:add_core_forces.
         if self._born2:
             f, t, e = self._born2.eval_atoms(pos1, chg1, self.alpha, True, self.backend)
-            # BD2 parity: matches BORN1 block above and GPU path. Fixes
-            # audit C1 (CPU/GPU disagreement) and C2 (unjustified *0.5).
+            # This treatment matches the born1 block above and the GPU path, and
+            # corrects the audit findings C1 (a CPU/GPU disagreement) and C2 (an
+            # unjustified factor of 0.5).
             force += f
             torque += t
             energy += e
-        # Lennard-Jones + hydrophobic (optional)
+        # Optional Lennard-Jones and hydrophobic term.
         if self._lj_engine is not None:
             n1 = len(pos1)
             n2 = len(pos2)
-            type_ids1 = list(range(n1))  # atom type per atom (use index 0 default)
+            type_ids1 = list(range(n1))  # atom type per atom, defaulting to index 0
             type_ids2 = list(range(n2))
             f1, f2, e_lj = self._lj_engine.compute(pos1, pos2, type_ids1, type_ids2)
             force += f2  # force on mol2 from mol1
@@ -655,7 +653,6 @@ class PySTARCEngine:
         return "\n".join(lines)
 
 
-# Factory
 def load_dx_directory(
     directory: str | Path,
     mol1_prefix: str = "receptor",
@@ -664,14 +661,14 @@ def load_dx_directory(
     desolvation_alpha: float = 0.07957747,
 ) -> PySTARCEngine:
     """
-    Build PySTARCEngine from a the reference implementation run directory.
-    Auto-detects all files:
-      <prefix>[0-9].dx       -> APBS electrostatic grids
-      <prefix>[0-9]_born.dx  -> Born desolvation grids
-      <prefix>_cheby.xml     -> Chebyshev effective charges (long-range fallback)
-      <prefix>_mpole.xml     -> Multipole effective charges (alternative)
-    The effective charges are used as a long-range fallback when the query
-    point falls outside all loaded DX grids.
+    Build a PySTARCEngine from a reference-implementation run directory. The
+    relevant files are detected automatically by their names. Files named
+    <prefix>[0-9].dx are APBS electrostatic grids, files named
+    <prefix>[0-9]_born.dx are Born desolvation grids, files named
+    <prefix>_cheby.xml hold Chebyshev effective charges for the long-range
+    fallback, and files named <prefix>_mpole.xml hold multipole effective charges
+    as an alternative. The effective charges serve as a long-range fallback when
+    the query point falls outside all of the loaded DX grids.
     """
     d = Path(directory)
 

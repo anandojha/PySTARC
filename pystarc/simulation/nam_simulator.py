@@ -1,23 +1,22 @@
 """
-PySTARC NAM simulator
-===================
+PySTARC NAM simulator.
 
-Northrup-Allison-McCammon Brownian dynamics
+This module implements Northrup-Allison-McCammon Brownian dynamics for
+bimolecular association.
 
-Physics
--------
-- Ermak-McCammon translational + rotational integrator
-- Adaptive time step: 0.2 ps normal, 0.05 ps near reaction boundary
-- Ghost atom (GHO) reaction criteria with n_needed AND logic
-- NAM k_on formula (Northrup, Allison, McCammon 1984)
-- b-sphere setup and escape sphere termination
+On the physics, the integrator uses the Ermak-McCammon scheme for both
+translation and rotation. The time step is adaptive, taking 0.2 ps in the
+normal regime and 0.05 ps near the reaction boundary. Reaction criteria are
+defined through ghost atoms (GHO) and combined with the n_needed AND logic.
+The association rate constant k_on is computed from the NAM formula of
+Northrup, Allison, and McCammon (1984). Trajectories begin on the b-sphere
+and terminate when they reach the escape sphere.
 
-Parallelism
------------
-- n_threads=1 : serial (default, reproducible)
-- n_threads>1 : Python multiprocessing pool
-- Each worker seeded as seed + trajectory_index (fully reproducible)
-
+On parallelism, setting n_threads=1 runs the trajectories serially, which is
+the reproducible default. Setting n_threads greater than 1 distributes the
+trajectories across a Python multiprocessing pool. Each worker is seeded as
+seed + trajectory_index so that results are fully reproducible regardless of
+the number of threads.
 """
 
 from __future__ import annotations
@@ -49,17 +48,17 @@ import copy
 
 def _check_hard_sphere_overlap(mol1: Molecule, mol2: Molecule) -> bool:
     """
-    Check if any atoms from mol1 and mol2 overlap (hard-sphere exclusion).
-    Returns True if any pair of atoms from different molecules have their
-    centres closer than the sum of their radii.
-    If overlap detected after a BD step, the step is rejected
-    and a new random displacement is drawn.
-    Ghost atoms (radius=0) never overlap - they are zero-radius reference
-    points and are correctly excluded by the radius sum check.
+    Check whether any atom of mol1 overlaps any atom of mol2 under hard-sphere
+    exclusion. The function returns True when any pair of atoms from different
+    molecules have their centres closer than the sum of their radii. When an
+    overlap is detected after a BD step, the step is rejected and a new random
+    displacement is drawn. Ghost atoms have radius 0 and never overlap, because
+    they are zero-radius reference points that the radius-sum check correctly
+    excludes.
     """
     for a1 in mol1.atoms:
         if a1.radius < 1e-10:
-            continue  # ghost atom - no hard-sphere interaction
+            continue  # Ghost atom, which has no hard-sphere interaction.
         p1 = np.array([a1.x, a1.y, a1.z])
         r1 = a1.radius
         for a2 in mol2.atoms:
@@ -68,7 +67,7 @@ def _check_hard_sphere_overlap(mol1: Molecule, mol2: Molecule) -> bool:
             p2 = np.array([a2.x, a2.y, a2.z])
             d = float(np.linalg.norm(p1 - p2))
             if d < r1 + a2.radius:
-                return True  # overlap detected
+                return True  # Overlap detected.
     return False
 
 
@@ -79,13 +78,12 @@ def zero_force(mol1: Molecule, mol2: Molecule):
     return np.zeros(3), np.zeros(3), 0.0
 
 
-# Parameters
 def _mol2_positions(mol) -> np.ndarray:
-    """Extract (n_atoms, 3) array of positions from a Molecule.
+    """Return an (n_atoms, 3) array of atom positions from a Molecule.
 
-    Used by Brownian bridge code to pass mol2's current positions to
-    compute_pair_distances, which expects a flat positions array. Reads
-    Atom.x, .y, .z fields.
+    The Brownian bridge code uses this to pass mol2's current positions to
+    compute_pair_distances, which expects a flat positions array. The
+    positions are read from each atom's x, y, and z fields.
     """
     return np.array(
         [[a.x, a.y, a.z] for a in mol.atoms],
@@ -96,49 +94,50 @@ def _mol2_positions(mol) -> np.ndarray:
 @dataclass
 class NAMParameters:
     """
-    BD simulation parameters.
-    dt     = minimum_core_dt            (0.2 ps)
-    dt_rxn = minimum_core_reaction_dt  (0.05 ps)
+    Parameters that control a Brownian dynamics simulation. The field dt is the
+    normal minimum time step of 0.2 ps, and dt_rxn is the minimum time step of
+    0.05 ps used near the reaction surface.
     """
 
     n_trajectories: int = 1_000
-    dt: float = 0.2  # ps  normal minimum time step
-    dt_rxn: float = 0.05  # ps  near-reaction minimum time step
+    dt: float = 0.2  # Normal minimum time step in ps.
+    dt_rxn: float = 0.05  # Minimum time step in ps near the reaction surface.
     minimum_core_dt: float = (
-        0.0  # hard floor on adaptive dt away from reaction surface (0=no floor)
+        0.0  # Hard floor on the adaptive dt away from the reaction surface (0 means no floor).
     )
     minimum_core_reaction_dt: float = (
-        0.0  # hard floor on adaptive dt near reaction surface (0=no floor)
+        0.0  # Hard floor on the adaptive dt near the reaction surface (0 means no floor).
     )
-    max_steps: int = 1_000_000  # max_n_steps
-    r_start: float = 100.0  # Å  b-sphere radius
-    r_escape: float = 0.0  # Å  0 = auto (2 × r_start)
+    max_steps: int = 1_000_000  # Maximum number of steps per trajectory.
+    r_start: float = 100.0  # b-sphere radius in Å.
+    r_escape: float = 0.0  # Escape radius in Å. 0 selects the automatic value of 2 × r_start.
     seed: Optional[int] = None
     n_threads: int = 1
-    use_hard_sphere: bool = True  # reject steps with atom overlap (default)
-    hydrodynamic_interactions: bool = False  # hydrodynamic interactions (Rotne-Prager)
-    # Brownian bridge for reaction detection: when True, in addition to
-    # the endpoint check, evaluate the path-crossing probability for
-    # every contact pair whose pre- and post-step distances are both
-    # above its cutoff. Catches reactions that occur between discrete
-    # BD steps. Default ON because it closes a method gap; with empty
-    # PathwaySet the bridge code path is trivially skipped.
+    use_hard_sphere: bool = True  # Reject steps in which atoms overlap. This is the default.
+    hydrodynamic_interactions: bool = False  # Include Rotne-Prager hydrodynamic interactions.
+    # When use_brownian_bridge is True, the reaction check supplements the
+    # endpoint test by evaluating the path-crossing probability for every
+    # contact pair whose distance lies above its cutoff both before and after a
+    # step. This catches reactions that occur between discrete BD steps. It is
+    # on by default because it closes a gap in the method, and with an empty
+    # PathwaySet the bridge code path is simply skipped.
     use_brownian_bridge: bool = True
     verbose: bool = False
 
     def __post_init__(self):
         if self.r_escape == 0.0:
-            # the outer propagator triggers at qb_factor=1.1 × b_sphere,
-            # not at 2×b. Trajectories only need to diffuse 10% above b
-            # before return_prob is applied - critical for large b-spheres.
+            # The outer propagator triggers at qb_factor = 1.1 × b-sphere
+            # rather than at 2 × b. A trajectory only needs to diffuse 10%
+            # above b before the return probability is applied, which matters
+            # for large b-spheres.
             self.r_escape = self.r_start * 1.1
 
 
-# Per-trajectory worker (top-level for multiprocessing)
 def _run_trajectory_worker(args):
     """
-    Run one BD trajectory. Top-level function required by multiprocessing.
-    Each worker gets its own RNG: seed + trajectory_index.
+    Run one BD trajectory. This is a top-level function because Python
+    multiprocessing requires the worker to be picklable. Each worker gets its
+    own random number generator seeded as seed + trajectory_index.
     """
     (
         mol1,
@@ -152,36 +151,39 @@ def _run_trajectory_worker(args):
         traj_idx,
     ) = args
     rng = np.random.default_rng((params.seed or 0) + traj_idx)
-    # Independent rng_bb stream (offset 0xBB) so bridge sampling
-    # doesn't perturb the main rng across bridge_on/off comparisons.
+    # A separate rng_bb stream (offset by 0xBB) is used for bridge sampling so
+    # that it does not perturb the main rng when comparing runs with the bridge
+    # on against runs with it off.
     rng_bb = np.random.default_rng((params.seed or 0) + traj_idx + 0xBB)
-    # Private scratch molecule for this worker
+    # Each worker gets a private scratch molecule.
     mol2_scratch = copy.copy(mol2)
     mol2_scratch.atoms = [copy.copy(a) for a in mol2.atoms]
     D_r = mob.relative_rotational_diffusion()
-    # Random start on b-sphere
+    # Choose a random starting point on the b-sphere.
     v = rng.standard_normal(3)
     v /= np.linalg.norm(v)
     pos = v * params.r_start
     ori = random_quaternion(rng)
-    # Brownian bridge state: pair distances at the previous iter's top,
-    # the dt used in the previous outer step, and D at that step's
-    # start. None on iter 0. Bridge code path runs only when the flag
-    # is True AND the pathway_set has reactions to track.
+    # The Brownian bridge state holds the pair distances from the top of the
+    # previous iteration, the dt used in the previous outer step, and the
+    # diffusion coefficient at the start of that step. It is None on the first
+    # iteration. The bridge code path runs only when the flag is True and the
+    # pathway_set has reactions to track.
     _has_reactions = pathway_set is not None and len(pathway_set.reactions) > 0
     _bb_active = params.use_brownian_bridge and _has_reactions
     prev_pair_dists = None
     prev_dt_outer = 0.0
     prev_D_eff_bb = 0.0
     for step in range(params.max_steps):
-        # Place mol2 (vectorised: rotate pre-centred positions + translate)
+        # Place mol2 by rotating its pre-centred positions and translating
+        # them, done in a single vectorised operation.
         R = ori.to_rotation_matrix()
         new_pos = (R @ mol2_pos0.T).T + pos
         for atom, p in zip(mol2_scratch.atoms, new_pos):
             atom.x = float(p[0])
             atom.y = float(p[1])
             atom.z = float(p[2])
-        # Compute current pair distances if bridge is active.
+        # Compute the current pair distances when the bridge is active.
         if _bb_active:
             cur_pair_dists = compute_pair_distances(
                 mol1,
@@ -190,8 +192,9 @@ def _run_trajectory_worker(args):
             )
         else:
             cur_pair_dists = None
-        # Reaction check: bridge-aware when we have prior state, else
-        # endpoint-only via pathway_set.check_all (GHO AND logic built in).
+        # The reaction check is bridge-aware when prior state is available.
+        # Otherwise it is the endpoint-only test through pathway_set.check_all,
+        # which already applies the ghost-atom AND logic.
         if (
             _bb_active
             and prev_pair_dists is not None
@@ -216,27 +219,28 @@ def _run_trajectory_worker(args):
             return TrajectoryResult(
                 Fate.REACTED, step, step * params.dt, float(np.linalg.norm(pos)), rxn
             )
-        # Escape check
+        # Check for escape.
         r = float(np.linalg.norm(pos))
         if r >= params.r_escape:
             return TrajectoryResult(Fate.ESCAPED, step, step * params.dt, r)
-        # Forces via engine
+        # Evaluate the forces through the force engine.
         force, torque, _ = force_fn(mol1, mol2_scratch)
-        # RPY: position-dependent D_rel
+        # With Rotne-Prager-Yamakawa hydrodynamics the relative translational
+        # diffusion depends on position.
         D_t = mob.relative_translational_diffusion(pos)
-        # Choose dt (adaptive two-value scheme)
+        # Choose the time step using the simple two-value adaptive scheme.
         rxn_min = min(rxn_cutoffs) if rxn_cutoffs else 5.0
         dt = params.dt_rxn if r < 1.5 * rxn_min else params.dt
-        # Draw Wiener increments
+        # Draw the Wiener increments for this step.
         dW_t = math.sqrt(dt) * rng.standard_normal(3)
         dW_r = math.sqrt(dt) * rng.standard_normal(3)
         pos_old, ori_old, force_old = pos, ori, force.copy()
-        # BD step with pre-drawn Wiener increments
+        # Take the BD step using the pre-drawn Wiener increments.
         pos, ori = bd_step_wiener(pos, ori, force, torque, D_t, D_r, dt, dW_t, dW_r)
-        # Force-change backstep check
-        # If forces changed too much, subdivide the Wiener step
+        # Check whether the force changed too much over the step. If it did,
+        # subdivide the Wiener step into two half-steps.
         if params.use_hard_sphere or True:
-            # get forces at new position to check
+            # Evaluate the forces at the new position so they can be compared.
             R_trial = ori.to_rotation_matrix()
             trial_pos_arr = (R_trial @ mol2_pos0.T).T + pos
             for atom, p in zip(mol2_scratch.atoms, trial_pos_arr):
@@ -253,12 +257,13 @@ def _run_trajectory_worker(args):
                 params.dt_rxn,
                 radius=mob.radius2,
             ):
-                # Wiener subdivision: split dW at midpoint (unbiased)
-                s = math.sqrt(dt / 4.0)  # standard half-step noise
+                # Subdivide the Wiener path by splitting dW at its midpoint in
+                # an unbiased way.
+                s = math.sqrt(dt / 4.0)  # Noise amplitude of a half step.
                 dW_mid_t = 0.5 * dW_t + s * rng.standard_normal(3)
                 dW_mid_r = 0.5 * dW_r + s * rng.standard_normal(3)
                 hdt = dt / 2.0
-                # First half-step
+                # Take the first half-step.
                 pos, ori = bd_step_wiener(
                     pos_old,
                     ori_old,
@@ -270,7 +275,7 @@ def _run_trajectory_worker(args):
                     dW_mid_t,
                     dW_mid_r,
                 )
-                # Second half-step (using new forces)
+                # Take the second half-step using the new forces.
                 R2 = ori.to_rotation_matrix()
                 p2 = (R2 @ mol2_pos0.T).T + pos
                 for atom, p in zip(mol2_scratch.atoms, p2):
@@ -284,7 +289,7 @@ def _run_trajectory_worker(args):
                 pos, ori = bd_step_wiener(
                     pos, ori, f2, t2, D_t2, D_r, hdt, dW_2nd_t, dW_2nd_r
                 )
-        # Hard-sphere collision rejection
+        # Reject the step if it produces a hard-sphere collision.
         if params.use_hard_sphere:
             R_hs = ori.to_rotation_matrix()
             hs_pos = (R_hs @ mol2_pos0.T).T + pos
@@ -293,18 +298,18 @@ def _run_trajectory_worker(args):
                 atom.y = float(p[1])
                 atom.z = float(p[2])
             if _check_hard_sphere_overlap(mol1, mol2_scratch):
-                # redraw from same starting point
+                # Redraw the step from the same starting point.
                 dW_t2 = math.sqrt(dt) * rng.standard_normal(3)
                 dW_r2 = math.sqrt(dt) * rng.standard_normal(3)
                 D_t_old = mob.relative_translational_diffusion(pos_old)
                 pos, ori = bd_step_wiener(
                     pos_old, ori_old, force_old, torque, D_t_old, D_r, dt, dW_t2, dW_r2
                 )
-        # Save bridge state for the next iteration.
-        # cur_pair_dists were captured before this step; dt is the
-        # local dt actually used (the simple two-value scheme has no
-        # backstep-driven dt change here). D from pos_old is the right
-        # bridge D over [pos_old -> pos].
+        # Save the bridge state for the next iteration. The pair distances in
+        # cur_pair_dists were captured before this step. The recorded dt is the
+        # local dt actually used, since the simple two-value scheme does not
+        # change dt because of a backstep here. The diffusion at pos_old is the
+        # correct bridge diffusion over the interval from pos_old to pos.
         if _bb_active:
             prev_pair_dists = cur_pair_dists
             prev_dt_outer = float(dt)
@@ -317,12 +322,11 @@ def _run_trajectory_worker(args):
     )
 
 
-# NAM simulator
 class NAMSimulator:
     """
-    Northrup-Allison-McCammon Brownian dynamics simulator.
-    Molecule 1 is fixed at the origin.
-    Molecule 2 diffuses from a random point on the b-sphere.
+    Northrup-Allison-McCammon Brownian dynamics simulator. Molecule 1 is held
+    fixed at the origin, while molecule 2 diffuses inward from a random point
+    on the b-sphere.
     """
 
     def __init__(
@@ -341,31 +345,33 @@ class NAMSimulator:
         self.params = params
         self.force_fn = force_fn or zero_force
         self.rng = np.random.default_rng(params.seed)
-        # Independent RNG stream for Brownian bridge sampling (offset
-        # 0xBB). Keeps bridge sampling off the main rng so bridge_on
-        # vs bridge_off comparisons at the same seed produce identical
-        # trajectories (only bridge samples differ).
+        # A separate RNG stream is used for Brownian bridge sampling (offset by
+        # 0xBB). Keeping bridge sampling off the main rng ensures that runs with
+        # the bridge on and runs with it off, at the same seed, produce
+        # identical trajectories and differ only in the bridge samples.
         _bb_seed = (params.seed if params.seed is not None else 0) + 0xBB
         self.rng_bb = np.random.default_rng(_bb_seed)
-        # Pre-centre mol2 positions for fast placement (avoid copies per step)
+        # Pre-centre the mol2 positions so that placement is fast and avoids
+        # making copies on every step.
         c0 = mol2.centroid()
         self._mol2_pos0 = mol2.positions_array() - c0
         self._mol2_scratch = copy.copy(mol2)
         self._mol2_scratch.atoms = [copy.copy(a) for a in mol2.atoms]
-        # Reaction cutoff distances - used by adaptive dt
+        # Reaction cutoff distances, which the adaptive time step uses.
         self._rxn_cutoffs = [
             pair.distance_cutoff
             for rxn in pathway_set.reactions
             for pair in rxn.criteria.pairs
         ]
-        # Accumulators
+        # Accumulators for the trajectory outcomes.
         self.results: List[TrajectoryResult] = []
         self.n_reacted = 0
         self.n_escaped = 0
         self.reaction_counts: Dict[str, int] = {}
-        # Geometry-based adaptive time step
+        # Geometry-based adaptive time step controller.
         self._dt_ctrl = AdaptiveTimeStep()
-        # Outer propagator (LMZ) - set up if mobility info is available
+        # The outer propagator (LMZ) is set up when mobility information is
+        # available.
         self._outer_prop = None
         try:
             from pystarc.simulation.outer_propagator import OuterPropagator, OPGroupInfo
@@ -380,12 +386,12 @@ class NAMSimulator:
                 Dtrans=mobility.D_trans2,
                 Drot=mobility.D_rot2,
             )
-            # physical constants in PySTARC units (A, ps, kBT)
-            kT = 0.5961  # kBT in kcal/mol at 298.15 K
-            viscosity = 1.002e-3 * 1e-4 / 1e-12  # Pa.s -> kcal.ps/A^3 (20°C water)
+            # Physical constants expressed in PySTARC units of Å, ps, and kBT.
+            kT = 0.5961  # kBT in kcal/mol at 298.15 K.
+            viscosity = 1.002e-3 * 1e-4 / 1e-12  # Viscosity of water at 20 °C, converted from Pa·s to kcal·ps/Å³.
             dielectric = 78.54
-            vacuum_perm = 1.0 / (4 * math.pi * 332.0636)  # e^2/(kcal.A)
-            debye_len = 8.0  # A, physiological ionic strength
+            vacuum_perm = 1.0 / (4 * math.pi * 332.0636)  # Vacuum permittivity in e²/(kcal·Å).
+            debye_len = 8.0  # Debye length in Å at physiological ionic strength.
             max_mol_r = max(mol1.bounding_radius(), mol2.bounding_radius())
             self._outer_prop = OuterPropagator(
                 b_radius=params.r_start,
@@ -400,7 +406,8 @@ class NAMSimulator:
                 g1=g1,
             )
         except Exception:
-            # If outer propagator fails to set up, fall back to simple escape
+            # If the outer propagator cannot be set up, fall back to the simple
+            # escape check.
             self._outer_prop = None
 
     def _place_mol2(self, pos: np.ndarray, ori: Quaternion) -> Molecule:
@@ -414,7 +421,7 @@ class NAMSimulator:
         return mol
 
     def run_one(self) -> TrajectoryResult:
-        """Run a single trajectory - used by serial path."""
+        """Run a single trajectory. This is used by the serial path."""
         v = self.rng.standard_normal(3)
         v /= np.linalg.norm(v)
         pos = v * self.params.r_start
@@ -422,13 +429,13 @@ class NAMSimulator:
         D_r = self.mobility.relative_rotational_diffusion()
         r_h1 = self.mobility.radius1
         r_h2 = self.mobility.radius2
-        # Reset adaptive dt controller for this trajectory
+        # Reset the adaptive dt controller for this trajectory.
         self._dt_ctrl.reset()
-        # Brownian bridge state: pair distances at the previous iter's
-        # top, the dt actually used in the previous outer step, and the
-        # diffusion at the previous step's start. None on iter 0.
-        # Bridge code path runs only when use_brownian_bridge=True AND
-        # the pathway_set has reactions to track.
+        # The Brownian bridge state holds the pair distances from the top of the
+        # previous iteration, the dt actually used in the previous outer step,
+        # and the diffusion at the start of that step. It is None on the first
+        # iteration. The bridge code path runs only when use_brownian_bridge is
+        # True and the pathway_set has reactions to track.
         _has_reactions = (
             self.pathway_set is not None and len(self.pathway_set.reactions) > 0
         )
@@ -438,7 +445,7 @@ class NAMSimulator:
         prev_D_eff_bb = 0.0
         for step in range(self.params.max_steps):
             mol2 = self._place_mol2(pos, ori)
-            # Compute current pair distances if bridge is active.
+            # Compute the current pair distances when the bridge is active.
             if _bb_active:
                 cur_pair_dists = compute_pair_distances(
                     self.mol1,
@@ -447,7 +454,7 @@ class NAMSimulator:
                 )
             else:
                 cur_pair_dists = None
-            # Reaction check: bridge-aware when we have prior state.
+            # The reaction check is bridge-aware when prior state is available.
             if (
                 _bb_active
                 and prev_pair_dists is not None
@@ -477,8 +484,9 @@ class NAMSimulator:
                     rxn,
                 )
             r = float(np.linalg.norm(pos))
-            # Outer propagator (LMZ): triggers at r > qb_factor * b_sphere
-            # qb_factor = 1.1 (from motion/qb_factor.hh)
+            # The outer propagator (LMZ) is triggered when r exceeds
+            # qb_factor × b-sphere, where qb_factor is 1.1 (taken from
+            # motion/qb_factor.hh).
             QB_FACTOR = 1.1
             if self._outer_prop is not None and r >= QB_FACTOR * self.params.r_start:
                 reached_b, pos, ori_arr = self._outer_prop.new_state(
@@ -494,16 +502,19 @@ class NAMSimulator:
                     return TrajectoryResult(
                         Fate.ESCAPED, step, step * self.params.dt, r
                     )
-                # returned to b-sphere - continue BD
+                # The particle returned to the b-sphere, so continue the BD
+                # propagation.
                 continue
-            # Fallback simple escape check (when no outer propagator)
+            # Simple fallback escape check, used when there is no outer
+            # propagator.
             if self._outer_prop is None and r >= self.params.r_escape:
                 return TrajectoryResult(Fate.ESCAPED, step, step * self.params.dt, r)
             force, torque, _ = self.force_fn(self.mol1, mol2)
-            # RPY: position-dependent D_rel (hydrodynamic_interactions=true)
+            # With Rotne-Prager-Yamakawa hydrodynamics the relative
+            # translational diffusion depends on position.
             D_t = self.mobility.relative_translational_diffusion(pos)
             r = float(np.linalg.norm(pos))
-            # Geometry-based adaptive dt (step_variable_dt)
+            # Geometry-based adaptive time step.
             dt = self._dt_ctrl.get_dt(
                 r,
                 D_t,
@@ -514,13 +525,14 @@ class NAMSimulator:
                 dt_min=self.params.dt_rxn,
                 dt_rxn_min=self.params.dt_rxn / 4.0,
             )
-            # Hard-sphere rejection: save old state before stepping
+            # Save the old state before stepping so a hard-sphere rejection can
+            # redraw from it.
             pos_old, ori_old = pos, ori
-            # Draw Wiener increments and step
+            # Draw the Wiener increments and take the step.
             dW_t = math.sqrt(dt) * self.rng.standard_normal(3)
             dW_r = math.sqrt(dt) * self.rng.standard_normal(3)
             pos, ori = bd_step_wiener(pos, ori, force, torque, D_t, D_r, dt, dW_t, dW_r)
-            # Force-change backstep with Wiener subdivision
+            # Backstep on a large force change, subdividing the Wiener path.
             mol2_new = self._place_mol2(pos, ori)
             force_new, _, _ = self.force_fn(self.mol1, mol2_new)
             if backstep_due_to_force(
@@ -545,8 +557,8 @@ class NAMSimulator:
                 pos, ori = bd_step_wiener(
                     pos, ori, f2, t2, D_t2, D_r, hdt, dW_t - dW_mid_t, dW_r - dW_mid_r
                 )
-                self._dt_ctrl._last_dt = hdt  # record actual dt used
-            # Hard-sphere collision rejection
+                self._dt_ctrl._last_dt = hdt  # Record the dt actually used.
+            # Reject the step if it produces a hard-sphere collision.
             if self.params.use_hard_sphere:
                 mol2_trial = self._place_mol2(pos, ori)
                 if _check_hard_sphere_overlap(self.mol1, mol2_trial):
@@ -556,12 +568,13 @@ class NAMSimulator:
                     pos, ori = bd_step_wiener(
                         pos_old, ori_old, force, torque, D_t_old, D_r, dt, dW_t2, dW_r2
                     )
-            # Save state for the next iteration's Brownian bridge check.
-            # cur_pair_dists were captured before this step; effective
-            # dt is whatever the dt controller actually applied (set every
-            # call to get_dt() and overwritten to hdt if backstep fired).
-            # D from the start of this step (at pos_old) is the right
-            # bridge D over the [pos_old -> pos] interval.
+            # Save the state for the next iteration's Brownian bridge check.
+            # The pair distances in cur_pair_dists were captured before this
+            # step. The effective dt is whatever the dt controller actually
+            # applied, which is set on every call to get_dt and overwritten to
+            # hdt when a backstep fires. The diffusion at the start of this step
+            # (at pos_old) is the correct bridge diffusion over the interval
+            # from pos_old to pos.
             if _bb_active:
                 prev_pair_dists = cur_pair_dists
                 prev_dt_outer = float(self._dt_ctrl._last_dt or 0.0)
@@ -576,7 +589,7 @@ class NAMSimulator:
         )
 
     def run(self) -> "SimulationResult":
-        """Run all trajectories, serial or parallel."""
+        """Run all trajectories, either serially or in parallel."""
         self.results.clear()
         self.reaction_counts.clear()
         self.n_reacted = 0
@@ -629,10 +642,9 @@ class NAMSimulator:
             self.n_escaped += 1
 
 
-# Simulation result
 @dataclass
 class SimulationResult:
-    """Aggregated NAM BD results with k_on calculation."""
+    """Aggregated NAM Brownian dynamics results together with the k_on calculation."""
 
     n_trajectories: int
     n_reacted: int
@@ -642,12 +654,12 @@ class SimulationResult:
     r_start: float
     r_escape: float
     dt: float
-    k_db: float = 0.0  # LMZ rate from outer_propagator.relative_rate(b)
+    k_db: float = 0.0  # LMZ rate from outer_propagator.relative_rate(b).
 
     @classmethod
     def from_simulator(cls, sim: NAMSimulator) -> "SimulationResult":
         n_max = sum(1 for r in sim.results if r.fate == Fate.MAX_STEPS)
-        # Get LMZ k_db from outer propagator if available
+        # Obtain the LMZ k_db from the outer propagator when one is available.
         k_db = 0.0
         if sim._outer_prop is not None:
             try:
@@ -673,38 +685,47 @@ class SimulationResult:
 
     def rate_constant(self, D_rel: float, k_db: float = 0.0) -> float:
         """
-        NAM k_on (Northrup, Allison, McCammon 1984).
-        The LMZ formulation gives k_db = relative_rate(b_sphere)
-        from the outer propagator (which includes electrostatic effects):
-            k_on = conv_factor * k_db * P
-        where conv_factor = 6.02e8 converts to M^-1 s^-1.
-        If k_db is not provided (k_db=0), falls back to Smoluchowski:
-            k_D = 4*pi*D_rel*r_b*N_A
-            k_on = k_D * P / (1 - P*(1 - r_b/r_esc))
-        Parameters
-        ----------
-        D_rel : relative translational diffusion (Å²/ps)
-        k_db  : LMZ rate from outer_propagator.relative_rate(b_sphere)
-                in the internal units. If 0.0, uses Smoluchowski.
+        Compute the NAM association rate constant k_on from Northrup, Allison,
+        and McCammon (1984). The LMZ formulation supplies k_db, the relative
+        rate at the b-sphere from the outer propagator, which already includes
+        electrostatic effects, and gives
+
+            k_on = conv_factor × k_db × P
+
+        where conv_factor = 6.02e8 converts the result to M⁻¹ s⁻¹. Here P is the
+        reaction probability. When k_db is not provided (k_db = 0), the method
+        falls back to the Smoluchowski expression
+
+            k_D = 4π × D_rel × r_b × N_A
+            k_on = k_D × P / (1 − P × (1 − r_b / r_esc))
+
+        where D_rel is the relative translational diffusion coefficient, r_b is
+        the b-sphere radius, r_esc is the escape radius, and N_A is Avogadro's
+        number.
+
+        The argument D_rel is the relative translational diffusion coefficient
+        in Å²/ps. The argument k_db is the LMZ rate from
+        outer_propagator.relative_rate(b_sphere) in internal units; when it is
+        0.0 the Smoluchowski form is used instead.
         """
         P = self.reaction_probability
         if P == 0.0:
             return 0.0
 
         if k_db > 0.0:
-            # k_on = conv_factor * k_db * P
-            # conv_factor = 6.02e8 L/(mol) converts A^3/ps to M^-1 s^-1
-            # k_db is in A^3/ps units from relative_rate()
-            # Units: [A^3/ps] * [6.02e23/L] * [1e-27 L/A^3] * [1e12 ps/s] = M^-1 s^-1
-            CONV = 6.022e23 * 1e-27 * 1e12  # A^3/ps -> M^-1 s^-1
+            # Here k_on = conv_factor × k_db × P. The conversion factor
+            # 6.02e8 L/mol takes the rate from Å³/ps to M⁻¹ s⁻¹, and k_db comes
+            # from relative_rate() in Å³/ps. The unit chain is
+            # [Å³/ps] × [6.02e23/L] × [1e-27 L/Å³] × [1e12 ps/s] = M⁻¹ s⁻¹.
+            CONV = 6.022e23 * 1e-27 * 1e12  # Converts Å³/ps to M⁻¹ s⁻¹.
             return CONV * k_db * P
         else:
-            # Smoluchowski approximation (no outer propagator)
-            # k_D = 4π·D·b  in Å³/ps, then convert to M⁻¹s⁻¹
-            # CONV = N_A [/mol] * 1e-30 [m³/Å³] / 1e-12 [s/ps] / 1e-3 [m³/L]
-            #      = 6.022e23 * 1e-30 / 1e-12 / 1e-3 = 6.022e8  (Å³/ps -> M⁻¹s⁻¹)
-            CONV_A3ps = 6.022e23 * 1e-30 / 1e-12 / 1e-3  # = 6.022e8
-            k_D = 4.0 * math.pi * D_rel * self.r_start  # Å³/ps
+            # Smoluchowski approximation, used when there is no outer
+            # propagator. Here k_D = 4π × D × b in Å³/ps is converted to
+            # M⁻¹ s⁻¹. The factor is N_A [/mol] × 1e-30 [m³/Å³] / 1e-12 [s/ps]
+            # / 1e-3 [m³/L] = 6.022e23 × 1e-30 / 1e-12 / 1e-3 = 6.022e8.
+            CONV_A3ps = 6.022e23 * 1e-30 / 1e-12 / 1e-3  # Equals 6.022e8, converting Å³/ps to M⁻¹ s⁻¹.
+            k_D = 4.0 * math.pi * D_rel * self.r_start  # In Å³/ps.
             beta = self.r_start / self.r_escape
             denom = 1.0 - P * (1.0 - beta)
             return CONV_A3ps * k_D * P / denom
@@ -717,16 +738,17 @@ class SimulationResult:
         )
 
 
-# Confidence interval helpers (added to SimulationResult via monkey-patch)
-# We extend the class after definition to avoid dataclass issues
+# Confidence interval helpers, attached to SimulationResult by monkey-patching.
+# The class is extended after its definition to avoid dataclass issues.
 def _n_completed(self) -> int:
     return self.n_reacted + self.n_escaped
 
 
 def _reaction_probability_ci(self, confidence: float = 0.95):
     """
-    Wilson score 95% CI on P_rxn -
-    Wilson (1927): valid even for very small P_rxn.
+    Compute the Wilson score 95% confidence interval on the reaction
+    probability P_rxn. The Wilson (1927) interval is valid even when P_rxn is
+    very small.
     """
     n = self.n_reacted + self.n_escaped
     if n == 0:
@@ -736,10 +758,11 @@ def _reaction_probability_ci(self, confidence: float = 0.95):
     z2n = z**2 / n
     denom = 1.0 + z2n
     ctr = (p + z2n / 2.0) / denom
-    # Wilson (1927) margin: z * sqrt(p(1-p)/n + z^2/(4 n^2)) / (1 + z^2/n).
-    # With z2n = z^2/n the second term inside sqrt is z2n/(4 n), not z2n/4
-    # (the latter overstates the margin by a factor of n; CIs were ~22x too
-    # wide for typical PySTARC inputs n=1000, p=1e-3).
+    # The Wilson (1927) margin is z × √(p(1−p)/n + z²/(4n²)) / (1 + z²/n).
+    # With z2n = z²/n, the second term inside the square root is z2n/(4n), not
+    # z2n/4. The latter overstates the margin by a factor of n, which made the
+    # intervals roughly 22 times too wide for typical PySTARC inputs of
+    # n = 1000 and p = 1e-3.
     mar = z * math.sqrt(max(p * (1 - p) / n + z2n / (4.0 * n), 0.0)) / denom
     return (max(0.0, ctr - mar), min(1.0, ctr + mar))
 
@@ -747,16 +770,17 @@ def _reaction_probability_ci(self, confidence: float = 0.95):
 def _k_from_P(self, P: float, D_rel: float) -> float:
     if P <= 0.0:
         return 0.0
-    CONV_A3ps = 6.022e23 * 1e-30 / 1e-12 / 1e-3  # Å³/ps -> M⁻¹s⁻¹ = 6.022e8
+    CONV_A3ps = 6.022e23 * 1e-30 / 1e-12 / 1e-3  # Equals 6.022e8, converting Å³/ps to M⁻¹ s⁻¹.
     if self.k_db > 0.0:
         return CONV_A3ps * self.k_db * P
-    k_D = 4.0 * math.pi * D_rel * self.r_start  # Å³/ps
+    k_D = 4.0 * math.pi * D_rel * self.r_start  # In Å³/ps.
     beta = self.r_start / self.r_escape
     return CONV_A3ps * k_D * P / (1.0 - P * (1.0 - beta))
 
 
 def _rate_constant_ci(self, D_rel: float, confidence: float = 0.95):
-    """95% CI on k_on propagated from Wilson CI on P_rxn."""
+    """Compute the 95% confidence interval on k_on by propagating the Wilson
+    confidence interval on the reaction probability P_rxn."""
     p_lo, p_hi = self.reaction_probability_ci(confidence)
     return (_k_from_P(self, p_lo, D_rel), _k_from_P(self, p_hi, D_rel))
 
@@ -786,7 +810,7 @@ def _result_summary(
     return "\n".join(lines)
 
 
-# Attach methods to SimulationResult
+# Attach these helper methods to SimulationResult.
 SimulationResult.reaction_probability_ci = _reaction_probability_ci
 SimulationResult.rate_constant_ci = _rate_constant_ci
 SimulationResult.summary = _result_summary

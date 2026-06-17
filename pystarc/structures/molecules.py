@@ -1,5 +1,10 @@
 """
 Core molecular structure types for PySTARC.
+
+This module defines the basic data structures used throughout the package: a
+single point-charge atom, a rigid molecule built from atoms, an axis-aligned
+bounding box, and the contact-based reaction criteria that decide when two
+molecules have associated.
 """
 
 from __future__ import annotations
@@ -9,7 +14,7 @@ import numpy as np
 import math
 
 
-# Atom
+# A single atom.
 @dataclass
 class Atom:
     """A single point-charge atom with PQR data."""
@@ -27,6 +32,7 @@ class Atom:
 
     @property
     def position(self) -> np.ndarray:
+        """Return the atom's Cartesian coordinates in angstrom as a length-3 array."""
         return np.array([self.x, self.y, self.z], dtype=float)
 
     @position.setter
@@ -34,6 +40,7 @@ class Atom:
         self.x, self.y, self.z = float(xyz[0]), float(xyz[1]), float(xyz[2])
 
     def distance_to(self, other: "Atom") -> float:
+        """Return the Euclidean distance in angstrom between this atom and another."""
         dx = self.x - other.x
         dy = self.y - other.y
         dz = self.z - other.z
@@ -47,7 +54,7 @@ class Atom:
         )
 
 
-# Molecule
+# A rigid molecule made of atoms.
 @dataclass
 class Molecule:
     """Collection of atoms representing one rigid body."""
@@ -55,21 +62,33 @@ class Molecule:
     name: str = ""
     atoms: List[Atom] = field(default_factory=list)
 
-    # geometry helpers
+    # The methods below compute geometric properties of the molecule.
     def centroid(self) -> np.ndarray:
+        """Return the unweighted mean position of all atoms in angstrom."""
         if not self.atoms:
             return np.zeros(3)
         pos = np.array([a.position for a in self.atoms])
         return pos.mean(axis=0)
 
     def center_of_mass(self) -> np.ndarray:
-        """Uniform-mass centroid (PQR files lack mass data)."""
+        """Return the center of mass.
+
+        PQR files carry no atomic masses, so every atom is treated as having
+        equal mass and this reduces to the plain centroid.
+        """
         return self.centroid()
 
     def total_charge(self) -> float:
+        """Return the net charge of the molecule, summed over all atomic charges."""
         return sum(a.charge for a in self.atoms)
 
     def radius_of_gyration(self) -> float:
+        """Return the radius of gyration in angstrom about the centroid.
+
+        This is the root-mean-square distance of the atoms from the centroid,
+        Rg = sqrt(mean over atoms of |r - c|^2). Here r is each atom position and
+        c is the centroid, both in angstrom.
+        """
         if not self.atoms:
             return 0.0
         c = self.centroid()
@@ -77,34 +96,46 @@ class Molecule:
         return float(np.sqrt(((pos - c) ** 2).sum(axis=1).mean()))
 
     def bounding_radius(self) -> float:
-        """Maximum distance from centroid to any atom surface."""
+        """Return the radius in angstrom of the smallest sphere about the centroid
+        that encloses every atom, measured to each atom's surface rather than its
+        center. It is the maximum over atoms of the centroid-to-center distance plus
+        the atom radius."""
         if not self.atoms:
             return 0.0
         c = self.centroid()
         return max(np.linalg.norm(a.position - c) + a.radius for a in self.atoms)
 
     def positions_array(self) -> np.ndarray:
+        """Return the atom positions in angstrom as an array of shape (N, 3)."""
         return np.array([a.position for a in self.atoms])
 
     def charges_array(self) -> np.ndarray:
+        """Return the atomic charges as a length-N array."""
         return np.array([a.charge for a in self.atoms])
 
     def radii_array(self) -> np.ndarray:
+        """Return the atomic radii in angstrom as a length-N array."""
         return np.array([a.radius for a in self.atoms])
 
     def translate(self, delta: np.ndarray) -> None:
+        """Shift every atom in place by the displacement delta given in angstrom."""
         for a in self.atoms:
             a.x += delta[0]
             a.y += delta[1]
             a.z += delta[2]
 
     def rotate(self, R: np.ndarray) -> None:
-        """Rotate all atoms in-place around the origin."""
+        """Rotate every atom in place about the origin by the rotation matrix R."""
         for a in self.atoms:
             new_pos = R @ a.position
             a.position = new_pos
 
     def rotate_about_centroid(self, R: np.ndarray) -> None:
+        """Rotate the molecule in place by R about its own centroid.
+
+        The molecule is shifted so its centroid sits at the origin, rotated by R,
+        and shifted back, which leaves the centroid fixed.
+        """
         c = self.centroid()
         self.translate(-c)
         self.rotate(R)
@@ -117,10 +148,11 @@ class Molecule:
         return f"Molecule({self.name!r}, {len(self.atoms)} atoms, q={self.total_charge():.2f})"
 
 
-# BoundingBox
+# An axis-aligned bounding box.
 @dataclass
 class BoundingBox:
-    """Axis-aligned bounding box."""
+    """An axis-aligned box, stored as the minimum and maximum extent along each
+    Cartesian axis in angstrom."""
 
     xmin: float = 0.0
     xmax: float = 0.0
@@ -131,6 +163,11 @@ class BoundingBox:
 
     @classmethod
     def from_molecule(cls, mol: Molecule, padding: float = 0.0) -> "BoundingBox":
+        """Build the tightest axis-aligned box enclosing the atom centers of mol.
+
+        The optional padding in angstrom is added on every side, for example to
+        leave room for atomic radii or a margin around the molecule.
+        """
         if not mol.atoms:
             return cls()
         xs = [a.x for a in mol.atoms]
@@ -147,6 +184,7 @@ class BoundingBox:
 
     @property
     def center(self) -> np.ndarray:
+        """Return the geometric center of the box in angstrom."""
         return np.array(
             [
                 (self.xmin + self.xmax) / 2,
@@ -157,6 +195,7 @@ class BoundingBox:
 
     @property
     def size(self) -> np.ndarray:
+        """Return the side lengths of the box along each axis in angstrom."""
         return np.array(
             [
                 self.xmax - self.xmin,
@@ -166,6 +205,8 @@ class BoundingBox:
         )
 
     def contains(self, point: np.ndarray) -> bool:
+        """Return True if the point lies inside the box, with the boundary counted
+        as inside."""
         return (
             self.xmin <= point[0] <= self.xmax
             and self.ymin <= point[1] <= self.ymax
@@ -180,14 +221,16 @@ class BoundingBox:
         )
 
 
-# ContactPair
+# A single contact between an atom of one molecule and an atom of the other.
 @dataclass
 class ContactPair:
-    """A single reaction contact between an atom in mol1 and mol2."""
+    """One reaction contact, pairing a specific atom in mol1 with a specific atom
+    in mol2. The contact is satisfied when the two atoms are closer than
+    distance_cutoff."""
 
     mol1_atom_index: int = 0
     mol2_atom_index: int = 0
-    distance_cutoff: float = 5.0  # Å
+    distance_cutoff: float = 5.0  # contact distance threshold in Å
 
     def __repr__(self) -> str:
         return (
@@ -197,31 +240,34 @@ class ContactPair:
         )
 
 
-# ReactionCriteria
+# A reaction criterion defined by a set of atomic contacts.
 @dataclass
 class ReactionCriteria:
-    """
-    Set of contact pairs defining a reaction criterion.
-    Reaction criterion: fires when n_satisfied >= n_needed.
-    Default n_needed = len(pairs) (all pairs must be satisfied).
-    Setting n_needed < len(pairs) allows or-like logic.
+    """A reaction criterion built from a set of contact pairs.
+
+    The criterion fires once the number of satisfied contact pairs reaches the
+    threshold n_needed. By default n_needed equals the number of pairs, so every
+    contact must be satisfied at the same time, which behaves like a logical AND.
+    Setting n_needed below the number of pairs relaxes this so that any sufficient
+    subset of contacts triggers the reaction, which behaves more like a logical OR.
     """
 
     name: str = "reaction"
     pairs: List[ContactPair] = field(default_factory=list)
-    n_needed: int = -1  # -1 means all pairs (default: all pairs)
-    # State-machine labels (only used when state_machine_reactions=True)
-    # Default None -> flattened-reactions path
+    n_needed: int = -1  # a value of -1 means require all pairs
+    # The two labels below are only used when state-machine reactions are enabled.
+    # Leaving them as None selects the flattened-reactions path instead.
     state_before: "Optional[str]" = None
     state_after: "Optional[str]" = None
 
     def is_satisfied(self, mol1: Molecule, mol2: Molecule) -> bool:
-        """
-        n_satis = 0
-        for pair in pairs:
-            if distance < req_distance: n_satis++
-            if n_satis >= n_needed: return True
-        return False
+        """Return True if the reaction criterion is met for the given molecule pair.
+
+        Each contact pair is checked by measuring the distance between its two
+        atoms and counting the pair as satisfied when that distance is below the
+        pair's cutoff. The criterion is met as soon as the count of satisfied pairs
+        reaches the threshold, which is n_needed when set and otherwise the total
+        number of pairs. A criterion with no required contacts is always satisfied.
         """
         threshold = len(self.pairs) if self.n_needed < 0 else self.n_needed
         if threshold == 0:

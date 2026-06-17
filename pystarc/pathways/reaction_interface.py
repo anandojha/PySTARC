@@ -1,6 +1,6 @@
 """
-Reaction pathways and state machine for PySTARC.
-
+Reaction pathways and the state machine that PySTARC uses to detect when a
+bimolecular reaction has occurred during a Brownian-dynamics trajectory.
 """
 
 from __future__ import annotations
@@ -13,15 +13,16 @@ import numpy as np
 @dataclass
 class ReactionInterface:
     """
-    One reaction pathway: a name + a list of contact criteria.
-    All contacts must be satisfied simultaneously for the reaction to occur.
+    A single reaction pathway, consisting of a name and a list of contact
+    criteria. Every contact must be satisfied at the same time for the reaction
+    to occur.
     """
 
     name: str
     criteria: ReactionCriteria
-    probability: float = 1.0  # reaction probability when contacts are met
-    # State-machine labels (only used when state_machine_reactions=True)
-    # Default None -> flattened-reactions path
+    probability: float = 1.0  # Probability that the reaction fires once all contacts are met.
+    # Labels for the state machine, used only when state_machine_reactions is True.
+    # When both default to None, the simulator follows the flattened-reactions path instead.
     state_before: "Optional[str]" = None
     state_after: "Optional[str]" = None
 
@@ -33,10 +34,11 @@ class ReactionInterface:
     ) -> bool:
         """Return True if this reaction has fired.
 
-        rng: optional numpy Generator for the probability gate when
-        self.probability < 1.0. Pass an explicit rng for reproducibility;
-        when None, np.random.default_rng() is used for the single draw
-        (non-reproducible across runs but isolated from any global state).
+        The argument rng is an optional numpy Generator used for the probability
+        gate when self.probability is below 1.0. Pass an explicit rng to make the
+        result reproducible. When rng is None, np.random.default_rng() supplies
+        the single random draw, which is not reproducible across runs but is
+        isolated from any global random state.
         """
         if not self.criteria.is_satisfied(mol1, mol2):
             return False
@@ -56,8 +58,8 @@ class ReactionInterface:
 
 class PathwaySet:
     """
-    Collection of all reaction pathways for a simulation.
-    Iterates through pathways in order, returns first match.
+    The full collection of reaction pathways for a simulation. The pathways are
+    examined in order, and the first one that matches is returned.
     """
 
     def __init__(
@@ -66,9 +68,10 @@ class PathwaySet:
         first_state: Optional[str] = None,
     ):
         self.reactions: List[ReactionInterface] = reactions or []
-        # Initial state label for trajectories in state-machine reaction mode.
-        # Carries the value parsed from <first_state> in rxns.xml. None when
-        # state-machine mode is not used; in that case the simulator ignores it.
+        # Initial state label for trajectories run in state-machine reaction mode.
+        # This holds the value parsed from <first_state> in rxns.xml. It is None
+        # when state-machine mode is not used, and in that case the simulator
+        # ignores it.
         self.first_state: Optional[str] = first_state
 
     def add(self, rxn: ReactionInterface) -> None:
@@ -78,18 +81,19 @@ class PathwaySet:
         self, mol1: Molecule, mol2: Molecule, rng: Optional[np.random.Generator] = None
     ) -> Optional[str]:
         """
-        Check all pathways; return name of first that fires, or None.
+        Check every pathway and return the name of the first one that fires, or
+        None if none of them do.
         """
         for rxn in self.reactions:
             if rxn.criteria.is_satisfied(mol1, mol2):
                 prob = rxn.probability
                 if prob >= 1.0:
                     return rxn.name
-                # Use the supplied rng for reproducibility; fall back
-                # to a fresh default_rng when none is supplied. The fresh
-                # generator isolates the draw from any module-level global
-                # state, but is non-reproducible across runs unless the
-                # caller passes a seeded rng.
+                # Use the supplied rng so the result is reproducible, and fall
+                # back to a fresh default_rng when none is supplied. The fresh
+                # generator isolates the draw from any module-level global state,
+                # but it is not reproducible across runs unless the caller passes
+                # a seeded rng.
                 _rng = rng if rng is not None else np.random.default_rng()
                 if _rng.random() < prob:
                     return rxn.name
@@ -107,12 +111,13 @@ def make_default_reaction(
     mol1: Molecule, mol2: Molecule, cutoff: float = 5.0, n_pairs: int = 3
 ) -> ReactionInterface:
     """
-    Build a default reaction using the n closest atom pairs at centroid approach.
+    Build a default reaction from the n closest atom pairs as the two molecules
+    approach along the line joining their centroids.
     """
     c1 = mol1.centroid()
     c2 = mol2.centroid()
 
-    # Pick atoms nearest to the opposing centroid
+    # Pick the atoms nearest to the opposing molecule's centroid.
     def closest_atoms(mol: Molecule, target: np.ndarray, n: int) -> List[int]:
         dists = [np.linalg.norm(a.position - target) for a in mol.atoms]
         return sorted(range(len(dists)), key=lambda i: dists[i])[:n]

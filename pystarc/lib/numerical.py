@@ -1,5 +1,8 @@
 """
-Numerical utilities for PySTARC.
+General-purpose numerical utilities used throughout PySTARC. This module
+provides a natural cubic spline interpolator, Romberg integration, a single
+Wiener-process increment for Brownian dynamics, the low-order Cartesian
+multipole moments of a charge distribution, and Legendre polynomials.
 """
 
 from __future__ import annotations
@@ -7,16 +10,15 @@ from typing import Callable, List, Optional, Tuple
 import numpy as np
 import math
 
-# Cubic spline
-
-
 class CubicSpline:
     """
-    Natural cubic spline interpolation.
-    Usage::
-        spline = CubicSpline(x_data, y_data)
-        y = spline(x)
-        dy = spline.derivative(x)
+    Natural cubic spline interpolation through a set of data points.
+
+    Construct the spline by passing the sample abscissas and ordinates, for
+    example spline = CubicSpline(x_data, y_data). Calling the spline at a point,
+    spline(x), returns the interpolated value, and spline.derivative(x) returns
+    its first derivative. The natural boundary condition sets the second
+    derivative to zero at both ends.
     """
 
     def __init__(self, x: np.ndarray, y: np.ndarray):
@@ -30,7 +32,8 @@ class CubicSpline:
     def _compute_coefficients(self) -> None:
         n = len(self.x)
         h = np.diff(self.x)
-        # Set up tridiagonal system for natural spline (m_0 = m_{n-1} = 0)
+        # Assemble the tridiagonal system for the second derivatives m_i, with
+        # the natural boundary condition m_0 = m_{n-1} = 0.
         A = np.zeros((n, n))
         b = np.zeros(n)
         A[0, 0] = 1.0
@@ -70,7 +73,6 @@ class CubicSpline:
         return float(b + 2 * c * dx + 3 * d * dx**2)
 
 
-# Romberg integration
 def romberg_integrate(
     f: Callable[[float], float],
     a: float,
@@ -79,8 +81,10 @@ def romberg_integrate(
     max_order: int = 12,
 ) -> float:
     """
-    Romberg integration of f on [a, b].
-    Returns integral estimate.
+    Estimate the definite integral of f over the interval [a, b] by Romberg
+    integration, which applies repeated Richardson extrapolation to the
+    trapezoidal rule. The routine returns once successive diagonal estimates
+    agree to within tol, or after max_order refinements.
     """
     R = [[0.0] * (max_order + 1) for _ in range(max_order + 1)]
     h = b - a
@@ -97,28 +101,41 @@ def romberg_integrate(
     return R[max_order][max_order]
 
 
-# Wiener process
 def wiener_step(D: float, dt: float, dim: int, rng: np.random.Generator) -> np.ndarray:
     """
-    Generate one Wiener process increment: σ = √(2Ddt), dW ~ N(0, σ²).
+    Draw a single Wiener-process increment for a free Brownian step. The
+    displacement in each of the dim Cartesian directions is an independent
+    Gaussian with zero mean and standard deviation
+
+        σ = √(2 D Δt)
+
+    so that dW ~ N(0, σ²). Here D is the diffusion coefficient and Δt is the
+    time step.
     """
     sigma = math.sqrt(2.0 * D * dt)
     return sigma * rng.standard_normal(dim)
 
 
-# Cartesian multipoles
 def monopole_moment(charges: np.ndarray) -> float:
-    """Total charge q = Σ qᵢ."""
+    """Return the total charge q = Σ qᵢ of the distribution."""
     return float(np.sum(charges))
 
 
 def dipole_moment(positions: np.ndarray, charges: np.ndarray) -> np.ndarray:
-    """Dipole moment p = Σ qᵢ rᵢ."""
+    """Return the dipole moment p = Σ qᵢ rᵢ, where rᵢ is the position of charge qᵢ."""
     return (charges[:, None] * positions).sum(axis=0)
 
 
 def quadrupole_moment(positions: np.ndarray, charges: np.ndarray) -> np.ndarray:
-    """Traceless quadrupole tensor Qᵢⱼ = Σ qₖ(3rₖᵢ rₖⱼ - δᵢⱼ r²)."""
+    """
+    Return the traceless Cartesian quadrupole tensor
+
+        Qᵢⱼ = Σ qₖ (3 rₖᵢ rₖⱼ - δᵢⱼ r²)
+
+    where the sum runs over charges qₖ at positions rₖ, the indices i and j label
+    the Cartesian components, δᵢⱼ is the Kronecker delta, and r² is the squared
+    distance of charge k from the origin.
+    """
     Q = np.zeros((3, 3))
     for q, r in zip(charges, positions):
         r2 = np.dot(r, r)
@@ -126,9 +143,8 @@ def quadrupole_moment(positions: np.ndarray, charges: np.ndarray) -> np.ndarray:
     return Q
 
 
-# Legendre polynomials
 def legendre_p(n: int, x: float) -> float:
-    """Legendre polynomial Pₙ(x) via recurrence."""
+    """Evaluate the Legendre polynomial Pₙ(x) using the standard three-term recurrence."""
     if n == 0:
         return 1.0
     if n == 1:
@@ -141,5 +157,5 @@ def legendre_p(n: int, x: float) -> float:
 
 
 def legendre_series(coeffs: List[float], x: float) -> float:
-    """Evaluate Σ cₙ Pₙ(x)."""
+    """Evaluate the Legendre series Σ cₙ Pₙ(x), where coeffs holds the coefficients cₙ."""
     return sum(c * legendre_p(n, x) for n, c in enumerate(coeffs))

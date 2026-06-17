@@ -1,44 +1,41 @@
 """
-Convergence analysis for Brownian Dynamics simulations
-======================================================
+Convergence analysis for Brownian dynamics simulations.
 
-Physical Background
--------------------
-BD trajectories are independent Bernoulli trials. Each trajectory
-starts from a fresh random position on the b-surface with an
-independent random number seed, and terminates by either reacting
-(success, probability P_rxn) or escaping (failure, probability
-1 - P_rxn).
-
-Because the trials are independent and identically distributed
-(i.i.d.), the standard error of the mean is exact.
+Each Brownian dynamics trajectory is an independent Bernoulli trial. A
+trajectory starts from a fresh random position on the b-surface with an
+independent random number seed, and it ends either by reacting (a success,
+with probability P_rxn) or by escaping (a failure, with probability
+1 - P_rxn). Because the trials are independent and identically distributed,
+the standard error of the mean is exact and is given by
 
     SE(P_rxn) = √[P_rxn × (1 - P_rxn) / N]
 
-Convergence criterion
----------------------
-The relative standard error (RSE = SE / P_rxn) directly quantifies
-the precision of k_on.
+Here P_rxn is the reaction probability and N is the number of completed
+trajectories.
+
+The relative standard error, defined as RSE = SE / P_rxn, directly measures
+the precision of the rate constant k_on. It works out to
 
     RSE = √[(1 - P_rxn) / (N × P_rxn)]
 
-Since RSE ∝ 1/√N, the number of trajectories needed for a target
-precision is given by
+Since RSE is proportional to 1/√N, the number of trajectories needed to reach
+a target precision is
 
     N_needed = (1 - P_rxn) / (P_rxn × RSE_target²)
 
+where RSE_target is the desired relative standard error.
 
-
-Wilson score confidence interval
---------------------------------
-The 95% CI on P_rxn is computed using the Wilson score interval
+The 95% confidence interval on P_rxn is computed from the Wilson score
+interval,
 
     P ∈ [p̂ + z²/2n ± z√(p̂(1-p̂)/n + z²/4n²)] / (1 + z²/n)
 
-This is preferred over the normal approximation (p̂ ± 2σ) because
-it provides guaranteed coverage even when P_rxn << 0.05 or N is
-small.  The normal approximation gives negative lower bounds for
-small P_rxn, which is unphysical.
+where p̂ is the observed reaction probability, n is the number of trajectories,
+and z is the standard normal quantile (z ≈ 1.96 for 95% coverage). The Wilson
+interval is preferred over the normal approximation (p̂ ± 2σ) because it keeps
+its coverage even when P_rxn is much smaller than 0.05 or when N is small. The
+normal approximation can return negative lower bounds for small P_rxn, which is
+unphysical.
 """
 
 from typing import Optional
@@ -56,33 +53,23 @@ def analyse_convergence(
     work_dir: str = ".",
 ) -> dict:
     """
-    Run convergence analysis on completed BD simulation.
+    Run the convergence analysis on a completed Brownian dynamics simulation.
 
-    Parameters
-    ----------
-    n_reacted : int
-        Total trajectories that reacted.
-    n_escaped : int
-        Total trajectories that escaped.
-    k_b : float
-        Encounter rate constant (A^3/ps).
-    tol : float
-        Relative SE threshold for convergence (default 0.05 = 5%).
-    conv_factor : float
-        Unit conversion A^3/ps -> M-1 s-1.
-    work_dir : str
-        Directory to save convergence report.
+    The parameter n_reacted is the total number of trajectories that reacted,
+    and n_escaped is the total number that escaped. k_b is the encounter rate
+    constant in Å³/ps. tol is the relative standard error below which the
+    result is considered converged, defaulting to 0.05, that is 5%. conv_factor
+    is the factor that converts Å³/ps to M⁻¹ s⁻¹. work_dir is the directory in
+    which the convergence report is saved.
 
-    Returns
-    -------
-    dict with convergence results.
+    The function returns a dictionary holding the convergence results.
     """
     N = n_reacted + n_escaped
     if N == 0:
         return {"converged": False, "reason": "no completed trajectories"}
     P = n_reacted / N
     k_on = conv_factor * k_b * P
-    # SE and relative SE
+    # Standard error of P_rxn and the relative standard error.
     if P > 0 and P < 1:
         SE = math.sqrt(P * (1 - P) / N)
         relative_SE = SE / P
@@ -93,23 +80,25 @@ def analyse_convergence(
         SE = 0.0
         relative_SE = 0.0
     SE_kon = conv_factor * k_b * SE
-    # Wilson 95% CI (audit fix 2026-05-21: N=0 guard + sqrt non-negativity)
+    # Wilson 95% confidence interval. An audit on 2026-05-21 added a guard for
+    # the N=0 case and ensured the argument of the square root stays non-negative.
     z = 1.96
     if N == 0:
         wilson_lo, wilson_hi = 0.0, 1.0
     else:
         denom = 1 + z**2 / N
         centre = (P + z**2 / (2 * N)) / denom
-        # max(..., 0.0) guards FP roundoff at the P=0 or P=1 boundary.
+        # Clamping the argument at zero protects against floating-point roundoff
+        # at the P=0 or P=1 boundary, where it can dip slightly negative.
         sqrt_arg = max(P * (1 - P) / N + z**2 / (4 * N**2), 0.0)
         spread = z * math.sqrt(sqrt_arg) / denom
         wilson_lo = max(0.0, centre - spread)
         wilson_hi = min(1.0, centre + spread)
     wilson_lo_kon = conv_factor * k_b * wilson_lo
     wilson_hi_kon = conv_factor * k_b * wilson_hi
-    # Convergence verdict
+    # Decide whether the run has converged.
     converged = (0 < P < 1) and (relative_SE < tol)
-    # N needed for target tolerances
+    # Number of trajectories needed to reach a few target tolerances.
     targets = {}
     if 0 < P < 1:
         for target_tol in [0.10, 0.05, 0.01]:
@@ -136,7 +125,7 @@ def analyse_convergence(
 
 
 def print_convergence(result: dict) -> str:
-    """Print convergence analysis to terminal and return as string."""
+    """Print the convergence analysis to the terminal and return it as a string."""
     lines = []
     lines.append("")
     lines.append("  Convergence analysis")

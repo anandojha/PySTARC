@@ -1,14 +1,15 @@
 """
-PySTARC pipeline - Master orchestrator
-=====================================
-Chains all steps from a single PDB file to k_on:
-  Step 1: Extract ligand + receptor from PDB
-  Step 2: Parameterize ligand (antechamber + parmchk2 + tleap)
-  Step 3: Build gas-phase complex -> PQR files
-  Step 4: Run APBS -> all DX grids (electrostatic + born)
-  Step 5: Compute geometry (b-sphere, hydro radii, ghost atoms)
-  Step 6: Run PySTARC BD simulation -> k_on + 95% CI
-Entry point: run() called by run_pystarc.py
+PySTARC pipeline master orchestrator.
+
+This module chains together every step needed to go from a single PDB file to
+an association rate constant k_on. Step 1 extracts the ligand and receptor from
+the PDB. Step 2 parameterizes the ligand with AmberTools (antechamber, parmchk2,
+and tleap). Step 3 builds the gas-phase complex and writes the PQR files. Step 4
+runs APBS to produce all of the DX grids, both electrostatic and Born. Step 5
+computes the geometry, which includes the b-surface sphere, the hydrodynamic
+radii, and the ghost atoms. Step 6 runs the PySTARC Brownian-dynamics simulation
+to obtain k_on together with its 95% confidence interval. The entry point is
+run(), which is called by run_pystarc.py.
 """
 
 from __future__ import annotations
@@ -56,8 +57,9 @@ except ImportError:
 
 def run(cfg: PySTARCConfig):
     """
-    Full pipeline: PDB -> k_on.
-    All intermediate files go into cfg.work_dir.
+    Run the full pipeline that takes a PDB file and returns k_on.
+
+    All intermediate files are written into cfg.work_dir.
     """
     t0 = time.time()
     W = cfg.work_dir
@@ -76,18 +78,18 @@ def run(cfg: PySTARCConfig):
     print(f"  Threads       : {cfg.n_threads}")
     print(f"  GPU           : {cfg.gpu}")
     print()
-    # Steps 1-3: Extract + Build PQR files
-    # Shortcut: if receptor_pqr / ligand_pqr are provided in the input XML,
-    # skip PDB extraction and AmberTools/tleap entirely.
-    # Required for: pre-computed PQRs
+    # Steps 1 through 3 extract the molecules and build the PQR files. As a
+    # shortcut, if receptor_pqr and ligand_pqr are both provided in the input
+    # XML, we skip PDB extraction and AmberTools/tleap entirely and use the
+    # pre-computed PQR files directly.
     if cfg.receptor_pqr and cfg.ligand_pqr:
         print("[1] Using pre-computed PQR files - skipping PDB extraction.")
         receptor_pqr = Path(cfg.receptor_pqr)
         ligand_pqr = Path(cfg.ligand_pqr)
-        # Resolve relative paths against the XML file's directory
+        # Resolve any relative paths against the directory containing the XML file.
         xml_dir = Path(cfg.work_dir).parent
         if not receptor_pqr.is_absolute():
-            # try next to the XML first, then cwd
+            # Look next to the XML file first, then fall back to the current directory.
             candidate = xml_dir / receptor_pqr
             if not candidate.exists():
                 candidate = Path.cwd() / receptor_pqr
@@ -104,7 +106,7 @@ def run(cfg: PySTARCConfig):
             raise FileNotFoundError(f"receptor_pqr not found: {receptor_pqr}")
         if not ligand_pqr.exists():
             raise FileNotFoundError(f"ligand_pqr not found: {ligand_pqr}")
-        # Copy into work dir for APBS
+        # Copy the files into the work directory so that APBS can read them.
         if receptor_pqr.resolve() != (W / "receptor.pqr").resolve():
             shutil.copy(receptor_pqr, W / "receptor.pqr")
         if ligand_pqr.resolve() != (W / "ligand.pqr").resolve():
@@ -114,9 +116,9 @@ def run(cfg: PySTARCConfig):
         print("[3] PQR files ready (pre-computed).")
     else:
         print("\n[1] Extracting ligand and receptor from PDB ...")
-        # extract() returns (receptor_pdb, ligand_pdb); only ligand_pdb is
-        # consumed downstream because build_complex below takes pdb_path=cfg.pdb
-        # directly. Receptor side is discarded.
+        # extract() returns the receptor and ligand PDB paths. Only the ligand
+        # PDB is used downstream, because build_complex below takes pdb_path from
+        # cfg.pdb directly. The receptor PDB is discarded.
         _receptor_pdb, ligand_pdb = extract(cfg.pdb, cfg.ligand_resname, W)
         print("\n[2] Parameterizing ligand with AmberTools ...")
         mol2_path, frcmod_path, lib_path = parameterize(
@@ -139,14 +141,15 @@ def run(cfg: PySTARCConfig):
         )
         combined_pqr = make_combined_pqr(prmtop, complex_pdb, W)
         receptor_pqr, ligand_pqr = split_pqr(combined_pqr, cfg.ligand_resname, W)
-    # Center molecules + inject GHO ghost atoms
-    # GHO is placed at the centroid (origin) of each molecule.
-    # Required for standard b-surface reaction criterion:
-    # GHO-GHO distance < bd_milestone_radius (b-surface)
+    # Center the molecules and inject GHO ghost atoms. The GHO atom is placed at
+    # the centroid (the origin) of each molecule. It is needed for the standard
+    # b-surface reaction criterion, which fires when the GHO-to-GHO distance is
+    # less than bd_milestone_radius, the radius of the b-surface.
     print("\n[3b] Centring molecules and injecting GHO ghost atoms ...")
     for pqr_path in (receptor_pqr, ligand_pqr):
         atoms = read_pqr(pqr_path)
-        # Skip if GHO already present (e.g. user supplied pre-injected PQRs)
+        # Skip injection if a GHO atom is already present, for example when the
+        # user supplied PQR files that were already injected.
         if any(a.name.strip().upper() == "GHO" for a in atoms):
             print(f"  {pqr_path.name}: GHO already present - skipping")
             continue
@@ -154,7 +157,7 @@ def run(cfg: PySTARCConfig):
         atoms = _inject_gho(atoms)
         write_pqr(atoms, pqr_path)
         print(f"  {pqr_path.name}: centred + GHO injected at (0,0,0) done")
-    # Step 4: Run APBS
+    # Step 4 runs APBS to generate the electrostatic and Born grids.
     rec_dx, lig_dx = run_apbs_both(
         receptor_pqr=receptor_pqr,
         ligand_pqr=ligand_pqr,
@@ -173,7 +176,7 @@ def run(cfg: PySTARCConfig):
         coarse_dime=getattr(cfg, "apbs_coarse_dime", 0),
         fine_dime=getattr(cfg, "apbs_fine_dime", 0),
     )
-    # Step 5: Geometry
+    # Step 5 computes the geometry of the system.
     geom = compute_geometry(
         receptor_pqr,
         ligand_pqr,
@@ -193,12 +196,13 @@ def run(cfg: PySTARCConfig):
     rxn_stages, rxn_n_needed = (
         rxn_result if isinstance(rxn_result, tuple) else (rxn_result, -1)
     )
-    # Step 6: BD simulation
+    # Step 6 runs the Brownian-dynamics simulation.
     print("\n[6] Running BD simulation ...")
-    # Load molecules
+    # Load the receptor and ligand molecules.
     mol_rec = parse_pqr(receptor_pqr)
     mol_lig = parse_pqr(ligand_pqr)
-    # Load force engine (GPU -> Numba -> NumPy, auto-detected)
+    # Load the force engine, auto-detecting the fastest available backend. The
+    # code prefers the GPU (CuPy), then Numba, and finally falls back to NumPy.
     engine = load_dx_directory(
         W,
         mol1_prefix="receptor",
@@ -207,11 +211,11 @@ def run(cfg: PySTARCConfig):
         desolvation_alpha=cfg.desolvation_alpha,
     )
     print(f"  {engine.summary()}")
-    # Override GPU if user disabled it
+    # If the user disabled the GPU in the configuration, fall back to Numba.
     if not cfg.gpu and engine.backend == "cupy":
         engine.backend = "numba"
         print("  GPU disabled by config - using Numba")
-    # Mobility tensor with full RPY coupling
+    # Build the mobility tensor with full Rotne-Prager-Yamakawa coupling.
     mob = MobilityTensor.from_radii(
         geom.receptor.hydrodynamic_r,
         geom.ligand.hydrodynamic_r,
@@ -224,10 +228,11 @@ def run(cfg: PySTARCConfig):
         f"ligand={geom.ligand.hydrodynamic_r:.3f} Å"
     )
     print(f"  D_rel  = {D_rel:.5f} Å²/ps")
-    # Build reaction pathway from detected criteria.
-    # When state_machine_reactions=True and a rxns_xml is provided, preserve
-    # per-reaction grouping and state labels from the XML file. Otherwise,
-    # fall back to the flattened-pairs path (all pairs in one stage).
+    # Build the reaction pathway from the detected criteria. When
+    # state_machine_reactions is True and a rxns_xml file is provided, we
+    # preserve the per-reaction grouping and the state labels from the XML file.
+    # Otherwise we fall back to the flattened-pairs path, where all contact pairs
+    # are placed in a single stage.
     reactions = []
     _use_state_machine = getattr(cfg, "state_machine_reactions", False) and bool(
         cfg.rxns_xml
@@ -285,15 +290,16 @@ def run(cfg: PySTARCConfig):
                     criteria=crit,
                 )
             )
-    # When state-machine mode is active and rxns.xml provided a <first_state>
-    # tag, pass it through to PathwaySet so the simulator can initialize each
-    # trajectory's current_state correctly. The variable first_state is set in
-    # the state-machine branch above; in the flattened-pairs branch it is None.
+    # When state-machine mode is active and the rxns.xml file provided a
+    # <first_state> tag, pass it through to PathwaySet so that the simulator can
+    # correctly initialize each trajectory's current_state. The first_state
+    # variable is set in the state-machine branch above. In the flattened-pairs
+    # branch it remains None.
     pathway_set = PathwaySet(
         reactions,
         first_state=first_state if "first_state" in dir() else None,
     )
-    # NAM parameters
+    # Assemble the parameters for the near-association-mode (NAM) simulator.
     params = NAMParameters(
         n_trajectories=cfg.n_trajectories,
         dt=getattr(cfg, "dt", 0.2),
@@ -318,7 +324,8 @@ def run(cfg: PySTARCConfig):
                 DXGrid.from_file(p) for p in sorted(W.glob(f"{prefix}[0-9]{suffix}"))
             ]
 
-        # Multipole expansion for far-field (dipole + quadrupole)
+        # Set up the multipole expansion used for the far-field, which adds the
+        # dipole and quadrupole terms beyond the monopole.
         _mp_expansion = None
         if cfg.multipole_fallback:
             _mp_expansion = MultipoleExpansion(
@@ -335,7 +342,8 @@ def run(cfg: PySTARCConfig):
             receptor_charge=float(mol_rec.total_charge()),
             debye_length=cfg.debye_length,
             sdie=cfg.sdie,
-            # Born both-directions: lig Born grid on rec atoms
+            # Born desolvation acts in both directions. Here the ligand Born grid
+            # is evaluated on the receptor atoms.
             lig_born_grids=_load_dx("ligand", "_born.dx"),
             rec_positions=mol_rec.positions_array(),
             rec_charges=mol_rec.charges_array(),
@@ -348,7 +356,7 @@ def run(cfg: PySTARCConfig):
         gpu_sim = GPUBatchSimulator(
             mol_rec, mol_lig, mob, pathway_set, params, batch_engine
         )
-        # Attach config so simulator knows what to collect
+        # Attach the configuration so that the simulator knows what to collect.
         params._output_cfg = cfg.outputs
         params.max_dt = getattr(cfg, "max_dt", 0.0)
         params.checkpoint_interval = cfg.checkpoint_interval
@@ -364,8 +372,7 @@ def run(cfg: PySTARCConfig):
         result = sim.run()
         elapsed = time.time() - t0
         total_steps = sum(r.steps for r in sim.results)
-    # Print results
-    # Gather hardware info for summary footer
+    # Print the results. First gather the hardware information for the summary footer.
     n_gpu = 0
     gpu_name = ""
     try:
@@ -384,8 +391,11 @@ def run(cfg: PySTARCConfig):
     print("=" * 64)
     print("  Results")
     print("=" * 64)
-    # summary() already includes: P_rxn, k_on, CI, Wall time, BD steps/sec, Backend
-    # Pass Romberg k_b for two-level k_on formula (GPU: use Romberg; CPU: 0 = Smoluchowski)
+    # The result summary already includes the reaction probability P_rxn, k_on,
+    # its confidence interval, the wall-clock time, the BD steps per second, and
+    # the backend used. We pass the Romberg estimate of k_b into the two-level
+    # k_on formula. On the GPU we use the Romberg value, while on the CPU we pass
+    # zero, which selects the Smoluchowski expression.
     _k_b = getattr(gpu_sim, "_k_b", 0.0) if cfg.gpu else 0.0
     print(result.summary(D_rel, _k_b, cfg.confidence_interval))
     print(f"  Total steps  : {total_steps:,}")
@@ -396,7 +406,7 @@ def run(cfg: PySTARCConfig):
     else:
         print(f"  CPU threads  : {cfg.n_threads}")
     print("=" * 64)
-    # Checklist (printed to log)
+    # Print a checklist of the active physics settings to the log.
     _hi = getattr(cfg, "hydrodynamic_interactions", False)
     _rh_r = getattr(cfg, "r_hydro_rec", 0.0)
     _rh_l = getattr(cfg, "r_hydro_lig", 0.0)
@@ -444,7 +454,7 @@ def run(cfg: PySTARCConfig):
     print(f"  Diffusional rotation on return from r_escape")
     print(f"  Brownian bridge at reaction surface")
     print(f"  Position refresh after return (prevents r-overshoot)")
-    # Write output files
+    # Write the output files.
     if cfg.gpu and hasattr(result, "sim_data") and result.sim_data is not None:
         write_all(
             work_dir=cfg.work_dir,
@@ -455,7 +465,7 @@ def run(cfg: PySTARCConfig):
             D_rel=D_rel,
             confidence=cfg.confidence_interval,
         )
-    # Clean up temporary files
+    # Clean up the temporary files.
     tmp_dir = cfg.work_dir / "tmp"
     if tmp_dir.is_dir():
         shutil.rmtree(tmp_dir, ignore_errors=True)

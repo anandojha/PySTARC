@@ -1,31 +1,31 @@
 """
 Parallel execution engine for PySTARC.
-Three-tier parallelism strategy:
 
-Tier 1 - multiprocessing.Pool  (default, CPU, separate processes)
-         Works on all platforms with no extra dependencies.
-         Trajectories are independent -> embarrassingly parallel.
+This module offers four ways of running the independent Brownian-dynamics
+trajectories that make up a rate-constant calculation.
 
-Tier 2 - concurrent.futures.ProcessPoolExecutor
-         Same as Tier 1 but with progress reporting and
-         ability to cancel/timeout individual trajectories.
+The first tier uses multiprocessing.Pool. This is the default. It runs on CPU
+in separate processes, works on all platforms with no extra dependencies, and
+is embarrassingly parallel because the trajectories are independent of one
+another.
 
- Tier 3 - NumPy vectorised batch (experimental)
-          Runs N trajectories simultaneously as a vectorised
-          NumPy computation. No Python loop overhead.
-          ~5-10x faster per core than Tier 1 for simple systems.
+The second tier uses concurrent.futures.ProcessPoolExecutor. It does the same
+work as the first tier but adds progress reporting and the ability to cancel or
+time out individual trajectories.
 
-Tier 4 - GPU (stub, requires cupy or torch)
-         Full GPU batching not yet implemented but the
-         architecture is in place.
+The third tier is an experimental NumPy vectorised batch. It advances N
+trajectories simultaneously as a single vectorised NumPy computation with no
+per-step Python loop. For simple systems this runs roughly 5 to 10 times faster
+per core than the first tier.
 
-Usage
------
-    from pystarc.simulation.parallel import run_parallel, ParallelBackend
-    result = run_parallel(
-        mol1, mol2, mobility, pathway_set, params, force_fn,
-        backend=ParallelBackend.MULTIPROCESSING,
-    )
+The fourth tier targets the GPU and requires cupy or torch. Full GPU batching
+is not yet implemented, but the surrounding architecture is in place.
+
+To run a calculation, import run_parallel and ParallelBackend from
+pystarc.simulation.parallel and call run_parallel with the two molecules, the
+mobility tensor, the pathway set, the parameters, and the force function,
+passing the desired backend through the backend argument (for example
+ParallelBackend.MULTIPROCESSING).
 """
 
 from __future__ import annotations
@@ -66,20 +66,20 @@ except ImportError:
 
 class ParallelBackend(Enum):
     SERIAL = auto()  # single thread, no parallelism
-    MULTIPROCESSING = auto()  # multiprocessing.Pool (default)
-    FUTURES = auto()  # concurrent.futures with progress
+    MULTIPROCESSING = auto()  # multiprocessing.Pool, the default backend
+    FUTURES = auto()  # concurrent.futures with progress reporting
     NUMPY_BATCH = auto()  # vectorised NumPy batch
-    GPU = auto()  # GPU (requires cupy/torch)
+    GPU = auto()  # GPU, requires cupy or torch
 
 
-# Tier 1 - multiprocessing.Pool
+# First tier, running trajectories in a multiprocessing.Pool.
 def _run_pool(
     mol1, mol2, mob, pathway_set, params, force_fn, reaction_cutoffs, n_workers, verbose
 ):
     """
-    Run all trajectories in a multiprocessing.Pool.
-    Each worker is seeded with params.seed + trajectory_index,
-    matching the per-thread seeding.
+    Run all trajectories in a multiprocessing.Pool. Each worker is seeded with
+    params.seed plus its trajectory index, which matches the per-thread seeding
+    used elsewhere.
     """
     c0 = mol2.centroid()
     mol2_pos0 = mol2.positions_array() - c0
@@ -94,13 +94,14 @@ def _run_pool(
     return results
 
 
-# Tier 2 - concurrent.futures with live progress bar
+# Second tier, concurrent.futures with a live progress counter.
 def _run_futures(
     mol1, mol2, mob, pathway_set, params, force_fn, reaction_cutoffs, n_workers, verbose
 ):
     """
-    Run trajectories with ProcessPoolExecutor + live progress counter.
-    Same physics as Tier 1, better UX for long runs.
+    Run trajectories with a ProcessPoolExecutor and a live progress counter.
+    The physics is identical to the first tier. The progress reporting makes
+    long runs easier to follow.
     """
     c0 = mol2.centroid()
     mol2_pos0 = mol2.positions_array() - c0
@@ -141,28 +142,31 @@ def _run_futures(
     return results
 
 
-# Tier 3 - NumPy vectorised batch
-# Runs N trajectories simultaneously using numpy array operations.
-# The entire batch is a single vectorised step - no Python loop per step.
-# For systems with simple force functions (zero_force or grid-only)
-# this gives ~5-10x speedup per core vs the Python loop.
+# Third tier, the NumPy vectorised batch.
+# This advances N trajectories at once using NumPy array operations, so the
+# whole batch takes a single vectorised step with no Python loop per step. For
+# systems with simple force functions (zero_force or grid-only) this runs
+# roughly 5 to 10 times faster per core than the plain Python loop.
 def _run_numpy_batch(
     mol1, mol2, mob, pathway_set, params, force_fn, reaction_cutoffs, verbose
 ) -> List[TrajectoryResult]:
     """
-    Vectorised batch runner: all N trajectories advance simultaneously.
-    State arrays (N = n_trajectories):
-      pos  : (N, 3)  - current positions
-      done : (N,)    - boolean, trajectory complete
-      fate : (N,)    - outcome codes
-      steps: (N,)    - step count
-    Limitations vs single-trajectory runner:
-      - No adaptive dt (fixed dt throughout - a future improvement)
-      - force_fn must be zero_force or a vectorisable function
-        (StandardForceEngine is not currently vectorised)
-      - All N trajectories run to max_steps even if most finish early
-        (early-finish mask is applied but memory stays allocated)
-    Best for: large n_trajectories with zero or simple forces.
+    Vectorised batch runner in which all N trajectories advance simultaneously.
+
+    The state is held in arrays of length N, where N is the number of
+    trajectories. The array pos has shape (N, 3) and holds the current
+    positions. The array done has shape (N,) and flags each trajectory as
+    complete. The array fate has shape (N,) and holds the outcome codes. The
+    array steps has shape (N,) and holds the step count.
+
+    This runner has a few limitations compared with the single-trajectory
+    runner. It does not use an adaptive Δt, so the time step is fixed
+    throughout, which is left as a future improvement. The force function must
+    be zero_force or some other vectorisable function, since StandardForceEngine
+    is not currently vectorised. All N trajectories run to max_steps even when
+    most finish early, because the early-finish mask is applied but the memory
+    stays allocated. This runner is best suited to large numbers of
+    trajectories with zero or simple forces.
     """
     N = params.n_trajectories
     rng = np.random.default_rng(params.seed)
@@ -172,39 +176,39 @@ def _run_numpy_batch(
     r_esc = params.r_escape
     sigma_t = math.sqrt(2.0 * D_t * dt)
     sigma_r = math.sqrt(2.0 * D_r * dt)
-    # -- initialise state arrays -----------------------------------------------
-    # Random positions on b-sphere
+    # Initialise the per-trajectory state arrays.
+    # Draw random starting positions on the b-surface sphere.
     v = rng.standard_normal((N, 3))
     v /= np.linalg.norm(v, axis=1, keepdims=True)
-    pos = v * params.r_start  # (N, 3)
-    # Random orientations (quaternions) - stored as (N, 4) array
+    pos = v * params.r_start  # positions, shape (N, 3)
+    # Draw random orientations as quaternions, stored as an (N, 4) array.
     ori_arr = np.array([random_quaternion(rng).to_array() for _ in range(N)])
-    # Outcome tracking
+    # Arrays that track the outcome of each trajectory.
     done = np.zeros(N, dtype=bool)
     fates = np.full(N, Fate.MAX_STEPS)
     steps = np.zeros(N, dtype=int)
     rxn_names = [None] * N
-    # Pre-cache mol2 positions
+    # Cache the ligand atom positions, centred on the ligand centroid.
     c0 = mol2.centroid()
-    mol2_pos0 = mol2.positions_array() - c0  # (M, 3), M = atoms in mol2
+    mol2_pos0 = mol2.positions_array() - c0  # shape (M, 3), M = atoms in mol2
     if verbose:
         print(f"  [NumPy batch] N={N} trajectories, dt={dt} ps")
-    # main loop
+    # Main integration loop over time steps.
     for step in range(params.max_steps):
         active = ~done
         if not active.any():
             break
         active_idx = np.where(active)[0]
-        # place mol2 for each active trajectory and check reactions
-        # This is the one part we cannot fully vectorise without
-        # a vectorised reaction checker - fall back to Python loop
-        # over active trajectories only.
+        # Place the ligand for each active trajectory and check for reaction.
+        # This is the one part that cannot be fully vectorised without a
+        # vectorised reaction checker, so it falls back to a Python loop over
+        # the active trajectories only.
         for i in active_idx:
-            # Build quaternion from stored array
+            # Build the quaternion from the stored orientation array.
             q = Quaternion(*ori_arr[i])
             R = q.to_rotation_matrix()
             placed_pos = (R @ mol2_pos0.T).T + pos[i]
-            # Build placed molecule (reuse scratch)
+            # Build the placed ligand, reusing a scratch copy.
             mol2_scratch = copy.copy(mol2)
             mol2_scratch.atoms = [copy.copy(a) for a in mol2.atoms]
             for atom, p in zip(mol2_scratch.atoms, placed_pos):
@@ -223,15 +227,17 @@ def _run_numpy_batch(
                 fates[i] = Fate.ESCAPED
                 steps[i] = step
                 continue
-        # vectorised BD step for all still-active trajectories
+        # Take the vectorised Brownian-dynamics step for every trajectory that
+        # is still active.
         still_active = np.where(~done)[0]
         if len(still_active) == 0:
             break
-        # Translational: vectorised across all active trajectories
-        # force = 0 (zero_force path - non-zero force requires per-traj call)
+        # Translational update, vectorised across all active trajectories. The
+        # force is zero on this zero_force path. A non-zero force would require
+        # a per-trajectory call.
         noise_t = sigma_t * rng.standard_normal((len(still_active), 3))
         pos[still_active] += noise_t
-        # Rotational: vectorised small-angle rotation
+        # Rotational update as a vectorised small-angle rotation.
         noise_r = sigma_r * rng.standard_normal((len(still_active), 3))
         norms = np.linalg.norm(noise_r, axis=1, keepdims=True)
         mask = (norms > 1e-14).ravel()
@@ -249,7 +255,7 @@ def _run_numpy_batch(
                 f"  step {step:>8d}: {n_active} active, "
                 f"{done.sum()} done ({fates[done==True] if done.any() else ''})"
             )
-    # Collect results
+    # Collect the per-trajectory results.
     results = []
     for i in range(N):
         results.append(
@@ -264,16 +270,16 @@ def _run_numpy_batch(
     return results
 
 
-# Tier 4 - GPU stub
+# Fourth tier, the GPU stub.
 def _run_gpu(mol1, mol2, mob, pathway_set, params, force_fn, reaction_cutoffs, verbose):
     """
     GPU execution stub.
-    Full GPU implementation requires:
-      - cupy (NVIDIA CUDA) or torch (NVIDIA/AMD/Apple Metal)
-      - Vectorised force function (DXGrid interpolation on GPU)
-      - Vectorised reaction checker
-    The architecture is in place (batch state arrays from Tier 3),
-    but the GPU memory transfers are not yet implemented.
+
+    A full GPU implementation would require cupy for NVIDIA CUDA or torch for
+    NVIDIA, AMD, and Apple Metal, together with a vectorised force function that
+    interpolates the DXGrid on the GPU and a vectorised reaction checker. The
+    surrounding architecture is in place through the batch state arrays of the
+    third tier, but the GPU memory transfers are not yet implemented.
     """
     try:
         backend = "CuPy (CUDA)"
@@ -297,13 +303,13 @@ def _run_gpu(mol1, mol2, mob, pathway_set, params, force_fn, reaction_cutoffs, v
     print(f"  [GPU] Backend: {backend}")
     print("  [GPU] Full GPU vectorisation not yet implemented.")
     print("  [GPU] Falling back to NumPy batch (CPU vectorised).")
-    # Fall back to NumPy batch until GPU is implemented
+    # Fall back to the NumPy batch runner until the GPU path is implemented.
     return _run_numpy_batch(
         mol1, mol2, mob, pathway_set, params, force_fn, reaction_cutoffs, verbose
     )
 
 
-# Main entry point
+# Main entry point.
 def run_parallel(
     mol1: Molecule,
     mol2: Molecule,
@@ -314,27 +320,29 @@ def run_parallel(
     backend: ParallelBackend = ParallelBackend.MULTIPROCESSING,
 ) -> SimulationResult:
     """
-    Run NAM BD trajectories with the specified parallelism backend.
-    Parameters
-    ----------
-    mol1, mol2     : receptor and ligand molecules
-    mobility       : MobilityTensor (Stokes-Einstein radii)
-    pathway_set    : reaction criteria
-    params         : NAMParameters (includes n_threads, seed, etc.)
-    force_fn       : force function (default: zero_force)
-    backend        : which parallelism tier to use
-    Returns
-    -------
-    SimulationResult with k_on, P_rxn, counts
-    Backend guide
-    -------------
-    SERIAL          : debugging, single trajectory at a time
-    MULTIPROCESSING : default for production, uses all CPU cores
-    FUTURES         : same as MULTIPROCESSING + live progress bar
-    NUMPY_BATCH     : fastest for zero_force / simple systems
-    GPU             : not yet implemented (falls back to NUMPY_BATCH)
-    Example
-    -------
+    Run the NAM Brownian-dynamics trajectories using the chosen parallelism
+    backend.
+
+    The arguments mol1 and mol2 are the receptor and ligand molecules. The
+    argument mobility is the MobilityTensor built from the Stokes-Einstein
+    radii. The argument pathway_set holds the reaction criteria. The argument
+    params is the NAMParameters object and carries values such as the number of
+    threads and the random seed. The argument force_fn is the force function and
+    defaults to zero_force. The argument backend selects which parallelism tier
+    to use.
+
+    The function returns a SimulationResult that contains the rate constant
+    k_on, the reaction probability P_rxn, and the outcome counts.
+
+    The available backends serve different purposes. SERIAL runs one trajectory
+    at a time and is meant for debugging. MULTIPROCESSING is the default for
+    production runs and uses all CPU cores. FUTURES does the same work as
+    MULTIPROCESSING and adds a live progress bar. NUMPY_BATCH is the fastest
+    choice for zero_force or otherwise simple systems. GPU is not yet
+    implemented and falls back to NUMPY_BATCH.
+
+    Example:
+
     >>> result = run_parallel(mol1, mol2, mob, ps, params,
     ...     force_fn=engine,
     ...     backend=ParallelBackend.MULTIPROCESSING)
@@ -343,7 +351,7 @@ def run_parallel(
     if force_fn is None:
         force_fn = zero_force
     n_workers = min(params.n_threads, params.n_trajectories, mp.cpu_count())
-    # Extract reaction cutoffs for adaptive dt
+    # Collect the reaction distance cutoffs, which the adaptive time step uses.
     reaction_cutoffs = [
         pair.distance_cutoff
         for rxn in pathway_set.reactions
@@ -351,7 +359,7 @@ def run_parallel(
     ]
     t0 = time.time()
     if backend == ParallelBackend.SERIAL or n_workers <= 1:
-        # Import and use the standard NAMSimulator serial path
+        # Use the standard serial NAMSimulator path.
         from pystarc.simulation.nam_simulator import NAMSimulator
 
         sim = NAMSimulator(mol1, mol2, mobility, pathway_set, params, force_fn)
@@ -406,7 +414,7 @@ def run_parallel(
     else:
         raise ValueError(f"Unknown backend: {backend}")
     elapsed = time.time() - t0
-    # Aggregate results
+    # Aggregate the per-trajectory results into summary counts.
     n_reacted = sum(1 for r in raw_results if r.fate == Fate.REACTED)
     n_escaped = sum(1 for r in raw_results if r.fate == Fate.ESCAPED)
     n_max = sum(1 for r in raw_results if r.fate == Fate.MAX_STEPS)
@@ -435,15 +443,17 @@ def run_parallel(
 
 def recommended_backend(force_fn=None) -> ParallelBackend:
     """
-    Auto-select the best backend for the current machine and force function.
-    Logic:
-      - GPU available + zero/simple force  -> GPU (when implemented)
-      - Multiple CPUs + complex force      -> MULTIPROCESSING
-      - Multiple CPUs + zero force         -> NUMPY_BATCH
-      - Single CPU                         -> SERIAL
+    Choose the best backend automatically for the current machine and force
+    function.
+
+    When a GPU is available and the force is zero or simple, the GPU backend is
+    preferred once it is implemented. On a machine with several CPUs and a
+    complex force, MULTIPROCESSING is chosen. On a machine with several CPUs and
+    a zero force, NUMPY_BATCH is chosen. On a single-CPU machine, SERIAL is
+    chosen.
     """
     n_cpu = mp.cpu_count()
-    # Check GPU
+    # Check whether a GPU is available.
     gpu_available = False
     if torch is not None:
         gpu_available = torch.cuda.is_available() or (

@@ -1,43 +1,42 @@
 """
-Diffusional rotation via quaternion algebra
-===========================================
+Diffusional rotation via quaternion algebra.
 
-Background
--------------------
-In Brownian dynamics, molecules are rigid bodies that both translate
-and rotate under thermal fluctuations.  The rotational diffusion
-coefficient for a sphere is:
+In Brownian dynamics, molecules are rigid bodies that both translate and rotate
+under thermal fluctuations. For a sphere the rotational diffusion coefficient is
+
     D_rot = 3 D_trans / (4 a²) = kBT / (8π η a³)
-where a is the hydrodynamic radius.
 
-At each BD time step Δt, a random rotation is drawn from the
-diffusional distribution:
+where a is the hydrodynamic radius, η is the solvent viscosity, and kBT is the
+thermal energy.
+
+At each Brownian-dynamics time step Δt, a random rotation is drawn from the
+diffusional distribution
+
     θ = √(2 D_rot Δt) × |ξ|
 
-where ξ ~ N(0, I₃) is a 3D Gaussian noise vector.  The rotation
-axis is ξ/|ξ| (uniformly distributed on S²) and the rotation
-angle is θ.
+where ξ is a three-dimensional Gaussian noise vector with ξ ~ N(0, I₃). The
+rotation axis is ξ/|ξ|, which is uniformly distributed on the unit sphere S², and
+the rotation angle is θ.
 
-Quaternion representation
--------------------------
-Rotations are stored as unit quaternions q = (w, x, y, z) with
-|q| = 1.  A rotation by angle θ about axis n̂ is:
+Rotations are stored as unit quaternions q = (w, x, y, z) with |q| = 1. A rotation
+by angle θ about a unit axis n̂ is
+
     q = (cos(θ/2), sin(θ/2) × n̂)
-Composing two rotations is quaternion multiplication:
-    q_new = q_step ⊗ q_old
 
-This is numerically superior to rotation matrices because:
-1. Quaternions avoid gimbal lock
-2. Renormalization (q - q/|q|) prevents drift
-3. Random rotations are trivially generated
-4. Exact for any rotation angle (no interpolation table)
+and composing two rotations is quaternion multiplication, q_new = q_step ⊗ q_old.
 
-Ligand atom positions
----------------------
-The ligand atoms in the lab frame are computed from the
-reference-frame positions (mol2_pos0) by:
+Quaternions are preferred over rotation matrices here for several reasons. They
+avoid gimbal lock, they stay numerically stable because renormalizing back to
+|q| = 1 removes accumulated drift, random rotations are trivial to generate, and
+they represent any rotation angle exactly without an interpolation table.
+
+The ligand atom positions in the lab frame are obtained from the reference-frame
+positions (mol2_pos0) by
+
     r_lab = R × r_ref + centroid
-where R is the 3×3 rotation matrix extracted from the quaternion.
+
+where R is the 3×3 rotation matrix extracted from the quaternion and centroid is
+the ligand center of mass in the lab frame.
 """
 
 from __future__ import annotations
@@ -47,7 +46,7 @@ import math
 
 
 def quat_multiply(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
-    """Quaternion product q1 * q2. Format: (w, x, y, z)."""
+    """Return the quaternion product q1 * q2, with both inputs in (w, x, y, z) order."""
     w1, x1, y1, z1 = q1
     w2, x2, y2, z2 = q2
     return np.array(
@@ -61,7 +60,11 @@ def quat_multiply(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
 
 
 def quat_of_rotvec(omega: np.ndarray) -> np.ndarray:
-    """Convert rotation vector omega to unit quaternion (w,x,y,z)."""
+    """Convert a rotation vector omega to a unit quaternion in (w, x, y, z) order.
+
+    The direction of omega is the rotation axis and its magnitude is the rotation
+    angle. Rotations smaller than 10⁻¹² radian are treated as the identity.
+    """
     angle = float(np.linalg.norm(omega))
     if angle < 1e-12:
         return np.array([1.0, 0.0, 0.0, 0.0])
@@ -78,85 +81,88 @@ def quat_of_rotvec(omega: np.ndarray) -> np.ndarray:
 
 
 def random_unit_quat(rng: np.random.Generator) -> np.ndarray:
-    """Uniformly random unit quaternion."""
+    """Return a unit quaternion drawn uniformly from all orientations."""
     q = rng.standard_normal(4)
     q /= np.linalg.norm(q)
     return q
 
 
 def diffusional_rotation(rng: np.random.Generator, tau: float) -> np.ndarray:
-    """
-    Random rotation quaternion for a body that has diffused for
-    dimensionless time tau = t * Dr.
-    For tau <= 0.25: single Gaussian step in angle space
-    For 0.25 < tau < 4: recursive splitting at known checkpoints
-    For tau >= 4: uniformly random rotation (mixing time exceeded)
-    Returns unit quaternion (w, x, y, z).
+    """Return a random rotation quaternion for a body that has diffused for the
+    dimensionless time tau = t × Dr.
+
+    When tau ≤ 0.25 the rotation is small and is sampled as a single Gaussian step
+    in angle space. When 0.25 < tau < 4 the interval is split recursively at known
+    checkpoints, composing a tabulated rotation at the checkpoint with a fresh
+    sample over the remaining time. When tau ≥ 4 the orientation has had time to
+    randomize fully, so a uniformly random rotation is returned. The result is a
+    unit quaternion in (w, x, y, z) order.
     """
     if tau <= 0.0:
         return np.array([1.0, 0.0, 0.0, 0.0])
     if tau <= 0.25:
-        # infinitesimal step: Gaussian in angle space
+        # Small step, so sample a Gaussian rotation directly in angle space.
         sqdt = math.sqrt(2.0 * tau)
         omega = sqdt * rng.standard_normal(3)
         return quat_of_rotvec(omega)
     elif tau < 0.5:
-        # split at 0.25
+        # Split the interval at the tau = 0.25 checkpoint.
         q0 = diffusional_rotation(rng, 0.25)
         q1 = diffusional_rotation(rng, tau - 0.25)
         return quat_multiply(q1, q0)
     elif tau < 1.0:
-        # split at 0.5 using spline-based distribution
+        # Split at tau = 0.5 using the tabulated rotation distribution there.
         q0 = _spline_rot_0p5(rng)
         q1 = diffusional_rotation(rng, tau - 0.5)
         return quat_multiply(q1, q0)
     elif tau < 2.0:
-        # split at 1.0
+        # Split at the tau = 1.0 checkpoint.
         q0 = _spline_rot_1p0(rng)
         q1 = diffusional_rotation(rng, tau - 1.0)
         return quat_multiply(q1, q0)
     elif tau < 4.0:
-        # split at 2.0
+        # Split at the tau = 2.0 checkpoint.
         q0 = _spline_rot_2p0(rng)
         q1 = diffusional_rotation(rng, tau - 2.0)
         return quat_multiply(q1, q0)
     else:
-        # past 4 time constants: effectively random
+        # After four time constants the orientation is effectively random.
         return random_unit_quat(rng)
 
 
-# Spline-based rotation distributions at checkpoints
-# We approximate them with the exact distribution: rotation angle theta for a
-# diffusing sphere has distribution p(theta) propto sin^2(theta/2) * P(theta,t)
-# where P is the sum over spherical harmonics.
-# For practical purposes we use the Gaussian approximation corrected for SO(3).
+# Tabulated rotation distributions at the checkpoints. For a diffusing sphere the
+# rotation angle theta follows p(theta) proportional to sin²(theta/2) × P(theta, t),
+# where P is the sum over spherical harmonics. In practice we use the Gaussian
+# approximation corrected for the SO(3) measure.
 
 
 def _sample_rotation_angle(rng: np.random.Generator, tau: float) -> float:
+    """Sample a rotation angle theta from the diffusion distribution on SO(3).
+
+    The distribution is
+
+        p(theta, t) = sum over l of (2l+1) × exp(-l(l+1)t) × sin(theta/2) × U_l(cos(theta/2))
+
+    where the U_l are the Wigner d-functions and l runs from 0 upward. For moderate
+    tau the angle is drawn by rejection sampling with a Gaussian proposal.
     """
-    Sample rotation angle theta from the diffusion distribution on SO(3).
-    p(theta, t) = sum_{l=0}^{inf} (2l+1) * exp(-l(l+1)*t) * sin(theta/2)
-                  * U_l(cos(theta/2))    (Wigner d-functions)
-    For moderate tau, we use rejection sampling with a Gaussian proposal.
-    """
-    sigma = math.sqrt(2.0 * tau)  # std dev of angle
-    # Rejection sampling: proposal = half-normal (angles in [0, pi])
-    # target = actual diffusion distribution (truncated sum of harmonics)
+    sigma = math.sqrt(2.0 * tau)  # Standard deviation of the rotation angle.
+    # Rejection sampling draws from a half-normal proposal over angles in [0, pi]
+    # and accepts against the diffusion distribution, the truncated sum of harmonics.
     max_l = max(10, int(5.0 / tau) + 5)
 
     def p_target(theta: float) -> float:
-        """p(theta) propto sum_l (2l+1) exp(-l(l+1)t) sin(theta)
-        (using sin(theta) Jacobian for SO(3))"""
+        """Evaluate the unnormalized angle distribution, using the sin(theta)
+        Jacobian for SO(3), as sum over l of (2l+1) exp(-l(l+1)t) sin(theta)."""
         val = 0.0
         for l in range(max_l + 1):
             val += (2 * l + 1) * math.exp(-l * (l + 1) * tau) * (2 * l + 1)
-            # approximate: use trace of rotation matrix = 1 + 2*cos(theta)
-            # so weight by sin^2(theta/2) = (1-cos(theta))/2
-        # Simplified: p(theta) = sum_l (2l+1)exp(-l(l+1)t) * sin(theta) * U_l(cos theta)
-        # Use the known series:
+            # The trace of the rotation matrix is 1 + 2 cos(theta), which gives the
+            # weight sin²(theta/2) = (1 - cos(theta))/2.
+        # The same density written as the known closed-form series in theta is
+        # sum over l of 2(2l+1) exp(-l(l+1)t) sin((2l+1)theta/2) / sin(theta/2).
         result = 0.0
         for l in range(max_l + 1):
-            # 2*(2l+1)*exp(-l(l+1)*t) * sin((2l+1)*theta/2) / sin(theta/2)
             half = (2 * l + 1) * theta / 2.0
             denom = math.sin(theta / 2.0) if theta > 1e-10 else (2 * l + 1) / 2.0
             if denom > 1e-15:
@@ -165,27 +171,29 @@ def _sample_rotation_angle(rng: np.random.Generator, tau: float) -> float:
                 )
         return max(0.0, result)
 
-    # For large tau use full Gaussian approach
+    # Fold the half-normal sample into [0, pi] and accept against the SO(3)
+    # correction. The factor sin(theta/2)²/(theta/2)² reweights a Gaussian on R³
+    # to the uniform measure on SO(3).
     for _ in range(10000):
         theta = abs(rng.normal(0, sigma))
         theta = theta % (2 * math.pi)
         if theta > math.pi:
             theta = 2 * math.pi - theta
-        # accept with probability proportional to sin(theta/2)^2 correction
-        # (Gaussian on R^3 vs uniform on SO(3))
         if theta < 1e-10:
             accept = 1.0
         else:
             accept = (math.sin(theta / 2.0) / (theta / 2.0)) ** 2
         if rng.random() < accept:
             return theta
-    return sigma  # fallback
+    return sigma  # Fallback if no sample is accepted within the loop.
 
 
 def _sample_quat_for_tau(rng: np.random.Generator, tau: float) -> np.ndarray:
-    """Sample a quaternion for a specific tau checkpoint."""
+    """Sample a rotation quaternion at a specific tau checkpoint by drawing a
+    rotation angle from the diffusion distribution and pairing it with a uniformly
+    random axis."""
     theta = _sample_rotation_angle(rng, tau)
-    # random axis
+    # Draw a random rotation axis.
     axis = rng.standard_normal(3)
     norm = np.linalg.norm(axis)
     if norm < 1e-12:
@@ -202,9 +210,9 @@ def _sample_quat_for_tau(rng: np.random.Generator, tau: float) -> np.ndarray:
     )
 
 
-# These are the precomputed CDF tables mapping uniform[0,1] -> rotation angle phi
-# at tau = 0.5, 1.0, 2.0.
-# Format: rprob[i] = P(theta < phis[i]) for diffusional rotation at given tau.
+# Precomputed cumulative distribution tables that map a uniform draw in [0, 1] to a
+# rotation angle phi at tau = 0.5, 1.0, and 2.0. Each entry rprob[i] is the
+# probability P(theta < phis[i]) for diffusional rotation at the given tau.
 
 _PHIS = [
     0,
@@ -949,17 +957,17 @@ _RPROB_2P0_ARR = np.array(_RPROB_2P0)
 
 
 def _spline_rot_from_table(rng: np.random.Generator, rprob: np.ndarray) -> np.ndarray:
-    """
-    Sample a rotation quaternion using the precomputed CDF table.
-      pc = uniform()
-      phi = spline.value(pc)   <- inverse CDF lookup
-      quat = random axis * sin(phi/2) + cos(phi/2)
+    """Sample a rotation quaternion from a precomputed cumulative distribution table.
+
+    A uniform draw pc is mapped through the inverse CDF to a rotation angle phi, and
+    phi is then combined with a uniformly random axis to form the quaternion
+    (cos(phi/2), sin(phi/2) × axis).
     """
     pc = rng.random()
-    # Inverse CDF: find phi such that rprob(phi) = pc
-    # Linear interpolation in the table (matching the Spline::value)
+    # Invert the CDF by finding phi such that rprob(phi) = pc, using linear
+    # interpolation in the table to match the reference spline evaluation.
     phi = float(np.interp(pc, rprob, _PHIS_ARR))
-    # Random axis
+    # Draw a random rotation axis.
     axis = rng.standard_normal(3)
     norm = float(np.linalg.norm(axis))
     if norm < 1e-14:
@@ -977,15 +985,15 @@ def _spline_rot_from_table(rng: np.random.Generator, rprob: np.ndarray) -> np.nd
 
 
 def _spline_rot_0p5(rng: np.random.Generator) -> np.ndarray:
-    """Exact the reference implementation spline rotation at tau=0.5"""
+    """Sample a rotation quaternion at tau = 0.5, matching the reference spline rotation."""
     return _spline_rot_from_table(rng, _RPROB_0P5_ARR)
 
 
 def _spline_rot_1p0(rng: np.random.Generator) -> np.ndarray:
-    """Exact the reference implementation spline rotation at tau=1.0"""
+    """Sample a rotation quaternion at tau = 1.0, matching the reference spline rotation."""
     return _spline_rot_from_table(rng, _RPROB_1P0_ARR)
 
 
 def _spline_rot_2p0(rng: np.random.Generator) -> np.ndarray:
-    """Exact the reference implementation spline rotation at tau=2.0"""
+    """Sample a rotation quaternion at tau = 2.0, matching the reference spline rotation."""
     return _spline_rot_from_table(rng, _RPROB_2P0_ARR)

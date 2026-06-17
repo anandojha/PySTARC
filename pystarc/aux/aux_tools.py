@@ -1,6 +1,11 @@
 """
 Auxiliary preprocessing tools for PySTARC.
 
+This module collects small helper routines that prepare molecular input for a
+Brownian-dynamics association-rate calculation. It builds bounding boxes,
+samples molecular surfaces, coarse-grains atomic charges onto a grid, locates
+charge-weighted centers, estimates hydrodynamic radii, finds inter-molecular
+contact pairs, and evaluates the Born solvation energy of a charged sphere.
 """
 
 from __future__ import annotations
@@ -12,21 +17,24 @@ import numpy as np
 import math
 
 
-# bounding_box
 def bounding_box(mol: Molecule, padding: float = 5.0) -> BoundingBox:
     """
-    Compute axis-aligned bounding box of a molecule with optional padding.
+    Return the axis-aligned bounding box of a molecule, expanded on every side
+    by the given padding in angstrom.
     """
     return BoundingBox.from_molecule(mol, padding=padding)
 
 
-# surface_spheres
 def surface_spheres(
     mol: Molecule, probe_radius: float = 1.4, n_points: int = 92
 ) -> List[np.ndarray]:
     """
-    Generate surface probe positions using a Fibonacci sphere around each atom.
-    Returns list of (x,y,z) probe positions on the molecular surface.
+    Generate probe positions on the solvent-accessible surface of a molecule.
+    Each atom is surrounded by n_points points spread evenly over a sphere using
+    the Fibonacci spiral construction, with the sphere radius set to the atom
+    radius plus the probe radius. Points that fall inside any neighbouring atom
+    are discarded, so only genuinely exposed surface points remain. The function
+    returns a list of (x, y, z) positions on the molecular surface.
     """
     positions = []
     golden = (1 + math.sqrt(5)) / 2
@@ -39,7 +47,7 @@ def surface_spheres(
             x = c[0] + r * math.sin(theta) * math.cos(phi)
             y = c[1] + r * math.sin(theta) * math.sin(phi)
             z = c[2] + r * math.cos(theta)
-            # Check not inside any other atom
+            # Keep this point only if it does not lie inside any other atom.
             p = np.array([x, y, z])
             buried = any(
                 np.linalg.norm(p - a.position) < a.radius + probe_radius
@@ -51,18 +59,20 @@ def surface_spheres(
     return positions
 
 
-# lumped_charges
 def lumped_charges(
     mol: Molecule, grid_spacing: float = 2.0
 ) -> List[Tuple[np.ndarray, float]]:
     """
-    Coarse-grain atomic charges onto a regular grid by nearest-grid-point.
-    Returns list of (position, charge) tuples for non-zero grid points.
+    Coarse-grain the atomic charges of a molecule onto a regular cubic grid.
+    Each atom is assigned to its nearest grid point and its charge is added
+    there, so several nearby atoms collapse into a single effective charge. The
+    function returns a list of (position, charge) tuples for the grid points
+    that carry a non-zero net charge.
     """
     if not mol.atoms:
         return []
     bb = bounding_box(mol, padding=grid_spacing)
-    # Build grid
+    # Lay out the grid axes spanning the padded bounding box.
     xs = np.arange(bb.xmin, bb.xmax + grid_spacing, grid_spacing)
     ys = np.arange(bb.ymin, bb.ymax + grid_spacing, grid_spacing)
     zs = np.arange(bb.zmin, bb.zmax + grid_spacing, grid_spacing)
@@ -89,11 +99,11 @@ def lumped_charges(
     return result
 
 
-# electrostatic_center
 def electrostatic_center(mol: Molecule) -> np.ndarray:
     """
-    Charge-weighted center of a molecule.
-    Falls back to geometric centroid if total charge is zero.
+    Return the charge-weighted center of a molecule, with each atom weighted by
+    the magnitude of its charge. If the molecule carries essentially no charge,
+    the function falls back to the geometric centroid.
     """
     total_q = sum(abs(a.charge) for a in mol.atoms)
     if total_q < 1e-10:
@@ -103,29 +113,36 @@ def electrostatic_center(mol: Molecule) -> np.ndarray:
     return (pos * charges[:, None]).sum(axis=0) / total_q
 
 
-# hydrodynamic_radius
 def hydrodynamic_radius_from_rg(mol: Molecule) -> float:
     """
-    Approximate hydrodynamic radius from radius of gyration.
-    r_h ≈ 0.77 × r_g  (empirical for globular proteins).
+    Estimate the hydrodynamic radius of a molecule from its radius of gyration.
+    The estimate uses the empirical relation
+
+        r_h ≈ 0.77 × r_g
+
+    where r_h is the hydrodynamic radius and r_g is the radius of gyration. The
+    factor 0.77 is an empirical value appropriate for globular proteins.
     """
     return 0.77 * mol.radius_of_gyration()
 
 
 def hydrodynamic_radius_from_surface(mol: Molecule) -> float:
     """
-    Approximate hydrodynamic radius as bounding radius of the molecule.
+    Estimate the hydrodynamic radius of a molecule as its bounding radius, that
+    is, the radius of the smallest sphere that encloses all of its atoms.
     """
     return mol.bounding_radius()
 
 
-# contact_distances
 def contact_distances(
     mol1: Molecule, mol2: Molecule, cutoff: float = 8.0
 ) -> List[Tuple[int, int, float]]:
     """
-    Return all atom pairs (i, j, dist) within cutoff Å.
-    Used to auto-generate reaction contacts.
+    Find all pairs of atoms from two molecules that lie within the cutoff
+    distance in angstrom. Each pair is reported as (i, j, dist), where i and j
+    index the atoms in the first and second molecule and dist is their
+    separation. The pairs are sorted by increasing distance and are used to
+    automatically generate the reaction contacts of an association event.
     """
     pairs = []
     for i, a1 in enumerate(mol1.atoms):
@@ -137,14 +154,20 @@ def contact_distances(
     return pairs
 
 
-# born_integral
 def born_integral(
     charge: float, radius: float, eps_in: float = 4.0, eps_out: float = 78.54
 ) -> float:
     """
-    Born solvation energy of a sphere:
-    ΔG_Born = -(q²/8π ε₀) × (1/ε_in - 1/ε_out) / r   [kBT]
-    Returns energy in kBT (using Bjerrum length scale).
+    Compute the Born solvation energy of a charged sphere, that is, the work of
+    moving a charge from a medium of dielectric constant ε_in into a medium of
+    dielectric constant ε_out. The energy is
+
+        ΔG_Born = -(q² / 8π ε₀) × (1/ε_in - 1/ε_out) / r
+
+    where q is the charge, r is the sphere radius, ε_in is the interior
+    dielectric constant, and ε_out is the exterior (solvent) dielectric
+    constant. The result is returned in units of kBT, with the prefactor folded
+    into the Bjerrum length so that no explicit ε₀ appears in the code.
     """
     if radius < 1e-10:
         return 0.0

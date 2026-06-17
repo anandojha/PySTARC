@@ -1,25 +1,26 @@
 """
-PySTARC - BD surface preparation pipeline
-============================================
-Generates a complete b_surface/ directory from a PDB + parm7 file.
+PySTARC b-surface preparation pipeline.
 
-Pipeline steps:
-  1. Strip water from PDB -> gas-phase complex
-  2. cpptraj: PDB -> inpcrd
-  3. ambpdb:  parm7 + inpcrd -> combined PQR
-  4. Split combined PQR -> receptor.pqr + ligand.pqr
-  5. Centre each molecule at origin (subtract centroid)
-  6. Assign each ligand atom its own residue number (pqr_resid_for_each_atom)
-  7. Inject GHO ghost atom at (0,0,0) into both PQRs
-  8. Convert PQRs to the reference implementation XML format -> receptor.xml + ligand.xml
-  9. Generate 3-level APBS inputs (coarse/medium/fine) -> run APBS -> DX files
-  10. Compute Debye length from ion concentration
-  11. Generate rxns.xml (milestone reaction criterion)
-  12. Generate input.xml (the reference implementation nam_simulation ready)
+This module builds a complete b_surface/ directory from a PDB file and an
+AMBER parm7 topology. The directory holds everything needed to launch a
+Brownian-dynamics association-rate calculation.
 
-Usage:
-  python prepare_bd_surface.py pystarc_input.xml
-  # or called from run_pystarc.py
+The pipeline runs in the following order. It strips water from the PDB to
+leave the gas-phase complex, then uses cpptraj to convert the PDB to an
+inpcrd coordinate file. It runs ambpdb on the parm7 topology and the inpcrd
+to produce a combined PQR, then splits that PQR into separate receptor and
+ligand files. Each molecule is centred at the origin by subtracting its
+centroid. Every ligand atom is then assigned its own residue number, and a
+GHO ghost atom is injected at the origin into both PQRs. The PQR files are
+converted to the XML format used by the reference implementation, giving
+receptor.xml and ligand.xml. Three nested APBS grids (coarse, medium, and
+fine) are generated and run with APBS to produce the DX potential maps. The
+Debye length is computed from the ion concentration. Finally the pipeline
+writes rxns.xml, which holds the milestone reaction criterion, and input.xml,
+which is ready for the reference implementation nam_simulation.
+
+Run it directly with "python prepare_bd_surface.py pystarc_input.xml", or
+call it from run_pystarc.py.
 """
 
 from __future__ import annotations
@@ -36,9 +37,10 @@ import math
 import sys
 import os
 
-# Constants
-# Comprehensive solvent/ion residue set - covers TIP3P, TIP4P, SPC/E,
-# CHARMM, GROMOS, AMBER, GROMACS naming conventions for water and ions.
+# Residue names that count as solvent or ions and are stripped before the
+# calculation. The set is deliberately broad and covers the water and ion
+# naming conventions used by TIP3P, TIP4P, SPC/E, CHARMM, GROMOS, AMBER, and
+# GROMACS.
 SOLVENT_RESIDUES = {
     # Water models
     "WAT",
@@ -80,28 +82,31 @@ SOLVENT_RESIDUES = {
     "CAL",
     "ZN2",
 }
-# Debye length formula: lambda_D = sqrt(eps0 * eps_r * kB * T / (2 * Na * e^2 * I))
-# At 298.15 K, water, 1:1 salt: lambda_D(A) = 3.04 / sqrt(c_molar)
-DEBYE_PREFACTOR_ANGSTROM = 3.04  # A * sqrt(mol/L) at 298 K, water, 1:1 electrolyte
+# The Debye screening length follows
+#     λ_D = sqrt(ε0 ε_r kB T / (2 Na e² I)).
+# Here ε0 is the vacuum permittivity, ε_r the relative permittivity of the
+# solvent, kB the Boltzmann constant, T the temperature, Na Avogadro's number,
+# e the elementary charge, and I the ionic strength. For water at 298.15 K with
+# a 1:1 salt this collapses to λ_D (in Å) = 3.04 / sqrt(c), where c is the molar
+# salt concentration. The prefactor below carries units of Å × sqrt(mol/L).
+DEBYE_PREFACTOR_ANGSTROM = 3.04  # Å × sqrt(mol/L) at 298 K, water, 1:1 electrolyte
 
 
-# Configuration
 @dataclass
 class BDSurfaceConfig:
-    """All parameters for the BD surface preparation pipeline."""
+    """Every parameter that controls the b-surface preparation pipeline."""
 
-    # Input files
-    # [REQUIRED] - set these for your system
-    pdb: Path = Path("complex.pdb")  # PDB file (water ok, stripped auto)
+    # Input files. These are required and must be set for the system at hand.
+    pdb: Path = Path("complex.pdb")  # PDB file; water is fine and is stripped automatically
     parm7: Path = Path("complex.parm7")  # AMBER topology
-    receptor_resname: str = ""  # 3-letter receptor residue name (e.g. "MGO", "HSP")
-    ligand_resname: str = ""  # 3-letter ligand residue name  (e.g. "APN", "BEN")
+    receptor_resname: str = ""  # 3-letter receptor residue name, for example "MGO" or "HSP"
+    ligand_resname: str = ""  # 3-letter ligand residue name, for example "APN" or "BEN"
     # Output
     work_dir: Path = Path("b_surface")
     # PQR options
     ligand_atom_per_residue: bool = True
     inject_gho: bool = True
-    # APBS
+    # APBS Poisson-Boltzmann settings
     pdie: float = 4.0
     sdie: float = 78.0
     apbs_fine_spacing: float = 0.5
@@ -113,11 +118,11 @@ class BDSurfaceConfig:
     # Ionic strength
     ion_concentration: float = 0.150  # mol/L
     ion_type: str = "NaCl"
-    debye_length: float = 0.0  # 0.0 = compute from concentration
+    debye_length: float = 0.0  # a value of 0.0 means compute it from the concentration
     # Reaction criterion
-    bd_milestone_radius: float = 30.0  # A - b-sphere (>= 3×(r_rec+r_lig))
-    bd_milestone_radius_inner: float = 12.0  # A (0.0 = disabled)
-    # BD simulation
+    bd_milestone_radius: float = 30.0  # b-sphere radius in Å, chosen ≥ 3×(r_rec + r_lig)
+    bd_milestone_radius_inner: float = 12.0  # inner milestone radius in Å; 0.0 disables it
+    # Brownian-dynamics simulation
     n_trajectories: int = 10000
     max_n_steps: int = 100000000
     seed: int = 11111113
@@ -131,25 +136,30 @@ class BDSurfaceConfig:
     confidence_interval: float = 0.95
 
     def compute_debye_length(self) -> float:
-        """Compute Debye length in Angstroms from ion concentration."""
+        """Return the Debye screening length in Å, derived from the ion concentration.
+
+        If an explicit Debye length was supplied it is returned unchanged. If
+        there are no ions in solution the screening length is effectively
+        infinite, so the function returns the largest representable float.
+        """
         if self.debye_length > 0:
             return self.debye_length
         if self.ion_concentration <= 0:
-            return 1.79769e308  # infinity - no screening
-        # 1:1 electrolyte (NaCl, KCl): lambda_D = 3.04/sqrt(c) A at 298 K
-        # Temperature correction: multiply by sqrt(T/298.15)
+            return 1.79769e308  # effectively infinite, meaning no electrostatic screening
+        # For a 1:1 electrolyte such as NaCl or KCl, λ_D = 3.04 / sqrt(c) Å at 298 K.
+        # The factor sqrt(T / 298.15) corrects for temperatures away from 298.15 K.
         t_factor = math.sqrt(self.temperature / 298.15)
         return DEBYE_PREFACTOR_ANGSTROM * t_factor / math.sqrt(self.ion_concentration)
 
     @property
     def kT(self) -> float:
-        """kT in units of kBT (dimensionless, with small T correction)."""
-        # Match SEEKR: kT = kB*T / kB*298.15 = T/298.15 * 1.0
+        """Return kT expressed in units of kB×298.15 K, so it is dimensionless near room temperature."""
+        # This matches the SEEKR convention, where kT = kB T / (kB × 298.15) = T / 298.15.
         return self.temperature / 298.15
 
 
 def parse_config(xml_path: Path) -> BDSurfaceConfig:
-    """Parse pystarc_input.xml into a BDSurfaceConfig."""
+    """Read pystarc_input.xml and return the corresponding BDSurfaceConfig."""
     tree = ET.parse(xml_path)
     root = tree.getroot()
 
@@ -197,7 +207,7 @@ def parse_config(xml_path: Path) -> BDSurfaceConfig:
     )
 
 
-# PQR utilities
+# Utilities for reading, writing, and transforming PQR atom records.
 @dataclass
 class PQRAtom:
     serial: int
@@ -212,8 +222,8 @@ class PQRAtom:
     record: str = "HETATM"
 
     def to_pqr_line(self) -> str:
-        # Always use HETATM for non-standard residues
-        # Prevents parser failures
+        # Write every atom as a HETATM record. The non-standard residues used
+        # here would otherwise trip up downstream parsers.
         return (
             f"HETATM{self.serial:5d} {self.name:<4s} {self.resname:<4s}"
             f"{self.resid:5d}    {self.x:8.3f}{self.y:8.3f}{self.z:8.3f}"
@@ -222,11 +232,12 @@ class PQRAtom:
 
 
 def read_pqr(path: Path) -> List[PQRAtom]:
-    """Parse a PQR file into a list of PQRAtom.
+    """Parse a PQR file into a list of PQRAtom records.
 
-    Delegates to the canonical PQR parser in pystarc.structures.pqr_io
-    and reshapes the result into the local PQRAtom dataclass used by
-    the b-surface preparation pipeline.
+    The actual parsing is delegated to the canonical PQR reader in
+    pystarc.structures.pqr_io. The records it returns are then reshaped into
+    the local PQRAtom dataclass used throughout the b-surface preparation
+    pipeline.
     """
     from pystarc.structures.pqr_io import parse_pqr_records
 
@@ -260,7 +271,11 @@ def centroid(atoms: List[PQRAtom]) -> np.ndarray:
 
 
 def centre_at_origin(atoms: List[PQRAtom]) -> List[PQRAtom]:
-    """Subtract centroid from all atom positions (excluding GHO)."""
+    """Translate all atoms so the heavy-atom centroid sits at the origin.
+
+    The centroid is computed over the real atoms only, ignoring any GHO ghost
+    atom, and is then subtracted from every atom position.
+    """
     ctr = centroid(atoms)
     for a in atoms:
         a.x -= ctr[0]
@@ -270,14 +285,19 @@ def centre_at_origin(atoms: List[PQRAtom]) -> List[PQRAtom]:
 
 
 def assign_each_atom_own_residue(atoms: List[PQRAtom]) -> List[PQRAtom]:
-    """Give each atom its own residue number (pqr_resid_for_each_atom)."""
+    """Number the atoms so each one becomes its own residue, starting from 1."""
     for i, a in enumerate(atoms):
         a.resid = i + 1
     return atoms
 
 
 def inject_gho(atoms: List[PQRAtom]) -> List[PQRAtom]:
-    """Append GHO ghost atom at (0,0,0) with zero charge and radius."""
+    """Append a GHO ghost atom at the origin with zero charge and zero radius.
+
+    The ghost atom carries no electrostatics and no excluded volume. It marks
+    the molecular centre so that later steps can measure the receptor-to-ligand
+    separation from a fixed reference point.
+    """
     next_serial = max(a.serial for a in atoms) + 1
     next_resid = max(a.resid for a in atoms) + 1
     atoms.append(
@@ -298,14 +318,14 @@ def inject_gho(atoms: List[PQRAtom]) -> List[PQRAtom]:
 
 
 def pqr_to_xml(atoms: List[PQRAtom], path: Path):
-    """
-    Convert PQR to the atom XML format.
-    Matches output of the pqr2xml tool.
-    Each residue groups its atoms; with ligand_atom_per_residue=True
-    each atom is its own residue.
+    """Write the atoms to the XML format expected by the reference implementation.
+
+    The output matches that of the pqr2xml tool. Atoms are grouped by residue.
+    When ligand_atom_per_residue is True every atom forms its own residue, so
+    each residue block contains a single atom.
     """
     lines = ["<roottag>\n"]
-    # Group atoms by residue
+    # Group atoms by residue number.
     for resid, group in groupby(sorted(atoms, key=lambda a: a.resid), key=lambda a: a.resid):
         group = list(group)
         resname = group[0].resname
@@ -327,25 +347,29 @@ def pqr_to_xml(atoms: List[PQRAtom], path: Path):
     path.write_text("".join(lines))
 
 
-# APBS grid sizing
 def compute_grid_params(
     atoms: List[PQRAtom], fine_spacing: float = 0.5, n_grids: int = 3, srad: float = 1.5
 ) -> List[dict]:
-    """
-    Compute APBS mg-manual grid parameters for 3 nested grids.
-    Returns list of dicts with keys: spacing, dime, glen, gcent.
-      glen_fine[i]   = max(16, ceil(2*(max_abs_coord[i]+atomic_r+srad)/16)*16)
-      glen_coarse[i] = 4 * glen_fine[i]
-      glen_medium[i] = 2 * glen_fine[i]
-      sp_coarse = fine_spacing * 2^round(log2(max_glen_coarse/16/fine_spacing))
-      sp_medium = sp_coarse / 4
-      dime[i]   = glen[i]/spacing + 1  (rounded to odd)
-      gcent     = centroid of heavy atoms
+    """Compute the APBS mg-manual grid parameters for three nested grids.
+
+    The return value is a list of dictionaries, one per grid, each carrying the
+    grid spacing, the dimension count (dime), the grid length (glen), and the
+    grid centre (gcent).
+
+    The fine grid length along each axis covers all atoms plus their atomic
+    radii plus the solvent probe radius, rounded up to a multiple of 16:
+        glen_fine[i] = max(16, ceil(2 × (max|coord[i]| + atomic_r + srad) / 16) × 16).
+    The coarser grids enclose the fine grid, with glen_coarse = 4 × glen_fine
+    and glen_medium = 2 × glen_fine. The coarse spacing is rounded to a power of
+    two multiple of the fine spacing, the medium spacing is one quarter of the
+    coarse spacing, and the dimension count along each axis is glen/spacing + 1
+    rounded up to an odd number. The grid centre is the heavy-atom centroid.
     """
     atoms_real = [a for a in atoms if a.name != "GHO"]
     coords = np.array([[a.x, a.y, a.z] for a in atoms_real])
     gcent = coords.mean(axis=0).tolist()
-    # Fine glen per axis: cover all atoms + atomic radii + srad probe
+    # Fine grid length per axis, large enough to enclose every atom together
+    # with its atomic radius and the solvent probe radius.
     glen_fine = []
     for i, ax in enumerate(["x", "y", "z"]):
         max_half = max(abs(getattr(a, ax)) + a.radius + srad for a in atoms_real)
@@ -359,10 +383,11 @@ def compute_grid_params(
     glen_medium = [g * 2 for g in glen_fine]
     glen_fine_xy = max(glen_fine[:2])
     sp_coarse = float(glen_fine_xy) / 4.0
-    # Round to nearest power of 2 * fine_spacing for clean grid
+    # Snap the coarse spacing to a power of two multiple of the fine spacing so
+    # the nested grids align cleanly.
     exp = round(math.log2(sp_coarse / fine_spacing))
     sp_coarse = fine_spacing * (2 ** max(0, exp))
-    sp_medium = sp_coarse / 4  # 3 levels: coarse/4x -> medium/2x -> fine/1x
+    sp_medium = sp_coarse / 4  # three levels: coarse, medium at one quarter, then fine
     grids = []
     for sp, glens in [
         (sp_coarse, glen_coarse),
@@ -389,18 +414,19 @@ def write_apbs_inputs(
     work_dir: Path,
     cfg: BDSurfaceConfig,
 ) -> List[Path]:
-    """
-    Write 3 APBS input files (coarse/medium/fine) for one molecule.
-    Returns list of .in file paths.
+    """Write the three APBS input files (coarse, medium, and fine) for one molecule.
+
+    Returns the list of .in file paths that were written.
     """
     grids = compute_grid_params(
         atoms, cfg.apbs_fine_spacing, cfg.apbs_n_grids, cfg.apbs_srad
     )
     in_files = []
-    # Ion string for APBS
+    # Build the mobile-ion block for APBS. For NaCl the Na+ and Cl- species are
+    # each present at the configured concentration. The block is left empty when
+    # there are no ions or when screening is effectively absent.
     debye = cfg.compute_debye_length()
     if cfg.ion_concentration > 0 and debye < 1e10:
-        # NaCl: Na+ conc=c, Cl- conc=c
         ion_lines = (
             f"  ion charge +1 conc {cfg.ion_concentration:.4f} radius 0.95\n"
             f"  ion charge -1 conc {cfg.ion_concentration:.4f} radius 1.81\n"
@@ -437,7 +463,7 @@ def write_apbs_inputs(
 
 
 def run_apbs(in_files: List[Path], work_dir: Path):
-    """Run APBS for each .in file sequentially."""
+    """Run APBS once for each input file, in sequence."""
     for in_file in in_files:
         print(f"    $ apbs {in_file.name}")
         result = subprocess.run(
@@ -447,24 +473,24 @@ def run_apbs(in_files: List[Path], work_dir: Path):
             raise RuntimeError(
                 f"APBS failed on {in_file.name}:\n{result.stdout[-2000:]}"
             )
-        # Move generated DX file if APBS wrote it with path prefix
+        # APBS sometimes writes the DX potential map to the current directory
+        # rather than the working directory, so move it into place if needed.
         dx_name = in_file.stem.replace(".in", "") + ".dx"
-        # APBS sometimes writes to cwd
         if not (work_dir / dx_name).exists():
             for candidate in Path(".").glob(f"{in_file.stem}*.dx"):
                 shutil.move(str(candidate), work_dir / candidate.name)
 
 
-# rxns.xml
 def write_rxns_xml(
     cfg: BDSurfaceConfig, rec_n_atoms: int, lig_n_atoms: int, work_dir: Path
 ):
+    """Write rxns.xml, the file that defines the milestone reaction criterion.
+
+    The criterion is the distance between the GHO ghost atoms, which are the
+    last atom of the receptor and the last atom of the ligand.
     """
-    Write rxns.xml reaction criterion file.
-    Uses GHO-GHO distance (last atom of each molecule).
-    """
-    rec_gho = rec_n_atoms  # last atom = GHO
-    lig_gho = lig_n_atoms  # last atom = GHO
+    rec_gho = rec_n_atoms  # the last receptor atom is the GHO ghost
+    lig_gho = lig_n_atoms  # the last ligand atom is the GHO ghost
     lines = ['<?xml version="1.0" ?>\n<roottag>\n']
     lines.append("   <first_state>b_surface</first_state>\n")
     lines.append("   <reactions>\n")
@@ -509,16 +535,13 @@ def write_rxns_xml(
     (work_dir / "rxns.xml").write_text("".join(lines))
 
 
-# input.xml
 def write_input_xml(
     cfg: BDSurfaceConfig, n_rec_grids: int, n_lig_grids: int, work_dir: Path
 ):
-    """
-    Write the nam_simulation input.xml.
-    """
+    """Write input.xml, the master input file read by nam_simulation."""
     debye = cfg.compute_debye_length()
     kT = cfg.kT
-    # Ion lines
+    # Build the mobile-ion block, leaving it empty when screening is absent.
     if cfg.ion_concentration > 0 and debye < 1e10:
         ion_xml = (
             f"\n      <ion>\n"
@@ -531,7 +554,7 @@ def write_input_xml(
     else:
         ion_xml = ""
     hi = "true" if cfg.hydrodynamic_interactions else "false"
-    # Build DX grid entries
+    # Build the XML entries that point to the receptor and ligand DX grids.
     rec_grids = "\n".join(
         f'          <grid source="make_apbs_inputs"> receptor{i}.dx </grid>'
         for i in range(n_rec_grids)
@@ -599,9 +622,9 @@ def write_input_xml(
     (work_dir / "input.xml").write_text(xml)
 
 
-# Main pipeline
+# The main pipeline driver and its helpers.
 def run_cmd(cmd: str, cwd: Path = None, step: str = "") -> str:
-    """Run a shell command, raise RuntimeError on failure."""
+    """Run a shell command and raise RuntimeError if it exits with a non-zero status."""
     result = subprocess.run(shlex.split(cmd), shell=False, cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(
@@ -617,7 +640,7 @@ def prepare_bd_surface(cfg: BDSurfaceConfig, input_xml_dir: Path):
     W.mkdir(parents=True, exist_ok=True)
     pdb = (input_xml_dir / cfg.pdb).resolve()
     parm = (input_xml_dir / cfg.parm7).resolve()
-    # Validate required fields
+    # Check that the required fields were supplied before doing any work.
     if not cfg.receptor_resname.strip():
         raise ValueError(
             "receptor_resname is required. Set <receptor_resname>XXX</receptor_resname> "
@@ -645,10 +668,10 @@ def prepare_bd_surface(cfg: BDSurfaceConfig, input_xml_dir: Path):
     print(f"  Debye length   : {debye:.2f} A")
     print(f"  Milestone r    : {cfg.bd_milestone_radius:.1f} A")
     print()
-    # -- Step 1: Strip water from PDB
+    # Step 1: strip water and ions from the PDB.
     print("[1] Stripping water from PDB ...")
     dry_pdb = W / "complex_nowater.pdb"
-    SOLVENT = SOLVENT_RESIDUES  # use the comprehensive module-level set
+    SOLVENT = SOLVENT_RESIDUES  # the broad solvent and ion residue set defined at module level
     kept = 0
     with open(pdb) as fin, open(dry_pdb, "w") as fout:
         for line in fin:
@@ -661,7 +684,7 @@ def prepare_bd_surface(cfg: BDSurfaceConfig, input_xml_dir: Path):
             if tag in ("ATOM", "HETATM"):
                 kept += 1
     print(f"  {kept} atoms retained after stripping solvent")
-    # -- Step 2: cpptraj PDB -> inpcrd
+    # Step 2: use cpptraj to convert the PDB to an inpcrd coordinate file.
     print("\n[2] cpptraj: PDB -> inpcrd ...")
     pdb_stem = pdb.stem
     inpcrd = W / f"{pdb_stem}.inpcrd"
@@ -674,7 +697,7 @@ def prepare_bd_surface(cfg: BDSurfaceConfig, input_xml_dir: Path):
     shutil.move(str(rst), str(inpcrd))
     cpptraj_in.unlink(missing_ok=True)
     print(f"  -> {inpcrd.name}")
-    # -- Step 3: ambpdb -> combined PQR
+    # Step 3: run ambpdb on the topology and coordinates to write the combined PQR.
     combined_pqr_name = f"{pdb_stem}.pqr"
     print(f"\n[3] ambpdb: parm7 + inpcrd -> {combined_pqr_name} ...")
     combined_pqr = W / combined_pqr_name
@@ -684,14 +707,14 @@ def prepare_bd_surface(cfg: BDSurfaceConfig, input_xml_dir: Path):
         step="ambpdb",
     )
     print(f"  -> {combined_pqr.name}")
-    # -- Step 4: Split combined PQR -> receptor + ligand
+    # Step 4: split the combined PQR into separate receptor and ligand atom lists.
     print("\n[4] Splitting PQR into receptor and ligand ...")
     all_atoms = read_pqr(combined_pqr)
     rec_atoms = [a for a in all_atoms if a.resname == cfg.receptor_resname]
     lig_atoms = [a for a in all_atoms if a.resname == cfg.ligand_resname]
     print(f"  Receptor ({cfg.receptor_resname}): {len(rec_atoms)} atoms")
     print(f"  Ligand   ({cfg.ligand_resname}):   {len(lig_atoms)} atoms")
-    # -- Step 5: Centre each molecule at origin
+    # Step 5: centre each molecule on the origin.
     print("\n[5] Centering molecules at origin ...")
     rec_ctr = centroid(rec_atoms)
     lig_ctr = centroid(lig_atoms)
@@ -699,16 +722,16 @@ def prepare_bd_surface(cfg: BDSurfaceConfig, input_xml_dir: Path):
     print(f"  Ligand centroid:   {lig_ctr.round(3)}")
     rec_atoms = centre_at_origin(rec_atoms)
     lig_atoms = centre_at_origin(lig_atoms)
-    # Re-number serials from 1
+    # Renumber the atom serials so each list starts from 1.
     for i, a in enumerate(rec_atoms):
         a.serial = i + 1
     for i, a in enumerate(lig_atoms):
         a.serial = i + 1
-    # Step 6: Ligand - each atom gets own residue
+    # Step 6: give each ligand atom its own residue number.
     if cfg.ligand_atom_per_residue:
         print("\n[6] Assigning each ligand atom its own residue number ...")
         lig_atoms = assign_each_atom_own_residue(lig_atoms)
-    # Step 7: Inject GHO ghost atom
+    # Step 7: inject a GHO ghost atom at the origin into both molecules.
     if cfg.inject_gho:
         print("\n[7] Injecting GHO ghost atom at centroid (0,0,0) ...")
         rec_atoms = inject_gho(rec_atoms)
@@ -720,14 +743,14 @@ def prepare_bd_surface(cfg: BDSurfaceConfig, input_xml_dir: Path):
     write_pqr(rec_atoms, rec_pqr)
     write_pqr(lig_atoms, lig_pqr)
     print(f"  -> {rec_pqr.name}, {lig_pqr.name}")
-    # Step 8: PQR to XML
+    # Step 8: convert both PQR files to the XML format.
     print("\n[8] Converting PQR to the XML format ...")
     rec_xml = W / "receptor.xml"
     lig_xml = W / "ligand.xml"
     pqr_to_xml(rec_atoms, rec_xml)
     pqr_to_xml(lig_atoms, lig_xml)
     print(f"  -> {rec_xml.name}, {lig_xml.name}")
-    # Step 9: APBS inputs + run
+    # Step 9: generate the APBS input files and run APBS for both molecules.
     print("\n[9] Generating APBS inputs and running APBS ...")
     rec_in = write_apbs_inputs(rec_atoms, rec_xml, "receptor", W, cfg)
     lig_in = write_apbs_inputs(lig_atoms, lig_xml, "ligand", W, cfg)
@@ -743,14 +766,14 @@ def prepare_bd_surface(cfg: BDSurfaceConfig, input_xml_dir: Path):
             print(f"  -> {dx.name}  ({size} KB)")
         else:
             print(f"  WARNING: {dx.name} not found!")
-    # Step 10: rxns.xml
+    # Step 10: write the reaction criterion file rxns.xml.
     print("\n[10] Writing rxns.xml ...")
     write_rxns_xml(cfg, len(rec_atoms), len(lig_atoms), W)
     print(
         f"  Reaction: receptor GHO ({len(rec_atoms)}) - "
         f"ligand GHO ({len(lig_atoms)}) < {cfg.bd_milestone_radius:.1f} A"
     )
-    # Step 11: input.xml
+    # Step 11: write the master input file input.xml, ready for nam_simulation.
     print(
         "\n[11] Writing input.xml (the reference implementation nam_simulation ready) ..."
     )
@@ -775,7 +798,7 @@ def prepare_bd_surface(cfg: BDSurfaceConfig, input_xml_dir: Path):
     return W
 
 
-# Entry point
+# Command-line entry point.
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(__doc__)

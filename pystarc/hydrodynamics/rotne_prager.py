@@ -1,30 +1,32 @@
 """
-Rotne-Prager-Yamakawa hydrodynamic interaction tensor
-=====================================================
+The Rotne-Prager-Yamakawa hydrodynamic interaction tensor.
 
-When two spheres diffuse in a viscous fluid, each sphere's motion
-creates a flow field that affects the other.  This hydrodynamic
-interaction (HI) modifies the effective diffusion coefficient.
+When two spheres diffuse in a viscous fluid, each sphere's motion creates
+a flow field that affects the other. This hydrodynamic interaction (HI)
+modifies the effective diffusion coefficient.
 
-For two spheres of radii a₁, a₂ at separation r along the line
-of centres:
+For two spheres of radii a₁ and a₂ at separation r along the line of
+centres, the diffusion coefficient parallel to that line is
+
     D_∥(r) = kBT/(6πη) × [1/a₁ + 1/a₂ - 3/r + 2ā²/r³]
-where ā² = (a₁² + a₂²)/2.
 
-Physical interpretation:
-  - 1/a₁ + 1/a₂   : free diffusion of two spheres (no coupling)
-  - -3/r          : leading HI correction (slows approach)
-  - +2ā²/r³       : finite-size correction
+where ā² = (a₁² + a₂²)/2. Physically, the term 1/a₁ + 1/a₂ is the free
+diffusion of two uncoupled spheres, the term -3/r is the leading
+hydrodynamic correction that slows the approach, and the term +2ā²/r³ is
+the finite-size correction.
 
-At large r: D_∥ -> D₀ = kBT/(6πη) × (1/a₁ + 1/a₂)
-At contact r = a₁+a₂: D_∥ < D₀ (HI slows the approach by ~20-40%)
+At large r the diffusion coefficient approaches the free value
+D₀ = kBT/(6πη) × (1/a₁ + 1/a₂). At contact, r = a₁+a₂, it is smaller
+than D₀ because the hydrodynamic interaction slows the approach by
+roughly 20 to 40 percent.
 
-This tensor is from Zuk et al., J. Fluid Mech. 741, R5 (2014),
-which extends the original Rotne-Prager (1969) and Yamakawa (1970)
-results to handle overlapping spheres correctly.
+This tensor follows Zuk et al., J. Fluid Mech. 741, R5 (2014), which
+extends the original Rotne-Prager (1969) and Yamakawa (1970) results to
+handle overlapping spheres correctly.
 
-HI reduces k_b for typical protein systems because the
-effective diffusion near contact is slower than free diffusion.
+The hydrodynamic interaction reduces k_b for typical protein systems
+because the effective diffusion near contact is slower than free
+diffusion.
 """
 
 from __future__ import annotations
@@ -38,8 +40,12 @@ def stokes_translational_diffusion(
     radius_ang: float, eta: float = ETA_WATER, T: float = T_DEFAULT
 ) -> float:
     """
-    Stokes-Einstein translational diffusion.  D_t = kBT / (6 π η r)
-    Returns D_t in Å²/ps.
+    Stokes-Einstein translational diffusion coefficient,
+
+        D_t = kBT / (6πηr).
+
+    Here r is the sphere radius in angstrom, η is the solvent viscosity,
+    and T is the temperature. Returns D_t in Å²/ps.
     """
     r_m = radius_ang * ANG_TO_M
     D_m2s = KB_SI * T / (6.0 * math.pi * eta * r_m)
@@ -50,8 +56,12 @@ def stokes_rotational_diffusion(
     radius_ang: float, eta: float = ETA_WATER, T: float = T_DEFAULT
 ) -> float:
     """
-    Stokes rotational diffusion.  D_r = kBT / (8 π η r³)
-    Returns D_r in rad²/ps.
+    Stokes rotational diffusion coefficient,
+
+        D_r = kBT / (8πηr³).
+
+    Here r is the sphere radius in angstrom, η is the solvent viscosity,
+    and T is the temperature. Returns D_r in rad²/ps.
     """
     r_m = radius_ang * ANG_TO_M
     D_r_s = KB_SI * T / (8.0 * math.pi * eta * r_m**3)
@@ -62,21 +72,24 @@ def rpy_offdiagonal(
     r_vec: np.ndarray, a: float, b: float, D_a: float, D_b: float
 ) -> np.ndarray:
     """
-    Rotne-Prager-Yamakawa off-diagonal translational mobility tensor M_12.
+    The off-diagonal translational mobility tensor M_12 of the
+    Rotne-Prager-Yamakawa model.
 
-    Far field (r > a+b):
-        tt_I  = (1 + (a²+b²)/3r²) / (8πr)
-        tt_uu = (1 - (a²+b²)/r²)  / (8πr)
-    Partial overlap (|a-b| < r <= a+b)  [Zuk et al. 2014 Eq. 11]:
-        tt_I  = (16r³(a+b) - ((a-b)² + 3r²)²) / (192π·a·b·r³)
-        tt_uu = 3·((a-b)² - r²)²             / (192π·a·b·r³)
-    One inside other (r <= |a-b|):
-        tt_I  = 1/(6π·max(a,b)),  tt_uu = 0
-    M_12 = tt_I·I + tt_uu·r̂r̂ᵀ
+    The tensor is assembled as M_12 = tt_I·I + tt_uu·r̂r̂ᵀ, where I is the
+    identity and r̂ is the unit vector along the line of centres. The two
+    scalar coefficients depend on the regime.
 
-    All terms are viscosity-scaled.
-    PySTARC works in kBT units where D = kBT·mobility so mobility = D/kBT.
-    Returns the tensor in Å²/ps units consistent with self-diffusion.
+    In the far field, r > a+b, they are
+    tt_I = (1 + (a²+b²)/3r²) / (8πr) and tt_uu = (1 - (a²+b²)/r²) / (8πr).
+    In the partial-overlap regime, |a-b| < r <= a+b (Zuk et al. 2014,
+    Eq. 11), they are tt_I = (16r³(a+b) - ((a-b)² + 3r²)²) / (192π·a·b·r³)
+    and tt_uu = 3·((a-b)² - r²)² / (192π·a·b·r³). When one sphere lies
+    inside the other, r <= |a-b|, the tensor reduces to the self-mobility
+    of the larger sphere, tt_I = 1/(6π·max(a,b)) and tt_uu = 0.
+
+    All terms are viscosity-scaled. PySTARC works in kBT units where
+    D = kBT·mobility, so mobility = D/kBT. Returns the tensor in Å²/ps,
+    consistent with the self-diffusion coefficients.
     """
     r = float(np.linalg.norm(r_vec))
     if r < 1e-10:
@@ -92,26 +105,28 @@ def rpy_offdiagonal(
     r2 = r * r
     r3 = r2 * r
     if r > a + b:
-        # Far field
+        # Far field, the two spheres do not overlap.
         den = PI8 * r
         a2ob2 = a2 + b2
         tt_I = (1.0 + a2ob2 / (3.0 * r2)) / den
         tt_uu = (1.0 - a2ob2 / r2) / den
     elif r > abs(a - b):
-        # Partial overlap
+        # The spheres partially overlap.
         ab = a * b
-        am2 = (a - b) ** 2  # (a-b)^2
+        am2 = (a - b) ** 2  # the squared radius difference (a-b)²
         den = 6.0 * 32.0 * PI * ab * r3
         tt_I = (16.0 * r3 * (a + b) - (am2 + 3.0 * r2) ** 2) / den
         tt_uu = 3.0 * (am2 - r2) ** 2 / den
     else:
-        # One sphere inside the other - self-mobility of larger sphere
+        # One sphere lies inside the other, so the result is the
+        # self-mobility of the larger sphere.
         a_max = max(a, b)
         tt_I = 1.0 / (PI6 * a_max)
         tt_uu = 0.0
-    # Scale from viscosity units to diffusion units:
-    # In BD, D = kBT * mobility, and D_a = kBT/(6π·η·a).
-    # So kBT/η = D_a * 6π * a.  Use geometric mean of both molecules.
+    # Convert from viscosity units to diffusion units. In Brownian
+    # dynamics D = kBT·mobility, and the self-diffusion is
+    # D_a = kBT/(6π·η·a), so kBT/η = D_a·6π·a. We take the geometric
+    # mean of the two molecules.
     kT_over_eta = math.sqrt(D_a * PI6 * a * D_b * PI6 * b)
     M = kT_over_eta * (tt_I * I3 + tt_uu * outer)
     return M
@@ -119,20 +134,27 @@ def rpy_offdiagonal(
 
 class MobilityTensor:
     """
-    Full RPY mobility tensor for a two-molecule BD system.
-    Stores both diagonal (self) and off-diagonal (hydrodynamic coupling)
-    terms. The effective relative diffusion D_rel_eff(r) depends on the
-    current separation r between the molecules.
-    When hydrodynamic_interactions = True , the BD step
-    uses D_rel_eff(r) instead of the constant D_t1 + D_t2. This slows
-    down the relative diffusion when the molecules are close - physically
-    correct because close molecules drag solvent into the gap between them.
+    The full RPY mobility tensor for a two-molecule Brownian-dynamics
+    system.
+
+    The tensor stores both the diagonal self terms and the off-diagonal
+    hydrodynamic coupling terms. The effective relative diffusion
+    D_rel_eff(r) depends on the current separation r between the
+    molecules. When hydrodynamic interactions are enabled, the BD step
+    uses D_rel_eff(r) instead of the constant D_t1 + D_t2. This slows the
+    relative diffusion when the molecules are close, which is physically
+    correct because nearby molecules drag solvent into the gap between
+    them.
+
     Parameters
     ----------
     r1, r2  : hydrodynamic radii [Å]
-    D_t1, D_r1 : translational/rotational diffusion for molecule 1 [Å²/ps, rad²/ps]
-    D_t2, D_r2 : translational/rotational diffusion for molecule 2
-    use_rpy    : if True (default), use full RPY coupling and if False, use diagonal approximation (faster but less accurate)
+    D_t1, D_r1 : translational and rotational diffusion for molecule 1
+        [Å²/ps, rad²/ps]
+    D_t2, D_r2 : translational and rotational diffusion for molecule 2
+    use_rpy    : if True (the default) use the full RPY coupling, and if
+        False use the diagonal approximation, which is faster but less
+        accurate
     """
 
     def __init__(
@@ -162,7 +184,7 @@ class MobilityTensor:
         T: float = T_DEFAULT,
         use_rpy: bool = True,
     ) -> "MobilityTensor":
-        """Build MobilityTensor from hydrodynamic radii."""
+        """Build a MobilityTensor from the two hydrodynamic radii."""
         return cls(
             D_trans1=stokes_translational_diffusion(radius1, eta, T),
             D_rot1=stokes_rotational_diffusion(radius1, eta, T),
@@ -175,13 +197,18 @@ class MobilityTensor:
 
     def relative_translational_diffusion(self, r_vec: np.ndarray = None) -> float:
         """
-        Effective relative translational diffusion at separation r_vec.
-        Without RPY (diagonal):
-            D_rel = D_t1 + D_t2
-        With RPY coupling (default: hydrodynamic_interactions=true):
-            D_rel_eff(r) = D_t1 + D_t2 - (2/3) tr(M_12(r))
-        The RPY correction reduces D_rel near contact (r ≈ a+b) and
-        vanishes at large r, recovering the diagonal result.
+        The effective relative translational diffusion at separation
+        r_vec.
+
+        Without RPY coupling the diagonal approximation gives simply
+        D_rel = D_t1 + D_t2. With RPY coupling, which is the default, the
+        result is
+
+            D_rel_eff(r) = D_t1 + D_t2 - (2/3)·tr(M_12(r)),
+
+        where M_12(r) is the off-diagonal mobility tensor. The RPY
+        correction reduces D_rel near contact (r ≈ a+b) and vanishes at
+        large r, recovering the diagonal result.
         """
         D0 = self.D_trans1 + self.D_trans2
         if not self.use_rpy or r_vec is None:
@@ -191,13 +218,17 @@ class MobilityTensor:
         M12 = rpy_offdiagonal(
             r_vec, self.radius1, self.radius2, self.D_trans1, self.D_trans2
         )
-        # Scalar coupling: effective D_rel = D_t1 + D_t2 - (2/3) tr(M_12)
-        # Factor 2 because both molecules feel the coupling symmetrically
+        # The scalar coupling that reduces the relative diffusion,
+        # D_rel = D_t1 + D_t2 - (2/3)·tr(M_12). The factor of two appears
+        # because both molecules feel the coupling symmetrically.
         D_coupling = (2.0 / 3.0) * np.trace(M12)
-        return max(D0 - D_coupling, 1e-12)  # never negative
+        return max(D0 - D_coupling, 1e-12)  # clamp so the result is never negative
 
     def relative_rotational_diffusion(self) -> float:
-        """D_r_rel = D_r1 + D_r2 (RPY rotational coupling is negligible)."""
+        """
+        The relative rotational diffusion, D_r_rel = D_r1 + D_r2. The
+        RPY rotational coupling is negligible and is ignored here.
+        """
         return self.D_rot1 + self.D_rot2
 
     def __repr__(self) -> str:
@@ -208,25 +239,27 @@ class MobilityTensor:
         )
 
 
-# Full RPY pair tensor (translation + rotation + cross-coupling).
-# All returned coefficients carry units of (length)^(-k) where
-# k depends on the block (1 for tt, 2 for tr/rt, 3 for rr).
-# Multiply by 1/eta to recover physical mobility, and by kT
-# to recover diffusion coefficients.
+# The full RPY pair tensor, including translation, rotation, and the
+# cross-coupling between them. The returned coefficients carry units of
+# (length) to the power -k, where k is 1 for the translation block, 2 for
+# the translation-rotation blocks, and 3 for the rotation block. Multiply
+# by 1/η to recover the physical mobility, and by kT to recover the
+# diffusion coefficients.
 
 
 def rpy_full_components(ai, aj, r):
     """Scalar coefficients of the RPY pair mobility tensor.
 
-    Returns six scalars (tt_I, tt_uu, rr_I, rr_uu, rt_eps, tr_eps)
-    that combine with identity, outer-product, and Levi-Civita-on-u
-    matrices to assemble the four 3x3 blocks of the pair tensor.
-    See rpy_pair_blocks() for the assembly.
+    Returns the six scalars (tt_I, tt_uu, rr_I, rr_uu, rt_eps, tr_eps)
+    that combine with the identity, outer-product, and Levi-Civita-on-u
+    matrices to assemble the four 3x3 blocks of the pair tensor. See
+    rpy_pair_blocks() for the assembly.
 
-    Three regimes:
-      r > ai + aj           : non-overlapping (Rotne-Prager-Yamakawa)
-      |ai-aj| < r <= ai+aj  : partial overlap (Zuk et al. 2014)
-      r <= |ai-aj|          : one sphere fully inside the other
+    There are three regimes set by the separation r. For r > ai + aj the
+    spheres do not overlap and follow the Rotne-Prager-Yamakawa result.
+    For |ai-aj| < r <= ai+aj the spheres partially overlap and follow
+    Zuk et al. 2014. For r <= |ai-aj| one sphere lies fully inside the
+    other.
     """
     pi = math.pi
     pi6 = 6.0 * pi
@@ -237,7 +270,7 @@ def rpy_full_components(ai, aj, r):
     r3 = r2 * r
 
     if r > ai + aj:
-        # Non-overlapping (far field).
+        # Far field, the spheres do not overlap.
         den_tt = pi8 * r
         a2or2 = (ai2 + aj2) / r2
         tt_I = (1.0 + a2or2 / 3.0) / den_tt
@@ -252,7 +285,7 @@ def rpy_full_components(ai, aj, r):
         return tt_I, tt_uu, rr_I, rr_uu, rt_eps, tr_eps
 
     if r > abs(ai - aj):
-        # Partial overlap.
+        # The spheres partially overlap.
         aij = ai * aj
         am2 = (ai - aj) ** 2
         den_tt = 6.0 * 32.0 * pi * aij * r3
@@ -276,7 +309,8 @@ def rpy_full_components(ai, aj, r):
         rr_I = A / den_rr
         rr_uu = B / den_rr
 
-        # Cross-coupling: BD2 has an asymmetric f(ai,aj) helper.
+        # The translation-rotation cross-coupling uses an asymmetric
+        # helper f(ai, aj), following the BD2 implementation.
         def _rt_term(a_force, a_torque):
             af2 = a_force * a_force
             num = (a_force - a_torque + r) ** 2 * (
@@ -288,14 +322,14 @@ def rpy_full_components(ai, aj, r):
         tr_eps = _rt_term(aj, ai)
         return tt_I, tt_uu, rr_I, rr_uu, rt_eps, tr_eps
 
-    # Fully nested: one sphere strictly inside the other.
+    # One sphere is strictly inside the other.
     a = max(ai, aj)
     tt_I = 1.0 / (pi6 * a)
     tt_uu = 0.0
     rr_I = 1.0 / (8.0 * pi * a * a * a)
     rr_uu = 0.0
-    # BD2's get_components() leaves rt/tr at zero in this regime
-    # ("add rt components later"). Follow the same choice.
+    # The BD2 implementation leaves the translation-rotation coupling at
+    # zero in this regime, and we follow the same choice.
     rt_eps = 0.0
     tr_eps = 0.0
     return tt_I, tt_uu, rr_I, rr_uu, rt_eps, tr_eps
@@ -304,27 +338,28 @@ def rpy_full_components(ai, aj, r):
 def rpy_pair_blocks(ai, aj, r_ij):
     """Full 3x3 block decomposition of the RPY pair mobility tensor.
 
-    Returns (mtt, mrt, mtr, mrr), each a 3x3 numpy array, such that
-    the linear response of bead i's velocity and angular velocity to
-    a force and torque applied at bead j is:
+    Returns (mtt, mrt, mtr, mrr), each a 3x3 numpy array, such that the
+    linear response of bead i's velocity and angular velocity to a force
+    and torque applied at bead j is
 
         [v_i ]   [ mtt  mtr ] [ F_j ]
-        [w_i ] = [ mrt  mrr ] [ T_j ]
+        [w_i ] = [ mrt  mrr ] [ T_j ].
 
-    Convention: Viscosity is not applied; multiply blocks by
-    1/eta to recover physical mobility.
+    By convention the viscosity is not applied. Multiply the blocks by
+    1/η to recover the physical mobility.
     """
     r = float(np.linalg.norm(r_ij))
     if r < 1e-12:
-        # Degenerate: same point. Caller should use rpy_self_blocks.
+        # The two beads coincide, which is degenerate. The caller should
+        # use rpy_self_blocks for this case.
         return np.zeros((3, 3)), np.zeros((3, 3)), np.zeros((3, 3)), np.zeros((3, 3))
 
     u = np.asarray(r_ij, dtype=float) / r
     uu = np.outer(u, u)
     I3 = np.eye(3)
 
-    # Levi-Civita applied to u: eps_ijk u_k. The signed cross-product
-    # matrix such that eps_u @ v = u x v.
+    # The Levi-Civita symbol contracted with u, eps_ijk·u_k. This is the
+    # signed cross-product matrix such that eps_u @ v = u × v.
     eps_u = np.array(
         [
             [0.0, -u[2], u[1]],
@@ -343,13 +378,14 @@ def rpy_pair_blocks(ai, aj, r_ij):
 
 
 def rpy_self_blocks(a):
-    """Single-bead self-mobility (the diagonal i = j entry).
+    """Single-bead self-mobility, the diagonal i = j entry.
 
-    Returns (mtt_self, mrr_self), each a 3x3 numpy array. The cross-
-    coupling self-blocks are zero by symmetry for an isolated sphere.
+    Returns (mtt_self, mrr_self), each a 3x3 numpy array. The
+    cross-coupling self-blocks are zero by symmetry for an isolated
+    sphere.
 
-    Convention: viscosity is not applied. mtt_self = I / (6 pi a),
-    mrr_self = I / (8 pi a^3).
+    By convention the viscosity is not applied. The blocks are
+    mtt_self = I / (6πa) and mrr_self = I / (8πa³).
     """
     pi = math.pi
     I3 = np.eye(3)
@@ -361,34 +397,36 @@ def rpy_self_blocks(a):
 def rpy_full_mobility_matrix(positions, radii):
     """Assemble the full 6N x 6N RPY mobility matrix for N spheres.
 
-    The mobility matrix M relates generalized forces (force + torque)
-    on each bead to generalized velocities (linear + angular) on each
-    bead, hydrodynamically coupled through the surrounding fluid:
+    The mobility matrix M relates the generalized forces (force and
+    torque) on each bead to the generalized velocities (linear and
+    angular) of each bead, hydrodynamically coupled through the
+    surrounding fluid,
 
         v_i = sum_j (mtt_ij F_j + mtr_ij T_j)
-        w_i = sum_j (mrt_ij F_j + mrr_ij T_j)
+        w_i = sum_j (mrt_ij F_j + mrr_ij T_j).
 
-    Block layout: bead i occupies DOFs [6i, 6i+6), with the first
-    three for translation and the last three for rotation. The 6x6
-    block at (i, j) decomposes as
+    In the block layout bead i occupies degrees of freedom [6i, 6i+6),
+    where the first three are translation and the last three are
+    rotation. The 6x6 block at (i, j) decomposes as
         M[6i:6i+3, 6j:6j+3] = mtt(i,j)
         M[6i:6i+3, 6j+3:6j+6] = mtr(i,j)
         M[6i+3:6i+6, 6j:6j+3] = mrt(i,j)
-        M[6i+3:6i+6, 6j+3:6j+6] = mrr(i,j)
-    where for i = j these come from rpy_self_blocks (cross-coupling
-    is zero for an isolated sphere) and for i != j from rpy_pair_blocks.
+        M[6i+3:6i+6, 6j+3:6j+6] = mrr(i,j).
+    For i = j these come from rpy_self_blocks, where the cross-coupling
+    is zero for an isolated sphere, and for i != j they come from
+    rpy_pair_blocks.
 
-    Convention: viscosity is not applied; multiply M by 1/eta for
-    physical mobility, or by kT/eta for diffusion units.
+    By convention the viscosity is not applied. Multiply M by 1/η for
+    the physical mobility, or by kT/η for diffusion units.
 
     Parameters
     ----------
-    positions : (N, 3) array of bead centers (in any consistent frame).
+    positions : (N, 3) array of bead centers, in any consistent frame.
     radii     : (N,) array of bead hydrodynamic radii.
 
     Returns
     -------
-    M : (6N, 6N) numpy array. Symmetric to numerical precision by
+    M : (6N, 6N) numpy array, symmetric to numerical precision by
         Onsager reciprocity.
     """
     positions = np.asarray(positions, dtype=float)
@@ -406,29 +444,30 @@ def rpy_full_mobility_matrix(positions, radii):
     M = np.zeros((6 * n, 6 * n), dtype=float)
 
     for i in range(n):
-        # Diagonal block: self-mobility, no cross-coupling.
+        # The diagonal block is the self-mobility, with no cross-coupling.
         mtt_self, mrr_self = rpy_self_blocks(radii[i])
         M[6 * i : 6 * i + 3, 6 * i : 6 * i + 3] = mtt_self
         M[6 * i + 3 : 6 * i + 6, 6 * i + 3 : 6 * i + 6] = mrr_self
-        # mtr and mrt blocks are zero on the diagonal (no self-cross
-        # coupling for an isolated sphere); leave them at zero.
+        # The mtr and mrt blocks are zero on the diagonal because an
+        # isolated sphere has no self cross-coupling, so we leave them at
+        # zero.
 
         for j in range(i + 1, n):
-            # Off-diagonal block (i, j) and its transpose-pair (j, i).
+            # The off-diagonal block (i, j) and its transpose pair (j, i).
             r_ij = positions[j] - positions[i]
             mtt_ij, mrt_ij, mtr_ij, mrr_ij = rpy_pair_blocks(
                 radii[i],
                 radii[j],
                 r_ij,
             )
-            # (i, j) block.
+            # The (i, j) block.
             M[6 * i : 6 * i + 3, 6 * j : 6 * j + 3] = mtt_ij
             M[6 * i : 6 * i + 3, 6 * j + 3 : 6 * j + 6] = mtr_ij
             M[6 * i + 3 : 6 * i + 6, 6 * j : 6 * j + 3] = mrt_ij
             M[6 * i + 3 : 6 * i + 6, 6 * j + 3 : 6 * j + 6] = mrr_ij
-            # (j, i) block = (i, j)^T by Onsager reciprocity. Fill
-            # by transpose rather than re-evaluating to guarantee
-            # exact numerical symmetry.
+            # The (j, i) block equals the transpose of the (i, j) block by
+            # Onsager reciprocity. We fill it by transposing rather than
+            # re-evaluating, which guarantees exact numerical symmetry.
             M[6 * j : 6 * j + 3, 6 * i : 6 * i + 3] = mtt_ij.T
             M[6 * j : 6 * j + 3, 6 * i + 3 : 6 * i + 6] = mrt_ij.T
             M[6 * j + 3 : 6 * j + 6, 6 * i : 6 * i + 3] = mtr_ij.T
@@ -438,11 +477,11 @@ def rpy_full_mobility_matrix(positions, radii):
 
 
 def _hydrodynamic_center(positions, radii):
-    """Radius-weighted centroid: hc = (sum a_i r_i) / (sum a_i).
+    """Radius-weighted centroid, hc = (sum a_i·r_i) / (sum a_i).
 
-    This is the natural reference point for a heterogeneous-radius chain;
-    all bead radii enter linearly, so larger beads pull the center
-    toward themselves.
+    This is the natural reference point for a chain of beads with
+    different radii. All bead radii enter linearly, so larger beads pull
+    the center toward themselves.
     """
     radii = np.asarray(radii, dtype=float)
     positions = np.asarray(positions, dtype=float)
@@ -451,8 +490,8 @@ def _hydrodynamic_center(positions, radii):
 
 
 def _translation_only_mobility(positions, radii):
-    """Extract the 3N x 3N translation-translation block of the full
-    RPY mobility matrix. Each 3x3 block (i, j) is mtt(a_i, a_j, r_ij).
+    """Extract the 3N x 3N translation-translation block of the full RPY
+    mobility matrix. Each 3x3 block (i, j) is mtt(a_i, a_j, r_ij).
     """
     M_full = rpy_full_mobility_matrix(positions, radii)
     n = len(positions)
@@ -467,24 +506,28 @@ def _translation_only_mobility(positions, radii):
 
 
 def _build_robust_solver(M):
-    """Build a callable solver(v) for M @ x = v, robust to near-singular M.
+    """Build a callable solver(v) for M @ x = v that is robust to a
+    near-singular M.
 
-    Tries strategies in order:
-      1. Cholesky on M (cheap; requires symmetric positive definite)
-      2. Cholesky on M + eps*I with progressive jitter (handles near-singular)
-      3. Symmetric eigendecomposition with eigenvalue clipping (handles indefinite)
+    The function tries three strategies in order. First it attempts a
+    plain Cholesky factorization of M, which is cheap but requires M to
+    be symmetric positive definite. If that fails it tries a Cholesky
+    factorization of M + eps·I with progressively larger jitter, which
+    handles a near-singular M. As a last resort it uses a symmetric
+    eigendecomposition with eigenvalue clipping, which handles an
+    indefinite M.
 
     Returns
     -------
     (solver, was_regularized, info)
-        solver : callable(v) -> approximate M^{-1} v
-        was_regularized : bool; True if any fallback strategy was used
+        solver : callable(v) returning an approximate M^{-1}·v
+        was_regularized : bool, True if any fallback strategy was used
         info : str describing the strategy actually applied
     """
     n = M.shape[0]
     trace_avg = float(np.trace(M)) / max(n, 1)
 
-    # 1. Plain Cholesky
+    # First strategy, a plain Cholesky factorization.
     try:
         L = np.linalg.cholesky(M)
         def solver_chol(v, L=L):
@@ -494,7 +537,8 @@ def _build_robust_solver(M):
     except np.linalg.LinAlgError:
         pass
 
-    # 2. Regularized Cholesky with progressive jitter
+    # Second strategy, a regularized Cholesky factorization with
+    # progressively larger jitter on the diagonal.
     for eps_factor in (1e-12, 1e-9, 1e-6):
         eps = eps_factor * max(abs(trace_avg), 1.0)
         try:
@@ -506,7 +550,8 @@ def _build_robust_solver(M):
         except np.linalg.LinAlgError:
             continue
 
-    # 3. Symmetric eigendecomposition with eigenvalue clipping
+    # Third strategy, a symmetric eigendecomposition with eigenvalue
+    # clipping.
     eigvals, eigvecs = np.linalg.eigh(M)
     floor = max(float(abs(eigvals).max()), 1.0) * 1e-10
     eigvals_clipped = np.maximum(eigvals, floor)
@@ -518,27 +563,26 @@ def _build_robust_solver(M):
 
 
 def chain_rigid_body_resistance(positions, radii):
-    """Compute the chain's rigid-body resistance matrices and hydrodynamic
-    center, given the bead positions and radii.
+    """Compute the chain's rigid-body resistance matrices and
+    hydrodynamic center, given the bead positions and radii.
 
-    Returns (A, C, hc):
-      A  : (3, 3) translational resistance, force per unit velocity.
-           A acts as: F_net = eta * A @ v_chain, where v_chain is the
-           uniform translational velocity of the rigid chain.
-      C  : (3, 3) rotational resistance, torque per unit angular
-           velocity, taken about the hydrodynamic center.
-           T_net = eta * C @ omega_chain.
-      hc : (3,) hydrodynamic center (radius-weighted centroid).
+    Returns (A, C, hc). The matrix A is the (3, 3) translational
+    resistance, the force per unit velocity, acting as
+    F_net = η·A @ v_chain, where v_chain is the uniform translational
+    velocity of the rigid chain. The matrix C is the (3, 3) rotational
+    resistance, the torque per unit angular velocity taken about the
+    hydrodynamic center, acting as T_net = η·C @ omega_chain. The vector
+    hc is the (3,) hydrodynamic center, the radius-weighted centroid.
 
-    Convention: viscosity is NOT included. Multiply A by eta for
+    By convention the viscosity is not included. Multiply A by η for the
     physical resistance. The corresponding rigid-body translational
-    diffusion is D_trans = kT * inv(eta * A); similarly for D_rot.
+    diffusion is D_trans = kT·inv(η·A), and similarly for D_rot.
 
-    Algorithm: For each Cartesian direction k, prescribe the rigid-body
-    velocity field, solve M_tt F = v for the per-bead forces required to
-    maintain that motion against the fluid, and read off the column of
-    A or C from the appropriate sum or moment of those forces.
-    This avoids ever forming M_tt^{-1} explicitly.
+    The algorithm works as follows. For each Cartesian direction k it
+    prescribes the rigid-body velocity field, solves M_tt·F = v for the
+    per-bead forces required to maintain that motion against the fluid,
+    and reads off the column of A or C from the appropriate sum or moment
+    of those forces. This avoids ever forming M_tt^{-1} explicitly.
 
     Parameters
     ----------
@@ -547,10 +591,10 @@ def chain_rigid_body_resistance(positions, radii):
 
     Notes
     -----
-    The translation-rotation cross-coupling block B is not returned.
-    For chains that are well-centered at the hydrodynamic center,
-    B is small or zero by symmetry; full Stokesian-dynamics
-    treatment would compute it.
+    The translation-rotation cross-coupling block B is not returned. For
+    chains that are well-centered at the hydrodynamic center, B is small
+    or zero by symmetry. A full Stokesian-dynamics treatment would
+    compute it.
     """
     positions = np.asarray(positions, dtype=float)
     radii = np.asarray(radii, dtype=float)
@@ -567,12 +611,13 @@ def chain_rigid_body_resistance(positions, radii):
     hc = _hydrodynamic_center(positions, radii)
     M_tt = _translation_only_mobility(positions, radii)
 
-    # Solve M_tt @ F = v. RPY mobility is SPD for non-overlapping beads,
-    # but coarse-grained chains derived from PDBs can have near-coincident
-    # beads (e.g. CA fallback for disordered sidechains), making M_tt
+    # Solve M_tt @ F = v. The RPY mobility is symmetric positive definite
+    # for non-overlapping beads, but coarse-grained chains derived from
+    # PDB files can have near-coincident beads (for example the
+    # CA fallback for disordered sidechains), which makes M_tt
     # ill-conditioned or indefinite. _build_robust_solver falls back
-    # through regularized Cholesky -> symmetric eigendecomposition rather
-    # than raising LinAlgError on the user.
+    # from a regularized Cholesky factorization to a symmetric
+    # eigendecomposition rather than raising a LinAlgError on the user.
     solve, _was_regularized, _solver_info = _build_robust_solver(M_tt)
     if _was_regularized:
         warnings.warn(
@@ -584,7 +629,8 @@ def chain_rigid_body_resistance(positions, radii):
             stacklevel=2,
         )
 
-    # A matrix: prescribe uniform translation v_i = e_k for every bead.
+    # Build the A matrix by prescribing a uniform translation v_i = e_k
+    # for every bead.
     A = np.zeros((3, 3))
     for k in range(3):
         v = np.zeros(3 * n)
@@ -594,8 +640,9 @@ def chain_rigid_body_resistance(positions, radii):
         F_per_bead = F.reshape(n, 3)
         A[:, k] = F_per_bead.sum(axis=0)
 
-    # C matrix: prescribe rigid-body rotation omega = e_k about hc, so
-    # bead i moves with velocity v_i = omega x (r_i - hc).
+    # Build the C matrix by prescribing a rigid-body rotation
+    # omega = e_k about hc, so bead i moves with velocity
+    # v_i = omega × (r_i - hc).
     C = np.zeros((3, 3))
     for k in range(3):
         omega = np.zeros(3)
@@ -619,34 +666,35 @@ def chain_diffusion_tensors(positions, radii, kT=1.0, viscosity=None):
     """Compute the chain's rigid-body diffusion tensors and hydrodynamic
     center, ready for use in a Brownian-dynamics integrator.
 
-    Returns (D_trans, D_rot, hc):
-      D_trans : (3, 3) translational diffusion tensor [length^2 / time]
-      D_rot   : (3, 3) rotational diffusion tensor    [1 / time]
-      hc      : (3,)   hydrodynamic center            [length]
+    Returns (D_trans, D_rot, hc). The matrix D_trans is the (3, 3)
+    translational diffusion tensor in length²/time, D_rot is the (3, 3)
+    rotational diffusion tensor in 1/time, and hc is the (3,)
+    hydrodynamic center in length.
 
     The diffusion tensors are obtained by inverting the resistance
-    matrices A and C (from chain_rigid_body_resistance) and scaling
-    by kT / eta:
+    matrices A and C from chain_rigid_body_resistance and scaling by
+    kT/η,
 
-        D_trans = (kT / eta) * inv(A)
-        D_rot   = (kT / eta) * inv(C)
+        D_trans = (kT/η)·inv(A)
+        D_rot   = (kT/η)·inv(C).
 
     Parameters
     ----------
     positions : (N, 3) bead centers.
     radii     : (N,)   bead hydrodynamic radii.
-    kT        : thermal energy. PySTARC convention is kT = 1.
-    viscosity : solvent viscosity. If None, uses the package default
-                WATER_VISCOSITY = 0.243 kBT.ps/A^3 from motion/do_bd_step.
+    kT        : thermal energy. The PySTARC convention is kT = 1.
+    viscosity : solvent viscosity. If None, the package default
+                WATER_VISCOSITY = 0.243 kBT·ps/Å³ from motion/do_bd_step
+                is used.
 
     Notes
     -----
     For a chain of N >= 2 beads, both A and C are invertible by
-    construction. For N = 1, A is invertible but C is the zero matrix
-    (see chain_rigid_body_resistance docstring); a single-bead chain
-    cannot use the algorithm without bead-rotation contributions.
-    Callers should special-case N = 1 by using the bead's own
-    rotational mobility 1/(8 pi eta a^3).
+    construction. For N = 1 the matrix A is invertible but C is the zero
+    matrix (see the chain_rigid_body_resistance docstring), so a
+    single-bead chain cannot use the algorithm without bead-rotation
+    contributions. Callers should special-case N = 1 by using the bead's
+    own rotational mobility 1/(8πηa³).
     """
     from pystarc.motion.do_bd_step import WATER_VISCOSITY
 
@@ -663,17 +711,17 @@ def chain_diffusion_tensors(positions, radii, kT=1.0, viscosity=None):
     D_trans = scale * np.linalg.inv(A)
 
     if n == 1:
-        # C is zero by construction in BD2's algorithm; fall back to
-        # the single-bead Stokes rotational mobility for correctness.
+        # C is zero by construction in the BD2 algorithm, so for a single
+        # bead we fall back to the Stokes rotational mobility, which is
+        # correct.
         a = float(radii[0])
         D_rot = (kT / viscosity) * np.eye(3) / (8.0 * math.pi * a**3)
     else:
-        # Singular C arises for special chain geometries (e.g. a
-        # perfectly collinear chain has zero rotational drag about its
-        # own axis since all moment arms vanish). The user constructed
-        # a configuration where the chain isn't a well-defined three-
-        # DOF rigid rotor; raise a clear error rather than a generic
-        # numpy LinAlgError.
+        # A singular C arises for special chain geometries. For example,
+        # a perfectly collinear chain has zero rotational drag about its
+        # own axis because all moment arms vanish. In that case the chain
+        # is not a well-defined three-degree-of-freedom rigid rotor, so we
+        # raise a clear error rather than a generic numpy LinAlgError.
         try:
             D_rot = scale * np.linalg.inv(C)
         except np.linalg.LinAlgError:

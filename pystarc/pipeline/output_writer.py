@@ -1,8 +1,9 @@
 """
-PySTARC output writer
-=====================
-Writes all simulation output files to the bd_sims/ directory.
-Called by pipeline.py after simulation completes.
+PySTARC output writer.
+
+This module writes all of the simulation output files into the bd_sims/
+directory. The pipeline calls it once the Brownian-dynamics simulation has
+finished.
 """
 
 from typing import Dict, Any, Optional
@@ -22,56 +23,61 @@ def write_all(
     confidence: float = 0.95,
 ):
     """
-    Write all enabled output files to work_dir.
-    Parameters
-    ----------
-    work_dir : Path
-        Output directory (bd_sims/)
-    result : GPUBatchResult
-        Simulation result object
-    sim_data : dict
-        Collected trajectory data from the simulator. Keys:
-        - 'start_pos': (N, 3) starting positions
-        - 'start_q': (N, 4) starting orientations
-        - 'outcome': (N,) int - 1=reacted, 2=escaped, 3=max_steps
-        - 'n_steps': (N,) int - steps per trajectory
-        - 'min_dist': (N,) float - closest approach distance
-        - 'step_at_min': (N,) int - step when closest approach occurred
-        - 'total_time_ps': (N,) float - accumulated simulation time
-        - 'n_returns': (N,) int - times returned from escape sphere
-        - 'bb_triggered': (N,) bool - Brownian bridge caught reaction
-        - 'encounter_pos': (M, 3) - ligand centroid at reaction
-        - 'encounter_q': (M, 4) - ligand orientation at reaction
-        - 'encounter_traj': (M,) - trajectory indices
-        - 'encounter_step': (M,) - step numbers
-        - 'encounter_n_pairs': (M,) - pairs satisfied
-        - 'near_miss_pos': (K, 3) - centroid at closest approach (escaped)
-        - 'near_miss_q': (K, 4) - orientation at closest approach
-        - 'near_miss_traj': (K,) - trajectory indices
-        - 'near_miss_dist': (K,) - min distance values
-        - 'path_steps': list of (n_recorded, 8) arrays [traj_id, step, x, y, z, q0, q1, q2]
-        - 'energy_steps': list of (n_recorded, 6) arrays [traj_id, step, fx, fy, fz, dt]
-        - 'radial_bins': (n_bins,) bin edges
-        - 'radial_counts': (n_bins-1,) histogram counts
-        - 'angular_theta': (n_ang,) theta bin centers
-        - 'angular_phi': (n_ang,) phi bin centers
-        - 'angular_counts': (n_theta, n_phi) 2D histogram
-        - 'milestone_radii': (n_milestones,) radii
-        - 'milestone_flux_out': (n_milestones,) outward crossings
-        - 'milestone_flux_in': (n_milestones,) inward crossings
-        - 'contact_pair_counts': (n_pairs,) how often each pair was within cutoff
-        - 'contact_total_steps': int - total steps counted
-        - 'trans_bins': (n_bins,) radial bin edges for transition matrix
-        - 'trans_matrix': (n_bins, n_bins) count matrix
-        - 'rxn_pair_dists_at_encounter': (M, n_pairs) pair distances at reaction
-    output_cfg : OutputConfig
-        Flags for which files to write
-    k_b : float
-        Romberg k_b value
-    D_rel : float
-        Relative diffusion coefficient
-    confidence : float
-        Confidence level for CI
+    Write every enabled output file into work_dir.
+
+    work_dir is the output directory, normally bd_sims/. result is the
+    GPUBatchResult object holding the simulation outcome. output_cfg is an
+    OutputConfig whose flags decide which files are written. k_b is the
+    Romberg k_b value, D_rel is the relative translational diffusion
+    coefficient, and confidence is the confidence level used for the
+    reported intervals.
+
+    sim_data is a dictionary of trajectory data collected by the simulator.
+    Its keys describe N trajectories, M recorded reactions, and K recorded
+    near misses. The per-trajectory arrays are 'start_pos' with shape (N, 3)
+    giving the starting positions, 'start_q' with shape (N, 4) giving the
+    starting orientations, 'outcome' with shape (N,) where 1 means reacted,
+    2 means escaped, and 3 means the trajectory hit the maximum step count,
+    'n_steps' giving the number of steps taken in each trajectory, 'min_dist'
+    giving the closest-approach distance, 'step_at_min' giving the step at
+    which that closest approach occurred, 'total_time_ps' giving the
+    accumulated simulation time, 'n_returns' counting how many times the
+    trajectory returned from the escape sphere, and 'bb_triggered' which is
+    True when a Brownian bridge caught the reaction.
+
+    The reaction (encounter) arrays cover the M trajectories that reacted.
+    'encounter_pos' with shape (M, 3) is the ligand centroid at reaction,
+    'encounter_q' with shape (M, 4) is the ligand orientation at reaction,
+    'encounter_traj' gives the trajectory indices, 'encounter_step' gives the
+    step numbers, and 'encounter_n_pairs' gives the number of contact pairs
+    satisfied. 'rxn_pair_dists_at_encounter' with shape (M, n_pairs) holds the
+    pair distances at the moment of reaction.
+
+    The near-miss arrays cover the K escaped trajectories at their closest
+    approach. 'near_miss_pos' with shape (K, 3) is the centroid at closest
+    approach, 'near_miss_q' with shape (K, 4) is the orientation there,
+    'near_miss_traj' gives the trajectory indices, and 'near_miss_dist' gives
+    the minimum-distance values.
+
+    'path_steps' is a list of (n_recorded, 8) arrays with columns
+    [traj_id, step, x, y, z, q0, q1, q2], and 'energy_steps' is a list of
+    (n_recorded, 6) arrays with columns [traj_id, step, fx, fy, fz, dt].
+
+    The histogram arrays are 'radial_bins' with shape (n_bins,) for the bin
+    edges, 'radial_counts' with shape (n_bins-1,) for the histogram counts,
+    'angular_theta' and 'angular_phi' for the theta and phi bin centers, and
+    'angular_counts' with shape (n_theta, n_phi) for the two-dimensional
+    angular histogram.
+
+    The milestone arrays are 'milestone_radii' for the milestone radii,
+    'milestone_flux_out' for the outward crossings, and 'milestone_flux_in'
+    for the inward crossings.
+
+    The contact and transition data are 'contact_pair_counts' with shape
+    (n_pairs,) giving how often each pair was within the cutoff,
+    'contact_total_steps' giving the total number of steps counted,
+    'trans_bins' giving the radial bin edges for the transition matrix, and
+    'trans_matrix' with shape (n_bins, n_bins) giving the count matrix.
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -263,7 +269,8 @@ def write_all(
     if output_cfg.p_commit and "outcome" in sim_data:
         outcome = sim_data["outcome"]
         spos = sim_data["start_pos"]
-        # Bin starting positions by radius and compute p_react
+        # Bin the starting positions by their radius and compute the
+        # reaction probability within each bin.
         r_start = np.linalg.norm(spos, axis=1)
         n_bins = 50
         bins = np.linspace(r_start.min(), r_start.max(), n_bins + 1)
@@ -306,9 +313,9 @@ def write_all(
     if output_cfg.pose_clusters and "encounter_q" in sim_data:
         eq = sim_data["encounter_q"]
         if len(eq) > 5:
-            # Simple angular clustering: convert quaternions to Euler θ
-            # and bin into octants
-            # θ = 2*arccos(|q0|)
+            # Simple angular clustering. Convert each quaternion to the
+            # rotation angle θ and bin the angles into octants, where
+            # θ = 2 arccos(|q0|).
             angles = 2.0 * np.arccos(np.clip(np.abs(eq[:, 0]), 0, 1))
             n_clusters = min(8, len(eq))
             bins = np.linspace(0, np.pi, n_clusters + 1)

@@ -1,40 +1,29 @@
 """
-PQR I/O for PySTARC.
+PQR file input and output for PySTARC.
 
-Single canonical PQR parser used by all library code and example scripts.
+This module provides the single canonical PQR parser used by all library code
+and example scripts.
 
-Supported format variations:
+It handles several variations of the PQR format. Both ATOM and HETATM records
+are read. The chain identifier at PDB column 22 is optional, so files with or
+without a chain column are both supported. Collapsed spacing between adjacent
+numeric fields is tolerated through the whitespace fallback, for example a
+negative x coordinate that runs into the space before y, or only a single space
+separating the charge from the radius. A trailing element symbol is captured
+when present. Four-character Amber residue names that extend into the chain
+column, such as NTHR or CLYS, are handled. Blank lines and lines beginning with
+REMARK or END are skipped.
 
-  Record types
-      ATOM and HETATM.
-  Chain column
-      Optional. Files with or without a chain identifier at PDB column 22
-      are both handled.
-  Numeric spacing
-      Collapsed spacing between adjacent numeric fields (e.g. negative x
-      coordinate eating the space before y, or single-space separation
-      between charge and radius) is handled by the whitespace fallback.
-  Trailing element symbol
-      Optional. Captured when present.
-  Extended residue names
-      Four-character Amber residue names that extend into the chain
-      column (e.g. NTHR, CLYS) are handled.
-  Comment and blank lines
-      Blank lines and lines beginning with REMARK or END are skipped.
+The public interface consists of four pieces. PQRRecord is a dataclass holding
+all eleven PQR fields plus the element symbol. parse_pqr_records returns a list
+of PQRRecord objects and is the single source of truth for parsing. parse_pqr
+returns a Molecule and is a backward-compatible wrapper. write_pqr writes a
+Molecule out as a PQR file.
 
-Public API:
-
-  PQRRecord          Dataclass with all eleven PQR fields plus element.
-  parse_pqr_records  Returns list[PQRRecord]. Single source of truth.
-  parse_pqr          Returns Molecule. Backward-compatible wrapper.
-  write_pqr          Writes a Molecule out as PQR. Behavior unchanged.
-
-Parse strategy:
-
-  For each candidate line, strict PDB-column parsing is tried first and
-  the whitespace-split fallback with chain-column auto-detection runs
-  on any parse failure. Malformed lines that both modes reject are
-  skipped silently, matching prior parser behavior.
+The parsing strategy is to try strict PDB-column parsing first, then fall back
+to a whitespace split with chain-column auto-detection whenever the strict
+parse fails. Lines that both modes reject are skipped silently, matching the
+behavior of the earlier parser.
 """
 
 from __future__ import annotations
@@ -44,10 +33,14 @@ from typing import List, Optional
 from pathlib import Path
 
 
-# Public data type
+# The public data type returned by the parser.
 @dataclass
 class PQRRecord:
-    """One parsed record from a PQR file."""
+    """A single atom record parsed from a PQR file.
+
+    It holds the eleven standard PQR fields together with an optional trailing
+    element symbol.
+    """
 
     record_type: str
     serial: int
@@ -63,9 +56,15 @@ class PQRRecord:
     element: str = ""
 
 
-# Primary parser
+# The primary parser and single source of truth for reading PQR files.
 def parse_pqr_records(path: str | Path) -> List[PQRRecord]:
-    """Parse a PQR file into a list of PQRRecord."""
+    """Parse a PQR file into a list of PQRRecord objects.
+
+    This reads the file line by line, skips blank lines and REMARK or END
+    records, and keeps only ATOM and HETATM records. Each kept line is parsed
+    first by the strict column parser and then, if that fails, by the
+    whitespace fallback. Lines that both parsers reject are skipped.
+    """
     path = Path(path)
     records: List[PQRRecord] = []
     with open(path) as fh:
@@ -87,9 +86,14 @@ def parse_pqr_records(path: str | Path) -> List[PQRRecord]:
     return records
 
 
-# Strict column parser (PDB spec)
+# Strict parser based on the fixed PDB column positions.
 def _parse_strict(line: str, record_type: str) -> Optional[PQRRecord]:
-    """Parse one PQR line using fixed PDB column positions."""
+    """Parse one PQR line using the fixed PDB column positions.
+
+    This reads each field from its standard PDB column range and returns None if
+    the line is too short or any numeric field fails to convert, which lets the
+    caller fall back to the whitespace parser.
+    """
     if len(line) < 54:
         return None
     try:
@@ -125,9 +129,16 @@ def _parse_strict(line: str, record_type: str) -> Optional[PQRRecord]:
         return None
 
 
-# Whitespace fallback parser
+# Whitespace fallback parser used when strict column parsing fails.
 def _parse_whitespace(line: str, record_type: str) -> Optional[PQRRecord]:
-    """Parse one PQR line by whitespace split, detecting chain presence."""
+    """Parse one PQR line by splitting on whitespace and detecting the chain.
+
+    This is the fallback for lines whose columns do not line up with the PDB
+    specification, for example when collapsed spacing merges adjacent numeric
+    fields. The chain column is detected by checking whether the fifth token is
+    an integer (no chain) or the sixth token is an integer (chain present), and
+    the remaining fields are read relative to that offset.
+    """
     parts = line.split()
     if len(parts) < 10:
         return None
@@ -170,6 +181,7 @@ def _parse_whitespace(line: str, record_type: str) -> Optional[PQRRecord]:
 
 
 def _is_int(s: str) -> bool:
+    """Return True if the string can be converted to an integer."""
     try:
         int(s)
         return True
@@ -177,12 +189,13 @@ def _is_int(s: str) -> bool:
         return False
 
 
-# Backward-compatible API
+# Backward-compatible parser that returns a Molecule.
 def parse_pqr(path: str | Path) -> Molecule:
     """Parse a PQR file into a Molecule.
 
-    Backward-compatible signature. Callers that need the chain identifier,
-    element symbol, or record type should use parse_pqr_records instead.
+    This keeps the original signature for existing callers. Callers that need
+    the chain identifier, element symbol, or record type should use
+    parse_pqr_records instead. Atoms with no chain are assigned chain "A".
     """
     path = Path(path)
     mol = Molecule(name=path.stem)
@@ -205,7 +218,13 @@ def parse_pqr(path: str | Path) -> Molecule:
 
 
 def write_pqr(mol: Molecule, path: str | Path) -> None:
-    """Write a Molecule to a .pqr file."""
+    """Write a Molecule to a .pqr file.
+
+    The output begins with a REMARK header naming the molecule, followed by one
+    ATOM record per atom with its name, residue name, residue index, Cartesian
+    coordinates in angstrom, charge, and radius, and closes with an END line.
+    Atoms with an empty name or residue name are written as "X" and "UNK".
+    """
     path = Path(path)
     with open(path, "w") as fh:
         fh.write(f"REMARK  Generated by PySTARC  molecule={mol.name}\n")

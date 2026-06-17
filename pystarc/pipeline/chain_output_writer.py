@@ -1,42 +1,40 @@
 """
-PySTARC chain BD output writer
+Output writer for chain Brownian-dynamics runs.
 
-Produces output files matching the rigid-body OutputConfig schema.
-After Stage 2 (sub-stages 2a-2d), 11 of 14 OutputConfig flags are
-implemented in chain BD mode.
+This module produces output files that match the rigid-body OutputConfig
+schema. After Stage 2 (sub-stages 2a through 2d), 11 of the 14 OutputConfig
+flags are implemented in chain BD mode.
 
-  Always written:
-    results.json        summary, diffusion config, chain summary, params
-    trajectories.csv    one row per trajectory
+Two files are always written. results.json holds the run summary, diffusion
+configuration, chain summary, and parameters. trajectories.csv holds one row
+per trajectory.
 
-  Conditional (gated on OutputConfig flags):
-    encounters.csv         REACTED trajectories: pos/orientation at reaction
-    near_misses.csv        non-REACTED: closest approach during trajectory
-    paths.npz              per-snapshot COM + orientation + radial
-    radial_density.csv     histogram of |COM| separations
-    angular_map.npz        2D (theta, phi) occupancy heatmap
-    fpt_distribution.csv   histogram of first-passage times
-    contact_frequency.csv  aggregate (target, chain) atom-pair contacts
-    milestone_flux.csv     shell crossings (outward + inward)
-    energetics.npz         per-snapshot energy components
+The remaining files are conditional and gated on OutputConfig flags.
+encounters.csv records the position and orientation at reaction for each
+REACTED trajectory. near_misses.csv records the closest approach during each
+non-REACTED trajectory. paths.npz stores the per-snapshot center of mass,
+orientation, and radial separation. radial_density.csv is a histogram of the
+center-of-mass separations |COM|. angular_map.npz is a two-dimensional (theta,
+phi) occupancy heatmap. fpt_distribution.csv is a histogram of first-passage
+times. contact_frequency.csv aggregates target-chain atom-pair contacts.
+milestone_flux.csv counts outward and inward shell crossings. energetics.npz
+stores the per-snapshot energy components.
 
-Three OutputConfig flags are accepted but currently no-op in chain BD
-mode (file is not produced). Implementing each requires new analysis
-code beyond simple file emission:
+Three OutputConfig flags are accepted but currently do nothing in chain BD
+mode, so no file is produced. Implementing each one requires new analysis code
+beyond simple file emission. The p_commit.npz output (a commitment probability
+map) needs a shell-conditioned committor analysis. The transition_matrix.npz
+output (a Markov state transition matrix) needs Markov state definitions for
+chain BD. The pose_clusters.csv output (clustered encounter orientations) needs
+clustering of the encounter quaternions.
 
-    p_commit.npz           commitment probability map
-                            -> needs shell-conditioned committor analysis
-    transition_matrix.npz  Markov state transition matrix
-                            -> needs Markov state definitions for chain BD
-    pose_clusters.csv      clustered encounter orientations
-                            -> needs encounter quaternion clustering
+Because these three flags are accepted but skipped, a default OutputConfig with
+all flags set to True does not raise an error. Users simply see 11 files
+instead of 14.
 
-These accept-but-skip flags mean a default OutputConfig (all flags
-True) does not error; users see 11 files instead of 14.
-
-This is the chain-side counterpart to pipeline/output_writer.py. The
-GPU-batch NAM writer expects a sim_data dict with arrays whose shapes
-differ from chain BD natural data, so we keep parallel writers.
+This is the chain-side counterpart to pipeline/output_writer.py. The GPU-batch
+NAM writer expects a sim_data dict whose array shapes differ from the natural
+chain BD data, so we keep the two writers separate.
 """
 
 from __future__ import annotations
@@ -52,9 +50,10 @@ import json
 def _diffusion_block(sim) -> Dict[str, Any]:
     """Serialize the simulator's diffusion configuration.
 
-    For auto_diffusion mode, includes the full 3x3 tensors plus the
-    isotropic-equivalent (trace/3) and the rigid-body hydrodynamic
-    center. For scalar mode, just emits scalar D_trans, D_rot.
+    In auto_diffusion mode this includes the full 3×3 diffusion tensors along
+    with the isotropic equivalent (the trace divided by 3) and the rigid-body
+    hydrodynamic center. In scalar mode it emits only the scalar D_trans and
+    D_rot.
     """
     if sim.auto_diffusion:
         D_t = np.asarray(sim.D_trans)
@@ -70,8 +69,8 @@ def _diffusion_block(sim) -> Dict[str, Any]:
             "D_rot_units": "rad^2/ps",
         }
     else:
-        # Scalar path. D_trans / D_rot may also be (3, 3) arrays if the
-        # user passed pre-computed tensors; handle both.
+        # Scalar path. D_trans and D_rot may also arrive as (3, 3) arrays if
+        # the user passed pre-computed tensors, so handle both cases.
         D_t = sim.D_trans
         D_r = sim.D_rot
         if np.ndim(D_t) == 2:
@@ -96,7 +95,7 @@ def _diffusion_block(sim) -> Dict[str, Any]:
 
 
 def _chain_block(sim) -> Dict[str, Any]:
-    """Summarize the chain template."""
+    """Summarize the chain template into a JSON-friendly dict."""
     template = sim.chain_template
     return {
         "name": template.name,
@@ -113,17 +112,17 @@ def _chain_block(sim) -> Dict[str, Any]:
 def _params_block(sim) -> Dict[str, Any]:
     """Serialize all ChainBDParameters fields to a JSON-friendly dict.
 
-    Uses dataclasses.asdict on the canonical ChainBDParameters dataclass
-    so any new field is automatically included without touching this
-    writer. Test fixtures that pass plain Python classes for sim.params
-    are handled via attribute introspection so both production and test
-    paths cover the same field set.
+    This calls dataclasses.asdict on the canonical ChainBDParameters dataclass
+    so that any new field is included automatically without editing this
+    writer. Test fixtures that pass plain Python classes for sim.params are
+    handled by attribute introspection, so the production and test paths cover
+    the same set of fields.
     """
     p = sim.params
     if is_dataclass(p):
         return asdict(p)
-    # Plain-class fallback: collect public non-callable attributes.
-    # Used by test stubs that mock sim.params without a real dataclass.
+    # Plain-class fallback: collect the public, non-callable attributes. This
+    # path is used by test stubs that mock sim.params without a real dataclass.
     return {
         k: getattr(p, k)
         for k in dir(p)
@@ -135,20 +134,22 @@ def _summary_stats(
     results: List[TrajectoryResult],
     max_steps_cap: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Aggregate per-trajectory results into summary stats.
+    """Aggregate per-trajectory results into summary statistics.
 
-    max_steps_cap: pass sim.params.max_steps so timeout detection compares
-    against the configured cap. When None (e.g. post-hoc analysis of saved
-    results without a sim object), falls back to the maximum observed step
-    count via _max_steps_of; this legacy behavior may misclassify the
-    longest escape as a timeout when no trajectory actually times out.
+    Pass sim.params.max_steps as max_steps_cap so that timeout detection
+    compares against the configured cap. When max_steps_cap is None, for
+    example during post-hoc analysis of saved results without a sim object,
+    the function falls back to the largest observed step count from
+    _max_steps_of. That legacy behavior can misclassify the longest escape as
+    a timeout even when no trajectory actually timed out.
     """
     n = len(results)
     n_reacted = sum(1 for r in results if r.fate == Fate.REACTED)
     n_escaped = sum(1 for r in results if r.fate == Fate.ESCAPED)
     n_max_steps = sum(1 for r in results if r.fate == Fate.MAX_STEPS)
-    # Compare against the configured max_steps when available; fall back to
-    # max-observed for back-compat with saved-results post-processing.
+    # Compare against the configured max_steps when it is available. Fall back
+    # to the maximum observed value to stay compatible with post-processing of
+    # saved results.
     cap = max_steps_cap if max_steps_cap is not None else _max_steps_of(results)
     n_timeouts = sum(1 for r in results if r.fate == Fate.ESCAPED and r.steps == cap)
     if n == 0:
@@ -175,7 +176,7 @@ def _summary_stats(
         "min_time_ps": float(np.min(times)),
         "max_time_ps": float(np.max(times)),
     }
-    # Per-reaction tally: which reactions fired and how often.
+    # Tally how often each named reaction fired.
     reaction_counts = Counter(r.reaction_name for r in results if r.reaction_name)
     if reaction_counts:
         summary["reaction_counts"] = dict(reaction_counts)
@@ -183,11 +184,12 @@ def _summary_stats(
 
 
 def _max_steps_of(results: List[TrajectoryResult]) -> int:
-    """Inferred max_steps cap from the results -- the largest steps value.
+    """Infer the max_steps cap from the results as the largest step value.
 
-    Used for timeout detection. Pass sim.params.max_steps in
-    instead, but inferring from results keeps the helper independent
-    and slightly more permissive (works on saved results too).
+    This is used for timeout detection. It is better to pass
+    sim.params.max_steps directly, but inferring the cap from the results
+    keeps this helper independent and slightly more permissive, since it also
+    works on saved results.
     """
     if not results:
         return 0
@@ -200,8 +202,8 @@ def write_results_json(
     results: List[TrajectoryResult],
     wall_time_sec: float,
 ) -> Path:
-    """Write results.json: a single summary file with all the metadata
-    a downstream analyst would want about this run.
+    """Write results.json, a single summary file that holds all the metadata a
+    downstream analyst would want about this run.
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -226,7 +228,7 @@ def write_trajectories_csv(
     work_dir: Path,
     results: List[TrajectoryResult],
 ) -> Path:
-    """Write trajectories.csv: one row per trajectory."""
+    """Write trajectories.csv with one row per trajectory."""
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -250,11 +252,12 @@ def write_encounters_csv(
     work_dir: Path,
     results: List[TrajectoryResult],
 ):
-    """One row per REACTED trajectory: position + orientation at reaction.
+    """Write one row per REACTED trajectory giving the position and orientation
+    at reaction.
 
-    Columns: traj_id, step, time_ps, x, y, z, q_w, q_x, q_y, q_z, reaction_name
-    Returns Path to file written, or None if no REACTED trajectories with
-    populated encounter_pos.
+    The columns are traj_id, step, time_ps, x, y, z, q_w, q_x, q_y, q_z, and
+    reaction_name. The function returns the Path to the file it wrote, or None
+    when there are no REACTED trajectories with a populated encounter_pos.
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -290,10 +293,11 @@ def write_near_misses_csv(
     work_dir: Path,
     results: List[TrajectoryResult],
 ):
-    """One row per non-REACTED trajectory: closest approach during traj.
+    """Write one row per non-REACTED trajectory giving the closest approach
+    reached during the trajectory.
 
-    Columns: traj_id, fate, near_miss_dist, x, y, z
-    Returns Path or None if no near_miss data populated.
+    The columns are traj_id, fate, near_miss_dist, x, y, and z. The function
+    returns the Path to the file, or None when no near-miss data is populated.
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -323,10 +327,10 @@ def write_fpt_distribution_csv(
     results: List[TrajectoryResult],
     n_bins: int = 50,
 ):
-    """Histogram of first-passage times for REACTED trajectories.
+    """Write a histogram of first-passage times for the REACTED trajectories.
 
-    Columns: bin_lo, bin_hi, count
-    Returns Path or None if no REACTED trajectories.
+    The columns are bin_lo, bin_hi, and count. The function returns the Path to
+    the file, or None when there are no REACTED trajectories.
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -346,11 +350,12 @@ def write_contact_frequency_csv(
     work_dir: Path,
     results: List[TrajectoryResult],
 ):
-    """Aggregate (target_atom, chain_atom) contact counts across all trajectories.
+    """Aggregate the (target_atom, chain_atom) contact counts across all
+    trajectories.
 
-    Columns: target_atom_id, chain_atom_id, total_contacts, n_trajectories
-    Sorted descending by total_contacts.
-    Returns Path or None if no contact data populated.
+    The columns are target_atom_id, chain_atom_id, total_contacts, and
+    n_trajectories, sorted in descending order by total_contacts. The function
+    returns the Path to the file, or None when no contact data is populated.
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -377,15 +382,17 @@ def write_energetics_npz(
     work_dir: Path,
     results: List[TrajectoryResult],
 ):
-    """Per-trajectory energy traces in flat schema (no pickle needed).
+    """Write the per-trajectory energy traces in a flat schema that needs no
+    pickling.
 
-    Stored as flat arrays keyed by snapshot:
-      traj_id   (n_total,) int      trajectory index for each snapshot
-      step      (n_total,) int      step number for each snapshot
-      energy    (n_total, 4) float  (total, elec, born, steric)
-      fate      (n_traj,) U10       fate per trajectory
-      columns   (4,) U10            energy column labels
-    Returns Path or None if no energy data populated.
+    The data is stored as flat arrays keyed by snapshot. The array traj_id of
+    shape (n_total,) holds the trajectory index for each snapshot, and step of
+    shape (n_total,) holds the step number for each snapshot. The array energy
+    of shape (n_total, 4) holds the total, electrostatic, Born, and steric
+    energy components. The array fate of shape (n_traj,) holds the fate of each
+    trajectory, and columns of shape (4,) holds the energy column labels. The
+    function returns the Path to the file, or None when no energy data is
+    populated.
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -421,16 +428,17 @@ def write_paths_npz(
     work_dir: Path,
     results: List[TrajectoryResult],
 ):
-    """Per-trajectory COM + orientation snapshots in flat schema (no pickle).
+    """Write the per-trajectory center-of-mass and orientation snapshots in a
+    flat schema that needs no pickling.
 
-    Stored as flat arrays:
-      traj_id  (n_total,) int      trajectory index for each snapshot
-      step     (n_total,) int      step number for each snapshot
-      com      (n_total, 3) float  center-of-mass position [A]
-      q        (n_total, 4) float  quaternion (w, x, y, z)
-      radial   (n_total,) float    |com| separation [A]
-      fate     (n_traj,) U10       fate per trajectory
-    Returns Path or None if no path data populated.
+    The data is stored as flat arrays. The array traj_id of shape (n_total,)
+    holds the trajectory index for each snapshot, and step of shape (n_total,)
+    holds the step number for each snapshot. The array com of shape (n_total,
+    3) holds the center-of-mass position in Å, and q of shape (n_total, 4)
+    holds the orientation quaternion (w, x, y, z). The array radial of shape
+    (n_total,) holds the separation |com| in Å, and fate of shape (n_traj,)
+    holds the fate of each trajectory. The function returns the Path to the
+    file, or None when no path data is populated.
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -475,14 +483,15 @@ def write_radial_density_csv(
     results: List[TrajectoryResult],
     n_bins: int = 50,
 ):
-    """Radial density histogram of all trajectory snapshots.
+    """Write a radial density histogram over all trajectory snapshots.
 
-    Bins |COM| separations from radial_trace across all trajectories.
-    Density column is a probability density (per A): count / total / bin_width.
-    Bin range: 0 to max(radial) across all trajectories.
+    The function bins the |COM| separations taken from radial_trace across all
+    trajectories. The density column is a probability density per Å, computed
+    as count / total / bin_width. The bins span from 0 to the maximum radial
+    value seen across all trajectories.
 
-    Columns: bin_lo, bin_hi, count, density
-    Returns Path or None if no radial data populated.
+    The columns are bin_lo, bin_hi, count, and density. The function returns
+    the Path to the file, or None when no radial data is populated.
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -511,18 +520,27 @@ def write_angular_map_npz(
     n_theta: int = 18,
     n_phi: int = 36,
 ):
-    """2D histogram of ligand (theta, phi) occupancy in receptor frame.
+    """Write a two-dimensional histogram of ligand (theta, phi) occupancy in
+    the receptor frame.
 
-    Uses path_com positions; converts to spherical coords:
-      theta = arccos(z/r)      polar angle in [0, pi]
-      phi   = arctan2(y, x)    azimuthal in [-pi, pi]
+    The function uses the path_com positions and converts each one to spherical
+    coordinates. The polar angle in [0, π] is
 
-    Stored as:
-      counts          (n_theta, n_phi) int    per-bin snapshot count
-      theta_edges     (n_theta+1,) float      bin edges, radians
-      phi_edges       (n_phi+1,) float        bin edges, radians
-      total_snapshots scalar int              total snapshots binned
-    Returns Path or None if no path_com data populated.
+        theta = arccos(z / r)
+
+    and the azimuthal angle in [-π, π] is
+
+        phi = arctan2(y, x).
+
+    Here r is the radial distance of the center of mass, and x, y, z are its
+    Cartesian components in the receptor frame.
+
+    The data is stored as several arrays. The array counts of shape (n_theta,
+    n_phi) holds the snapshot count in each bin. The array theta_edges of shape
+    (n_theta+1,) and phi_edges of shape (n_phi+1,) hold the bin edges in
+    radians, and total_snapshots is a scalar count of the snapshots binned. The
+    function returns the Path to the file, or None when no path_com data is
+    populated.
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -565,21 +583,23 @@ def write_milestone_flux_csv(
     results: List[TrajectoryResult],
     n_shells: int = 10,
 ):
-    """Aggregate outward + inward shell crossings across all trajectories.
+    """Aggregate the outward and inward shell crossings across all trajectories.
 
-    Shells are linearly spaced between min and max of radial_trace
-    across all trajectories (excluding zero radii). For each pair of
-    consecutive snapshots in a trajectory:
-      - "crossed outward" if r_prev < R <= r_curr  (R is the shell radius)
-      - "crossed inward"  if r_curr < R <= r_prev
+    The shells are linearly spaced between the minimum and maximum of
+    radial_trace across all trajectories, with zero radii excluded. For each
+    pair of consecutive snapshots in a trajectory, a crossing is counted as
+    outward when r_prev < R <= r_curr and as inward when r_curr < R <= r_prev.
+    Here R is the shell radius, r_prev is the separation at the earlier
+    snapshot, and r_curr is the separation at the later snapshot.
 
-    Note: crossings between sampled points (within save_interval) are
-    not detected, so this gives a coarse-grained flux estimate. For
-    typical save_interval=10 and shells separated by several A, the
+    Crossings that happen between sampled points, that is within one
+    save_interval, are not detected, so this is a coarse-grained flux estimate.
+    For a typical save_interval of 10 and shells separated by several Å, the
     miss rate should be small.
 
-    Columns: shell_radius, n_crossings_out, n_crossings_in
-    Returns Path or None if no usable radial_trace data.
+    The columns are shell_radius, n_crossings_out, and n_crossings_in. The
+    function returns the Path to the file, or None when there is no usable
+    radial_trace data.
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -596,7 +616,7 @@ def write_milestone_flux_csv(
     r_max = float(all_r.max())
     if r_max <= r_min:
         return None
-    # n_shells internal points, excluding endpoints.
+    # Place n_shells interior shell radii, excluding the two endpoints.
     shells = np.linspace(r_min, r_max, n_shells + 2)[1:-1]
     n_out = np.zeros(n_shells, dtype=int)
     n_in = np.zeros(n_shells, dtype=int)
@@ -624,63 +644,58 @@ def write_chain_results(
     wall_time_sec: float = 0.0,
     outputs=None,
 ) -> List[Tuple[str, Path]]:
-    """Write chain BD output files to work_dir.
+    """Write the chain BD output files to work_dir.
 
-    Always-written files (regardless of outputs flags):
-      - results.json      summary + diffusion + chain + params blocks
-      - trajectories.csv  one row per trajectory
+    Two files are always written regardless of the output flags. results.json
+    holds the summary, diffusion, chain, and parameters blocks, and
+    trajectories.csv holds one row per trajectory.
 
-    Conditional files (gated on OutputConfig flags):
-      - encounters.csv         outputs.encounters_csv
-      - near_misses.csv        outputs.near_misses_csv
-      - paths.npz              outputs.full_paths
-      - radial_density.csv     outputs.radial_density
-      - angular_map.npz        outputs.angular_map
-      - fpt_distribution.csv   outputs.fpt_distribution
-      - contact_frequency.csv  outputs.contact_frequency
-      - milestone_flux.csv     outputs.milestone_flux
-      - energetics.npz         outputs.energetics
+    The remaining files are conditional and gated on OutputConfig flags. The
+    outputs.encounters_csv flag controls encounters.csv, outputs.near_misses_csv
+    controls near_misses.csv, and outputs.full_paths controls paths.npz. The
+    outputs.radial_density flag controls radial_density.csv, outputs.angular_map
+    controls angular_map.npz, and outputs.fpt_distribution controls
+    fpt_distribution.csv. The outputs.contact_frequency flag controls
+    contact_frequency.csv, outputs.milestone_flux controls milestone_flux.csv,
+    and outputs.energetics controls energetics.npz.
 
-    The following OutputConfig flags are accepted but currently do not
-    produce a file (silently no-op, no error):
-      - outputs.p_commit
-      - outputs.transition_matrix
-      - outputs.pose_clusters
-    See module docstring for why these are deferred.
+    Three OutputConfig flags are accepted but currently do not produce a file.
+    The outputs.p_commit, outputs.transition_matrix, and outputs.pose_clusters
+    flags silently do nothing and raise no error. See the module docstring for
+    why these are deferred.
 
-    Each conditional writer returns None when its required data is
-    absent (e.g. no REACTED trajectories -> no encounters.csv); in
-    those cases the file is also skipped silently.
+    Each conditional writer returns None when its required data is absent, for
+    example when there are no REACTED trajectories so no encounters.csv can be
+    written. In those cases the file is skipped silently.
 
-    Returns a list of (filename, full_path) tuples for all files
-    actually written, in the order of the rigid-body output_writer
+    The function returns a list of (filename, full_path) tuples for every file
+    that was actually written, ordered by the rigid-body output_writer
     convention.
 
-    Parameters
-    ----------
-    work_dir       : output directory (created if missing)
-    sim            : ChainBDSimulator instance (introspected for config)
-    results        : list of TrajectoryResult from sim.run()
-    wall_time_sec  : wall clock time of the run, in seconds; included
-                     in the summary if > 0
-    outputs        : OutputConfig controlling per-file flags. If None,
-                     a default-constructed OutputConfig is used (all
-                     flags True).
+    The work_dir parameter is the output directory, which is created if it does
+    not exist. The sim parameter is a ChainBDSimulator instance, which is
+    introspected for the run configuration. The results parameter is the list
+    of TrajectoryResult objects returned by sim.run(). The wall_time_sec
+    parameter is the wall-clock time of the run in seconds, included in the
+    summary when it is greater than 0. The outputs parameter is an OutputConfig
+    that controls the per-file flags. When outputs is None, a
+    default-constructed OutputConfig is used, which has all flags set to True.
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
     written: List[Tuple[str, Path]] = []
-    # Default to a fresh OutputConfig if caller didn't supply one.
+    # Use a fresh OutputConfig when the caller did not supply one.
     if outputs is None:
         from pystarc.pipeline.input_parser import OutputConfig
 
         outputs = OutputConfig()
-    # Always written.
+    # Files that are always written.
     p = write_results_json(work_dir, sim, results, wall_time_sec)
     written.append(("results.json", p))
     p = write_trajectories_csv(work_dir, results)
     written.append(("trajectories.csv", p))
-    # Sub-stage 2b: 5 conditional writers, gated on OutputConfig flags.
+    # Sub-stage 2b adds five conditional writers, each gated on an OutputConfig
+    # flag.
     if outputs.encounters_csv:
         p = write_encounters_csv(work_dir, results)
         if p is not None:
@@ -689,7 +704,7 @@ def write_chain_results(
         p = write_near_misses_csv(work_dir, results)
         if p is not None:
             written.append(("near_misses.csv", p))
-    # Sub-stage 2c: heavier-data writers.
+    # Sub-stage 2c adds the heavier-data writers.
     if outputs.full_paths:
         p = write_paths_npz(work_dir, results)
         if p is not None:
@@ -710,7 +725,7 @@ def write_chain_results(
         p = write_contact_frequency_csv(work_dir, results)
         if p is not None:
             written.append(("contact_frequency.csv", p))
-    # Sub-stage 2d.
+    # Sub-stage 2d adds the milestone flux and energetics writers.
     if outputs.milestone_flux:
         p = write_milestone_flux_csv(work_dir, results)
         if p is not None:

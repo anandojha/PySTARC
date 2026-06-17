@@ -1,49 +1,47 @@
 """
-GPU force evaluation engine
-===========================
+GPU force evaluation engine.
 
-Background
--------------------
-This module computes the total force on each ligand atom from the
-receptor's electrostatic field.  Three contributions are summed.
+This module computes the total force on each ligand atom from the receptor's
+electrostatic field. Three contributions are summed.
 
-1. ELECTROSTATIC (Poisson-Boltzmann)
-   F_elec = -q_i × ∇φ_rec(r_i)
-   The receptor's electrostatic potential φ_rec is precomputed by
-   APBS on a 3D grid.  The gradient ∇φ is evaluated by trilinear
-   interpolation with central differences at half-grid-spacing.
-   For atoms outside the grid (with 3-spacing safety margin), the
-   Yukawa multipole far-field is used instead.
+The first contribution is the electrostatic (Poisson-Boltzmann) force,
 
-2. BORN DESOLVATION
-   F_born = -α × q_i² × ∇φ_born(r_i)
-   When a charged atom approaches the receptor, it partially
-   displaces the high-dielectric solvent, paying an energetic
-   penalty.  The Born potential φ_born is the vacuum electrostatic
-   potential (ε=1 everywhere, no ions).  α = 1/(4π) ≈ 0.0796.
+    F_elec = -q_i × ∇φ_rec(r_i).
 
-   Computed in BOTH directions:
-   1. Direction 1: receptor Born grid at ligand atom positions
-   2. Direction 2: ligand Born grid at receptor atom positions
-   Direction 2 is GPU-memory-intensive for large receptors and
-   is computed in 500 MB chunks.
+Here q_i is the charge of ligand atom i and φ_rec is the receptor's
+electrostatic potential, which is precomputed by APBS on a 3D grid. The
+gradient ∇φ is evaluated by trilinear interpolation with central differences
+taken at half the grid spacing. For atoms outside the grid (using a
+three-spacing safety margin), the Yukawa multipole far-field is used instead.
 
-3. YUKAWA MONOPOLE FALLBACK
-   For atoms far from the receptor (outside APBS grid), the
-   screened Coulomb force provides the correct long-range behavior:
-   F = q_rec × q_lig / (4πε) × (1/r² + 1/(rλ)) × exp(-r/λ) × r̂
-   where λ is the Debye screening length.
+The second contribution is the Born desolvation force,
 
-Force batching
---------------
-For large ligands (e.g. thrombomodulin, 1652 atoms), evaluating
-forces for all 10⁶ trajectories simultaneously would exceed GPU
-memory.  The engine automatically batches:
+    F_born = -α × q_i² × ∇φ_born(r_i).
 
-    N_batch = 4 GB / (N_lig_atoms × 150 bytes)
+When a charged atom approaches the receptor it partially displaces the
+high-dielectric solvent and pays an energetic penalty. The Born potential
+φ_born is the vacuum electrostatic potential (ε = 1 everywhere, no ions) and
+α = 1/(4π) ≈ 0.0796. This term is computed in both directions. Direction 1
+evaluates the receptor Born grid at the ligand atom positions. Direction 2
+evaluates the ligand Born grid at the receptor atom positions. Direction 2 is
+demanding on GPU memory for large receptors and is computed in 500 MB chunks.
 
-The 150 bytes/atom accounts for ~6 internal arrays per batch
-(positions, forces, energies, masks, etc.).
+The third contribution is the Yukawa monopole fallback. For atoms far from the
+receptor (outside the APBS grid), the screened Coulomb force gives the correct
+long-range behavior,
+
+    F = q_rec × q_lig / (4πε) × (1/r² + 1/(rλ)) × exp(-r/λ) × r̂,
+
+where λ is the Debye screening length.
+
+For large ligands (for example thrombomodulin, 1652 atoms), evaluating forces
+for all 10⁶ trajectories at once would exceed GPU memory, so the engine
+batches automatically using
+
+    N_batch = 4 GB / (N_lig_atoms × 150 bytes).
+
+The figure of 150 bytes per atom accounts for roughly 6 internal arrays per
+batch (positions, forces, energies, masks, and so on).
 """
 
 from __future__ import annotations
@@ -62,7 +60,7 @@ except ImportError:
     _CUPY = False
 
 
-# CUDA kernel: one thread per (trajectory, atom) pair
+# CUDA kernel with one thread per (trajectory, atom) pair.
 
 _BATCH_KERNEL_CODE = r"""
 extern "C" __global__
@@ -127,15 +125,14 @@ void batch_force_kernel(
 
 class GPUBatchForceEngine:
     """
-    Batch GPU force engine with Yukawa far-field fallback.
-    Parameters
-    ----------
-    elec_grids      : list of DXGrid for electrostatics (finest first)
-    born_grids      : list of DXGrid for Born desolvation (finest first)
-    alpha           : Born desolvation parameter
-    receptor_charge : total charge of receptor molecule (in e)
-    debye_length    : Debye screening length (in A)
-    sdie            : solvent dielectric constant
+    Batch GPU force engine with a Yukawa far-field fallback.
+
+    The argument elec_grids is a list of DXGrid objects for electrostatics,
+    ordered finest first, and born_grids is the corresponding list for Born
+    desolvation, also finest first. The argument alpha is the Born desolvation
+    parameter. receptor_charge is the total charge of the receptor molecule in
+    units of e, debye_length is the Debye screening length in angstrom, and
+    sdie is the solvent dielectric constant.
     """
 
     def __init__(
@@ -161,39 +158,42 @@ class GPUBatchForceEngine:
             )
         self.alpha = alpha
         self._kernel = cp.RawKernel(_BATCH_KERNEL_CODE, "batch_force_kernel")
-        # System parameters for Yukawa far-field fallback
+        # System parameters used by the Yukawa far-field fallback.
         self._rec_charge = receptor_charge
         self._debye = debye_length
         self._sdie = sdie
-        # V_factor = Q_rec / (4*pi*eps_s)  where eps_s = sdie * vacuum_permittivity
-        # vacuum_permittivity in the reference units: 0.000142 e^2/(kBT*A)
+        # The prefactor of the far-field potential is V_factor = Q_rec / (4π εs),
+        # where εs = sdie × (vacuum permittivity). The vacuum permittivity in
+        # the reference units used here is 0.000142 e²/(kBT·A).
         eps_s = sdie * VACUUM_PERMITTIVITY_KBT
         self._V_factor = receptor_charge / (4.0 * math.pi * eps_s) if eps_s > 0 else 0.0
         self._has_yukawa = abs(receptor_charge) > 1e-9 and debye_length > 0
-        # Multipole expansion (dipole + quadrupole) for far-field
+        # Multipole expansion (dipole and quadrupole) used in the far field.
         self._multipole = multipole_expansion
         if self._multipole is not None:
             self._mp_dipole_gpu = cp.asarray(self._multipole.dipole, dtype=cp.float64)
             self._mp_quad_gpu = cp.asarray(self._multipole.quadrupole, dtype=cp.float64)
             self._mp_four_pi_eps = self._multipole.four_pi_eps
-        # Verbose call counter for first-call diagnostics
+        # Counter used to emit diagnostics on the first few calls.
         self._call_count = 0
-        # Upload grids to GPU once
+        # Upload the grids to the GPU once.
         self._elec_grids_gpu = self._upload_grids(elec_grids)
         self._born_grids_gpu = self._upload_grids(born_grids)
-        # The reference grid architecture: one fine grid per molecule + multipole/analytical
-        # field for atoms outside.
-        # The coarse electrostatic grid exists only to provide Dirichlet
-        # boundary conditions for the fine grid's APBS solve (bcfl map).
-        # At runtime: fine grid for atoms inside, Chebyshev/Yukawa for outside.
-        # Retain all APBS grids at runtime. _eval_batch's `assigned` mask
-        # ensures each atom is processed by exactly one grid (the finest
-        # containing it). Atoms outside all grids fall through to the
-        # Yukawa fallback. The previous code dropped every grid but the
-        # finest under the assumption that coarse grids existed only as
-        # APBS boundary conditions — but the coarse APBS field is more
-        # accurate than truncated multipole extrapolation in the
-        # intermediate range, and matches BD2 runtime behavior.
+        # The reference grid architecture uses one fine grid per molecule plus a
+        # multipole or analytical field for atoms outside it. The coarse
+        # electrostatic grid exists only to provide Dirichlet boundary
+        # conditions for the fine grid's APBS solve (the bcfl map). At runtime
+        # the fine grid handles atoms inside it and the Chebyshev or Yukawa
+        # field handles atoms outside.
+        #
+        # We retain all APBS grids at runtime. The `assigned` mask in
+        # _eval_batch ensures that each atom is processed by exactly one grid,
+        # namely the finest grid that contains it. Atoms outside all grids fall
+        # through to the Yukawa fallback. The previous code dropped every grid
+        # but the finest, assuming the coarse grids existed only as APBS
+        # boundary conditions. In fact the coarse APBS field is more accurate
+        # than truncated multipole extrapolation in the intermediate range, and
+        # it matches the BD2 runtime behavior.
         if len(self._elec_grids_gpu) > 1:
             _fine = self._elec_grids_gpu[0]
             _coarse = self._elec_grids_gpu[-1]
@@ -206,11 +206,12 @@ class GPUBatchForceEngine:
                 f"(fine ±{_fine_ext:.0f}Å -> coarse ±{_coarse_ext:.0f}Å)"
                 + ("  + Yukawa far-field" if self._has_yukawa else "")
             )
-        # DIAGNOSTIC: revert Born coarse retention. Coarse Born grid at
-        # b-sphere distance produces ~60x larger outward force than ELEC,
-        # killing trajectory approach. Until we figure out whether the
-        # coarse APBS Born grid is physical or an artifact, drop it and
-        # use fine-only (= pre-fix-#8 behavior for Born).
+        # Diagnostic: revert the retention of the coarse Born grid. At b-sphere
+        # distance the coarse Born grid produces an outward force roughly 60×
+        # larger than the electrostatic force, which prevents trajectories from
+        # approaching. Until we determine whether the coarse APBS Born grid is
+        # physical or an artifact, we drop it and use the finest grid only.
+        # This restores the Born behavior from before fix #8.
         if len(self._born_grids_gpu) > 1:
             _finest_born = self._born_grids_gpu[0]
             _fineb_ext = float(
@@ -221,25 +222,27 @@ class GPUBatchForceEngine:
                 f"[DIAGNOSTIC: coarse grid dropped to test fix #8 hypothesis]"
             )
             self._born_grids_gpu = [_finest_born]
-        # core_desolvation_force_on_1(state0, state1)  -> rec Born on lig
-        # core_desolvation_force_on_1(state1, state0)  -> lig Born on rec
-        # Direction 2 needs ligand Born grids + receptor atom positions
+        # The call core_desolvation_force_on_1(state0, state1) gives the
+        # receptor Born force on the ligand, and core_desolvation_force_on_1(
+        # state1, state0) gives the ligand Born force on the receptor.
+        # Direction 2 requires the ligand Born grids and the receptor atom
+        # positions.
         self._lig_born_grids_gpu = []
         self._rec_pos_gpu = None
         self._rec_charges_gpu = None
         if lig_born_grids and rec_positions is not None and rec_charges is not None:
             self._lig_born_grids_gpu = self._upload_grids(lig_born_grids)
-            # Keep only finest lig Born grid (auto-sized to ligand extent)
-            # Lig Born grids: retain all (same logic as rec-side above).
-            # _eval_batch's `assigned` mask makes finest-first assignment
-            # correct for multi-grid; coarse lig Born grids give receptor
-            # atoms in the intermediate range a proper APBS field.
+            # We retain all ligand Born grids, by the same reasoning used for
+            # the receptor side above. The `assigned` mask in _eval_batch makes
+            # finest-first assignment correct for the multi-grid case, and the
+            # coarse ligand Born grids give receptor atoms in the intermediate
+            # range a proper APBS field.
             self._rec_pos_gpu = cp.asarray(
                 rec_positions, dtype=cp.float64
-            )  # (N_rec, 3)
+            )  # shape (N_rec, 3)
             self._rec_charges_gpu = cp.asarray(
                 rec_charges, dtype=cp.float64
-            )  # (N_rec,)
+            )  # shape (N_rec,)
             print(
                 f"  Born both-directions: {len(self._lig_born_grids_gpu)} lig born grid(s), "
                 f"{len(rec_charges)} rec atoms"
@@ -253,7 +256,7 @@ class GPUBatchForceEngine:
                 f"  Yukawa far-field: Q_rec={receptor_charge:+.2f} e, "
                 f"debye={debye_length:.3f} A, sdie={sdie:.1f}"
             )
-        # LJ (WCA repulsive) forces using PQR radii
+        # Lennard-Jones (WCA repulsive) forces computed from the PQR radii.
         self._use_lj = use_lj
         self._enable_born2_torque = enable_born2_torque
         self._rec_radii_gpu = None
@@ -261,9 +264,10 @@ class GPUBatchForceEngine:
         if use_lj and rec_radii is not None and lig_radii is not None:
             self._rec_radii_gpu = cp.asarray(rec_radii, dtype=cp.float64)
             self._lig_radii_gpu = cp.asarray(lig_radii, dtype=cp.float64)
-            # WCA epsilon in kBT units (0.1 kcal/mol / 0.593 kcal/mol/kBT ≈ 0.17 kBT)
+            # WCA well depth in kBT units: 0.1 kcal/mol ÷ 0.593 kcal/mol/kBT ≈ 0.17 kBT.
             self._lj_epsilon = 0.17
-            # Activation radius: only compute LJ when centroid is close
+            # Activation radius beyond which the LJ term is skipped. It is only
+            # computed when the ligand centroid is close to the receptor.
             _max_sig = float(self._rec_radii_gpu.max() + self._lig_radii_gpu.max())
             self._lj_activation = _max_sig * 2.5
             print(
@@ -272,13 +276,15 @@ class GPUBatchForceEngine:
             )
 
     def _upload_grids(self, grids):
-        """Upload DXGrid list to GPU, sorted finest first.
-        Grid bounds account for:
-        1. Gradient probe width (central diff needs ±0.5*sp)
-        2. APBS boundary artifacts (focused grids with bcfl=map have
-           ~3 shells contaminated by coarse grid BC interpolation)
-        Valid range: [origin + 3*sp, origin + (nx-4)*sp].
-        This 3-spacing margin prevents force spikes at grid boundaries.
+        """Upload a list of DXGrid objects to the GPU, sorted finest first.
+
+        The usable grid bounds account for two effects. First, the central
+        difference used for the gradient probes the grid at ±0.5 of the
+        spacing. Second, focused APBS grids built with bcfl=map have roughly 3
+        outer shells contaminated by interpolation of the coarse-grid boundary
+        conditions. The valid range is therefore [origin + 3·sp,
+        origin + (nx-4)·sp]. This three-spacing margin prevents force spikes at
+        the grid boundaries.
         """
         if not grids:
             return []
@@ -290,11 +296,12 @@ class GPUBatchForceEngine:
             sp = cp.array([g.delta[i, i] for i in range(3)], dtype=cp.float64)
             inv_sp = 1.0 / sp
             nx, ny, nz = g.data.shape
-            # BC-safe bounds: 3 spacings from each edge
-            # (gradient probe needs 0.5*sp + APBS focused BC contaminates ~2-3 shells)
+            # Boundary-condition-safe bounds set 3 spacings in from each edge.
+            # The gradient probe needs 0.5 of a spacing, and the focused APBS
+            # boundary conditions contaminate roughly 2 to 3 shells.
             sp_np = np.array([g.delta[i, i] for i in range(3)])
             dims = np.array([nx, ny, nz])
-            margin = 3.0  # grid spacings from edge
+            margin = 3.0  # number of grid spacings in from the edge
             lo = g.origin + margin * sp_np
             hi = g.origin + (dims - 1 - margin) * sp_np
             uploaded.append(
@@ -314,24 +321,27 @@ class GPUBatchForceEngine:
 
     def _eval_batch(
         self,
-        positions_gpu,  # (N_traj, N_atoms, 3)
-        charges_gpu,  # (N_atoms,)
+        positions_gpu,  # shape (N_traj, N_atoms, 3)
+        charges_gpu,  # shape (N_atoms,)
         grids_gpu,
         alpha: float,
         is_born: bool,
-        centroids=None,  # (N_traj, 3) reference point for torque accumulation
+        centroids=None,  # shape (N_traj, 3), the reference point for torque accumulation
     ):
         """
-        Evaluate forces, torques, and energies for all trajectories.
-        Finest-grid-first assignment. Yukawa fallback for unassigned atoms.
-        Torque is computed about each trajectory's centroid; when centroids
-        is None, torques are returned as zeros (matches legacy callers).
+        Evaluate the forces, torques, and energies for all trajectories.
+
+        Atoms are assigned to grids finest first, and atoms left unassigned use
+        the Yukawa fallback. Torque is computed about each trajectory's
+        centroid. When centroids is None the torques are returned as zeros,
+        which matches the behavior expected by legacy callers.
         """
         N_traj, N_atoms, _ = positions_gpu.shape
         total_forces = cp.zeros((N_traj, 3), dtype=cp.float64)
         total_torques = cp.zeros((N_traj, 3), dtype=cp.float64)
         total_energies = cp.zeros((N_traj,), dtype=cp.float64)
-        # Lever arms about each trajectory's centroid for torque accumulation.
+        # Lever arms measured from each trajectory's centroid, used to
+        # accumulate torque.
         if centroids is not None:
             lever_arms = positions_gpu - centroids[:, None, :]
         else:
@@ -391,12 +401,14 @@ class GPUBatchForceEngine:
             )
             total_forces += atom_forces.sum(axis=1)
             total_energies += atom_energies.sum(axis=1)
-            # Per-atom torque about each trajectory's centroid; lever × force.
+            # Per-atom torque about each trajectory's centroid, given by the
+            # lever arm crossed with the force.
             if lever_arms is not None:
                 atom_torques = cp.cross(lever_arms, atom_forces, axis=2)
                 total_torques += atom_torques.sum(axis=1)
-        # Yukawa far-field fallback for atoms outside all grids
-        # (electrostatic only - Born decays too fast to matter)
+        # Yukawa far-field fallback for atoms outside all grids. This applies
+        # to electrostatics only, because the Born term decays too fast to
+        # matter at these distances.
         if not is_born and self._has_yukawa:
             not_assigned = ~assigned
             n_not = int(cp.sum(not_assigned))
@@ -413,7 +425,7 @@ class GPUBatchForceEngine:
                         f"{n_not}/{N_traj*N_atoms} atom-traj pairs "
                         f"({100*n_not/(N_traj*N_atoms):.1f}%)"
                     )
-        # Log first few calls
+        # Log the first few calls.
         if self._call_count < 3 and not is_born:
             n_assigned = int(cp.sum(assigned))
             n_total = N_traj * N_atoms
@@ -423,7 +435,7 @@ class GPUBatchForceEngine:
                 f"{n_assigned}/{n_total} atom-traj pairs assigned to grids "
                 f"({100*n_assigned/n_total:.1f}%)"
             )
-            # Force magnitude stats
+            # Statistics on the force magnitude.
             f_mag = cp.linalg.norm(total_forces, axis=1)
             print(
                 f"    [FORCE VERBOSE] |F| stats: "
@@ -435,35 +447,41 @@ class GPUBatchForceEngine:
 
     def _yukawa_forces_gpu(self, positions_gpu, charges_gpu, mask=None, centroids=None):
         """
-        Analytical screened Coulomb force from receptor charge distribution.
-        When multipole_expansion is set: monopole + dipole + quadrupole.
-        Otherwise: monopole only (net charge Q).
-        Receptor at origin. Force on atom i:
-            F_i = -q_i * grad(phi)   [kBT/A, matches APBS grid forces]
+        Analytical screened Coulomb force from the receptor charge
+        distribution.
+
+        When a multipole expansion is provided this includes the monopole,
+        dipole, and quadrupole terms. Otherwise it uses the monopole only,
+        that is, the net charge Q. The receptor is placed at the origin, and
+        the force on atom i is
+
+            F_i = -q_i × ∇φ,
+
+        in units of kBT/A, matching the forces obtained from the APBS grids.
         """
         N_traj, N_atoms, _ = positions_gpu.shape
         debye = self._debye
-        r_mag = cp.linalg.norm(positions_gpu, axis=2)  # (N_traj, N_atoms)
+        r_mag = cp.linalg.norm(positions_gpu, axis=2)  # shape (N_traj, N_atoms)
         safe_r = cp.maximum(r_mag, 1.0)
         exp_term = cp.exp(-safe_r / debye)
         r_hat = positions_gpu / safe_r[:, :, None]
-        # Monopole: phi = V_factor * exp(-r/λ) / r
+        # Monopole potential: φ = V_factor × exp(-r/λ) / r.
         V_fac = self._V_factor
         phi = V_fac * exp_term / safe_r
         dphi_dr = V_fac * exp_term * (-1.0 / safe_r**2 - 1.0 / (safe_r * debye))
-        # Dipole + Quadrupole (if multipole expansion available)
+        # Dipole and quadrupole terms, when a multipole expansion is available.
         if self._multipole is not None:
-            p_gpu = self._mp_dipole_gpu  # (3,)
-            Q_gpu = self._mp_quad_gpu  # (3, 3)
+            p_gpu = self._mp_dipole_gpu  # dipole vector, shape (3,)
+            Q_gpu = self._mp_quad_gpu  # quadrupole tensor, shape (3, 3)
             fpe = self._mp_four_pi_eps
             lam = debye
-            # Dipole: phi_1 = (p · r̂) / (4πε r²) × (1 + r/λ) × exp(-r/λ)
-            p_dot_r = cp.sum(r_hat * p_gpu[None, None, :], axis=2)  # (N_traj, N_atoms)
+            # Dipole potential: φ_1 = (p · r̂) / (4πε r²) × (1 + r/λ) × exp(-r/λ).
+            p_dot_r = cp.sum(r_hat * p_gpu[None, None, :], axis=2)  # shape (N_traj, N_atoms)
             p_mag = float(cp.linalg.norm(p_gpu))
             if p_mag > 1e-9:
                 phi_dip = p_dot_r / (fpe * safe_r**2) * (1.0 + safe_r / lam) * exp_term
                 phi += phi_dip
-                # d(phi_dip)/dr - leading radial term
+                # Leading radial term of d(φ_dip)/dr.
                 dphi_dip_dr = (
                     p_dot_r
                     / fpe
@@ -475,11 +493,12 @@ class GPUBatchForceEngine:
                     )
                 )
                 dphi_dr += dphi_dip_dr
-            # Quadrupole: phi_2 = (r̂ᵀ Q r̂) / (4πε r³) × (1 + r/λ + r²/(3λ²)) × exp(-r/λ)
+            # Quadrupole potential:
+            # φ_2 = (r̂ᵀ Q r̂) / (4πε r³) × (1 + r/λ + r²/(3λ²)) × exp(-r/λ).
             q_mag = float(cp.linalg.norm(Q_gpu))
             if q_mag > 1e-9:
-                # r̂ᵀ Q r̂ for each atom: (N_traj, N_atoms)
-                # r_hat: (N_traj, N_atoms, 3)
+                # The scalar r̂ᵀ Q r̂ for each atom has shape (N_traj, N_atoms),
+                # formed from r_hat of shape (N_traj, N_atoms, 3).
                 rQr = cp.sum(r_hat * cp.einsum("ij,...j->...i", Q_gpu, r_hat), axis=2)
                 phi_quad = (
                     rQr
@@ -500,13 +519,14 @@ class GPUBatchForceEngine:
                     )
                 )
                 dphi_dr += dphi_quad_dr
-        # grad(phi) = d(phi)/dr * r_hat + transverse from non-spherical terms.
-        # The radial part is exact for monopole (spherically symmetric V).
-        # For dipole, V_dip = (p·r̂)/(4πε r²)·(1+r/λ)·exp(-r/λ) carries angular
-        # dependence through (p·r̂); ∇V_dip therefore has a transverse component
-        # proportional to (p - (p·r̂)r̂) that the radial-only formula drops.
-        # Including it is essential for orientational steering by the
-        # ligand-receptor dipole interaction beyond the fine APBS grid.
+        # The gradient is ∇φ = (dφ/dr) r̂ plus a transverse contribution from
+        # the non-spherical terms. The radial part is exact for the monopole,
+        # whose potential is spherically symmetric. For the dipole the
+        # potential V_dip = (p·r̂)/(4πε r²)·(1+r/λ)·exp(-r/λ) carries angular
+        # dependence through (p·r̂), so ∇V_dip has a transverse component
+        # proportional to (p - (p·r̂)r̂) that a radial-only formula would drop.
+        # Including it is essential for the orientational steering produced by
+        # the ligand-receptor dipole interaction beyond the fine APBS grid.
         grad_phi = dphi_dr[:, :, None] * r_hat
         if (
             self._multipole is not None
@@ -515,14 +535,14 @@ class GPUBatchForceEngine:
             p_gpu_t = self._mp_dipole_gpu
             fpe_t = self._mp_four_pi_eps
             lam_t = debye
-            g_f = (1.0 + safe_r / lam_t) * exp_term  # (N_traj, N_atoms)
+            g_f = (1.0 + safe_r / lam_t) * exp_term  # shape (N_traj, N_atoms)
             transverse_factor = g_f / (fpe_t * safe_r**3)
             p_dot_r_t = cp.sum(r_hat * p_gpu_t[None, None, :], axis=2)
             p_perp = (
                 p_gpu_t[None, None, :] - p_dot_r_t[:, :, None] * r_hat
-            )  # (N_traj, N_atoms, 3)
+            )  # shape (N_traj, N_atoms, 3)
             grad_phi = grad_phi + transverse_factor[:, :, None] * p_perp
-        # F_i = -q_i * grad(phi)
+        # The force on each atom is F_i = -q_i × ∇φ.
         q_3d = charges_gpu[None, :, None]
         atom_forces = -q_3d * grad_phi
         atom_energies = charges_gpu[None, :] * phi
@@ -532,7 +552,8 @@ class GPUBatchForceEngine:
             atom_energies = atom_energies * mask.astype(cp.float64)
         forces = atom_forces.sum(axis=1)
         energies = atom_energies.sum(axis=1)
-        # Torque about each trajectory's centroid: sum_i lever_i × F_i.
+        # Torque about each trajectory's centroid, given by the sum over atoms
+        # of lever_i × F_i.
         if centroids is not None:
             lever_arms = positions_gpu - centroids[:, None, :]
             atom_torques = cp.cross(lever_arms, atom_forces, axis=2)
@@ -543,21 +564,22 @@ class GPUBatchForceEngine:
 
     def _wca_forces_gpu(self, lig_positions, centroids):
         """
-        WCA (purely repulsive LJ) forces using PQR radii, with per-atom
-        torque about each trajectory's centroid.
+        WCA (purely repulsive Lennard-Jones) forces from the PQR radii, with
+        per-atom torque about each trajectory's centroid.
 
-        Only activates for trajectories where centroid is close to receptor.
-        sigma_ij = rec_radius_i + lig_radius_j (Lorentz combining rule).
-        WCA cutoff: r < 2^(1/6) × sigma_ij (only repulsive part).
-        Processed in chunks to limit GPU memory.
+        This activates only for trajectories whose centroid is close to the
+        receptor. The pair size is σ_ij = rec_radius_i + lig_radius_j from the
+        Lorentz combining rule, and the WCA cutoff keeps only the repulsive
+        part, r < 2^(1/6) × σ_ij. The work is processed in chunks to limit GPU
+        memory.
 
-        Returns (force, torque) each shaped (N_traj, 3).
+        Returns a (force, torque) pair, each of shape (N_traj, 3).
         """
         N_traj = lig_positions.shape[0]
         N_lig = lig_positions.shape[1]
         N_rec = self._rec_pos_gpu.shape[0]
         eps = self._lj_epsilon
-        # Find trajectories close enough for LJ
+        # Select the trajectories close enough to need the LJ term.
         r_cen = cp.linalg.norm(centroids, axis=1)
         active = r_cen < self._lj_activation
         n_active = int(active.sum())
@@ -566,74 +588,82 @@ class GPUBatchForceEngine:
         if n_active == 0:
             return lj_forces, lj_torques
         active_idx = cp.where(active)[0]
-        # Process in chunks to limit memory: (chunk × N_lig × N_rec × 3)
+        # Process in chunks to limit the memory of the (chunk × N_lig × N_rec ×
+        # 3) array.
         CHUNK = max(1, min(50, int(2e9 / (N_lig * N_rec * 8 * 3))))
         for c0 in range(0, n_active, CHUNK):
             c1 = min(c0 + CHUNK, n_active)
             idx = active_idx[c0:c1]
             nc = len(idx)
-            # lig_pos: (nc, N_lig, 3), rec_pos: (N_rec, 3)
-            lp = lig_positions[idx]  # (nc, N_lig, 3)
-            rp = self._rec_pos_gpu  # (N_rec, 3)
-            # Pairwise distances: (nc, N_lig, N_rec, 3)
+            # Ligand positions lp have shape (nc, N_lig, 3) and receptor
+            # positions rp have shape (N_rec, 3).
+            lp = lig_positions[idx]  # shape (nc, N_lig, 3)
+            rp = self._rec_pos_gpu  # shape (N_rec, 3)
+            # Pairwise displacement vectors, shape (nc, N_lig, N_rec, 3).
             diff = lp[:, :, None, :] - rp[None, None, :, :]  # broadcast
-            r2 = (diff * diff).sum(axis=3)  # (nc, N_lig, N_rec)
+            r2 = (diff * diff).sum(axis=3)  # shape (nc, N_lig, N_rec)
             r = cp.sqrt(cp.maximum(r2, 1e-6))
-            # sigma_ij = rec_radius + lig_radius
+            # Pair size σ_ij = lig_radius + rec_radius.
             sig = (
                 self._lig_radii_gpu[None, :, None] + self._rec_radii_gpu[None, None, :]
             )
-            # WCA cutoff: r < 2^(1/6) * sigma
+            # WCA cutoff at r < 2^(1/6) × σ.
             r_cut = 1.122462 * sig  # 2^(1/6) ≈ 1.122462
             in_range = r < r_cut
-            # WCA force: F = eps * (12*(sig/r)^12 - 6*(sig/r)^6) / r^2 * r_vec
+            # WCA force: F = eps × (12 (σ/r)¹² - 6 (σ/r)⁶) / r² × r_vec.
             sr = sig / r
             sr2 = sr * sr
             sr6 = sr2 * sr2 * sr2
             sr12 = sr6 * sr6
-            f_mag = eps * (12.0 * sr12 - 6.0 * sr6) / r2  # (nc, N_lig, N_rec)
+            f_mag = eps * (12.0 * sr12 - 6.0 * sr6) / r2  # shape (nc, N_lig, N_rec)
             f_mag = cp.where(in_range, f_mag, 0.0)
-            # Force on ligand atom from each rec atom: f_mag * (lig - rec) / r
+            # Force on each ligand atom from each receptor atom,
+            # f_mag × (lig - rec) / r.
             f_vec = (
                 f_mag[:, :, :, None] * diff / r[:, :, :, None]
-            )  # (nc, N_lig, N_rec, 3)
-            # Per-lig-atom force (summed over rec atoms): (nc, N_lig, 3)
+            )  # shape (nc, N_lig, N_rec, 3)
+            # Force per ligand atom, summed over receptor atoms, shape (nc,
+            # N_lig, 3).
             f_per_lig = f_vec.sum(axis=2)
-            # Net force per trajectory: sum over lig atoms
+            # Net force per trajectory, summed over ligand atoms.
             lj_forces[idx] = f_per_lig.sum(axis=1)
-            # Per-atom torque about lig centroid: cross(r - c, f_per_lig)
-            lever = lp - centroids[idx][:, None, :]  # (nc, N_lig, 3)
-            atom_torques = cp.cross(lever, f_per_lig, axis=2)  # (nc, N_lig, 3)
+            # Per-atom torque about the ligand centroid, cross(r - c, f_per_lig).
+            lever = lp - centroids[idx][:, None, :]  # shape (nc, N_lig, 3)
+            atom_torques = cp.cross(lever, f_per_lig, axis=2)  # shape (nc, N_lig, 3)
             lj_torques[idx] = atom_torques.sum(axis=1)
         return lj_forces, lj_torques
 
     def __call__(self, lig_positions, lig_charges, R_matrices=None, centroids=None):
         """
-        Compute net force, torque, energy on ligand for all trajectories.
-        Born desolvation is computed in both directions:
-        1. core_desolvation_force_on_1(state0, state1) -> rec Born on lig
-        2. core_desolvation_force_on_1(state1, state0) -> lig Born on rec
-        The force on rec from direction 2 is negated (Newton's 3rd) to get
-        the reaction force on lig.
-        Parameters
-        ----------
-        lig_positions : (N_traj, N_lig, 3) ligand atom positions in lab frame
-        lig_charges   : (N_lig,) ligand atom charges
-        R_matrices    : (N_traj, 3, 3) rotation matrices (lig frame -> lab)
-        centroids     : (N_traj, 3) ligand centroid positions
+        Compute the net force, torque, and energy on the ligand for all
+        trajectories.
+
+        Born desolvation is computed in both directions. Direction 1, given by
+        core_desolvation_force_on_1(state0, state1), is the receptor Born force
+        on the ligand. Direction 2, given by core_desolvation_force_on_1(
+        state1, state0), is the ligand Born force on the receptor. The force on
+        the receptor from direction 2 is negated by Newton's third law to give
+        the reaction force on the ligand.
+
+        The argument lig_positions has shape (N_traj, N_lig, 3) and holds the
+        ligand atom positions in the lab frame, lig_charges has shape (N_lig,)
+        and holds the ligand atom charges, R_matrices has shape (N_traj, 3, 3)
+        and holds the rotation matrices that map the ligand frame to the lab
+        frame, and centroids has shape (N_traj, 3) and holds the ligand
+        centroid positions.
         """
         N_traj, N_atoms, _ = lig_positions.shape
         forces = cp.zeros((N_traj, 3), dtype=cp.float64)
         torques = cp.zeros((N_traj, 3), dtype=cp.float64)
         energies = cp.zeros((N_traj,), dtype=cp.float64)
         if self._call_count < 3:
-            r_mag = cp.linalg.norm(lig_positions[:, 0, :], axis=1)  # centroid r
+            r_mag = cp.linalg.norm(lig_positions[:, 0, :], axis=1)  # radial distance of the centroid
             print(
                 f"    [ENGINE call#{self._call_count}] N_traj={N_traj} N_atoms={N_atoms}  "
                 f"r_centroid: mean={float(r_mag.mean()):.3f} "
                 f"min={float(r_mag.min()):.3f} max={float(r_mag.max()):.3f}"
             )
-        # Electrostatic force on ligand from receptor field
+        # Electrostatic force on the ligand from the receptor field.
         if self._elec_grids_gpu:
             f, t, e = self._eval_batch(
                 lig_positions,
@@ -660,7 +690,8 @@ class GPUBatchForceEngine:
             forces += f
             torques += t
             energies += e
-        # Born desolvation direction 1: rec Born grid on lig atoms
+        # Born desolvation, direction 1: the receptor Born grid acting on the
+        # ligand atoms.
         if self._born_grids_gpu:
             f, t, e = self._eval_batch(
                 lig_positions,
@@ -680,9 +711,10 @@ class GPUBatchForceEngine:
                     f"    [COMPONENT] BORN1:  |F|_mean={fm:.6e} kBT/Å  "
                     f"|T|_mean={tm:.6e} kBT"
                 )
-        # Born desolvation direction 2: lig Born grid on rec atoms
-        # Evaluates lig Born grid at rec atom positions -> force on rec.
-        # Newton's 3rd law: force on lig = -force on rec.
+        # Born desolvation, direction 2: the ligand Born grid acting on the
+        # receptor atoms. Evaluating the ligand Born grid at the receptor atom
+        # positions gives the force on the receptor. By Newton's third law the
+        # force on the ligand is minus the force on the receptor.
         if (
             self._enable_born2_torque
             and self._lig_born_grids_gpu
@@ -692,14 +724,15 @@ class GPUBatchForceEngine:
             and self.alpha > 1e-12
         ):
             f2, t2 = self._eval_born_reverse(R_matrices, centroids, N_traj)
-            # BD2 parity: sum both BORN1 (added above) and the Newton-3rd
-            # reciprocal of BORN2 into the ligand net force. Matches BD2
-            # forces_impl.hh add_core_forces (~L998-1005) which sums
-            # b_force10 + b_force11 into force1.
-            # Previously f2 was zeroed as a workaround for an apparent
-            # spurious barrier at r~22-30 A; restored for BD2 parity.
-            # If the barrier reappears in benchmarks, investigate the
-            # ligand Born grid construction (see diagnostic at L209-223).
+            # For parity with BD2 we add both the direction 1 Born force (added
+            # above) and the Newton's-third-law reciprocal of the direction 2
+            # Born force into the ligand net force. This matches add_core_forces
+            # in BD2's forces_impl.hh (around lines 998 to 1005), which sums
+            # b_force10 and b_force11 into force1. The term f2 was previously
+            # zeroed as a workaround for an apparent spurious barrier at r ≈ 22
+            # to 30 A, and it is restored here for BD2 parity. If that barrier
+            # reappears in benchmarks, investigate the ligand Born grid
+            # construction (see the diagnostic near lines 209 to 223).
             forces += f2
             torques += t2
             if self._call_count < 3:
@@ -710,7 +743,8 @@ class GPUBatchForceEngine:
                     f"|T|_mean={tm:.6e} kBT  "
                     f"- lig Born on {self._rec_pos_gpu.shape[0]} rec atoms"
                 )
-        # LJ (WCA repulsive) forces - only when atoms are very close
+        # Lennard-Jones (WCA repulsive) forces, computed only when atoms are
+        # very close.
         if self._use_lj and self._rec_radii_gpu is not None:
             lj_f, lj_t = self._wca_forces_gpu(lig_positions, centroids)
             forces += lj_f
@@ -727,53 +761,60 @@ class GPUBatchForceEngine:
 
     def _eval_born_reverse(self, R_matrices, centroids, N_traj):
         """
-        Born direction 2: evaluate lig Born grid at rec atom positions.
-        For each trajectory:
-          1. Transform rec atoms into lig frame: R^T @ (rec_pos - centroid)
-          2. Evaluate lig Born grid -> per-atom force on rec atoms in lig frame
-          3. Rotate back to lab frame: R @ F_lig
-          4. Newton's 3rd: force on lig = -force on rec
-          5. Torque on lig about its centre = -torque on rec about same point
-             (matches BD2 add_core_forces b_torque11 contribution).
-        Chunked by trajectory to limit GPU memory (N_rec can be large).
-        Returns
-        -------
-        result_f : (N_traj, 3) net force on ligand from direction 2
-        result_t : (N_traj, 3) net torque on ligand from direction 2
+        Born direction 2: evaluate the ligand Born grid at the receptor atom
+        positions.
+
+        For each trajectory the receptor atoms are first transformed into the
+        ligand frame as Rᵀ (rec_pos - centroid). The ligand Born grid is then
+        evaluated to give the per-atom force on the receptor atoms expressed in
+        the ligand frame, which is rotated back to the lab frame as R F_lig. By
+        Newton's third law the force on the ligand is minus the force on the
+        receptor, and likewise the torque on the ligand about its centre is
+        minus the torque on the receptor about the same point, matching the
+        b_torque11 contribution in BD2's add_core_forces. The work is chunked
+        by trajectory to limit GPU memory, since N_rec can be large.
+
+        Returns result_f of shape (N_traj, 3), the net force on the ligand from
+        direction 2, and result_t of shape (N_traj, 3), the corresponding net
+        torque on the ligand.
         """
         N_rec = self._rec_pos_gpu.shape[0]
         result_f = cp.zeros((N_traj, 3), dtype=cp.float64)
         result_t = cp.zeros((N_traj, 3), dtype=cp.float64)
-        # Get ligand Born grid extent - skip if no rec atoms can reach it
+        # Get the extent of the ligand Born grid and skip if no receptor atom
+        # can reach it.
         if self._lig_born_grids_gpu:
             g = self._lig_born_grids_gpu[0]
             lig_grid_radius = float(max(abs(g["lo"][0]), abs(g["hi"][0])))
         else:
             return result_f, result_t
-        # Chunk size: limit to ~500 MB for the (chunk, N_rec, 3) array
+        # Choose the chunk size to keep the (chunk, N_rec, 3) array under about
+        # 500 MB.
         max_bytes = 500 * 1024 * 1024
         chunk_size = max(1, int(max_bytes / (N_rec * 3 * 8)))
         chunk_size = min(chunk_size, N_traj)
         for c0 in range(0, N_traj, chunk_size):
             c1 = min(c0 + chunk_size, N_traj)
             nc = c1 - c0
-            # Skip chunk if all centroids are too far for any rec atom
-            # to fall inside the ligand Born grid
+            # Skip the chunk if all centroids are too far for any receptor atom
+            # to fall inside the ligand Born grid.
             r_cen = cp.linalg.norm(centroids[c0:c1], axis=1)
             rec_max_r = float(cp.linalg.norm(self._rec_pos_gpu, axis=1).max())
             min_possible_dist = float(r_cen.min()) - rec_max_r
             if min_possible_dist > lig_grid_radius:
-                continue  # no rec atoms can be inside lig Born grid
-            # rec_pos_rel: (nc, N_rec, 3) = rec_pos - centroid
+                continue  # no receptor atom can be inside the ligand Born grid
+            # Receptor positions relative to the ligand centroid,
+            # rec_pos_rel = rec_pos - centroid, with shape (nc, N_rec, 3).
             rec_pos_rel = self._rec_pos_gpu[None, :, :] - centroids[c0:c1, None, :]
-            # Transform to lig frame: R^T @ rec_pos_rel
+            # Transform into the ligand frame as Rᵀ rec_pos_rel.
             R_T = cp.swapaxes(R_matrices[c0:c1], 1, 2)
             rec_in_lig = cp.einsum("nij,nkj->nki", R_T, rec_pos_rel)
-            # Evaluate lig Born grid at rec positions in lig frame.
-            # zero_centroids puts the torque reference at the origin of the
-            # ligand frame (the ligand's centre). _eval_batch then returns
-            # sum_j r_j_lig × f_j_lig = torque on RECEPTOR atoms about the
-            # ligand's centre, expressed in the ligand frame.
+            # Evaluate the ligand Born grid at the receptor positions in the
+            # ligand frame. Setting zero_centroids places the torque reference
+            # at the origin of the ligand frame, the ligand's centre.
+            # _eval_batch then returns sum_j r_j_lig × f_j_lig, the torque on
+            # the receptor atoms about the ligand's centre, expressed in the
+            # ligand frame.
             zero_centroids = cp.zeros((nc, 3), dtype=cp.float64)
             f_lig, t_lig, e_lig = self._eval_batch(
                 rec_in_lig,
@@ -783,12 +824,14 @@ class GPUBatchForceEngine:
                 True,
                 centroids=zero_centroids,
             )
-            # Force: rotate to lab frame, negate (N3 -> force on lig).
+            # Rotate the force to the lab frame, then negate it so that
+            # Newton's third law gives the force on the ligand.
             f_lab = cp.einsum("nij,nj->ni", R_matrices[c0:c1], f_lig)
             result_f[c0:c1] = -f_lab
-            # Torque on ligand about its centre = -torque on receptor about
-            # same point (Newton 3rd holds for torques about a shared point).
-            # Rotate the lig-frame torque to lab frame, then negate.
+            # The torque on the ligand about its centre is minus the torque on
+            # the receptor about the same point, since Newton's third law holds
+            # for torques taken about a shared point. Rotate the ligand-frame
+            # torque to the lab frame, then negate it.
             t_lab = cp.einsum("nij,nj->ni", R_matrices[c0:c1], t_lig)
             result_t[c0:c1] = -t_lab
         return result_f, result_t

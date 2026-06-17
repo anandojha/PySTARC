@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Combine all output files from split PySTARC runs into bd_sims/.
-Auto-detects bd_sims/bd_1, bd_sims/bd_2, ... directories.
-Produces identical file formats as a single-GPU run.
+Combine the output files from a split PySTARC run back into a single bd_sims
+directory. The script automatically detects the per-shard directories
+bd_sims/bd_1, bd_sims/bd_2, and so on, and writes combined files in exactly the
+same formats that a single-GPU run would produce.
 """
 
 import numpy as np
@@ -16,6 +17,11 @@ import re
 
 
 def main():
+    """Detect the per-shard bd_N directories, pool their results, and write the
+    combined output files. This recomputes the reaction probability and the
+    association rate constant k_on from the pooled trajectory counts, reports the
+    Wilson confidence interval and convergence, and merges the per-shard CSV and
+    NPZ files into a single set in the bd_sims directory."""
     parser = argparse.ArgumentParser(
         description="Combine split PySTARC k_on calculations"
     )
@@ -29,7 +35,7 @@ def main():
     if not os.path.isdir(bd_sims):
         print(f"  Error: {bd_sims} not found.")
         return
-    # Auto-detect bd_N directories
+    # Find every bd_N shard directory and sort them by the integer N.
     pattern = re.compile(r"^bd_\d+$")
     subdirs = sorted(
         [
@@ -42,7 +48,8 @@ def main():
     if not subdirs:
         print(f"  Error: no bd_N directories found in {bd_sims}")
         return
-    # Load all results.json
+    # Read the results.json from each shard, recording which shards have
+    # finished and which are still missing their output.
     runs = []
     dirs_valid = []
     dirs_missing = []
@@ -62,7 +69,12 @@ def main():
     if not runs:
         print("  Error: no completed runs found")
         return
-    # Pool counts
+    # Pool the trajectory counts across all completed shards. The reaction
+    # probability P is the fraction of trajectories that reacted, and the
+    # association rate constant follows from
+    #     k_on = CONV × k_b × P,
+    # where k_b is the rate at which trajectories cross the b-surface and CONV
+    # converts from Å³/ps to M⁻¹ s⁻¹.
     nr = sum(r["n_reacted"] for r in runs)
     ne = sum(r["n_escaped"] for r in runs)
     n_max = sum(r.get("n_max_steps", 0) for r in runs)
@@ -76,7 +88,9 @@ def main():
     k_on = CONV * k_b * P
     SE = math.sqrt(P * (1 - P) / N) if 0 < P < 1 else 0
     RSE = SE / P if P > 0 else float("inf")
-    # Wilson 95% CI (audit fix 2026-05-21: N=0 guard + sqrt non-negativity)
+    # Wilson 95% confidence interval for the reaction probability. The audit fix
+    # of 2026-05-21 added a guard for the N=0 case and clamped the argument of
+    # the square root to be non-negative.
     z = 1.96
     if N == 0:
         P_lo, P_hi = 0.0, 1.0
@@ -94,18 +108,22 @@ def main():
         r.get("steps_per_sec", 0) * r.get("wall_time_sec", 0) for r in runs
     )
     steps_sec = total_steps / wall_time if wall_time > 0 else 0
+    # Split k_on into a mantissa and a power of ten so it can be printed in
+    # scientific notation together with its half-width error bar.
     if k_on > 0:
         exp = int(math.floor(math.log10(k_on)))
         man = k_on / 10**exp
         err = (k_hi - k_lo) / 2 / 10**exp
     else:
         exp, man, err = 0, 0, 0
+    # Estimate how many trajectories would be needed to reach a given relative
+    # standard error using N ≈ (1 - P) / (P × tol²) for each tolerance.
     targets = {}
     if 0 < P < 1:
         for tol in [0.10, 0.05, 0.01]:
             targets[f"{int(tol*100)}%"] = int(math.ceil((1 - P) / (P * tol**2)))
 
-    # Print summary
+    # Print a human-readable summary of the combined run.
     print(f"\n  Combined results ({len(runs)}/{len(subdirs)} runs)")
     print(f"  N completed      = {N:,}")
     print(f"  Reacted          = {nr:,}")
@@ -123,7 +141,7 @@ def main():
             status = "completed" if N >= n else "need more simulations"
             print(f"    For ±{t} RSE: {n:,} ({status})")
     print(f"  {'Converged' if RSE < 0.05 else 'Not converged'} (RSE {RSE*100:.2f}%)")
-    # Save results.json
+    # Assemble the combined results dictionary that will be written to disk.
     results = {
         "k_on": k_on,
         "k_on_low": k_lo,
@@ -147,10 +165,11 @@ def main():
         "confidence_level": 0.95,
         "log10_k_on": math.log10(k_on) if k_on > 0 else 0,
     }
-    # Aggregate per-reaction fire counts from sub-runs when state-machine
-    # mode was active. Each sub-run's results.json may carry a list of
-    # reaction entries with name / n_fired / state_before / state_after.
-    # Sum n_fired across sub-runs while preserving the reaction metadata.
+    # When the simulation ran in state-machine mode, each sub-run records how
+    # many times every reaction fired. A sub-run's results.json may carry a list
+    # of reaction entries, each with a name, a fire count n_fired, and the states
+    # before and after the reaction. Here we sum n_fired across all sub-runs
+    # while keeping the reaction metadata and the original ordering.
     per_rxn = {}
     rxn_order = []
     for r in runs:
@@ -177,7 +196,9 @@ def main():
             )
     _save_json(results, os.path.join(bd_sims, "results.json"))
 
-    # Combine CSV files
+    # Combine the per-shard CSV files. Tables of one row per trajectory are
+    # concatenated with their trajectory ids reindexed so they stay unique,
+    # while histogram-style tables are summed bin by bin.
     _concat_csv(dirs_valid, "trajectories.csv", bd_sims, reindex="traj_id")
     _concat_csv(dirs_valid, "encounters.csv", bd_sims, reindex="traj_id")
     _concat_csv(dirs_valid, "near_misses.csv", bd_sims, reindex="traj_id")
@@ -205,7 +226,8 @@ def main():
         bd_sims,
         sum_cols=["flux_outward", "flux_inward", "net_flux"],
     )
-    # Combine NPZ files
+    # Combine the per-shard NPZ archives, concatenating the trajectory data
+    # arrays and summing the binned counts and matrices.
     _concat_npz(dirs_valid, "paths.npz", bd_sims, data_key="data", meta_key="columns")
     _concat_npz(
         dirs_valid, "energetics.npz", bd_sims, data_key="data", meta_key="columns"
@@ -227,7 +249,8 @@ def main():
     _sum_npz(
         dirs_valid, "p_commit.npz", bd_sims, sum_key="counts", copy_keys=["milestones"]
     )
-    # Convergence
+    # Write a separate convergence report summarising the pooled statistics and
+    # whether the relative standard error has dropped below the 5% tolerance.
     conv = {
         "N": N,
         "n_reacted": nr,
@@ -249,14 +272,21 @@ def main():
     print(f"\n  All files saved -> {bd_sims}/")
 
 
-# Helpers
 def _save_json(data, path):
+    """Write a dictionary to a JSON file and report its basename."""
     with open(path, "w") as f:
         json.dump(data, f, indent=2, default=str)
     print(f"    {os.path.basename(path)}")
 
 
 def _concat_csv(dirs, filename, out_dir, reindex=None):
+    """Concatenate the same CSV file from several shard directories into one.
+
+    The rows from every shard are stacked in order. When a reindex column is
+    given (typically the trajectory id), its values are offset shard by shard so
+    that every trajectory keeps a unique id in the combined table. Shards that do
+    not contain the file are skipped, and nothing is written if no rows are found.
+    """
     rows = []
     offset = 0
     header = None
@@ -296,6 +326,15 @@ def _sum_csv(
     recompute_col=None,
     total_N=None,
 ):
+    """Sum histogram-style CSV files across shards bin by bin.
+
+    Rows are grouped by every column that is not being summed, so identical bins
+    from different shards are merged. The columns named in sum_col or sum_cols are
+    added together. If a recompute_col is given together with the total
+    trajectory count total_N, that column is recomputed as the summed count
+    divided by total_N, which turns a pooled count back into a normalised density
+    or frequency.
+    """
     all_data = {}
     header = None
     key_cols = None
@@ -348,6 +387,13 @@ def _sum_csv(
 
 
 def _concat_npz(dirs, filename, out_dir, data_key="data", meta_key="columns"):
+    """Concatenate the data array from the same NPZ file across shards.
+
+    The array stored under data_key is read from every shard and stacked along
+    its first axis. The metadata stored under meta_key (for example the column
+    names) is taken from the first shard that has it and carried through
+    unchanged, since it is the same for every shard.
+    """
     arrays = []
     meta = None
     for d in dirs:
@@ -373,6 +419,13 @@ def _concat_npz(dirs, filename, out_dir, data_key="data", meta_key="columns"):
 
 
 def _sum_npz(dirs, filename, out_dir, sum_key, copy_keys=None):
+    """Sum the array stored under sum_key across shards element by element.
+
+    The arrays from every shard (for example counts, a transition matrix, or
+    commitment counts) are added together. Any arrays named in copy_keys, such as
+    the bin centres or milestone labels, are copied from the first shard that has
+    them, since they are shared across shards.
+    """
     total = None
     copies = {}
     for d in dirs:

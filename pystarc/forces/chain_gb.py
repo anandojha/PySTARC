@@ -1,47 +1,53 @@
-"""Generalized Born (GB-OBC2) self-Born desolvation for chain BD.
+"""Generalized Born (GB-OBC2) self-Born desolvation for chain Brownian dynamics.
 
-Implements GB-OBC2 (Onufriev, Bashford, Case 2004) for chain BD. The
-polarization free energy of a chain in implicit solvent decomposes as
+This module implements the GB-OBC2 model of Onufriev, Bashford, and Case (2004)
+for chain Brownian dynamics. The polarization free energy of a chain in implicit
+solvent splits into a diagonal self-energy and an off-diagonal cross term,
 
     Delta G_pol = U_self + U_offdiag
 
-    U_self    = -1/2 * cf * sum_i  q_i^2 / R_eff,i
-    U_offdiag = -    cf * sum_{i<j} q_i q_j / f_GB(r_ij, R_eff,i, R_eff,j)
+where the two pieces are
 
-with the dielectric and Coulomb factor
+    U_self    = -1/2 cf sum_i q_i^2 / R_eff,i
+    U_offdiag = -cf sum_{i<j} q_i q_j / f_GB(r_ij, R_eff,i, R_eff,j).
 
-    cf = (1/eps_in - 1/eps_out) * k_e * e^2 / kBT  [units: A]
+Here q_i is the partial charge on atom i in units of the elementary charge,
+R_eff,i is its effective Born radius in angstrom, and r_ij is the interatomic
+distance. The dielectric prefactor combines the interior and exterior dielectric
+constants with the Coulomb constant,
 
-and Still 1990 generalized distance
+    cf = (1/eps_in - 1/eps_out) k_e e^2 / kBT,
+
+which carries units of angstrom. The generalized distance f_GB is the smooth
+interpolation of Still and coworkers (1990),
 
     f_GB(r, R_i, R_j) = sqrt(r^2 + R_i R_j exp(-r^2 / (4 R_i R_j))).
 
-R_eff,i is computed via OBC2:
+Each effective radius R_eff,i follows from the OBC2 rescaling,
 
-    R_eff,i^-1 = rho_tilde,i^-1 - rho_i^-1 * tanh(alpha * psi - beta * psi^2 + gamma * psi^3)
+    1/R_eff,i = 1/rho_tilde,i - (1/rho_i) tanh(alpha psi - beta psi^2 + gamma psi^3),
 
-where rho_tilde,i = rho_i - offset, psi_i = rho_tilde,i * I_i, and I_i is
-the HCT pairwise descreening integral over surrounding chain atoms.
-Atoms that are solvent-exposed get R_eff approx rho_tilde; buried atoms
-get R_eff that grows toward the cluster size.
+where rho_tilde,i = rho_i - offset is the intrinsic radius after the offset is
+removed, psi_i = rho_tilde,i I_i, and I_i is the Hawkins-Cramer-Truhlar pairwise
+descreening integral summed over the surrounding chain atoms. Solvent-exposed
+atoms end up with R_eff close to rho_tilde, while buried atoms acquire a larger
+R_eff that grows toward the size of the surrounding cluster.
 
-Path B dispatch (handled by chain_full_gb_force in stage 1B):
-  - When the chain has no COFFDROP empirical pair tables active, the
-    chain has no other electrostatic treatment, so we apply full GB:
-    vacuum Coulomb baseline + diagonal + off-diagonal.
-  - When COFFDROP pair tables are active, those tables already encode
-    pre-screened effective electrostatics. To avoid double-counting we
-    apply only the diagonal self-energy term.
+The top-level composer chain_full_gb_force selects between two treatments. When
+the chain carries no active COFFDROP empirical pair tables, the chain has no
+other electrostatic treatment, so the full GB model is applied, namely the vacuum
+Coulomb baseline together with the diagonal and off-diagonal terms. When COFFDROP
+pair tables are active, those tables already encode pre-screened effective
+electrostatics, so only the diagonal self-energy term is applied to avoid
+double-counting.
 
-This module ships the forward energy functions only. Force functions
-(analytical gradients with finite-difference verification) are added in
-stage 1B so that R_eff can be sanity-checked before forces are committed.
+Both the forward energy functions and their analytical force counterparts are
+provided. The force routines are verified against central finite differences so
+that R_eff can be sanity-checked before the forces are relied upon.
 
-References:
-  Onufriev, A.; Bashford, D.; Case, D. A. Proteins 2004, 55, 383.
-  Hawkins, G. D.; Cramer, C. J.; Truhlar, D. G. JPC 1996, 100, 19824.
-  Still, W. C.; Tempczyk, A.; Hawley, R. C.; Hendrickson, T. JACS 1990,
-    112, 6127.
+References. Onufriev, A.; Bashford, D.; Case, D. A. Proteins 2004, 55, 383.
+Hawkins, G. D.; Cramer, C. J.; Truhlar, D. G. JPC 1996, 100, 19824.
+Still, W. C.; Tempczyk, A.; Hawley, R. C.; Hendrickson, T. JACS 1990, 112, 6127.
 """
 
 from __future__ import annotations
@@ -52,31 +58,29 @@ from typing import Optional, Tuple
 DEFAULT_OBC_ALPHA = 1.0
 DEFAULT_OBC_BETA = 0.8
 DEFAULT_OBC_GAMMA = 4.85
-DEFAULT_OBC_OFFSET = 0.09  # offset between vdW and intrinsic radius (A)
-DEFAULT_HCT_SCALE = 0.85  # uniform Hawkins-Cramer-Truhlar scaling
+DEFAULT_OBC_OFFSET = 0.09  # Offset between the van der Waals and intrinsic radius, in angstrom.
+DEFAULT_HCT_SCALE = 0.85  # Uniform Hawkins-Cramer-Truhlar scaling factor.
 
-# Coulomb constant: k_e * e^2 / kBT in units of A (at T = 300.15 K).
-# Derivation:
-#   k_e * e^2 (SI) = 8.9875e9 * (1.602176634e-19)^2 = 2.307e-28 J*m
-#                  = 2.307e-18 J*A
-#   kBT (T = 300.15 K) = 1.380649e-23 * 300.15 = 4.144e-21 J
-#   ratio = 556.86 A * kBT / e^2
+# Coulomb constant k_e e^2 / kBT expressed in angstrom at T = 300.15 K. The value
+# follows from k_e e^2 in SI units, 8.9875e9 * (1.602176634e-19)^2 = 2.307e-28 J*m,
+# which is 2.307e-18 J*A, divided by kBT = 1.380649e-23 * 300.15 = 4.144e-21 J. The
+# ratio is 556.86 A in units of kBT per squared elementary charge.
 COULOMB_K_KBT_A = 556.86
 
 
 def _hct_integrand(r, rho_tilde_i, rho_S_j):
-    """HCT pairwise descreening integrand for atom i from atom j.
+    """Hawkins-Cramer-Truhlar pairwise descreening integrand for atom i due to atom j.
 
-    Vector-safe. Inputs may be arrays broadcast-compatible with each
-    other. Returns the integrand value at the given r.
+    The routine is vector-safe. The inputs may be arrays as long as they are
+    broadcast-compatible with each other, and the integrand is returned at the
+    given separation r.
 
-    Three cases:
-      case_engulf  : rho_tilde_i >= r + rho_S_j
-        atom j is fully inside atom i's volume; no descreening; 0.
-      case_overlap : rho_tilde_i >= r - rho_S_j (and not engulfed)
-        j overlaps i's surface; L = rho_tilde_i, U = r + rho_S_j.
-      case_outside : r > rho_tilde_i + rho_S_j
-        j is fully outside i's volume; L = r - rho_S_j, U = r + rho_S_j.
+    The geometry falls into three regimes. When rho_tilde_i is at least r + rho_S_j,
+    atom j sits entirely inside atom i's volume, so it cannot descreen and the
+    integrand is zero. When rho_tilde_i is at least r - rho_S_j but j is not fully
+    engulfed, atom j overlaps the surface of atom i, and the integration runs from
+    L = rho_tilde_i to U = r + rho_S_j. Otherwise j lies fully outside atom i, and
+    the integration runs from L = r - rho_S_j to U = r + rho_S_j.
     """
     case_engulf = rho_tilde_i >= r + rho_S_j
     case_overlap = (rho_tilde_i >= r - rho_S_j) & ~case_engulf
@@ -114,27 +118,25 @@ def obc_effective_radii(
     obc_offset=DEFAULT_OBC_OFFSET,
     hct_scale=DEFAULT_HCT_SCALE,
 ):
-    """Compute OBC2 effective Born radii for chain atoms.
+    """Compute the OBC2 effective Born radii for the chain atoms.
 
-    R_eff,i^-1 = rho_tilde,i^-1 - rho_i^-1 * tanh(alpha*psi - beta*psi^2 + gamma*psi^3)
+    Each effective radius follows from the OBC2 rescaling,
 
-    with rho_tilde,i = rho_i - offset, psi_i = rho_tilde,i * I_i, and
-    I_i = sum_{j != i} HCT_integrand(r_ij, rho_tilde,i, rho_S,j) with
-    rho_S,j = hct_scale * rho_j.
+        1/R_eff,i = 1/rho_tilde,i - (1/rho_i) tanh(alpha psi - beta psi^2 + gamma psi^3),
 
-    Parameters
-    ----------
-    positions       : (n_atoms, 3) array of atom positions [A]
-    intrinsic_radii : (n_atoms,) array of intrinsic Born radii rho_i [A]
-                      (van der Waals radii before offset subtraction)
-    obc_alpha, obc_beta, obc_gamma : OBC2 scaling parameters
-                                     Onufriev 2004 set II defaults: 1.0, 0.8, 4.85
-    obc_offset      : offset between vdW and intrinsic radius [A]
-    hct_scale       : Hawkins-Cramer-Truhlar scaling factor S [unitless]
+    where rho_tilde,i = rho_i - offset and psi_i = rho_tilde,i I_i. The descreening
+    integral is I_i = sum_{j != i} HCT_integrand(r_ij, rho_tilde,i, rho_S,j) with the
+    scaled radius rho_S,j = hct_scale rho_j.
 
-    Returns
-    -------
-    R_eff : (n_atoms,) array of effective Born radii [A]
+    The argument positions is the (n_atoms, 3) array of atom positions in angstrom.
+    The argument intrinsic_radii is the (n_atoms,) array of intrinsic Born radii rho_i
+    in angstrom, that is the van der Waals radii before the offset is subtracted. The
+    parameters obc_alpha, obc_beta, and obc_gamma are the OBC2 scaling coefficients,
+    whose Onufriev 2004 set II defaults are 1.0, 0.8, and 4.85. The argument obc_offset
+    is the offset between the van der Waals and intrinsic radius in angstrom, and
+    hct_scale is the dimensionless Hawkins-Cramer-Truhlar scaling factor S.
+
+    The return value R_eff is the (n_atoms,) array of effective Born radii in angstrom.
     """
     positions = np.asarray(positions, dtype=float)
     intrinsic_radii = np.asarray(intrinsic_radii, dtype=float)
@@ -183,13 +185,10 @@ def gb_self_born_energy(
 ):
     """Diagonal GB self-Born energy.
 
-    U_self = -1/2 * cf * sum_i q_i^2 / R_eff,i
+    The self-energy is U_self = -1/2 cf sum_i q_i^2 / R_eff,i, where the dielectric
+    prefactor is cf = (1/eps_in - 1/eps_out) COULOMB_K_KBT_A.
 
-    cf = (1/eps_in - 1/eps_out) * COULOMB_K_KBT_A.
-
-    Returns
-    -------
-    energy : scalar in kBT
+    The return value is a scalar energy in units of kBT.
     """
     charges = np.asarray(charges, dtype=float)
     if R_eff is None:
@@ -211,14 +210,12 @@ def gb_offdiagonal_energy(
 ):
     """Off-diagonal GB cross-term energy.
 
-    U_offdiag = -cf * sum_{i<j} q_i q_j / f_GB(r_ij, R_eff,i, R_eff,j)
+    The cross term is U_offdiag = -cf sum_{i<j} q_i q_j / f_GB(r_ij, R_eff,i, R_eff,j),
+    where the generalized distance of Still and coworkers (1990) is
+    f_GB = sqrt(r^2 + R_i R_j exp(-r^2 / (4 R_i R_j))) and the dielectric prefactor is
+    cf = (1/eps_in - 1/eps_out) COULOMB_K_KBT_A.
 
-    f_GB = sqrt(r^2 + R_i R_j * exp(-r^2 / (4 R_i R_j)))   (Still 1990)
-    cf   = (1/eps_in - 1/eps_out) * COULOMB_K_KBT_A.
-
-    Returns
-    -------
-    energy : scalar in kBT
+    The return value is a scalar energy in units of kBT.
     """
     positions = np.asarray(positions, dtype=float)
     charges = np.asarray(charges, dtype=float)
@@ -256,22 +253,18 @@ def gb_vacuum_coulomb_energy(
 ):
     """Vacuum Coulomb baseline between non-bonded chain pairs.
 
-    U_Coulomb = (COULOMB_K_KBT_A / eps_in) * sum_{i<j, not excluded} q_i q_j / r_ij
+    The baseline is U_Coulomb = (COULOMB_K_KBT_A / eps_in) sum q_i q_j / r_ij, where
+    the sum runs over pairs i < j that are not excluded. Pairs flagged in
+    exclude_pair_mask, typically the bonded 1-2, 1-3, and 1-4 neighbors, are skipped.
 
-    Pairs flagged in exclude_pair_mask (typically bonded 1-2, 1-3, 1-4)
-    are skipped.
+    The argument positions is the (n_atoms, 3) array of positions in angstrom and
+    charges is the (n_atoms,) array of partial charges in units of the elementary
+    charge. The argument eps_in is the interior dielectric, which is typically 1.0 for
+    a chain treated as a vacuum-like solute. The argument exclude_pair_mask is an
+    (n_atoms, n_atoms) boolean array where a True entry at (i, j) means that pair is
+    skipped, and only its upper triangle is read.
 
-    Parameters
-    ----------
-    positions          : (n_atoms, 3) [A]
-    charges            : (n_atoms,)   [e]
-    eps_in             : interior dielectric (typically 1.0 for chain in vacuum-like solute)
-    exclude_pair_mask  : (n_atoms, n_atoms) boolean; True at (i, j) means skip that pair.
-                         Only the upper triangle is read.
-
-    Returns
-    -------
-    energy : scalar in kBT
+    The return value is a scalar energy in units of kBT.
     """
     positions = np.asarray(positions, dtype=float)
     charges = np.asarray(charges, dtype=float)
@@ -292,50 +285,40 @@ def gb_vacuum_coulomb_energy(
     return energy
 
 
-# =============================================================================
-#  Forces (Stage 1B): vacuum Coulomb and diagonal self-Born.
+# Forces: vacuum Coulomb and diagonal self-Born.
 #
-#  Diagonal self-Born force chain rule:
+# The diagonal self-Born force comes from differentiating U_self = -1/2 cf sum_i
+# q_i^2 / R_eff,i through the OBC chain rule. The dependence on the effective radius
+# gives dE/dR_eff,i = +1/2 cf q_i^2 / R_eff,i^2, and the effective radius depends on
+# the descreening integral through dR_eff,i/dr_k = D_i dI_i/dr_k. The OBC scalar D_i
+# is R_eff,i^2 (1 - tanh^2(arg_i)) / rho_i times (alpha - 2 beta psi_i + 3 gamma psi_i^2)
+# times rho_tilde,i.
 #
-#      U_self = -1/2 cf sum_i q_i^2 / R_eff,i
+# It is convenient to define eta_i = (dE/dR_eff,i) D_i = 1/2 cf q_i^2 / R_eff,i^2 D_i,
+# so that dE/dr_k = sum_i eta_i dI_i/dr_k. The integral gradient is
+# dI_i/dr_k = sum_{j != i} K[i, j] d(r_ij)/dr_k, where K[i, j] = d(integrand_ij)/dr_ij
+# depends on rho_tilde,i and rho_S,j. The distance gradient d(r_ij)/dr_k is the unit
+# vector from j toward i when k = i, the unit vector from i toward j when k = j, and
+# zero otherwise.
 #
-#      dE/dR_eff,i = +1/2 cf q_i^2 / R_eff,i^2
-#      dR_eff,i/dr_k = D_i * dI_i/dr_k       (OBC chain rule)
-#
-#  with
-#      D_i = R_eff,i^2 * (1 - tanh^2(arg_i))/rho_i
-#                       * (alpha - 2 beta psi_i + 3 gamma psi_i^2)
-#                       * rho_tilde,i
-#
-#  Define eta_i = (dE/dR_eff,i) * D_i = 1/2 cf q_i^2 / R_eff,i^2 * D_i.
-#  Then dE/dr_k = sum_i eta_i * dI_i/dr_k, where
-#
-#      dI_i/dr_k = sum_{j != i} K[i, j] * d(r_ij)/dr_k
-#      K[i, j]   := d(integrand_ij)/dr_ij   (depends on rho_tilde,i and rho_S,j)
-#
-#  d(r_ij)/dr_k is the unit vector from j toward i when k=i, the unit vector
-#  from i toward j when k=j, and zero otherwise.
-#
-#  Force F_k = -dE/dr_k assembles two pieces (both with K[k, k] = 0):
-#
-#      Term 1 (k acts as the subject):   -eta_k * sum_j K[k, j] * unit[k, j]
-#      Term 2 (k acts as a screener):    +sum_i eta_i * K[i, k] * unit[i, k]
-#
-#  Both terms are computed via einsum over precomputed K and unit-vector tensors.
-#  Translation invariance check: sum_k F_k = -sum_{i,j} eta_i K[i,j] unit[i,j]
-#  + sum_{i,j} eta_i K[i,j] unit[i,j] = 0, as required.
-# =============================================================================
+# The force F_k = -dE/dr_k therefore assembles two pieces, both relying on K[k, k] = 0.
+# In the first piece atom k acts as the subject, contributing -eta_k sum_j K[k, j]
+# unit[k, j]. In the second piece atom k acts as a screener for the other atoms,
+# contributing +sum_i eta_i K[i, k] unit[i, k]. Both pieces are evaluated with einsum
+# over the precomputed K and unit-vector tensors. As a translation-invariance check,
+# sum_k F_k cancels term by term and gives zero, as required.
 
 
 def _hct_integrand_deriv(r, rho_tilde_i, rho_S_j):
-    """Derivative of HCT integrand w.r.t. r at fixed rho_tilde_i, rho_S_j.
+    """Derivative of the HCT integrand with respect to r at fixed rho_tilde_i, rho_S_j.
 
-    Returns d(integrand)/dr (vector-safe, broadcast-compatible).
+    The routine returns d(integrand)/dr and is vector-safe and broadcast-compatible.
 
-    Three branches matching _hct_integrand:
-      case_engulf  : derivative is 0
-      case_overlap : L = rho_tilde_i (constant in r), U = r + rho_S_j (dL/dr=0, dU/dr=1)
-      case_outside : L = r - rho_S_j, U = r + rho_S_j (dL/dr=1, dU/dr=1)
+    The three branches mirror those of _hct_integrand. In the engulfed regime the
+    integrand is constant, so the derivative is zero. In the overlap regime the lower
+    limit L = rho_tilde_i is constant in r while the upper limit U = r + rho_S_j varies,
+    so dL/dr = 0 and dU/dr = 1. In the outside regime both limits L = r - rho_S_j and
+    U = r + rho_S_j vary with r, so dL/dr = 1 and dU/dr = 1.
     """
     case_engulf = rho_tilde_i >= r + rho_S_j
     case_overlap = (rho_tilde_i >= r - rho_S_j) & ~case_engulf
@@ -394,15 +377,14 @@ def _obc_chain_rule_data(
     obc_offset=DEFAULT_OBC_OFFSET,
     hct_scale=DEFAULT_HCT_SCALE,
 ):
-    """Precompute everything needed for OBC force chain rule.
+    """Precompute everything needed for the OBC force chain rule.
 
-    Returns dict with keys:
-      R_eff         : (n,)       effective Born radii
-      D             : (n,)       D_i = dR_eff_i / dI_i  (OBC chain rule scalar)
-      K             : (n, n)     K[i, j] = d(integrand_ij) / dr_ij; diagonal zero
-      r             : (n, n)     pairwise distances
-      unit          : (n, n, 3)  unit[i, j, :] = (r_i - r_j) / r_ij; diagonal zero
-      rho_tilde     : (n,)
+    The return value is a dictionary. The entry R_eff holds the (n,) effective Born
+    radii. The entry D holds the (n,) OBC chain-rule scalars D_i = dR_eff_i / dI_i.
+    The entry K holds the (n, n) integrand derivatives K[i, j] = d(integrand_ij) / dr_ij
+    with the diagonal set to zero. The entry r holds the (n, n) pairwise distances. The
+    entry unit holds the (n, n, 3) unit vectors unit[i, j, :] = (r_i - r_j) / r_ij with
+    the diagonal set to zero. The entry rho_tilde holds the (n,) offset-corrected radii.
     """
     positions = np.asarray(positions, dtype=float)
     intrinsic_radii = np.asarray(intrinsic_radii, dtype=float)
@@ -460,13 +442,12 @@ def chain_vacuum_coulomb_force(
 ):
     """Vacuum Coulomb forces and energy between non-bonded chain pairs.
 
-    F_k = (COULOMB_K / eps_in) * q_k * sum_{m != k, m allowed} q_m * (r_k - r_m) / r_km^3
-    U   = (COULOMB_K / eps_in) * sum_{i<j, allowed} q_i q_j / r_ij
+    The force on atom k is F_k = (COULOMB_K / eps_in) q_k sum q_m (r_k - r_m) / r_km^3,
+    summed over allowed partners m other than k, and the energy is
+    U = (COULOMB_K / eps_in) sum q_i q_j / r_ij over allowed pairs i < j.
 
-    Returns
-    -------
-    forces : (n, 3) array of forces in kBT/A on each chain atom
-    energy : scalar in kBT
+    The return value forces is the (n, 3) array of forces in kBT per angstrom on each
+    chain atom, and energy is a scalar in units of kBT.
     """
     positions = np.asarray(positions, dtype=float)
     charges = np.asarray(charges, dtype=float)
@@ -480,7 +461,8 @@ def chain_vacuum_coulomb_force(
 
     qq = charges[:, None] * charges[None, :]
 
-    # Allowed-pair mask (symmetric). Default: all off-diagonal allowed.
+    # Build the symmetric mask of allowed pairs. By default every off-diagonal pair
+    # is allowed.
     allowed = ~np.eye(n, dtype=bool)
     if exclude_pair_mask is not None:
         excl = np.asarray(exclude_pair_mask, dtype=bool)
@@ -492,8 +474,8 @@ def chain_vacuum_coulomb_force(
     upper_mask = np.triu(np.ones((n, n), dtype=bool), k=1) & allowed
     energy = K_factor * float(np.sum(qq[upper_mask] * inv_r[upper_mask]))
 
-    # F_k vec: K_factor * q_k * sum_{m allowed} q_m (r_k - r_m)/r_km^3
-    #        = K_factor * q_k * sum_m q_m * inv_r3[k, m] * (r_k - r_m)
+    # The force vector on atom k is K_factor q_k sum q_m (r_k - r_m) / r_km^3 over the
+    # allowed partners m, which equals K_factor q_k sum_m q_m inv_r3[k, m] (r_k - r_m).
     weight = qq * inv_r3 * allowed  # (n, n)
     forces = K_factor * np.einsum("km,kmd->kd", weight, diff)
     return forces, energy
@@ -509,20 +491,17 @@ def chain_self_born_diagonal_force(
 ):
     """Diagonal GB self-Born forces and energy.
 
-    F_k = -dE_self/dr_k = -sum_i eta_i * dI_i/dr_k, with
-      eta_i           = 0.5 * cf * q_i^2 / R_eff_i^2 * D_i
-      dI_k/dr_k       = sum_j K[k, j] * unit[k, j, :]   (k as subject atom)
-      dI_i/dr_k (i!=k) = -K[i, k] * unit[i, k, :]        (k as screener for i)
+    The force is F_k = -dE_self/dr_k = -sum_i eta_i dI_i/dr_k, where the per-atom weight
+    is eta_i = 0.5 cf q_i^2 / R_eff_i^2 D_i. When atom k is itself the subject, the
+    integral gradient is dI_k/dr_k = sum_j K[k, j] unit[k, j, :], and when k instead
+    screens another atom i, the gradient is dI_i/dr_k = -K[i, k] unit[i, k, :] for i not
+    equal to k. Substituting these and using K[k, k] = 0 to extend the sums over all
+    atoms gives
 
-    Substituting and using K[k, k] = 0 to extend sums over all atoms:
+        F_k = -eta_k sum_j K[k, j] unit[k, j, :] + sum_i eta_i K[i, k] unit[i, k, :].
 
-      F_k = -eta_k * sum_j K[k, j] * unit[k, j, :]
-            + sum_i eta_i * K[i, k] * unit[i, k, :]
-
-    Returns
-    -------
-    forces : (n, 3) [kBT/A]
-    energy : scalar [kBT]
+    The return value forces is the (n, 3) array in kBT per angstrom and energy is a
+    scalar in kBT.
     """
     positions = np.asarray(positions, dtype=float)
     charges = np.asarray(charges, dtype=float)
@@ -538,23 +517,23 @@ def chain_self_born_diagonal_force(
     cf = (1.0 / eps_in - 1.0 / eps_out) * COULOMB_K_KBT_A
     energy = -0.5 * cf * float(np.sum(charges * charges / R_eff))
 
-    # eta_i = 0.5 * cf * q_i^2 / R_eff_i^2 * D_i
+    # The per-atom weight is eta_i = 0.5 cf q_i^2 / R_eff_i^2 D_i.
     eta = 0.5 * cf * (charges * charges) / (R_eff * R_eff) * D  # (n,)
 
-    # Term 1: F1[k, :] = -eta_k * sum_j K[k, j] * unit[k, j, :]
+    # First term, atom k acting as the subject: -eta_k sum_j K[k, j] unit[k, j, :].
     T1 = -eta[:, None] * np.einsum("kj,kjd->kd", K, unit)
-    # Term 2: F2[k, :] = +sum_i eta_i * K[i, k] * unit[i, k, :]
+    # Second term, atom k acting as a screener: +sum_i eta_i K[i, k] unit[i, k, :].
     T2 = np.einsum("i,ik,ikd->kd", eta, K, unit)
     forces = T1 + T2
     return forces, energy
 
 
 def _finite_difference_force(positions, energy_fn, h=1e-5):
-    """Central-difference force approximation: F = -dE/dr.
+    """Central-difference approximation of the force F = -dE/dr.
 
-    energy_fn must accept a position array of shape (n, 3) and return a scalar.
-    Returns array of shape (n, 3). Used as ground-truth for verifying analytical
-    force implementations.
+    The callable energy_fn must accept a position array of shape (n, 3) and return a
+    scalar energy. The routine returns an array of shape (n, 3) and serves as the
+    ground truth for verifying the analytical force implementations.
     """
     positions = np.asarray(positions, dtype=float)
     n = positions.shape[0]
@@ -571,20 +550,17 @@ def _finite_difference_force(positions, energy_fn, h=1e-5):
     return F
 
 
-# =============================================================================
-#  Stage 1B-beta: off-diagonal GB cross-term force + top-level dispatcher.
+# Off-diagonal GB cross-term force and top-level dispatcher.
 #
-#  Off-diagonal force has two contributions:
-#    Direct (r_ij in f_GB):
-#      F_k^direct = -cf q_k sum_{m != k} q_m / f_GB,km^2 * df_GB/dr_km * unit[k, m]
-#    Indirect (R_eff,m for all m, propagated via OBC chain rule):
-#      eta_m^offdiag = D_m * cf * q_m * sum_{j != m} q_j / f_GB,mj^2 * df_GB,mj/dR_m
-#      F_k^indirect  = -eta_k^offdiag * sum_j K[k, j] * unit[k, j]
-#                     + sum_i eta_i^offdiag * K[i, k] * unit[i, k]
-#
-#  The indirect piece reuses the OBC chain-rule structure of the diagonal force
-#  with eta^offdiag in place of eta^diag.
-# =============================================================================
+# The off-diagonal force has two contributions. The direct contribution comes from
+# the explicit r_ij inside f_GB and is
+# F_k^direct = -cf q_k sum_{m != k} q_m / f_GB,km^2 df_GB/dr_km unit[k, m]. The indirect
+# contribution comes from the dependence of every R_eff,m on the geometry, propagated
+# through the OBC chain rule. Writing
+# eta_m^offdiag = D_m cf q_m sum_{j != m} q_j / f_GB,mj^2 df_GB,mj/dR_m, the indirect
+# force is F_k^indirect = -eta_k^offdiag sum_j K[k, j] unit[k, j]
+# + sum_i eta_i^offdiag K[i, k] unit[i, k]. The indirect piece reuses the OBC chain-rule
+# structure of the diagonal force with eta^offdiag in place of eta^diag.
 
 
 def chain_offdiagonal_gb_force(
@@ -597,18 +573,14 @@ def chain_offdiagonal_gb_force(
 ):
     """Off-diagonal GB cross-term forces and energy.
 
-    Parameters
-    ----------
-    positions       : (n, 3) [A]
-    charges         : (n,)   [e]
-    intrinsic_radii : (n,)   [A]
-    eps_in, eps_out : interior / exterior dielectrics
-    obc_kwargs      : optional OBC2 parameter overrides
+    The argument positions is the (n, 3) array of positions in angstrom, charges is the
+    (n,) array of partial charges in units of the elementary charge, and intrinsic_radii
+    is the (n,) array of intrinsic Born radii in angstrom. The arguments eps_in and
+    eps_out are the interior and exterior dielectric constants, and obc_kwargs holds any
+    optional OBC2 parameter overrides.
 
-    Returns
-    -------
-    forces : (n, 3) [kBT/A]
-    energy : scalar [kBT]
+    The return value forces is the (n, 3) array in kBT per angstrom and energy is a
+    scalar in kBT.
     """
     positions = np.asarray(positions, dtype=float)
     charges = np.asarray(charges, dtype=float)
@@ -626,7 +598,7 @@ def chain_offdiagonal_gb_force(
     cf = (1.0 / eps_in - 1.0 / eps_out) * COULOMB_K_KBT_A
     eye_mask = np.eye(n, dtype=bool)
 
-    # f_GB and its r and R_i derivatives over all (i, j)
+    # Evaluate f_GB along with its r and R_i derivatives over all pairs (i, j).
     R_i_mat = R_eff[:, None]
     R_j_mat = R_eff[None, :]
     A = R_i_mat * R_j_mat
@@ -643,23 +615,24 @@ def chain_offdiagonal_gb_force(
     upper = np.triu(np.ones((n, n), dtype=bool), k=1)
     energy = -cf * float(np.sum(qq[upper] * inv_f_GB[upper]))
 
-    # Direct: df_GB/dr = r/f_GB * (1 - expD/4); zero on diagonal
+    # Direct piece. The distance derivative is df_GB/dr = (r/f_GB)(1 - expD/4) and is
+    # zeroed on the diagonal.
     df_GB_dr = r_safe * (1.0 - 0.25 * expD) * inv_f_GB
     df_GB_dr[eye_mask] = 0.0
     weight_direct = qq * inv_f_GB2 * df_GB_dr
     weight_direct[eye_mask] = 0.0
     F_direct = -cf * np.einsum("km,kmd->kd", weight_direct, unit)
 
-    # Indirect via R_eff (per-atom chain rule):
-    # df_GB,mj/dR_m = R_j * expD * (1 - D) / (2 f_GB)  (treating first R-arg as variable)
+    # Indirect piece through R_eff, applied with the per-atom chain rule. Treating the
+    # first radius argument as the variable, df_GB,mj/dR_m = R_j expD (1 - D) / (2 f_GB).
     df_GB_dR_first = R_j_mat * expD * (1.0 - D_grid) * inv_f_GB * 0.5
     df_GB_dR_first[eye_mask] = 0.0
-    # eta_m^offdiag = D_m * cf * q_m * sum_{j != m} q_j / f_GB,mj^2 * df_GB,mj/dR_m
+    # The per-atom weight is eta_m^offdiag = D_m cf q_m sum_{j != m} q_j / f_GB,mj^2 df_GB,mj/dR_m.
     inner = inv_f_GB2 * df_GB_dR_first  # (n, n)
     sum_per_m = np.sum(inner * charges[None, :], axis=1)  # (n,)
     eta_off = D_chain * cf * charges * sum_per_m  # (n,)
 
-    # Apply OBC chain rule with eta_off (same structure as diagonal force)
+    # Apply the OBC chain rule with eta_off, using the same structure as the diagonal force.
     T1 = -eta_off[:, None] * np.einsum("kj,kjd->kd", K, unit)
     T2 = np.einsum("i,ik,ikd->kd", eta_off, K, unit)
     F_indirect = T1 + T2
@@ -678,27 +651,23 @@ def chain_full_gb_force(
     exclude_pair_mask=None,
     obc_kwargs=None,
 ):
-    """Top-level GB force composer with Path B dispatch.
+    """Top-level GB force composer that selects between the two electrostatic treatments.
 
-    Path B logic:
-      coffdrop_active=False -> full GB: diagonal + off-diagonal + vacuum Coulomb.
-      coffdrop_active=True  -> diagonal only (avoids double-counting against
-                               COFFDROP's pre-screened pair potentials).
+    When coffdrop_active is False the full GB model is assembled, namely the diagonal
+    self-energy together with the off-diagonal cross term and the vacuum Coulomb
+    baseline. When coffdrop_active is True only the diagonal term is kept, which avoids
+    double-counting against COFFDROP's pre-screened pair potentials.
 
-    Parameters
-    ----------
-    positions, charges, intrinsic_radii : standard chain arrays
-    eps_in, eps_out                     : dielectrics
-    coffdrop_active                     : if True, restrict to diagonal-only
-    exclude_pair_mask                   : (n, n) bool, pairs to skip in vacuum Coulomb
-                                          (typically bonded 1-2, 1-3, 1-4 exclusions)
-    obc_kwargs                          : OBC2 parameter overrides
+    The arguments positions, charges, and intrinsic_radii are the standard chain arrays,
+    and eps_in and eps_out are the interior and exterior dielectric constants. The flag
+    coffdrop_active restricts the result to the diagonal term when True. The argument
+    exclude_pair_mask is an (n, n) boolean array of pairs to skip in the vacuum Coulomb
+    sum, typically the bonded 1-2, 1-3, and 1-4 exclusions, and obc_kwargs holds any
+    OBC2 parameter overrides.
 
-    Returns
-    -------
-    forces   : (n, 3) [kBT/A]
-    energies : dict with keys 'self', 'offdiag', 'coulomb', 'total' [kBT]
-               (offdiag and coulomb are 0 when coffdrop_active=True)
+    The return value forces is the (n, 3) array in kBT per angstrom. The return value
+    energies is a dictionary with the keys 'self', 'offdiag', 'coulomb', and 'total' in
+    kBT, where the off-diagonal and Coulomb entries are zero when coffdrop_active is True.
     """
     F_diag, E_self = chain_self_born_diagonal_force(
         positions, charges, intrinsic_radii, eps_in, eps_out, obc_kwargs

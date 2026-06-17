@@ -1,22 +1,23 @@
 """
-PySTARC step near absorbing surface
-===================================
+PySTARC step near an absorbing surface.
 
-Resolves motion of a particle diffusing near an absorbing surface at x=0.
-Computes:
-  1. Whether the particle is absorbed (reaches x=0)
-  2. If not, its new position x
-  3. The elapsed time
+This module resolves the motion of a particle diffusing near an absorbing
+surface located at x = 0. It determines whether the particle is absorbed,
+meaning it reaches x = 0, and if it survives it returns the new position x
+and the elapsed time.
 
-This is the Lamm-Schulten (1981) method implemented for both the
-b-sphere (inner boundary) and q-sphere (outer boundary).
+This is the Lamm-Schulten (1981) method, implemented for both the b-sphere
+(the inner boundary) and the q-sphere (the outer boundary).
 
-The survival probability is:
-    P_sur = 0.5 * ( exp(b*x0) * (erf((x0+bt)/2*sqrt(tau)) - 1)
-                  + erf((x0-bt)/2*sqrt(tau)) + 1 )
-where b = -F (force pointing away from boundary), tau = x0^2 (units of
-Length^2, NOT time). The elapsed time, when needed, is tau/D.
-This convention matches BrownDye2 (step_near_absorbing_surface.hh L37-38).
+The survival probability is
+
+    P_sur = 0.5 × ( exp(b·x0) · (erf((x0 + bt) / 2√τ) − 1)
+                  + erf((x0 − bt) / 2√τ) + 1 ).
+
+Here b = −F is the force pointing away from the boundary and τ = x0² has
+units of Length² rather than time. When the elapsed time is needed it is
+given by τ/D. This convention matches BrownDye2 in
+step_near_absorbing_surface.hh, lines 37 to 38.
 """
 
 from __future__ import annotations
@@ -27,50 +28,48 @@ import math
 
 
 def _inv_erf(x: float) -> float:
-    """Inverse error function, matching the inv_erf."""
+    """Return the inverse error function, matching inv_erf."""
     return float(_scipy_erfinv(x))
 
 
 def step_near_absorbing_surface(
     rng: np.random.Generator,
-    x0: float,  # initial distance from absorbing surface (A)
-    F: float,  # radial force component (1/A, kT units, + = away from surface)
-    D: float,  # diffusion coefficient (A^2/ps)
+    x0: float,  # initial distance from the absorbing surface, in angstrom
+    F: float,  # radial force component in units of 1/Å (kT units), positive means away from the surface
+    D: float,  # diffusion coefficient, in Å²/ps
 ) -> Tuple[bool, float, float]:
     """
-    Propagate a particle near an absorbing surface at x=0.
-    Parameters
-    ----------
-    rng  : random number generator
-    x0   : initial distance from surface (must be > 0)
-    F    : force pointing away from surface (kT/A units)
-    D    : diffusion coefficient (A^2/ps)
+    Propagate a particle near an absorbing surface at x = 0.
 
-    Returns
-    -------
-    (survives, new_x, time)
-    survives : True if particle did NOT reach surface
-    new_x    : new distance from surface (0 if absorbed)
-    time     : elapsed time (ps)
+    The argument rng is the random number generator. x0 is the initial
+    distance from the surface and must be positive. F is the force pointing
+    away from the surface, in units of kT/Å. D is the diffusion coefficient,
+    in Å²/ps.
+
+    The function returns the tuple (survives, new_x, time). survives is True
+    if the particle did not reach the surface. new_x is the new distance from
+    the surface, which is 0 if the particle was absorbed. time is the elapsed
+    time in picoseconds.
     """
-    b = -F  # b = -F by convention
-    # tau has units of Length^2 (matches BD2 convention; the elapsed time
-    # is tau/D). Earlier versions used tau = x0*x0/D which conflated tau
-    # with the Time-typed quantity and produced dimensionally inconsistent
-    # erf arguments and a returned time off by a factor of D.
-    tau = x0 * x0  # Length^2 (Angstrom^2)
+    b = -F  # b is defined as −F by convention.
+    # tau has units of Length², following the BrownDye2 convention, so the
+    # elapsed time is tau/D. Earlier versions used tau = x0*x0/D, which
+    # conflated tau with a time-typed quantity. That produced dimensionally
+    # inconsistent erf arguments and a returned time that was off by a factor
+    # of D.
+    tau = x0 * x0  # Length², in Å²
     st = math.sqrt(tau)
     st2 = 2.0 * st
     bt = b * tau
     erfmt = math.erf((x0 - bt) / st2)
     erfpt = math.erf((x0 + bt) / st2)
-    # survival probability
+    # Survival probability.
     psurv = 0.5 * (math.exp(b * x0) * (erfpt - 1.0) + erfmt + 1.0)
-    psurv = max(0.0, min(1.0, psurv))  # numerical safety
+    psurv = max(0.0, min(1.0, psurv))  # Clamp into [0, 1] for numerical safety.
     survives = rng.random() < psurv
     if survives:
-        # Sample new position from survival distribution
-        # Rejection method: use no-flux distribution as proposal
+        # Sample the new position from the survival distribution using
+        # rejection sampling, with the no-flux distribution as the proposal.
         E = math.erf((x0 - bt) / st2)
         x = 0.0
         found = False
@@ -78,11 +77,11 @@ def step_near_absorbing_surface(
         for _ in range(max_attempts):
             pc = rng.random()
             iearg = pc * (E + 1.0) - E
-            # clamp to valid range for erfinv
+            # Clamp to the valid range for erfinv.
             iearg = max(-1.0 + 1e-12, min(1.0 - 1e-12, iearg))
             x = 2.0 * st * _inv_erf(iearg) - bt + x0
             if x < 0.0:
-                continue  # try again
+                continue  # Reject and try again.
             t4 = 4.0 * tau
             p0 = math.exp(-((x - x0 + bt) ** 2) / t4)
             p1 = math.exp(b * x0 - ((x + x0 + bt) ** 2) / t4)
@@ -96,17 +95,17 @@ def step_near_absorbing_surface(
             if found:
                 break
         if not found:
-            x = max(x0, 0.001)  # fallback
+            x = max(x0, 0.001)  # Fallback if rejection sampling did not converge.
         new_x = max(0.0, x)
         time = tau / D
         return True, new_x, time
 
     else:
-        # Particle absorbed: sample absorption time
-        # p(tau) propto x0 * exp(-(x0-b*tau)^2 / (4*tau)) / (2*sqrt(pi*tau^3))
+        # The particle was absorbed, so sample the absorption time. Its
+        # density is p(τ) ∝ x0 · exp(−(x0 − b·τ)² / (4τ)) / (2√(π·τ³)).
         x02 = x0 * x0
         b2 = b * b
-        # find tau_max where dp/dtau = 0 (Taylor expansion for small b*x0)
+        # Find tau_max, where dp/dτ = 0, using a Taylor expansion for small b·x0.
         if abs(b * x0) < 0.5:
             tau_max = x02 * (1.0 / 6.0 - x02 * b2 / 216.0)
         else:
@@ -124,7 +123,7 @@ def step_near_absorbing_surface(
         pmax = pt(tau_max)
         if pmax <= 0:
             pmax = 1e-30
-        # rejection sampling for absorption time
+        # Rejection sampling for the absorption time.
         tau_samp = 0.0
         for _ in range(10000):
             tau_samp = tau * rng.random()

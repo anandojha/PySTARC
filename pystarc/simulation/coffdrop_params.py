@@ -1,18 +1,19 @@
 """
-PySTARC COFFDROP parameter file parser
-=====================================
-Reads the four COFFDROP data files:
-1. **coffdrop.xml**       - tabulated pair, bond-angle and dihedral potentials
-                            (units: kcal/mol, distances in Å, angles in degrees)
-2. **map.xml**        - atom-to-bead mapping per residue
-3. **connectivity.xml**   - bond definitions (residue pairs, bead names, orders,
-                            equilibrium length)
-4. **charges.xml**        - partial charges on named beads per residue
-All four files are directly parsed from the XML formats provided on the
-the COFFDROP data repository.
+Parser for the COFFDROP parameter files used by PySTARC.
 
-Usage
------
+This module reads the four XML files that together define the COFFDROP
+coarse-grained force field. The file coffdrop.xml holds the tabulated pair,
+bond-angle, and dihedral potentials, with energies in kcal/mol, distances in
+Å, and angles in degrees. The file map.xml gives the atom-to-bead mapping for
+each residue. The file connectivity.xml lists the bond definitions, namely the
+residue pairs, bead names, sequence orders, and equilibrium lengths. The file
+charges.xml provides the partial charges on the named beads of each residue.
+All four files are parsed directly from the XML formats published in the
+COFFDROP data repository.
+
+To use this module, load the four files and then evaluate the potentials. For
+example, after
+
     from pystarc.simulation.coffdrop_params import COFFDROPParams
     params = COFFDROPParams.load(
         ff_xml       = "coffdrop.xml",
@@ -20,13 +21,13 @@ Usage
         connectivity_xml = "connectivity.xml",
         charges_xml  = "charges.xml",
     )
-    # Evaluate pair potential between two bead types at distance r (Å)
-    V = params.pair_potential("ALA", "CA", "GLY", "CA", r=5.0)
-    dVdr = params.pair_force("ALA", "CA", "GLY", "CA", r=5.0)
-    # Evaluate bond-angle potential (degrees)
-    V = params.angle_potential(res_triplet, atom_triplet, order_triplet, theta_deg)
-    # Evaluate dihedral potential (degrees)
-    V = params.dihedral_potential(res_quad, atom_quad, order_quad, phi_deg)
+
+one can evaluate the pair potential and its derivative between two bead types
+at a separation r in Å with params.pair_potential("ALA", "CA", "GLY", "CA",
+r=5.0) and params.pair_force("ALA", "CA", "GLY", "CA", r=5.0). The bond-angle
+and dihedral potentials are obtained in the same way from
+params.angle_potential and params.dihedral_potential, with the angle given in
+degrees.
 """
 
 from __future__ import annotations
@@ -38,10 +39,10 @@ import numpy as np
 import math
 from scipy.interpolate import CubicSpline
 
-# Unit conversion
-# coffdrop.xml energies are in kcal/mol.
-_KCAL_TO_KBT = 1.688656287  # standard COFFDROP energy conversion
-# Angles in the XML are in degrees; internally we keep radians for forces.
+# Unit conversions. The energies in coffdrop.xml are given in kcal/mol, so this
+# is the standard COFFDROP factor that converts them to units of kBT.
+_KCAL_TO_KBT = 1.688656287
+# Angles in the XML are in degrees. Internally we keep radians for forces.
 _DEG_TO_RAD = math.pi / 180.0
 
 
@@ -50,10 +51,10 @@ _DEG_TO_RAD = math.pi / 180.0
 class BeadDef:
     """One coarse-grained bead in the mapping file."""
 
-    name: str  # e.g. 'CA', 'CB', 'NG'
-    atoms: List[str]  # all-atom names that map to this bead
-    location: str = ""  # 'begin' / 'end' / ''
-    btype: str = ""  # 'cap' / 'terminus' / ''
+    name: str  # the bead name, for example 'CA', 'CB', or 'NG'
+    atoms: List[str]  # the all-atom names that map onto this bead
+    location: str = ""  # position within the chain: 'begin', 'end', or empty
+    btype: str = ""  # bead role: 'cap', 'terminus', or empty
 
 
 @dataclass
@@ -92,10 +93,10 @@ def _parse_mapping(xml_path: str) -> Dict[str, ResidueDef]:
 class BondDef:
     """One bond from connectivity.xml."""
 
-    residues: Tuple[str, str]  # residue names ('XXX' = wildcard)
-    atoms: Tuple[str, str]  # bead names
-    orders: Tuple[int, int]  # sequence orders within residue
-    length: float  # equilibrium length [Å]
+    residues: Tuple[str, str]  # the two residue names, where 'XXX' is a wildcard
+    atoms: Tuple[str, str]  # the two bead names
+    orders: Tuple[int, int]  # the sequence orders within the residue
+    length: float  # the equilibrium length in Å
     index: int
 
 
@@ -146,25 +147,26 @@ def _parse_charges(xml_path: str) -> Dict[Tuple[str, str], float]:
 @dataclass
 class TabulatedPotential:
     """
-    A 1D tabulated potential with linear interpolation.
+    A one-dimensional tabulated potential evaluated by interpolation.
     """
 
     x_min: float
     x_max: float
-    values: np.ndarray  # energy values [kBT], length N
-    residues: Tuple  # tuple of residue type indices
-    atoms: Tuple  # tuple of atom (bead) type indices
-    orders: Tuple  # tuple of sequence order values
+    values: np.ndarray  # the N energy values in units of kBT
+    residues: Tuple  # the residue type indices
+    atoms: Tuple  # the atom (bead) type indices
+    orders: Tuple  # the sequence order values
     index: int
 
     def __post_init__(self):
         n = len(self.values)
         self._dx = (self.x_max - self.x_min) / (n - 1) if n > 1 else 1.0
-        # Build the cubic spline once at construction; subsequent value() and
-        # deriv() calls evaluate it. Use natural boundary conditions
-        # (second derivative = 0 at endpoints) to match BD2's Even_Spline
-        # semantics. Spline is only buildable when there are at least 4
-        # points; for shorter tables we fall back to linear interp.
+        # Build the cubic spline once when the object is constructed, so that
+        # later calls to value() and deriv() simply evaluate it. We use natural
+        # boundary conditions (the second derivative vanishes at the endpoints)
+        # to match the Even_Spline semantics of BD2. A spline can only be built
+        # when there are at least 4 points, so for shorter tables we fall back
+        # to linear interpolation.
         if n >= 4:
             xs = self.x_min + self._dx * np.arange(n)
             self._spline = CubicSpline(xs, self.values, bc_type="natural")
@@ -179,7 +181,7 @@ class TabulatedPotential:
             return float(self.values[-1])
         if self._spline is not None:
             return float(self._spline(x))
-        # Fallback linear interp for short tables.
+        # Fall back to linear interpolation for short tables.
         t = (x - self.x_min) / self._dx
         i = int(math.floor(t))
         frac = t - i
@@ -190,8 +192,8 @@ class TabulatedPotential:
         if x <= self.x_min or x >= self.x_max:
             return 0.0
         if self._spline is not None:
-            return float(self._spline(x, 1))  # 1 -> first derivative
-        # Fallback for short tables.
+            return float(self._spline(x, 1))  # the second argument 1 selects the first derivative
+        # Fall back to linear differences for short tables.
         t = (x - self.x_min) / self._dx
         i = int(math.floor(t))
         if i < 0:
@@ -202,21 +204,14 @@ class TabulatedPotential:
         return float((self.values[i + 1] - self.values[i]) / self._dx)
 
     def deriv_array(self, xs: np.ndarray) -> np.ndarray:
-        """Vectorized first derivative: returns array of derivatives.
+        """Vectorized first derivative that returns an array of derivatives.
 
-        Zero outside table range. Same semantics as deriv() applied
-        elementwise, but exploits CubicSpline's array support to be
-        much faster than a Python loop over scalar deriv() calls.
-
-        Parameters
-        ----------
-        xs : np.ndarray, shape (N,)
-            Input x values.
-
-        Returns
-        -------
-        np.ndarray, shape (N,)
-            First derivative at each x, zero outside [x_min, x_max].
+        This has the same meaning as deriv() applied to each element, returning
+        zero outside the table range, but it takes advantage of the array
+        support in CubicSpline and so is much faster than a Python loop over
+        scalar deriv() calls. The input xs is an array of x values of shape
+        (N,), and the result is an array of shape (N,) giving the first
+        derivative at each x, which is zero outside [x_min, x_max].
         """
         xs = np.asarray(xs)
         out = np.zeros_like(xs, dtype=np.float64)
@@ -224,10 +219,10 @@ class TabulatedPotential:
         if not in_range.any():
             return out
         if self._spline is not None:
-            # CubicSpline supports array input directly.
+            # CubicSpline accepts array input directly.
             out[in_range] = self._spline(xs[in_range], 1)
             return out
-        # Fallback: linear differences (per-element, but vectorized index math).
+        # Fall back to linear differences, with the index arithmetic vectorized.
         n = len(self.values)
         t = (xs - self.x_min) / self._dx
         i_arr = np.floor(t).astype(np.int64)
@@ -249,12 +244,12 @@ def _parse_ff(
 ]:
     """
     Parse coffdrop.xml.
-    Returns
-    -------
-    type_map     : {'atoms': {name: index}, 'residues': {name: index}}
-    pairs        : list of TabulatedPotential (pair non-bonded)
-    angles       : list of TabulatedPotential (bond angles)
-    dihedrals    : list of TabulatedPotential (dihedral angles)
+
+    The function returns four objects. The first, type_map, maps atom and
+    residue names to integer indices and has the form {'atoms': {name: index},
+    'residues': {name: index}}. The remaining three are lists of
+    TabulatedPotential objects holding, respectively, the non-bonded pair
+    potentials, the bond-angle potentials, and the dihedral-angle potentials.
     """
     tree = ET.parse(xml_path)
     root = tree.getroot()
@@ -280,7 +275,7 @@ def _parse_ff(
         for pot_node in pairs_node.findall("potentials/potential"):
             orders_txt = pot_node.findtext("orders", "0 0").split()
             orders = tuple(int(v) for v in orders_txt)
-            # orders == (0, 0) means this is a non-bonded pair potential
+            # Orders of (0, 0) identify a non-bonded pair potential.
             if orders != (0, 0):
                 continue
             idx = int(pot_node.findtext("index", "0"))
@@ -359,9 +354,10 @@ def _match_pot(
 ) -> Optional[TabulatedPotential]:
     """
     Find the best-matching potential entry.
-    The standard approach uses wildcard residue index 0 (XXX) to denote
-    "matches any residue". An exact residue match takes priority
-    over a wildcard match.
+
+    Following the standard convention, the wildcard residue index 0 (written XXX
+    in the data files) means "matches any residue". When both an exact residue
+    match and a wildcard match are available, the exact match takes priority.
     """
     exact = None
     wild = None
@@ -372,7 +368,7 @@ def _match_pot(
             continue
         if pot.orders != orders:
             continue
-        # Check residues
+        # Check that the residues match, allowing the wildcard.
         res_match = all(
             pr == rr or pr == wildcard for pr, rr in zip(pot.residues, res_indices)
         )
@@ -389,16 +385,15 @@ def _match_pot(
 # Main parameter container
 class COFFDROPParams:
     """
-    All four COFFDROP parameter files loaded and indexed for fast lookup.
-    Attributes
-    ----------
-    mapping       : {resname -> ResidueDef}
-    bonds         : list of BondDef
-    charges       : {(resname, beadname) -> float}
-    type_map      : {'atoms': {name: idx}, 'residues': {name: idx}}
-    pair_pots     : list of TabulatedPotential (non-bonded pairs)
-    angle_pots    : list of TabulatedPotential (bond angles)
-    dihedral_pots : list of TabulatedPotential (dihedrals)
+    Holds all four COFFDROP parameter files, loaded and indexed for fast lookup.
+
+    The attribute mapping is a dictionary from residue name to ResidueDef. The
+    attribute bonds is a list of BondDef. The attribute charges maps a
+    (residue name, bead name) pair to the partial charge. The attribute
+    type_map maps atom and residue names to integer indices and has the form
+    {'atoms': {name: idx}, 'residues': {name: idx}}. The attributes pair_pots,
+    angle_pots, and dihedral_pots are lists of TabulatedPotential objects for
+    the non-bonded pairs, the bond angles, and the dihedrals, respectively.
     """
 
     def __init__(
@@ -418,7 +413,7 @@ class COFFDROPParams:
         self.pair_pots = pair_pots
         self.angle_pots = angle_pots
         self.dihedral_pots = dihedral_pots
-        # Pre-build name -> index lookups
+        # Pre-build the name to index lookups.
         self._at_idx = type_map["atoms"]
         self._res_idx = type_map["residues"]
 
@@ -428,12 +423,13 @@ class COFFDROPParams:
     ) -> "COFFDROPParams":
         """
         Load all four COFFDROP files.
-        Parameters
-        ----------
-        ff_xml           : path to coffdrop.xml (force-field tabulated potentials)
-        mapping_xml      : path to map.xml  (atom-to-bead mapping)
-        connectivity_xml : path to connectivity.xml (bond definitions)
-        charges_xml      : path to charges.xml (bead partial charges)
+
+        The argument ff_xml is the path to coffdrop.xml, which holds the
+        tabulated force-field potentials. The argument mapping_xml is the path
+        to map.xml, which gives the atom-to-bead mapping. The argument
+        connectivity_xml is the path to connectivity.xml, which holds the bond
+        definitions. The argument charges_xml is the path to charges.xml, which
+        gives the bead partial charges.
         """
         mapping = _parse_mapping(mapping_xml)
         bonds = _parse_connectivity(connectivity_xml)
@@ -445,11 +441,11 @@ class COFFDROPParams:
 
     # Public evaluation API
     def _ri(self, resname: str) -> int:
-        """Residue type index (0 = XXX wildcard if unknown)."""
+        """Return the residue type index, using the XXX wildcard 0 if unknown."""
         return self._res_idx.get(resname, 0)
 
     def _ai(self, beadname: str) -> int:
-        """Atom (bead) type index."""
+        """Return the atom (bead) type index."""
         return self._at_idx.get(beadname, -1)
 
     def pair_potential(
@@ -462,12 +458,13 @@ class COFFDROPParams:
         orders: Tuple[int, int] = (0, 0),
     ) -> float:
         """
-        Non-bonded pair potential V(r) in kBT at separation r [Å].
-        orders = (0,0) selects non-bonded pairs convention.
+        Return the non-bonded pair potential V(r) in kBT at separation r in Å.
+
+        The default orders of (0, 0) select the non-bonded pair convention.
         """
         ri = (self._ri(res0), self._ri(res1))
         ai = (self._ai(bead0), self._ai(bead1))
-        # Try both orderings (symmetric)
+        # The interaction is symmetric, so try both orderings of the pair.
         pot = _match_pot(self.pair_pots, ri, ai, orders)
         if pot is None:
             ai_rev = (ai[1], ai[0])
@@ -485,8 +482,9 @@ class COFFDROPParams:
         orders: Tuple[int, int] = (0, 0),
     ) -> float:
         """
-        Non-bonded pair force magnitude dV/dr [kBT/Å] at r.
-        Positive = repulsive.
+        Return the non-bonded pair force dV/dr in kBT/Å at separation r.
+
+        A positive value corresponds to a repulsive force.
         """
         ri = (self._ri(res0), self._ri(res1))
         ai = (self._ai(bead0), self._ai(bead1))
@@ -504,7 +502,7 @@ class COFFDROPParams:
         orders: Tuple[int, ...],
         theta_deg: float,
     ) -> float:
-        """Bond-angle potential V(θ) in kBT, θ in degrees."""
+        """Return the bond-angle potential V(θ) in kBT, with θ in degrees."""
         ri = tuple(self._ri(r) for r in residues)
         ai = tuple(self._ai(b) for b in beads)
         pot = _match_pot(self.angle_pots, ri, ai, orders)
@@ -517,7 +515,7 @@ class COFFDROPParams:
         orders: Tuple[int, ...],
         theta_deg: float,
     ) -> float:
-        """Bond-angle force dV/dθ [kBT/deg]."""
+        """Return the bond-angle force dV/dθ in kBT per degree."""
         ri = tuple(self._ri(r) for r in residues)
         ai = tuple(self._ai(b) for b in beads)
         pot = _match_pot(self.angle_pots, ri, ai, orders)
@@ -530,7 +528,7 @@ class COFFDROPParams:
         orders: Tuple[int, ...],
         phi_deg: float,
     ) -> float:
-        """Dihedral potential V(φ) in kBT, φ in degrees."""
+        """Return the dihedral potential V(φ) in kBT, with φ in degrees."""
         ri = tuple(self._ri(r) for r in residues)
         ai = tuple(self._ai(b) for b in beads)
         pot = _match_pot(self.dihedral_pots, ri, ai, orders)
@@ -543,14 +541,14 @@ class COFFDROPParams:
         orders: Tuple[int, ...],
         phi_deg: float,
     ) -> float:
-        """Dihedral force dV/dφ [kBT/deg]."""
+        """Return the dihedral force dV/dφ in kBT per degree."""
         ri = tuple(self._ri(r) for r in residues)
         ai = tuple(self._ai(b) for b in beads)
         pot = _match_pot(self.dihedral_pots, ri, ai, orders)
         return pot.deriv(phi_deg) if pot is not None else 0.0
 
     def bead_charge(self, resname: str, beadname: str) -> float:
-        """Partial charge on a bead (in elementary charges)."""
+        """Return the partial charge on a bead, in elementary charges."""
         return self.charges.get((resname, beadname), 0.0)
 
     def beads_for_residue(self, resname: str) -> Optional[List[BeadDef]]:
@@ -561,7 +559,7 @@ class COFFDROPParams:
     def bond_length(
         self, res0: str, bead0: str, order0: int, res1: str, bead1: str, order1: int
     ) -> Optional[float]:
-        """Equilibrium bond length [Å] for a given bond, or None if not found."""
+        """Return the equilibrium bond length in Å for a bond, or None if absent."""
         for bond in self.bonds:
             r_match = (bond.residues[0] in (res0, "XXX")) and (
                 bond.residues[1] in (res1, "XXX")
@@ -570,7 +568,7 @@ class COFFDROPParams:
             o_match = bond.orders[0] == order0 and bond.orders[1] == order1
             if r_match and a_match and o_match:
                 return bond.length
-            # Reverse
+            # Also check the bond written in the reverse order.
             r_match2 = (bond.residues[1] in (res0, "XXX")) and (
                 bond.residues[0] in (res1, "XXX")
             )

@@ -1,31 +1,26 @@
 """
 Multipole effective charges for PySTARC.
 
-The standard approach uses "effective charges", i.e., a set of point charges that
-reproduce the electrostatic potential of the molecule outside a
-bounding sphere. This is faster than evaluating the full APBS grid
-for long-range interactions because we only need a small number of
-effective charges (typically 20-100) instead of interpolating a
-161^3 grid.
+The standard approach uses effective charges, meaning a small set of point
+charges that reproduce the electrostatic potential of the molecule outside a
+bounding sphere. This is faster than evaluating the full APBS grid for
+long-range interactions because we only need a small number of effective
+charges (typically 20 to 100) instead of interpolating a 161^3 grid.
 
-The method is described in:
-  Gabdoulline & Wade (1996) "Simulation of the diffusional association
-  of barnase and barstar". Biophys J 72:1917-1929.
+The method is described in Gabdoulline and Wade (1996), "Simulation of the
+diffusional association of barnase and barstar", Biophys J 72:1917-1929.
 
-The effective potential at point r outside the bounding sphere is:
+The effective potential at a point r outside the bounding sphere is
 
-    Φ_eff(r) = Σ_k  q_k * exp(-|r - r_k| / λ_D) / |r - r_k|  * l_B
+    Φ_eff(r) = l_B Σ_k q_k exp(-|r - r_k| / λ_D) / |r - r_k|
 
-where q_k, r_k are the effective charges and their positions,
-and the sum runs over all effective charges (typically 20-100).
+Here q_k and r_k are the effective charges and their positions, l_B is the
+Bjerrum length, λ_D is the Debye length, and the sum runs over all effective
+charges (typically 20 to 100).
 
-This is used for long-range forces when the ligand is outside the
-finest APBS grid. Inside the finest grid, the APBS potential is
-used directly.
-
-For PySTARC, we implement this as a fallback for points outside all
-loaded DX grids.
-
+This is used for long-range forces when the ligand is outside the finest APBS
+grid. Inside the finest grid, the APBS potential is used directly. In PySTARC
+this serves as a fallback for points that fall outside all loaded DX grids.
 """
 
 from __future__ import annotations
@@ -40,12 +35,19 @@ import math
 class EffectiveCharges:
     """
     Effective point charges that reproduce long-range electrostatics.
-    The potential at point r:
-        Φ(r) = Σ_k q_k * l_B * exp(-|r-r_k|/λ_D) / |r-r_k|
-    The force on a test charge q at point r:
-        F(r) = -q * ∇Φ(r)
-             = q * Σ_k q_k * l_B * exp(-|r-r_k|/λ_D) / |r-r_k|^2
-                           * (1/λ_D + 1/|r-r_k|) * (r-r_k)/|r-r_k|
+
+    The potential at a point r is
+
+        Φ(r) = Σ_k q_k l_B exp(-|r-r_k|/λ_D) / |r-r_k|
+
+    and the force on a test charge q at point r is
+
+        F(r) = -q ∇Φ(r)
+             = q Σ_k q_k l_B exp(-|r-r_k|/λ_D) / |r-r_k|^2
+                          (1/λ_D + 1/|r-r_k|) (r-r_k)/|r-r_k|
+
+    Here q_k and r_k are the effective charges and their positions, l_B is the
+    Bjerrum length, and λ_D is the Debye length.
     """
 
     def __init__(
@@ -62,8 +64,12 @@ class EffectiveCharges:
 
     def potential(self, r: np.ndarray) -> float:
         """
-        Debye-Hückel potential at point r from all effective charges.
-        Φ(r) = Σ_k q_k * l_B * exp(-d_k/λ_D) / d_k   [kBT/e]
+        Return the Debye-Hückel potential at point r summed over all effective
+        charges, in units of kBT/e.
+
+        Φ(r) = Σ_k q_k l_B exp(-d_k/λ_D) / d_k
+
+        Here d_k is the distance from r to the k-th effective charge.
         """
         d_vec = r[np.newaxis, :] - self.positions  # (N,3)
         d = np.linalg.norm(d_vec, axis=1)  # (N,)
@@ -78,17 +84,18 @@ class EffectiveCharges:
 
     def force_on_charge(self, r: np.ndarray, q: float) -> np.ndarray:
         """
-        Force on test charge q at point r.
-        F = -q ∇Φ(r)    [kBT/Å]
+        Return the force on a test charge q at point r, in units of kBT/Å.
+
+        F = -q ∇Φ(r)
         """
         if abs(q) < 1e-9:
             return np.zeros(3)
         d_vec = r[np.newaxis, :] - self.positions  # (N,3)
         d = np.linalg.norm(d_vec, axis=1)  # (N,)
         mask = d > 1e-10
-        # Gradient of Φ w.r.t. r:
-        # ∂Φ/∂r = Σ_k q_k l_B exp(-d/λ) * [-(1/λ + 1/d)] * (r-r_k)/d
-        # Force on q: F = -q ∂Φ/∂r
+        # The gradient of Φ with respect to r is
+        # ∂Φ/∂r = Σ_k q_k l_B exp(-d/λ) [-(1/λ + 1/d)] (r-r_k)/d,
+        # and the force on the test charge is F = -q ∂Φ/∂r.
         inv_d = 1.0 / d[mask]
         exp_fac = np.exp(-d[mask] / self.debye_length)
         coeff = (
@@ -98,7 +105,7 @@ class EffectiveCharges:
             * (1.0 / self.debye_length + inv_d)
             * inv_d
         )  # (N,)
-        # d_vec[mask] / d[mask,None] = unit vectors
+        # Dividing each separation vector by its length gives the unit vectors.
         unit = d_vec[mask] / d[mask, np.newaxis]  # (N,3)
         grad_phi = -(coeff[:, np.newaxis] * unit).sum(axis=0)  # (3,)
         return -q * grad_phi
@@ -111,9 +118,10 @@ class EffectiveCharges:
         bjerrum_length: float = BJERRUM_LENGTH,
     ) -> "EffectiveCharges":
         """
-        Load effective charges from a the reference implementation XML file.
-        Supports both *_cheby.xml and *_mpole.xml formats.
-        XML format (the reference implementation):
+        Load effective charges from a reference implementation XML file. Both
+        the *_cheby.xml and *_mpole.xml formats are supported. The reference
+        implementation writes the charges in the form
+
             <charges>
               <charge>
                 <x> -4.72 </x>
@@ -128,7 +136,7 @@ class EffectiveCharges:
         root = tree.getroot()
         positions = []
         charges = []
-        # Handle both <charges> and <multipole> root tags
+        # Accept either a <charges> or a <multipole> root tag.
         charge_elements = root.findall(".//charge")
         if not charge_elements:
             charge_elements = root.findall(".//point_charge")
@@ -166,11 +174,12 @@ def load_effective_charges(
     bjerrum_length: float = BJERRUM_LENGTH,
 ) -> Optional[EffectiveCharges]:
     """
-    Auto-detect and load effective charges from a the reference implementation directory.
-    Looks for files in this priority order:
-      1. <prefix>_cheby.xml     (Chebyshev effective charges - most accurate)
-      2. <prefix>_mpole.xml     (multipole expansion)
-    Returns None if no file is found (not an error - DX grids alone suffice).
+    Detect and load effective charges from a reference implementation
+    directory. The search tries files in order of preference, first
+    <prefix>_cheby.xml (Chebyshev effective charges, the most accurate) and
+    then <prefix>_mpole.xml (a multipole expansion). When no file is found the
+    function returns None, which is not an error because the DX grids alone are
+    sufficient.
     """
     d = Path(directory)
     for suffix in ["_cheby.xml", "_mpole.xml", "_charges.xml"]:

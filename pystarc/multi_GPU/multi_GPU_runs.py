@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Split a PySTARC simulation into N independent runs for multi-GPU execution.
-Creates bd_sims/bd_1/, bd_sims/bd_2/, ... each with adjusted seed and trajectory count.
-DX grids are symlinked from bd_sims/ to avoid copying large files.
-If bd_sims/ does not exist, runs 1 trajectory first to generate APBS grids.
+Split a single PySTARC simulation into N independent runs so they can be spread
+across several GPUs. The script creates one directory per run, bd_sims/bd_1/,
+bd_sims/bd_2/, and so on, giving each its own random seed and its own share of the
+total trajectory count. The DX electrostatic grids are large, so each run directory
+symlinks them from bd_sims/ rather than copying them. If bd_sims/ does not yet exist,
+the script first runs a single trajectory to generate the APBS grids.
 """
 
 import xml.etree.ElementTree as ET
@@ -36,7 +38,7 @@ def main():
     per_split = total_traj // args.n_splits
     base_dir = os.path.dirname(os.path.abspath(args.xml))
     bd_sims = os.path.join(base_dir, "bd_sims")
-    # Auto-generate APBS grids if bd_sims/ does not exist
+    # Generate the APBS grids automatically if bd_sims/ has no DX files yet.
     if not os.path.isdir(bd_sims) or not any(
         f.endswith(".dx") for f in os.listdir(bd_sims)
     ):
@@ -50,12 +52,14 @@ def main():
         if ret.returncode != 0:
             print("  Error: grid generation failed.")
             return
-        # Clean grid-gen artifacts (keep only .dx, .cache, .pqr)
+        # Remove the leftover files from grid generation, keeping only the grid
+        # and structure files (.dx, .cache, .pqr).
         for f in os.listdir(bd_sims):
             fpath = os.path.join(bd_sims, f)
             if os.path.isfile(fpath) and not f.endswith((".dx", ".cache", ".pqr")):
                 os.remove(fpath)
-        # Reload original XML
+        # Reload the original XML, since the copy used for grid generation had its
+        # trajectory count and step count overwritten.
         tree = ET.parse(args.xml)
         root = tree.getroot()
         print("  Grids ready.\n")
@@ -75,7 +79,8 @@ def main():
         root.find("n_trajectories").text = str(per_split)
         root.find("seed").text = str(base_seed + i * 11111111)
         root.find("work_dir").text = "."
-        # Resolve relative paths to absolute so they work from bd_sims/bd_N/
+        # Turn any relative input paths into absolute ones so they still resolve
+        # correctly when the run executes from inside bd_sims/bd_N/.
         for tag in ["rxns_xml", "receptor_pqr", "ligand_pqr"]:
             el = root.find(tag)
             if el is not None and el.text and not os.path.isabs(el.text.strip()):
@@ -92,7 +97,7 @@ def main():
     for i in range(1, args.n_splits + 1):
         print(f"    cd bd_sims/bd_{i} && python {runner} input.xml && cd ../..")
     print(f"\n  Then combine:")
-    # combine auto-detects bd_sims/bd_N directories
+    # The combiner finds the bd_sims/bd_N directories on its own.
     print(f"    python {combiner}")
 
 

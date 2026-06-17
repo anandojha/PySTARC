@@ -1,10 +1,10 @@
 """
-PySTARC pipeline - Step 2: Parameterize ligand
-=============================================
-Runs AmberTools to assign force field parameters to the ligand:
-  1. antechamber  - assign AM1-BCC partial charges -> ligand.mol2
-  2. parmchk2     - find missing parameters        -> ligand.frcmod
-  3. tleap        - build Amber library file       -> ligand.lib
+Step 2 of the PySTARC pipeline, parameterizing the ligand.
+
+This module runs AmberTools to assign force field parameters to the ligand.
+First antechamber assigns AM1-BCC partial charges and writes ligand.mol2.
+Then parmchk2 finds any missing parameters and writes ligand.frcmod. Finally
+tleap builds the Amber library file ligand.lib.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import os
 
 
 def _run(cmd: str, cwd: Path, step: str):
-    """Run a shell command, raise on failure with clear message."""
+    """Run a shell command and raise a clear error if it fails."""
     print(f"    $ {cmd}")
     result = subprocess.run(shlex.split(cmd), shell=False, cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -31,6 +31,7 @@ def _run(cmd: str, cwd: Path, step: str):
 
 
 def _check_tool(name: str):
+    """Confirm that the named command line tool is available on the PATH."""
     if not shutil.which(name):
         raise EnvironmentError(
             f"'{name}' not found in PATH.\n"
@@ -47,16 +48,15 @@ def parameterize(
 ) -> Tuple[Path, Path, Path]:
     """
     Parameterize the ligand using AmberTools.
-    Parameters
-    ----------
-    ligand_pdb     : path to ligand-only PDB
-    ligand_resname : 3-letter residue name (e.g. 'BEN')
-    ligand_charge  : net formal charge (integer, e.g. 1)
-    work_dir       : working directory for all intermediate files
-    ligand_ff      : 'gaff' or 'gaff2'
-    Returns
-    -------
-    (mol2_path, frcmod_path, lib_path)
+
+    The argument ligand_pdb is the path to a ligand-only PDB file, and
+    ligand_resname is its three-letter residue name (for example 'BEN').
+    ligand_charge is the net formal charge as an integer (for example 1), and
+    work_dir is the working directory where all intermediate files are written.
+    ligand_ff selects the force field and is either 'gaff' or 'gaff2'.
+
+    The function returns the paths to the three generated files as the tuple
+    (mol2_path, frcmod_path, lib_path).
     """
     for tool in ["antechamber", "parmchk2", "tleap"]:
         _check_tool(tool)
@@ -66,7 +66,7 @@ def parameterize(
     mol2_path = work_dir / f"{resname_lower}.mol2"
     frcmod_path = work_dir / f"{resname_lower}.frcmod"
     lib_path = work_dir / f"{resname_lower}.lib"
-    # 1. antechamber: AM1-BCC partial charges
+    # Run antechamber to assign AM1-BCC partial charges.
     print("  antechamber - AM1-BCC charges ...")
     _run(
         f"antechamber -i {ligand_pdb.resolve()} -fi pdb "
@@ -76,14 +76,14 @@ def parameterize(
         cwd=work_dir,
         step="antechamber",
     )
-    # 2. parmchk2: missing force field parameters
+    # Run parmchk2 to find any missing force field parameters.
     print("parmchk2 - missing parameters ...")
     _run(
         f"parmchk2 -i {mol2_path.name} -f mol2 -o {frcmod_path.name}",
         cwd=work_dir,
         step="parmchk2",
     )
-    # 3. tleap: build Amber library file
+    # Run tleap to build the Amber library file.
     print("  tleap - building ligand library ...")
     tleap_script = work_dir / "save_ligand_lib.tleap"
     tleap_script.write_text(
@@ -95,7 +95,7 @@ def parameterize(
     _run(f"tleap -f {tleap_script.name}", cwd=work_dir, step="tleap-savelib")
     if not lib_path.exists():
         raise RuntimeError(f"tleap did not produce {lib_path}")
-    # Cleanup antechamber intermediates
+    # Remove the intermediate files left behind by antechamber.
     for pattern in ["ANTECHAMBER*", "ATOMTYPE.INF", "sqm.*", "leap.log"]:
         for f in work_dir.glob(pattern):
             f.unlink(missing_ok=True)

@@ -1,10 +1,9 @@
 """
-XML I/O for PySTARC simulation inputs and outputs.
+XML input and output for PySTARC simulations.
 
-Parses the reference implementation-compatible XML files:
-- simulation input files
-- reaction/contact files
-- chain/molecule files
+This module reads and writes the XML files used by the reference implementation.
+These include the simulation input files, the reaction and contact files, and the
+chain and molecule files.
 """
 
 from __future__ import annotations
@@ -15,17 +14,23 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
-# Reaction XML parser
+# Parser for the reaction XML file.
 def parse_reaction_xml(path: str | Path) -> PathwaySet:
     """
-    Parse a the reference reaction XML file.
-    Expected structure:
-    <reactions>
-      <reaction name="rxn1" probability="1.0">
-        <contact molecule1_index="3" molecule2_index="17" distance="5.0"/>
-        ...
-      </reaction>
-    </reactions>
+    Read a reaction XML file in the reference format and return the set of reaction
+    pathways it defines. Each reaction carries a name and a reaction probability, and
+    lists the contact pairs whose simultaneous formation defines the reaction. A
+    contact pair names two atoms (one from each molecule) and the distance cutoff in
+    angstrom within which they are considered in contact.
+
+    The file has the following structure:
+
+        <reactions>
+          <reaction name="rxn1" probability="1.0">
+            <contact molecule1_index="3" molecule2_index="17" distance="5.0"/>
+            ...
+          </reaction>
+        </reactions>
     """
     path = Path(path)
     tree = ET.parse(path)
@@ -48,7 +53,7 @@ def parse_reaction_xml(path: str | Path) -> PathwaySet:
 
 
 def write_reaction_xml(pathway_set: PathwaySet, path: str | Path) -> None:
-    """Write a PathwaySet to the reaction XML file."""
+    """Write a set of reaction pathways to a reaction XML file in the reference format."""
     root = ET.Element("reactions")
     for rxn in pathway_set.reactions:
         rxn_elem = ET.SubElement(
@@ -67,13 +72,16 @@ def write_reaction_xml(pathway_set: PathwaySet, path: str | Path) -> None:
     tree.write(str(path), encoding="unicode", xml_declaration=True)
 
 
-# Simulation input XML parser
+# Parser for the simulation input XML file.
 def parse_simulation_xml(path: str | Path) -> Dict:
     """
-    Parse a simulation input XML file.
-    Returns a dict with keys:
-      n_trajectories, dt, max_steps, r_start, r_escape, seed,
-      mol1_pqr, mol2_pqr, reaction_file, dx_files
+    Read a simulation input XML file and return its settings as a dictionary. The
+    settings are the number of Brownian-dynamics trajectories (n_trajectories), the
+    time step Δt (dt), the maximum number of steps per trajectory (max_steps), the
+    b-surface starting radius and the escape radius in angstrom (r_start and r_escape),
+    the random-number seed (seed), the PQR structure files for the two molecules
+    (mol1_pqr and mol2_pqr), the reaction definition file (reaction_file), and the list
+    of OpenDX electrostatic grid files (dx_files).
     """
     path = Path(path)
     tree = ET.parse(path)
@@ -117,7 +125,7 @@ def parse_simulation_xml(path: str | Path) -> Dict:
 
 
 def write_simulation_xml(config: Dict, path: str | Path) -> None:
-    """Write a simulation configuration dict to XML."""
+    """Write a simulation configuration dictionary to a simulation input XML file."""
     root = ET.Element("simulation")
     for key, val in config.items():
         if key == "dx_files":

@@ -1,35 +1,37 @@
 """
-Molecular geometry and diffusion parameters
-============================================
+Molecular geometry and diffusion parameters.
 
-Background
--------------------
-This module computes the geometric and diffusive properties needed
-for the BD simulation from the PQR file data.
+This module computes the geometric and diffusive properties that the
+Brownian-dynamics simulation needs, starting from the atom data in a PQR file.
 
-1. b-Surface radius
-The b-surface is a sphere of radius b centered on the receptor,
-from which all BD trajectories are launched.  Its radius is chosen
-so that the interaction potential is approximately centrosymmetric:
+The b-surface is a sphere of radius b centered on the receptor, from which all
+Brownian-dynamics trajectories are launched. Its radius is chosen so that the
+interaction potential is approximately centrosymmetric:
 
     b = max_receptor_extent + max_ligand_extent + padding
 
-Typically b ≈ 3-5 × molecular_radius.
+Here b is typically about 3 to 5 times the molecular radius.
 
-2. Escape sphere
-The escape sphere at r_esc = 2b is where the outer propagator
-decides return vs escape.  Trajectories that reach r_esc either
-return to the b-surface (with probability p_return) or are
-terminated as escapes.
+The escape sphere at r_esc = 2b is where the outer propagator decides between
+return and escape. A trajectory that reaches r_esc either returns to the
+b-surface with probability p_return or is terminated as an escape.
 
-3. Diffusion coefficients
-From the Stokes-Einstein relation:
-    D_trans = kBT / (6π η a)    [Å²/ps]
-    D_rot   = 3 D_trans / (4a²) [rad²/ps]
-    D_rel   = D_trans,1 + D_trans,2  (relative diffusion)
+The diffusion coefficients follow from the Stokes-Einstein relation. The
+translational coefficient is
 
-The RMS displacement per step is √(6 D_rel Δt).
-For Δt = 1 ps: Δr_rms = √(6 × 0.053) ≈ 0.56 Å.
+    D_trans = kBT / (6π η a)    in Å²/ps,
+
+the rotational coefficient is
+
+    D_rot = 3 D_trans / (4a²)    in rad²/ps,
+
+and the relative translational diffusion coefficient is the sum of the two
+translational coefficients,
+
+    D_rel = D_trans,1 + D_trans,2.
+
+The root-mean-square displacement per step is √(6 D_rel Δt). For Δt = 1 ps this
+gives Δr_rms = √(6 × 0.053) ≈ 0.56 Å.
 """
 
 from __future__ import annotations
@@ -59,14 +61,15 @@ class AtomRecord:
 
     @property
     def is_ghost(self) -> bool:
-        # Audit fix 2026-05-21: removed dead trailing clause
-        # 'abs(self.charge) < 1e-9 and self.radius < 1e-6'.
-        # Python precedence parses it as (charge AND radius), and because
-        # 'radius < 1e-6' is already clause 2, the AND clause could never
-        # fire independently. Probable original intent: a charge-only fallback
-        # that would need to be 'or abs(self.charge) < 1e-9' to actually work,
-        # which is a behavior change (would flag any uncharged atom as ghost)
-        # and needs physics validation before reinstating.
+        # Audit fix on 2026-05-21: the dead trailing clause
+        # 'abs(self.charge) < 1e-9 and self.radius < 1e-6' was removed. Python
+        # operator precedence parses it as (charge AND radius), and because
+        # 'radius < 1e-6' is already the second clause, the AND clause could
+        # never fire on its own. The probable original intent was a charge-only
+        # fallback, which would need to be written as 'or abs(self.charge) <
+        # 1e-9' to actually take effect. That is a behavior change (it would
+        # flag any uncharged atom as a ghost) and needs physics validation
+        # before it can be reinstated.
         return (
             self.name.strip().upper() == "GHO"
             or self.radius < 1e-6
@@ -79,26 +82,26 @@ class MoleculeGeometry:
     n_charged: int
     n_ghost: int
     centroid: np.ndarray
-    max_radius: float  # max distance from centroid to atom surface
-    hydrodynamic_r: float  # hydrodynamic radius (= max_radius for rigid body)
-    ghost_indices: List[int]  # 0-based indices of ghost atoms
+    max_radius: float  # maximum distance from the centroid to an atom surface
+    hydrodynamic_r: float  # hydrodynamic radius (equals max_radius for a rigid body)
+    ghost_indices: List[int]  # zero-based indices of the ghost atoms
     ghost_positions: List[np.ndarray]
     total_charge: float
 
 
 def parse_pqr(pqr_path: Path) -> List[AtomRecord]:
-    """Parse a PQR file and return list of AtomRecord.
+    """Parse a PQR file and return a list of AtomRecord.
 
-    Delegates to the canonical PQR parser in pystarc.structures.pqr_io,
-    which handles the full range of PQR format variations (ATOM/HETATM,
-    chain column present or absent, 4-char Amber resnames, collapsed
-    numeric spacing, trailing element column).
+    The work is delegated to the canonical PQR parser in
+    pystarc.structures.pqr_io, which handles the full range of PQR format
+    variations. These include ATOM and HETATM records, the chain column being
+    present or absent, four-character Amber residue names, collapsed numeric
+    spacing, and a trailing element column.
 
-    Legacy fallback: if the canonical parser rejects every line (for
-    example a minimal PQR with only nine fields per line, no radius
-    column), this function retries with a lenient whitespace parse
-    that defaults the missing radius to 1.5 Angstrom, preserving
-    prior geometry-module behavior.
+    A legacy fallback is provided as well. If the canonical parser rejects every
+    line, for example a minimal PQR with only nine fields per line and no radius
+    column, this function retries with a lenient whitespace parse that defaults
+    the missing radius to 1.5 Å, preserving the prior behavior of this module.
     """
     from pystarc.structures.pqr_io import parse_pqr_records
 
@@ -118,7 +121,7 @@ def parse_pqr(pqr_path: Path) -> List[AtomRecord]:
             )
             for i, r in enumerate(records)
         ]
-    # Lenient fallback for legacy PQRs missing the radius column.
+    # Lenient fallback for legacy PQR files that are missing the radius column.
     atoms: List[AtomRecord] = []
     with open(pqr_path) as f:
         for line in f:
@@ -154,31 +157,35 @@ def analyse_molecule(
     srad: float = 0.0,
 ) -> MoleculeGeometry:
     """
-    Compute geometric properties of a molecule from its PQR file.
+    Compute the geometric properties of a molecule from its PQR file.
 
-    Hydrodynamic radius uses the Hansen (J. Chem. Phys. 121, 9111, 2004)
-    Employs the solvent-excluded surface (SES) with probe_radius=srad
-    and grid_spacing=1.0Å.
-    Effective radii = atom_radius + srad before voxelisation.
-    Parameters
-    ----------
-    use_mc_hydro : if True (default), use MC algorithm (the reference implementation-exact).
-                   if False, use geometric approximation (fast, ~35% error).
-    grid_spacing : voxel grid spacing in Å. Defaults to 1.0Å matching reference.
-    n_mc         : MC sample count (default 1_000_000, matches the reference implementation).
-    srad         : solvent probe radius Å (reference default 1.5; 0.0 for two_spheres).
+    The hydrodynamic radius follows the method of Hansen (J. Chem. Phys. 121,
+    9111, 2004). It uses the solvent-excluded surface with a probe radius equal
+    to srad and a grid spacing of 1.0 Å. Each effective radius is the atom radius
+    plus srad before voxelisation.
+
+    The parameter use_mc_hydro selects the algorithm. When it is True, which is
+    the default, the Monte Carlo algorithm is used and reproduces the reference
+    implementation exactly. When it is False, a fast geometric approximation is
+    used instead, with an error of roughly 35 percent. The parameter grid_spacing
+    is the voxel grid spacing in Å and defaults to 1.0 Å to match the reference.
+    The parameter n_mc is the number of Monte Carlo samples and defaults to
+    1,000,000, again matching the reference implementation. The parameter srad is
+    the solvent probe radius in Å, for which the reference default is 1.5 and the
+    two-spheres case uses 0.0.
     """
     atoms = parse_pqr(pqr_path)
     if not atoms:
         raise ValueError(f"No atoms found in {pqr_path}")
     coords = np.array([[a.x, a.y, a.z] for a in atoms])
     radii = np.array([a.radius for a in atoms])
-    # b-sphere (max_radius): always geometric - used for BD setup, not Stokes-Einstein
+    # The b-sphere radius (max_radius) is always computed geometrically. It is
+    # used to set up the Brownian dynamics, not in the Stokes-Einstein relation.
     centroid = coords.mean(axis=0)
     dists = np.linalg.norm(coords - centroid, axis=1)
     max_radius = float(np.max(dists + radii))
-    # Grid spacing: uses spacing=1.0Å for large proteins,
-    # but adapts for small molecules (bbox/100 capped to [0.02, 1.0]).
+    # The grid spacing is 1.0 Å for large proteins, but it adapts for small
+    # molecules to bbox/100 clamped to the range 0.02 to 1.0 Å.
     if grid_spacing is None:
         radii_bbox = radii + srad if srad > 0.0 else radii
         bbox = float(
@@ -188,10 +195,12 @@ def analyse_molecule(
             )
         )
         grid_spacing = max(0.02, min(1.0, bbox / 100.0))
-    # Solvent-excluded surface: effective radius = vdW + probe
+    # For the solvent-excluded surface, the effective radius is the van der Waals
+    # radius plus the probe radius.
     radii_hydro = radii + srad if srad > 0.0 else radii
-    # Hydrodynamic radius: MC algorithm or geometric fallback
-    # Cache result next to PQR file so re-runs skip the expensive MC calculation.
+    # Compute the hydrodynamic radius, either with the Monte Carlo algorithm or
+    # with the geometric fallback. The result is cached next to the PQR file so
+    # that re-runs can skip the expensive Monte Carlo calculation.
     cache_path = Path(str(pqr_path) + f".r_hydro_s{grid_spacing}_p{srad:.4g}.cache")
     if use_mc_hydro:
         if cache_path.exists():
@@ -212,7 +221,7 @@ def analyse_molecule(
                     coords, radii_hydro, spacing=grid_spacing, n_mc=n_mc
                 )
                 centroid = mc_center
-                # Save to cache
+                # Save the result to the cache.
                 try:
                     line = f"{r_h:.8f} {centroid[0]:.8f} {centroid[1]:.8f} {centroid[2]:.8f}\n"
                     cache_path.write_text(line)
@@ -242,8 +251,8 @@ def analyse_molecule(
 class SystemGeometry:
     receptor: MoleculeGeometry
     ligand: MoleculeGeometry
-    r_start: float  # b-sphere radius (Å)
-    r_escape: float  # escape sphere (2 × b-sphere)
+    r_start: float  # b-sphere radius in Å
+    r_escape: float  # escape sphere radius, equal to 2 × the b-sphere radius
 
 
 def compute_geometry(
@@ -256,11 +265,13 @@ def compute_geometry(
     r_hydro_lig: float = 0.0,
 ) -> SystemGeometry:
     """
-    Compute full system geometry for BD setup.
-    b-sphere = bd_milestone_radius (outermost SEEKR milestone, user-defined)
-    escape   = 2 × b-sphere  (Luty-McCammon-Zhou convention)
-    If r_hydro_rec or r_hydro_lig are > 0, they override the MC-computed
-    hydrodynamic radii (matches reference hydro_params.xml values exactly).
+    Compute the full system geometry for the Brownian dynamics setup.
+
+    The b-sphere radius is bd_milestone_radius, the outermost SEEKR milestone,
+    which is user-defined. The escape sphere radius is 2 × the b-sphere radius,
+    following the Luty-McCammon-Zhou convention. When r_hydro_rec or r_hydro_lig
+    are greater than zero, they override the Monte Carlo hydrodynamic radii and
+    match the values in the reference hydro_params.xml exactly.
     """
     print("\n[5] Computing system geometry ...")
     rec = analyse_molecule(receptor_pqr, srad=srad)
@@ -317,26 +328,29 @@ def compute_geometry(
     )
 
 
-# Ghost atom / reaction criteria detection
+# Detection of ghost atoms and reaction criteria.
 @dataclass
 class ReactionPair:
-    rec_index: int  # 0-based atom index in receptor
-    lig_index: int  # 0-based atom index in ligand
+    rec_index: int  # zero-based atom index in the receptor
+    lig_index: int  # zero-based atom index in the ligand
     cutoff: float  # distance cutoff in Å
 
 
 def _parse_rxns_xml_criteria(rxns_path):
     """
-    Parse the rxns XML file and extract reaction pair criteria.
-    Supports two formats:
-    1. <atom1>rec_idx charge cutoff</atom1> <atom2>lig_idx...</atom2>
-    2. <atoms>rec_idx lig_idx</atoms> <distance>cutoff</distance>
-    Note: atom indices in the XML are 1-based.
-    They are stored as-is and the simulator uses them directly as 0-based
-    after subtracting 1 during ContactPair construction.
+    Parse the rxns XML file and extract the reaction pair criteria.
+
+    Two formats are supported. The first uses an <atom1> element holding the
+    receptor index, charge, and cutoff, together with an <atom2> element holding
+    the ligand index. The second uses an <atoms> element holding the receptor and
+    ligand indices, together with a <distance> element holding the cutoff.
+
+    The atom indices in the XML are one-based. They are converted here by
+    subtracting one so that the simulator uses them directly as zero-based indices
+    during ContactPair construction.
     """
     pairs = []
-    n_needed = -1  # -1 = all pairs (reference default)
+    n_needed = -1  # a value of -1 means all pairs, which is the reference default
     try:
         tree = ET.parse(str(rxns_path))
         root = tree.getroot()
@@ -344,7 +358,7 @@ def _parse_rxns_xml_criteria(rxns_path):
             crit = reaction.find("criterion")
             if crit is None:
                 continue
-            # Read n_needed if present
+            # Read n_needed if it is present.
             nn_node = crit.find("n_needed")
             if nn_node is not None:
                 try:
@@ -352,14 +366,15 @@ def _parse_rxns_xml_criteria(rxns_path):
                 except ValueError:
                     pass
             for pair_node in crit.findall("pair"):
-                # Format 1: <atom1>rec_idx charge cutoff</atom1> <atom2>lig_idx...</atom2>
+                # First format: an <atom1> element with the receptor index,
+                # charge, and cutoff, and an <atom2> element with the ligand index.
                 a1 = pair_node.find("atom1")
                 a2 = pair_node.find("atom2")
                 if a1 is not None and a2 is not None:
                     try:
                         p1 = a1.text.strip().split()
                         p2 = a2.text.strip().split()
-                        rec_idx = int(p1[0]) - 1  # convert 1-based -> 0-based
+                        rec_idx = int(p1[0]) - 1  # convert one-based to zero-based
                         lig_idx = int(p2[0]) - 1
                         cutoff = float(p1[2]) if len(p1) >= 3 else 5.0
                         pairs.append(
@@ -372,13 +387,14 @@ def _parse_rxns_xml_criteria(rxns_path):
                     except (ValueError, IndexError):
                         continue
                     continue
-                # Format 2: <atoms>rec_idx lig_idx</atoms> <distance>cutoff</distance>
+                # Second format: an <atoms> element with the receptor and ligand
+                # indices, and a <distance> element with the cutoff.
                 atoms_node = pair_node.find("atoms")
                 distance_node = pair_node.find("distance")
                 if atoms_node is not None and distance_node is not None:
                     try:
                         idx = atoms_node.text.strip().split()
-                        rec_idx = int(idx[0]) - 1  # convert 1-based -> 0-based
+                        rec_idx = int(idx[0]) - 1  # convert one-based to zero-based
                         lig_idx = int(idx[1]) - 1
                         cutoff = float(distance_node.text.strip())
                         pairs.append(
@@ -403,18 +419,24 @@ def auto_detect_reactions(
     bd_milestone_radius_inner: float = 12.0,
 ) -> "List[List[ReactionPair]]":
     """
-    Build reaction criteria from GHO ghost atoms.
-    1. rxns_xml given  -> parse criteria from the reference implementation rxns file
-    2. ghost_atoms manual spec -> parse triplets rec_idx,lig_idx,cutoff
-    3. ghost_atoms == 'auto' -> detect GHO atoms in PQR, use bd_milestone_radius as cutoff
-    4. No GHO found -> raise clear error (centroid fallback removed - physically wrong)
+    Build the reaction criteria from GHO ghost atoms.
+
+    The function tries several sources in order of priority. When rxns_xml is
+    given, the criteria are parsed from the reference implementation rxns file.
+    When ghost_atoms holds a manual specification, it is parsed as triplets of
+    receptor index, ligand index, and cutoff. When ghost_atoms is 'auto', the GHO
+    atoms in the PQR are detected and bd_milestone_radius is used as the cutoff.
+    If no GHO atoms are found, a clear error is raised, since the centroid
+    fallback was removed because it is physically wrong.
     """
-    # Priority 1: rxns XML
+    # First priority: the rxns XML file.
     if rxns_xml and rxns_xml.strip():
         rxns_path = Path(rxns_xml.strip())
-        # If relative, try resolving against the PDB parent directory
+        # If the path is relative, try resolving it against the PDB parent
+        # directory.
         if not rxns_path.is_absolute() and not rxns_path.exists():
-            # Try relative to cwd - already the common case
+            # Try the path relative to the current working directory, which is
+            # already the common case.
             pass
         if rxns_path.exists():
             pairs, n_needed = _parse_rxns_xml_criteria(rxns_path)
@@ -432,7 +454,7 @@ def auto_detect_reactions(
             print(f"  Warning: no pairs in {rxns_path.name}, falling back")
         else:
             print(f"  Warning: rxns_xml not found: {rxns_xml}")
-    # Priority 2: manual ghost_atoms spec
+    # Second priority: a manual ghost_atoms specification.
     if ghost_atoms.strip().lower() != "auto":
         pairs = []
         for line in ghost_atoms.strip().splitlines():
@@ -452,18 +474,19 @@ def auto_detect_reactions(
                 )
             )
         return [pairs], -1
-    # Priority 3: auto-detect GHO atoms in PQR
+    # Third priority: auto-detect the GHO atoms in the PQR.
     rec_ghosts = geom.receptor.ghost_indices
     lig_ghosts = geom.ligand.ghost_indices
     if rec_ghosts and lig_ghosts:
-        # One GHO per molecule - use first GHO of each
+        # There is one GHO atom per molecule, so use the first GHO of each.
         rec_gho = rec_ghosts[0]
         lig_gho = lig_ghosts[0]
-        # Reaction criterion: GHO-GHO distance < bd_milestone_radius
-        # This is the outermost milestone = b-surface radius
-        # q-surface (reaction) = bd_milestone_radius_inner (inner milestone)
-        # b-surface (start)    = bd_milestone_radius (outer milestone)
-        # Ligand starts at b-surface and reacts when it reaches the q-surface
+        # The reaction fires when the GHO-to-GHO distance falls below
+        # bd_milestone_radius. The b-surface is the outer milestone at
+        # bd_milestone_radius, where the ligand starts, and the q-surface is the
+        # inner milestone at bd_milestone_radius_inner, where the reaction occurs.
+        # The ligand starts on the b-surface and reacts when it reaches the
+        # q-surface.
         rxn_cutoff = (
             bd_milestone_radius_inner
             if bd_milestone_radius_inner > 0
@@ -475,8 +498,8 @@ def auto_detect_reactions(
             f"< {rxn_cutoff:.1f} A  (q-surface / inner milestone)"
         )
         return [pairs], 1
-    # No GHO atoms - raise a clear error (centroid fallback removed)
-    # The user must run with GHO-injected PQRs.
+    # No GHO atoms were found, so raise a clear error. The centroid fallback was
+    # removed, and the user must run with GHO-injected PQR files.
     raise RuntimeError(
         "\n\nNo GHO ghost atoms found in receptor.pqr or ligand.pqr.\n"
         "PySTARC requires GHO atoms to define the b-surface reaction criterion.\n"
@@ -485,18 +508,21 @@ def auto_detect_reactions(
     )
 
 
-# Multi-reaction parser with state-machine labels.
-# Kept distinct from _parse_rxns_xml_criteria, which remains the flattened-pairs entry point.
-# This parser is only called when state_machine_reactions=True in the config.
+# Multi-reaction parser with state-machine labels. It is kept distinct from
+# _parse_rxns_xml_criteria, which remains the flattened-pairs entry point. This
+# parser is called only when state_machine_reactions is True in the config.
 @dataclass
 class ReactionGroup:
     """
     One reaction with optional state-machine labels.
-    name         : reaction name from <n>...</n>
-    state_before : source state - trajectory must be in this state for reaction to fire
-    state_after  : destination state - trajectory enters this state after reaction fires
-    pairs        : list of ReactionPair (all pairs in this reaction's criterion)
-    n_needed     : min pairs that must fire simultaneously (-1 = all)
+
+    The field name is the reaction name read from the <n> element. The field
+    state_before is the source state, and the trajectory must be in this state
+    for the reaction to fire. The field state_after is the destination state, and
+    the trajectory enters this state after the reaction fires. The field pairs is
+    the list of ReactionPair objects making up this reaction's criterion. The
+    field n_needed is the minimum number of pairs that must fire simultaneously,
+    where a value of -1 means all of them.
     """
 
     name: str
@@ -508,11 +534,15 @@ class ReactionGroup:
 
 def _parse_rxns_xml_reaction_groups(rxns_path):
     """
-    Parse rxns XML preserving per-reaction grouping and state labels.
-    Returns (reaction_groups, first_state) where:
-      reaction_groups : List[ReactionGroup]
-      first_state     : Optional[str]   (value of <first_state>...</first_state>)
-    XML format:
+    Parse the rxns XML while preserving the per-reaction grouping and state
+    labels.
+
+    The function returns the tuple (reaction_groups, first_state). The first
+    element is a list of ReactionGroup objects. The second is an optional string
+    holding the value of the <first_state> element.
+
+    The expected XML format is as follows.
+
         <roottag>
           <first_state>b_surface</first_state>
           <reactions>
@@ -531,9 +561,11 @@ def _parse_rxns_xml_reaction_groups(rxns_path):
             ...
           </reactions>
         </roottag>
-    Note: atom indices in the XML are 1-based; this parser converts to 0-based.
-    Reactions without state labels have state_before=state_after=None, in which
-    case the caller can synthesize defaults or fall back to the flattened-pairs path.
+
+    The atom indices in the XML are one-based, and this parser converts them to
+    zero-based. Reactions without state labels have state_before and state_after
+    set to None, in which case the caller can synthesize defaults or fall back to
+    the flattened-pairs path.
     """
     groups = []
     first_state = None
@@ -544,12 +576,12 @@ def _parse_rxns_xml_reaction_groups(rxns_path):
         if fs_node is not None and fs_node.text:
             first_state = fs_node.text.strip()
         for reaction in root.iter("reaction"):
-            # Name from <n>...</n>
+            # Read the reaction name from the <n> element.
             n_node = reaction.find("n")
             rxn_name = (
                 n_node.text.strip() if (n_node is not None and n_node.text) else ""
             )
-            # State labels
+            # Read the state labels.
             sb_node = reaction.find("state_before")
             sa_node = reaction.find("state_after")
             state_before = (
@@ -558,7 +590,7 @@ def _parse_rxns_xml_reaction_groups(rxns_path):
             state_after = (
                 sa_node.text.strip() if (sa_node is not None and sa_node.text) else None
             )
-            # Criterion (pair list + n_needed)
+            # Read the criterion, which holds the pair list and n_needed.
             crit = reaction.find("criterion")
             if crit is None:
                 continue
@@ -571,7 +603,8 @@ def _parse_rxns_xml_reaction_groups(rxns_path):
                     pass
             rxn_pairs = []
             for pair_node in crit.findall("pair"):
-                # Format 1: <atom1>rec_idx ...</atom1> <atom2>lig_idx ...</atom2>
+                # First format: an <atom1> element with the receptor index and an
+                # <atom2> element with the ligand index.
                 a1 = pair_node.find("atom1")
                 a2 = pair_node.find("atom2")
                 if a1 is not None and a2 is not None:
@@ -591,7 +624,8 @@ def _parse_rxns_xml_reaction_groups(rxns_path):
                     except (ValueError, IndexError):
                         continue
                     continue
-                # Format 2: <atoms>rec_idx lig_idx</atoms> <distance>cutoff</distance>
+                # Second format: an <atoms> element with the receptor and ligand
+                # indices, and a <distance> element with the cutoff.
                 atoms_node = pair_node.find("atoms")
                 distance_node = pair_node.find("distance")
                 if atoms_node is not None and distance_node is not None:

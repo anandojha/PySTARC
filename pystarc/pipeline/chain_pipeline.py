@@ -1,16 +1,15 @@
-"""Orchestrator for chain BD simulations launched via input.xml.
+"""Orchestrator for chain Brownian-dynamics simulations launched from input.xml.
 
-When pystarc.pipeline.input_parser.parse() returns a PySTARCConfig
-with .chain set (i.e. the input.xml contained a <chain> block),
-run_pystarc.py delegates to run_chain() here. This mirrors
-pystarc.pipeline.pipeline.run() for rigid-body BD: it loads the
-chain topology, target structure, reaction pairs, and APBS grids;
-constructs a ChainBDSimulator; runs the trajectories; and writes
-outputs to the work_dir.
+When pystarc.pipeline.input_parser.parse() returns a PySTARCConfig whose .chain
+field is set, meaning the input.xml contained a <chain> block, run_pystarc.py
+delegates to run_chain() defined here. This follows the same flow as
+pystarc.pipeline.pipeline.run() for rigid-body BD. It loads the chain topology,
+the target structure, the reaction pairs, and the APBS grids, constructs a
+ChainBDSimulator, runs the trajectories, and writes outputs to the work_dir.
 
-For Stage 1, output is the minimal set written by write_chain_results
-(results.json and trajectories.csv). Stage 2 will expand the writer
-to produce the same comprehensive set as the rigid-body work_dir.
+In Stage 1 the output is the minimal set written by write_chain_results, namely
+results.json and trajectories.csv. Stage 2 will extend the writer to produce
+the same comprehensive set of files as the rigid-body work_dir.
 """
 
 from __future__ import annotations
@@ -31,12 +30,12 @@ from pystarc.forces.electrostatic.grid_force import DXGrid
 
 
 def _load_reaction_pairs_json(path: str) -> List[Tuple[int, int, float]]:
-    """Load reaction pairs from a JSON file with format
-    [[target_atom_idx, chain_atom_idx, distance_A], ...].
+    """Load reaction pairs from a JSON file.
 
-    Returns
-    -------
-    list of (target_idx, chain_idx, distance_cutoff) 3-tuples.
+    The file holds a list of entries of the form
+    [[target_atom_idx, chain_atom_idx, distance_A], ...]. The function returns a
+    list of (target_idx, chain_idx, distance_cutoff) three-tuples, where the
+    cutoff distance is given in angstrom.
     """
     p = Path(path)
     if not p.exists():
@@ -59,8 +58,9 @@ def _build_pathway_set(
     n_needed: int,
 ) -> PathwaySet:
     """Convert a list of (target_idx, chain_idx, cutoff_A) tuples into a
-    single-reaction PathwaySet with n_needed contact pairs required to
-    satisfy the criterion.
+    single-reaction PathwaySet. The reaction criterion is satisfied once
+    n_needed of the listed contact pairs are simultaneously within their cutoff
+    distances.
     """
     pairs = [
         ContactPair(t_idx, c_idx, cutoff) for (t_idx, c_idx, cutoff) in reaction_pairs
@@ -75,19 +75,18 @@ def _build_pathway_set(
 
 
 def _ensure_chain_apbs_grids(config: PySTARCConfig) -> None:
-    """If target_grid_dx or born_grid_dx are specified in the chain config
-    but missing on disk, run APBS to generate them using parameters from
-    the top-level PySTARCConfig.
+    """Generate the APBS electrostatic grids if they are needed but absent.
 
-    Mirrors pystarc.pipeline.pipeline.run() step 4 (run_apbs_both) for the
-    rigid-body path. For chain BD we only have a single target molecule
-    (the chain itself is built from sequence, no PQR for it), so we call
-    the single-molecule run_apbs.
+    If target_grid_dx or born_grid_dx are named in the chain config but do not
+    exist on disk, run APBS to create them using parameters drawn from the
+    top-level PySTARCConfig. This plays the same role as the run_apbs_both step
+    in the rigid-body pipeline.run(). In chain BD there is only a single target
+    molecule, since the chain itself is built from sequence and has no PQR file,
+    so the single-molecule run_apbs is called here.
 
-    Convention: target_grid_dx is expected to follow the
-    "{work_dir}/{mol_name}1.dx" pattern produced by run_apbs (the "1" is
-    the fine-grid suffix). mol_name is derived by stripping trailing
-    digits from the filename stem.
+    By convention target_grid_dx follows the "{work_dir}/{mol_name}1.dx" pattern
+    produced by run_apbs, where the trailing "1" marks the fine grid. The
+    mol_name is recovered by stripping trailing digits from the filename stem.
     """
     if config.chain is None:
         return
@@ -147,33 +146,28 @@ def run_chain(
 ) -> Path:
     """Run a chain BD simulation from a parsed PySTARCConfig.
 
-    Parameters
-    ----------
-    config : PySTARCConfig
-        Parsed configuration with config.chain populated. Validation
-        ensures chain_json and receptor_pqr are present.
-    input_xml_path : Path, optional
-        Path to the original input.xml. If provided, a copy is placed
-        in the work_dir for reproducibility, matching the
-        rigid-body convention.
+    The config argument is a parsed configuration with config.chain populated.
+    Validation guarantees that chain_json and receptor_pqr are present. The
+    optional input_xml_path is the path to the original input.xml. When it is
+    given, a copy is placed in the work_dir for reproducibility, following the
+    rigid-body convention.
 
-    Returns
-    -------
-    Path : the work_dir directory containing output files.
+    The function returns the work_dir directory that holds the output files.
     """
     if config.chain is None:
         raise ValueError("run_chain() requires config.chain to be set")
     cc = config.chain
 
-    # Resolve work_dir (matches rigid-body single-run convention).
+    # Resolve the work_dir, following the rigid-body single-run convention.
     work_dir = Path(config.work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy input.xml into work_dir for reproducibility.
+    # Copy input.xml into the work_dir for reproducibility.
     if input_xml_path is not None:
         shutil.copy(str(input_xml_path), str(work_dir / "input.xml"))
 
-    # Load chain topology + initial atom positions (already centered at origin).
+    # Load the chain topology and the initial atom positions, which are already
+    # centered at the origin.
     print(f"Loading chain from {cc.chain_json} ...")
     chain_template, body_positions = load_chain_from_json(cc.chain_json)
     print(
@@ -184,12 +178,12 @@ def run_chain(
         f"{len(chain_template.torsions)} torsions)"
     )
 
-    # Load target structure as Molecule.
+    # Load the target structure as a Molecule.
     print(f"Loading target from {config.receptor_pqr} ...")
     target_mol = parse_pqr(config.receptor_pqr)
     print(f"  target: {target_mol}")
 
-    # Load reaction pairs from JSON and convert to PathwaySet.
+    # Load the reaction pairs from JSON and convert them to a PathwaySet.
     if not cc.reaction_pairs_json:
         raise ValueError("<chain><reaction_pairs_json> is required in chain BD mode")
     print(f"Loading reaction pairs from {cc.reaction_pairs_json} ...")
@@ -200,11 +194,11 @@ def run_chain(
         f"(n_needed={cc.reaction_n_needed})"
     )
 
-    # If grids are specified but missing on disk, generate them via APBS.
-    # Mirrors rigid-body pipeline.run() step 4.
+    # If the grids are named but missing on disk, generate them with APBS, just
+    # as the rigid-body pipeline.run() does.
     _ensure_chain_apbs_grids(config)
 
-    # Load APBS grids if specified.
+    # Load the APBS grids if they were specified.
     target_grid = None
     born_grid = None
     if cc.target_grid_dx:
@@ -214,10 +208,11 @@ def run_chain(
         print(f"Loading Born grid {cc.born_grid_dx} ...")
         born_grid = DXGrid.from_file(cc.born_grid_dx)
 
-    # Resolve r_escape sentinel: 0 means 2.0 * r_start (LMZ convention; matches rigid pipeline).
+    # Resolve the r_escape sentinel. A value of 0 means 2.0 × r_start, the LMZ
+    # convention, which matches the rigid-body pipeline.
     r_escape = cc.r_escape if cc.r_escape > 0.0 else (config.bd_milestone_radius * 2.0)
 
-    # Validate diffusion mode.
+    # Validate the diffusion mode.
     if cc.auto_diffusion and (cc.D_trans > 0.0 or cc.D_rot > 0.0):
         raise ValueError(
             "auto_diffusion cannot be combined with explicit D_trans or D_rot. "
@@ -225,7 +220,7 @@ def run_chain(
             "set D_trans and D_rot explicitly."
         )
 
-    # Build ChainBDParameters.
+    # Build the ChainBDParameters.
     params = ChainBDParameters(
         n_trajectories=config.n_trajectories,
         dt=config.dt,
@@ -250,12 +245,14 @@ def run_chain(
         debye_length=config.debye_length,
     )
 
-    # Resolve scalar D when auto_diffusion is False; pass None to the simulator
-    # for unspecified values so it applies its own defaults.
+    # Resolve the scalar diffusion coefficients when auto_diffusion is off. Pass
+    # None to the simulator for any value left unspecified so that it applies
+    # its own defaults.
     d_trans = cc.D_trans if cc.D_trans > 0.0 else None
     d_rot = cc.D_rot if cc.D_rot > 0.0 else None
 
-    # Construct the simulator. auto_diffusion vs explicit D is exclusive.
+    # Construct the simulator. Automatic diffusion and explicit D are mutually
+    # exclusive.
     print("Constructing ChainBDSimulator ...")
     sim_kwargs = dict(
         target=target_mol,
@@ -272,20 +269,20 @@ def run_chain(
     else:
         sim_kwargs["D_trans"] = d_trans
         sim_kwargs["D_rot"] = d_rot
-    # Thread OutputConfig through so the simulator records the right
-    # diagnostic cadence (Stage 2 instrumentation).
+    # Pass the OutputConfig through so the simulator records diagnostics at the
+    # correct cadence, which is part of the Stage 2 instrumentation.
     sim_kwargs["outputs"] = config.outputs
 
     sim = ChainBDSimulator(**sim_kwargs)
 
-    # Run.
+    # Run the trajectories.
     print(f"Running {config.n_trajectories} trajectories ...")
     t_start = time.time()
     results = sim.run()
     wall_time_sec = time.time() - t_start
     print(f"  done: {len(results)} trajectories in {wall_time_sec:.2f}s")
 
-    # Write outputs.
+    # Write the outputs.
     written = write_chain_results(
         work_dir=work_dir,
         sim=sim,
