@@ -135,22 +135,30 @@ def _parse_whitespace(line: str, record_type: str) -> Optional[PQRRecord]:
 
     This is the fallback for lines whose columns do not line up with the PDB
     specification, for example when collapsed spacing merges adjacent numeric
-    fields. The chain column is detected by checking whether the fifth token is
-    an integer (no chain) or the sixth token is an integer (chain present), and
-    the remaining fields are read relative to that offset.
+    fields. The chain column is detected from the structure of the residue and
+    coordinate tokens rather than from whether the fifth token alone looks
+    numeric, which keeps numeric chain identifiers from being misread as the
+    residue index. After the optional chain the layout is fixed as resid, x, y,
+    z, charge, radius, with resid an integer and the coordinates floating point
+    values that always carry a decimal point. A chain column is therefore
+    present when the sixth token is an integer residue index, regardless of
+    whether the fifth token is alphabetic or numeric. No chain is present when
+    the fifth token is the integer residue index and the sixth token is the x
+    coordinate, which is not an integer. The remaining fields are read relative
+    to the resulting offset.
     """
     parts = line.split()
     if len(parts) < 10:
         return None
     try:
-        if _is_int(parts[4]):
-            chain = ""
-            resid = int(parts[4])
-            off = 5
-        elif len(parts) >= 11 and _is_int(parts[5]):
+        if len(parts) >= 11 and _is_int(parts[5]):
             chain = parts[4]
             resid = int(parts[5])
             off = 6
+        elif _is_int(parts[4]):
+            chain = ""
+            resid = int(parts[4])
+            off = 5
         else:
             return None
         serial = int(parts[1]) if _is_int(parts[1]) else 0
