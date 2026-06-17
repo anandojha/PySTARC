@@ -347,7 +347,7 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
         overlap_check=get("overlap_check", default=True, cast=bool),
         multipole_fallback=get("multipole_fallback", default=True, cast=bool),
         lj_forces=get("lj_forces", default=False, cast=bool),
-        enable_born2_torque=get("enable_born2_torque", default=False, cast=bool),
+        enable_born2_torque=get("enable_born2_torque", default=True, cast=bool),
         checkpoint_interval=get("checkpoint_interval", default=0, cast=int),
         convergence_interval=get("convergence_interval", default=10, cast=int),
         convergence_check=get("convergence_check", default=True, cast=bool),
