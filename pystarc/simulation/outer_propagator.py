@@ -352,13 +352,14 @@ class OuterPropagator:
                 L = self.debye_len
                 D0 = self._D_parallel(r)
                 # Choose the time step from the gradient of the force.
-                V = self.V_factor * math.exp(-r / L) / r
-                Fr1 = -V / L**2 - 2.0 * Fr0 / r
+                Fr1 = (
+                    -(self.V_factor * math.exp(-r / L) / r) * (1.0 / r + 1.0 / L) ** 2
+                    - 2.0 * Fr0 / r
+                )
                 alpha = 0.01
                 if self.has_hi:
                     rm1 = 1.0 / r
-                    Di = (self.D_factor / PI6) * (-3.0 / r + 2.0 * self.a2 / (r**3))
-                    D1 = -3.0 * Di * rm1 - self.D_factor * rm1**2 / PI
+                    D1 = -3.0 * D0 * rm1 - self.D_factor * rm1**2 / PI
                     D2 = -4.0 * D1 * rm1 + self.D_factor * rm1**3 / PI
                     D3 = -5.0 * D2 * rm1 - 2.0 * self.D_factor * rm1**4 / PI
                     if abs(Fr0) > 0 and r < 3.0 * L:
