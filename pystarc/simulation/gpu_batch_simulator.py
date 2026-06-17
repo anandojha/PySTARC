@@ -1919,9 +1919,12 @@ class GPUBatchSimulator:
             ],
             axis=1,
         )  # (N,4)
-        # Quaternion multiplication q × dq.
-        w1, x1, y1, z1 = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
-        w2, x2, y2, z2 = dq[:, 0], dq[:, 1], dq[:, 2], dq[:, 3]
+        # Quaternion multiplication q_new = dq ⊗ q. The angular increment omega
+        # (torque drift plus noise) is expressed in the lab frame, so the
+        # increment is applied as a left product, matching the return-snap path
+        # and the analytic Langevin equilibrium for a dipole in a field.
+        w1, x1, y1, z1 = dq[:, 0], dq[:, 1], dq[:, 2], dq[:, 3]
+        w2, x2, y2, z2 = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
         qnew = cp.stack(
             [
                 w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
