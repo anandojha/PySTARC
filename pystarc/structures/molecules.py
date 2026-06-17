@@ -267,11 +267,14 @@ class ReactionCriteria:
         atoms and counting the pair as satisfied when that distance is below the
         pair's cutoff. The criterion is met as soon as the count of satisfied pairs
         reaches the threshold, which is n_needed when set and otherwise the total
-        number of pairs. A criterion with no required contacts is always satisfied.
+        number of pairs. A criterion with an effective threshold of zero, meaning
+        n_needed is set to 0 or n_needed is left negative while the pair list is
+        empty, can never fire. This matches BrownDye2, which reports such an empty
+        or zero-needed criterion as not satisfied.
         """
         threshold = len(self.pairs) if self.n_needed < 0 else self.n_needed
         if threshold == 0:
-            return True
+            return False
         n_satis = 0
         n1 = len(mol1.atoms)
         n2 = len(mol2.atoms)
