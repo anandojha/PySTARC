@@ -20841,3 +20841,32 @@ def test_combine_pool_p_commit_uses_count_pooling(tmp_path):
     # Bin 0: (0.2*10 + 0.2*30) / 40 = 0.2 ; Bin 1: (0.5*4 + 0) / 4 = 0.5
     np.testing.assert_allclose(out["p_commit"], [0.2, 0.5])
     np.testing.assert_allclose(out["n_samples"], [40.0, 4.0])
+
+
+def test_we_rate_constant_uses_nam_unit_convention():
+    """The weighted-ensemble k_on must use the same A^3/ps to M^-1 s^-1 factor
+    (6.022e8) as the single-trajectory pipeline, so it equals
+    6.022e8 * (4 pi D r) * P_rxn / (1 - P_rxn (1 - r_start/r_escape)) and lands in
+    a physical range rather than three orders of magnitude too large."""
+    import math
+    from pystarc.simulation.we_simulator import WEResult
+
+    res = WEResult(
+        n_iterations=10,
+        n_per_bin=10,
+        n_bins=5,
+        flux_reaction=0.0,
+        flux_escape=0.0,
+        weight_reacted=0.3,
+        weight_escaped=0.7,
+        r_start=50.0,
+        r_escape=60.0,
+        dt=0.2,
+    )
+    D_rel = 0.02
+    P = res.reaction_probability
+    k_b = 4.0 * math.pi * D_rel * res.r_start
+    denom = 1.0 - P * (1.0 - res.r_start / res.r_escape)
+    expected = 6.022e8 * k_b * P / denom
+    assert math.isclose(res.rate_constant(D_rel), expected, rel_tol=1e-12)
+    assert 1e8 < res.rate_constant(D_rel) < 1e11

@@ -164,18 +164,23 @@ class WEResult:
 
     def rate_constant(self, D_rel: float) -> float:
         """
-        Return k_on from the weighted ensemble run, using the NAM Smoluchowski
-        formula evaluated with the weighted ensemble reaction probability P_rxn.
+        Return k_on in M^-1 s^-1 from the weighted ensemble run.
+
+        The weighted ensemble reaction probability P_rxn is combined with the
+        diffusion-limited encounter rate at the b-surface through the
+        Northrup-Allison-McCammon finite-escape expression. The encounter rate is
+        the Smoluchowski steady-state rate k_b = 4 pi D r in units of A^3/ps,
+        evaluated from the relative diffusion coefficient D_rel and the b-surface
+        radius r_start. The factor 6.022e8 converts A^3/ps to M^-1 s^-1, the same
+        convention used in the single-trajectory pipeline.
         """
         P = self.reaction_probability
         if P == 0.0:
             return 0.0
-        D_cm2_s = D_rel * 1e-4
-        r_cm = self.r_start * 1e-8
-        k_D = 4.0 * math.pi * D_cm2_s * r_cm * 6.022e23
+        k_b = 4.0 * math.pi * D_rel * self.r_start  # A^3/ps
         beta = self.r_start / self.r_escape
         denom = 1.0 - P * (1.0 - beta)
-        return k_D * P / denom
+        return 6.022e8 * k_b * P / denom
 
     def __repr__(self) -> str:
         return (
