@@ -16198,23 +16198,40 @@ class TestNAMBrownianBridge:
         assert result.n_trajectories == 5
 
     def test_bridge_monotonicity_serial(self):
-        """Serial path: bridge ON must produce at least as many
-        reactions as bridge OFF.
+        """With the bridge on, every trajectory that reacts with the bridge off
+        must also react, and the total can only be greater or equal.
 
-        Bridge sampling uses an independent rng_bb stream, so the main
-        trajectory rng is identical between the two runs. Bridge_off
-        reactions are exactly the endpoint-fired ones; bridge_on adds
-        bridge-fired reactions on top. Strict monotonicity:
-        bridge_on.n_reacted >= bridge_off.n_reacted.
+        Each trajectory is run from its own identically seeded main rng in both
+        the bridge-off and bridge-on runs, while the bridge draws its crossing
+        samples from a separate rng_bb stream. The two runs therefore follow the
+        same main trajectory, so the bridge can only add a reaction (by catching
+        a mid-step crossing), never remove one. Seeding per trajectory avoids the
+        shared continuous serial rng, whose consumption otherwise differs between
+        the two runs once the bridge ends a trajectory early, which would
+        desynchronise all later trajectories.
         """
-        sim_off = self._build_nam_sim(use_bb=False, n_threads=1, n_traj=20, seed=7)
-        sim_on = self._build_nam_sim(use_bb=True, n_threads=1, n_traj=20, seed=7)
-        res_off = sim_off.run()
-        res_on = sim_on.run()
-        assert res_on.n_reacted >= res_off.n_reacted, (
-            f"bridge fewer reactions than no-bridge in serial: "
-            f"on={res_on.n_reacted}, off={res_off.n_reacted}"
-        )
+        import numpy as np
+        from pystarc.molsystem.system_state import Fate
+
+        n_traj, seed = 20, 7
+        sim_off = self._build_nam_sim(use_bb=False, n_threads=1, n_traj=1, seed=seed)
+        sim_on = self._build_nam_sim(use_bb=True, n_threads=1, n_traj=1, seed=seed)
+        on_count = off_count = 0
+        for idx in range(n_traj):
+            base = seed + idx
+            for sim in (sim_off, sim_on):
+                sim.rng = np.random.default_rng(base)
+                sim.rng_bb = np.random.default_rng(base + 0xBB)
+            r_off = sim_off.run_one()
+            r_on = sim_on.run_one()
+            off_reacted = r_off.fate == Fate.REACTED
+            on_reacted = r_on.fate == Fate.REACTED
+            off_count += int(off_reacted)
+            on_count += int(on_reacted)
+            assert not (off_reacted and not on_reacted), (
+                f"trajectory {idx}: reacted without the bridge but not with it"
+            )
+        assert on_count >= off_count, f"on={on_count}, off={off_count}"
 
     def test_bridge_monotonicity_parallel(self):
         """Parallel path (_run_trajectory_worker, n_threads=2): bridge
