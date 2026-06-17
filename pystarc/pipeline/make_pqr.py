@@ -146,6 +146,27 @@ def make_combined_pqr(prmtop_path: Path, complex_pdb: Path, work_dir: Path) -> P
         cwd=work_dir,
         step="ambpdb",
     )
+    # Confirm that ambpdb actually produced usable output. The shell redirection
+    # has no built in success check, so a silent failure would leave an empty or
+    # missing file that only surfaces as a confusing error later in split_pqr.
+    # Verify the file exists and holds at least one atom record here so that the
+    # failure is reported at its source.
+    if not combined_pqr.exists():
+        raise RuntimeError(
+            f"Step 'ambpdb' produced no output file at {combined_pqr}. Check that "
+            f"ambpdb is installed and that the topology and coordinate files are valid."
+        )
+    has_atom = False
+    with open(combined_pqr) as f:
+        for line in f:
+            if line.startswith("ATOM") or line.startswith("HETATM"):
+                has_atom = True
+                break
+    if not has_atom:
+        raise RuntimeError(
+            f"Step 'ambpdb' wrote {combined_pqr} but it contains no ATOM or HETATM "
+            f"records. Check that the topology and coordinate files are valid."
+        )
     # Remove the intermediate files.
     for f in [cpptraj_in, inpcrd]:
         f.unlink(missing_ok=True)
