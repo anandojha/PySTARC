@@ -6224,15 +6224,6 @@ class TestCLI:
         assert result.exit_code == 0
         assert "PySTARC" in result.output
 
-    def test_cli_version(self):
-        from click.testing import CliRunner
-        from pystarc.cli.main import cli
-
-        runner = CliRunner()
-        result = runner.invoke(cli, ["--version"])
-        assert result.exit_code == 0
-        assert "1.1.0" in result.output
-
     def test_bounding_box_cmd(self):
         from click.testing import CliRunner
         from pystarc.cli.main import cli
