@@ -69,6 +69,10 @@ def nam_simulation(mol1, mol2, rxn, n, dt, r_start, dx, seed, verbose, output):
             force = np.zeros(3)
             torque = np.zeros(3)
             energy = 0.0
+            # The centroid of mol_2 does not change during this call, so it is
+            # computed once here rather than once per atom. This is a pure
+            # performance hoist and does not change the numerical result.
+            centroid = mol_2.centroid()
             for grid in grids:
                 for atom in mol_2.atoms:
                     if abs(atom.charge) < 1e-9:
@@ -79,7 +83,7 @@ def nam_simulation(mol1, mol2, rxn, n, dt, r_start, dx, seed, verbose, output):
                     # The torque is the cross product r × f, where r is the
                     # atom position relative to the molecule centroid and f is
                     # the force on the atom.
-                    r = atom.position - mol_2.centroid()
+                    r = atom.position - centroid
                     torque += np.cross(r, f)
             return force, torque, energy
 
