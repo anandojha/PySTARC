@@ -42,7 +42,6 @@ GPU-accelerated rigid-body and flexible chain Brownian dynamics for bimolecular 
 - [Testing](#testing)
 - [Quick start](#quick-start)
 - [Examples](#examples)
-- [FAQ](#faq)
 - [Requirements](#requirements)
 - [License](#license)
 - [Citation](#citation)
@@ -144,31 +143,6 @@ examples/
 ├── ttk_inhibitors/                   Protein-ligand (8 TTK/MPS1 kinase inhibitors)
 └── trypsin_benzamidine_multi_GPUs/   Cluster SLURM demo (single-GPU and multi-GPU)
 ```
-
-## FAQ
-
-**Do I need a GPU to run PySTARC?**
-No. PySTARC falls back to NumPy on CPU when CuPy is unavailable. Single-GPU runs are roughly 50 to 200 times faster than CPU for protein-scale systems, so a CUDA 12+ GPU is recommended for production.
-
-**Which GPU hardware is supported?**
-Any NVIDIA GPU with CUDA 12+ and sufficient memory (16 GB or more is recommended for protein-protein complexes with fine APBS grids). PySTARC has been run on RTX 6000 Ada, A100, H100, and Quadro RTX 5000.
-
-**How long does a typical simulation take?**
-On a single RTX 6000 Ada:
-- Small systems (≤50 atoms, 1M trajectories): under 20 minutes
-- Protein-ligand (≤5000 atoms, 10M trajectories): 2 to 4 hours
-- Protein-protein (≤10000 atoms, 5M trajectories): 6 to 12 hours
-
-Multi-GPU runs scale approximately linearly across 2 to 8 GPUs on one node.
-
-**My simulation hangs at APBS grid generation.**
-This is usually a problem with the PQR charges or with grid dimensions exceeding GPU memory. Check that `receptor.pqr` and `ligand.pqr` carry correct AMBER partial charges, and reduce `fine_grid_length` or `dime` if the grid is too large.
-
-**How do I choose the b-surface radius and reaction criterion?**
-See [`examples/PARAMETERS.md`](examples/PARAMETERS.md), which covers b-surface sizing, reaction-criterion construction, and adaptive timestep selection for each benchmark complex.
-
-**I get a CUDA out-of-memory error.**
-Reduce `n_trajectories_per_batch` in `input.xml`, lower the APBS grid dimension (`dime`), or use a smaller `fine_grid_length`. GPU memory scales with both the trajectory count and the grid size.
 
 ## Requirements
 
