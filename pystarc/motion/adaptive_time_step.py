@@ -84,7 +84,8 @@ def max_time_step(
     # D_factor = kT/μ the viscosity factor, which we approximate here as
     # dt_size ≈ r_hydro² / D_rel.
     r_min = min(r_hydro1, r_hydro2)
-    dt_size = 4.0 * r_min**2 / D_rel if D_rel > 0 else _LARGE
+    # D_rel > 0 is guaranteed by the early return above, so no fallback is needed here.
+    dt_size = 4.0 * r_min**2 / D_rel
     return min(dt_pair, dt_rot, dt_size)
 
 
