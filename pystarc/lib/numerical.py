@@ -145,6 +145,8 @@ def quadrupole_moment(positions: np.ndarray, charges: np.ndarray) -> np.ndarray:
 
 def legendre_p(n: int, x: float) -> float:
     """Evaluate the Legendre polynomial Pₙ(x) using the standard three-term recurrence."""
+    if n < 0:
+        raise ValueError(f"legendre_p requires a nonnegative degree n, got n={n}.")
     if n == 0:
         return 1.0
     if n == 1:
