@@ -107,8 +107,28 @@ class DXGrid:
         self.delta = np.asarray(delta, dtype=float)  # (3,3)
         self.data = np.asarray(data, dtype=float)
         self.shape = np.array(self.data.shape)
-        # Inverse grid spacing along each axis, used for fast index lookup. This assumes an orthogonal grid.
-        self._inv_dx = 1.0 / np.diag(self.delta)
+        # Inverse grid spacing along each axis, used for fast index lookup. This
+        # assumes an orthogonal grid, so validate that assumption before using
+        # the diagonal alone. The index lookup and interpolation only consume
+        # the diagonal spacings, so a non-orthogonal grid or a non-positive
+        # spacing would be silently mishandled without these guards.
+        diag = np.diag(self.delta)
+        for axis, spacing in enumerate(diag):
+            if not spacing > 0.0:
+                raise ValueError(
+                    f"Grid spacing along axis {axis} must be strictly positive, "
+                    f"got {spacing}."
+                )
+        off_diagonal = self.delta - np.diag(diag)
+        max_off = float(np.max(np.abs(off_diagonal)))
+        tol = 1e-9 * float(np.max(np.abs(diag)))
+        if max_off > tol:
+            raise ValueError(
+                "Grid is not orthogonal: the off-diagonal entries of delta must "
+                f"be approximately zero, but the largest is {max_off} (tolerance "
+                f"{tol}). This interpolator only supports orthogonal grids."
+            )
+        self._inv_dx = 1.0 / diag
 
     @classmethod
     def from_file(cls, path: str | Path) -> "DXGrid":
@@ -145,7 +165,14 @@ class DXGrid:
                     if line.startswith("object") or line.startswith("attribute"):
                         break
                     raw_values.extend(float(v) for v in line.split())
-        data = np.array(raw_values, dtype=float).reshape(shape[0], shape[1], shape[2])
+        nx, ny, nz = int(shape[0]), int(shape[1]), int(shape[2])
+        expected = nx * ny * nz
+        if len(raw_values) != expected:
+            raise ValueError(
+                f"Malformed DX file {path}: expected {expected} grid values "
+                f"({nx} x {ny} x {nz}) but read {len(raw_values)}."
+            )
+        data = np.array(raw_values, dtype=float).reshape(nx, ny, nz)
         return cls(origin, delta, data)
 
     def _to_fractional(self, point: np.ndarray) -> np.ndarray:
