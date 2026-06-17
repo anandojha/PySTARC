@@ -8,3 +8,4 @@ rdkit
 cupy-cuda12x
 pytest
 pytest-cov
+pytest-sugar

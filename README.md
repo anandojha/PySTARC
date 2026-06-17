@@ -114,7 +114,8 @@ pip install dist/pystarc-1.1.0-py3-none-any.whl --force-reinstall
 ## Testing
 
 ```bash
-python -m pytest tests/ -v
+python -m pytest tests/                 # animated progress bar with a tick per test (pytest-sugar)
+python -m pytest tests/ -v              # one PASSED/FAILED line per test with a percent counter
 ```
 
 ## Quick start
