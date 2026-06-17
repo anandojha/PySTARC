@@ -1624,14 +1624,15 @@ class GPUBatchSimulator:
                     _energy_data.append(_esnap)
             # Progress report.
             done = int((status != 0).sum())
-            # Exit early under two conditions so that stragglers do not drag out
-            # the run. The first is to stop once at least 99.5% of trajectories
-            # are done, marking the rest as max-steps. The second is stall
-            # detection: if more than 95% are done and there has been no progress
-            # in 10k steps, stop, which catches trajectories trapped in deep
-            # potential wells.
-            if done >= int(N * 0.995):
-                break
+            # The run is bounded by max_steps and by stall detection below. A
+            # hard 99.5% early-exit was removed because it marked the slowest
+            # still-running trajectories as max-steps and excluded them from
+            # P_rxn. Those stragglers linger near the receptor and are
+            # disproportionately reaction-bound, so excluding them biased k_on
+            # downward. Stall detection still stops genuinely trapped runs: if
+            # more than 95% are done and there has been no progress in 10k steps,
+            # the run stops, which catches trajectories trapped in deep potential
+            # wells.
             if step > 0 and step % 10000 == 0:
                 if done > int(N * 0.95) and done - _stall_done < max(2, int(N * 0.001)):
                     print(
