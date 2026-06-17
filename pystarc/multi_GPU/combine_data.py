@@ -199,10 +199,30 @@ def main():
     # Combine the per-shard CSV files. Tables of one row per trajectory are
     # concatenated with their trajectory ids reindexed so they stay unique,
     # while histogram-style tables are summed bin by bin.
-    _concat_csv(dirs_valid, "trajectories.csv", bd_sims, reindex="traj_id")
-    _concat_csv(dirs_valid, "encounters.csv", bd_sims, reindex="traj_id")
-    _concat_csv(dirs_valid, "near_misses.csv", bd_sims, reindex="traj_id")
-    _concat_csv(dirs_valid, "fpt_distribution.csv", bd_sims, reindex="traj_id")
+    # The reindex offset for each shard is the total number of trajectories run
+    # by the earlier shards, so a trajectory keeps one consistent id across every
+    # combined table and archive.
+    traj_offsets = []
+    running = 0
+    for r in runs:
+        traj_offsets.append(running)
+        running += int(r.get("n_trajectories", 0))
+    _concat_csv(
+        dirs_valid, "trajectories.csv", bd_sims, reindex="traj_id", offsets=traj_offsets
+    )
+    _concat_csv(
+        dirs_valid, "encounters.csv", bd_sims, reindex="traj_id", offsets=traj_offsets
+    )
+    _concat_csv(
+        dirs_valid, "near_misses.csv", bd_sims, reindex="traj_id", offsets=traj_offsets
+    )
+    _concat_csv(
+        dirs_valid,
+        "fpt_distribution.csv",
+        bd_sims,
+        reindex="traj_id",
+        offsets=traj_offsets,
+    )
     _concat_csv(dirs_valid, "pose_clusters.csv", bd_sims)
     _sum_csv(
         dirs_valid,
@@ -228,9 +248,23 @@ def main():
     )
     # Combine the per-shard NPZ archives, concatenating the trajectory data
     # arrays and summing the binned counts and matrices.
-    _concat_npz(dirs_valid, "paths.npz", bd_sims, data_key="data", meta_key="columns")
     _concat_npz(
-        dirs_valid, "energetics.npz", bd_sims, data_key="data", meta_key="columns"
+        dirs_valid,
+        "paths.npz",
+        bd_sims,
+        data_key="data",
+        meta_key="columns",
+        reindex_col="traj_id",
+        offsets=traj_offsets,
+    )
+    _concat_npz(
+        dirs_valid,
+        "energetics.npz",
+        bd_sims,
+        data_key="data",
+        meta_key="columns",
+        reindex_col="traj_id",
+        offsets=traj_offsets,
     )
     _sum_npz(
         dirs_valid,
@@ -243,12 +277,10 @@ def main():
         dirs_valid,
         "transition_matrix.npz",
         bd_sims,
-        sum_key="matrix",
-        copy_keys=["milestones"],
+        sum_key="counts",
+        copy_keys=["bins"],
     )
-    _sum_npz(
-        dirs_valid, "p_commit.npz", bd_sims, sum_key="counts", copy_keys=["milestones"]
-    )
+    _pool_p_commit(dirs_valid, "p_commit.npz", bd_sims)
     # Write a separate convergence report summarising the pooled statistics and
     # whether the relative standard error has dropped below the 5% tolerance.
     conv = {
@@ -279,21 +311,25 @@ def _save_json(data, path):
     print(f"    {os.path.basename(path)}")
 
 
-def _concat_csv(dirs, filename, out_dir, reindex=None):
+def _concat_csv(dirs, filename, out_dir, reindex=None, offsets=None):
     """Concatenate the same CSV file from several shard directories into one.
 
     The rows from every shard are stacked in order. When a reindex column is
     given (typically the trajectory id), its values are offset shard by shard so
-    that every trajectory keeps a unique id in the combined table. Shards that do
-    not contain the file are skipped, and nothing is written if no rows are found.
+    that every trajectory keeps a unique id in the combined table. The offset for
+    shard i is offsets[i], the total number of trajectories run by the earlier
+    shards, which keeps the ids consistent with the other combined tables and
+    archives regardless of how many rows each shard contributes to this file.
+    Shards that do not contain the file are skipped, and nothing is written if no
+    rows are found.
     """
     rows = []
-    offset = 0
     header = None
-    for d in dirs:
+    for i, d in enumerate(dirs):
         fpath = os.path.join(d, filename)
         if not os.path.exists(fpath):
             continue
+        offset = offsets[i] if (reindex and offsets is not None) else 0
         with open(fpath) as f:
             reader = csv.DictReader(f)
             if reader.fieldnames is None:
@@ -303,8 +339,6 @@ def _concat_csv(dirs, filename, out_dir, reindex=None):
                 if reindex and reindex in row:
                     row[reindex] = str(int(row[reindex]) + offset)
                 rows.append(row)
-        if reindex:
-            offset = len(rows)
     if not rows:
         return
     out_path = os.path.join(out_dir, filename)
@@ -386,25 +420,40 @@ def _sum_csv(
     print(f"    {filename} ({len(rows):,} rows)")
 
 
-def _concat_npz(dirs, filename, out_dir, data_key="data", meta_key="columns"):
+def _concat_npz(
+    dirs,
+    filename,
+    out_dir,
+    data_key="data",
+    meta_key="columns",
+    reindex_col=None,
+    offsets=None,
+):
     """Concatenate the data array from the same NPZ file across shards.
 
     The array stored under data_key is read from every shard and stacked along
     its first axis. The metadata stored under meta_key (for example the column
     names) is taken from the first shard that has it and carried through
-    unchanged, since it is the same for every shard.
+    unchanged, since it is the same for every shard. When reindex_col names one
+    of the columns (typically the trajectory id), the values in that column are
+    offset by offsets[i] for shard i, so the ids match the combined CSV tables.
     """
     arrays = []
     meta = None
-    for d in dirs:
+    for i, d in enumerate(dirs):
         fpath = os.path.join(d, filename)
         if not os.path.exists(fpath):
             continue
         npz = np.load(fpath, allow_pickle=True)
-        if data_key in npz:
-            arrays.append(npz[data_key])
         if meta is None and meta_key in npz:
             meta = npz[meta_key]
+        if data_key in npz:
+            arr = np.array(npz[data_key])
+            if reindex_col is not None and offsets is not None and meta_key in npz:
+                cols = [str(c) for c in npz[meta_key]]
+                if reindex_col in cols and arr.ndim == 2:
+                    arr[:, cols.index(reindex_col)] += offsets[i]
+            arrays.append(arr)
     if not arrays:
         return
     combined = np.concatenate(arrays, axis=0)
@@ -447,6 +496,45 @@ def _sum_npz(dirs, filename, out_dir, sum_key, copy_keys=None):
     save_dict.update(copies)
     np.savez(out_path, **save_dict)
     print(f"    {filename} ({sum_key}: {total.shape})")
+
+
+def _pool_p_commit(dirs, filename, out_dir):
+    """Pool the commitment probability across shards by summing counts.
+
+    Each shard's p_commit.npz stores the per-bin reaction probability p_commit
+    and the per-bin sample count n_samples over a shared set of radial bins
+    r_bins. Probabilities cannot be averaged across shards, so the per-bin
+    reacted count is recovered as p_commit times n_samples, the reacted counts
+    and the sample counts are each summed across shards, and the pooled
+    probability is the summed reacted count divided by the summed sample count.
+    """
+    r_bins = None
+    reacted = None
+    n_total = None
+    for d in dirs:
+        fpath = os.path.join(d, filename)
+        if not os.path.exists(fpath):
+            continue
+        npz = np.load(fpath, allow_pickle=True)
+        if "p_commit" not in npz or "n_samples" not in npz:
+            continue
+        n = np.array(npz["n_samples"], dtype=float)
+        rc = np.array(npz["p_commit"], dtype=float) * n
+        reacted = rc if reacted is None else reacted + rc
+        n_total = n if n_total is None else n_total + n
+        if r_bins is None and "r_bins" in npz:
+            r_bins = npz["r_bins"]
+    if n_total is None:
+        return
+    pooled = np.divide(
+        reacted, n_total, out=np.zeros_like(reacted), where=n_total > 0
+    )
+    out_path = os.path.join(out_dir, filename)
+    save_dict = {"p_commit": pooled, "n_samples": n_total}
+    if r_bins is not None:
+        save_dict["r_bins"] = r_bins
+    np.savez(out_path, **save_dict)
+    print(f"    {filename} (p_commit: {pooled.shape})")
 
 
 if __name__ == "__main__":

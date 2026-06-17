@@ -185,6 +185,7 @@ from pystarc.structures.molecules import (
 from pystarc.multi_GPU.combine_data import (
     _concat_csv,
     _concat_npz,
+    _pool_p_commit,
     _save_json,
     _sum_csv,
     _sum_npz,
@@ -6719,7 +6720,9 @@ class TestCombineDataHelpers:
                 w = csv.DictWriter(f, fieldnames=["traj_id", "fate"])
                 w.writeheader()
                 w.writerow({"traj_id": "0", "fate": "escaped"})
-            _concat_csv([d1, d2], "traj.csv", td, reindex="traj_id")
+            _concat_csv(
+                [d1, d2], "traj.csv", td, reindex="traj_id", offsets=[0, 1]
+            )
             with open(os.path.join(td, "traj.csv")) as f:
                 rows = list(csv.DictReader(f))
             assert len(rows) == 2
@@ -20737,3 +20740,104 @@ def test_run_cmd_does_not_interpret_shell_redirection(tmp_path):
     returned = run_cmd(cmd, step="redir", cwd=tmp_path)
     assert not target.exists()
     assert ">" in returned
+
+
+def test_combine_concat_csv_offsets_keep_traj_ids_unique(tmp_path):
+    """When concatenating multi-row-per-trajectory shard tables, the trajectory
+    id of each shard must be offset by the number of trajectories run by the
+    earlier shards, not by the number of rows already written, so ids stay unique
+    and consistent across files even when a shard contributes several rows per
+    trajectory."""
+    import csv
+
+    d0 = tmp_path / "bd_0"
+    d1 = tmp_path / "bd_1"
+    d0.mkdir()
+    d1.mkdir()
+    # Shard 0 ran 5 trajectories; this file has two rows for trajectory 0.
+    with open(d0 / "encounters.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["traj_id", "d"])
+        w.writeheader()
+        w.writerow({"traj_id": "0", "d": "1"})
+        w.writerow({"traj_id": "0", "d": "2"})
+        w.writerow({"traj_id": "3", "d": "3"})
+    with open(d1 / "encounters.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["traj_id", "d"])
+        w.writeheader()
+        w.writerow({"traj_id": "0", "d": "4"})
+        w.writerow({"traj_id": "2", "d": "5"})
+
+    # Shard 0 ran 5 trajectories, so shard 1's ids are offset by 5.
+    _concat_csv(
+        [str(d0), str(d1)], "encounters.csv", str(tmp_path),
+        reindex="traj_id", offsets=[0, 5],
+    )
+    with open(tmp_path / "encounters.csv") as f:
+        rows = list(csv.DictReader(f))
+    ids = [int(r["traj_id"]) for r in rows]
+    assert ids == [0, 0, 3, 5, 7]  # shard 1 ids 0 and 2 became 5 and 7
+
+
+def test_combine_concat_npz_reindexes_traj_id_column(tmp_path):
+    """_concat_npz must offset the traj_id column by the per-shard trajectory
+    count so the archive ids match the combined CSV tables."""
+    d0 = tmp_path / "bd_0"
+    d1 = tmp_path / "bd_1"
+    d0.mkdir()
+    d1.mkdir()
+    cols = np.array(["traj_id", "step", "x"])
+    np.savez(d0 / "paths.npz", data=np.array([[0.0, 0, 1.0], [1.0, 0, 2.0]]), columns=cols)
+    np.savez(d1 / "paths.npz", data=np.array([[0.0, 0, 3.0]]), columns=cols)
+
+    _concat_npz(
+        [str(d0), str(d1)], "paths.npz", str(tmp_path),
+        data_key="data", meta_key="columns", reindex_col="traj_id", offsets=[0, 5],
+    )
+    out = np.load(tmp_path / "paths.npz", allow_pickle=True)
+    assert out["data"].shape == (3, 3)
+    # Shard 1's only trajectory had id 0, offset by 5 -> 5.
+    np.testing.assert_array_equal(out["data"][:, 0], [0.0, 1.0, 5.0])
+
+
+def test_combine_sum_npz_transition_matrix_keys(tmp_path):
+    """The pooled transition matrix must sum the count matrices stored under the
+    writer's keys (bins and counts), rather than keys that do not exist in the
+    file (which would silently drop the output)."""
+    d0 = tmp_path / "bd_0"
+    d1 = tmp_path / "bd_1"
+    d0.mkdir()
+    d1.mkdir()
+    bins = np.linspace(0.0, 10.0, 4)
+    np.savez(d0 / "transition_matrix.npz", bins=bins, counts=np.ones((3, 3)))
+    np.savez(d1 / "transition_matrix.npz", bins=bins, counts=np.full((3, 3), 2.0))
+
+    _sum_npz(
+        [str(d0), str(d1)], "transition_matrix.npz", str(tmp_path),
+        sum_key="counts", copy_keys=["bins"],
+    )
+    out = np.load(tmp_path / "transition_matrix.npz")
+    np.testing.assert_allclose(out["counts"], np.full((3, 3), 3.0))
+    np.testing.assert_allclose(out["bins"], bins)
+
+
+def test_combine_pool_p_commit_uses_count_pooling(tmp_path):
+    """The pooled commitment probability must be the summed reacted count divided
+    by the summed sample count across shards, not an average of the per-shard
+    probabilities."""
+    d0 = tmp_path / "bd_0"
+    d1 = tmp_path / "bd_1"
+    d0.mkdir()
+    d1.mkdir()
+    r_bins = np.linspace(0.0, 5.0, 3)
+    # Bin 0: shard 0 has 2/10 reacted, shard 1 has 6/30 reacted.
+    # Pooled probability is (2 + 6) / (10 + 30) = 8/40 = 0.2, not (0.2 + 0.2)/2.
+    np.savez(d0 / "p_commit.npz", r_bins=r_bins,
+             p_commit=np.array([0.2, 0.5]), n_samples=np.array([10.0, 4.0]))
+    np.savez(d1 / "p_commit.npz", r_bins=r_bins,
+             p_commit=np.array([0.2, 0.0]), n_samples=np.array([30.0, 0.0]))
+
+    _pool_p_commit([str(d0), str(d1)], "p_commit.npz", str(tmp_path))
+    out = np.load(tmp_path / "p_commit.npz")
+    # Bin 0: (0.2*10 + 0.2*30) / 40 = 0.2 ; Bin 1: (0.5*4 + 0) / 4 = 0.5
+    np.testing.assert_allclose(out["p_commit"], [0.2, 0.5])
+    np.testing.assert_allclose(out["n_samples"], [40.0, 4.0])
