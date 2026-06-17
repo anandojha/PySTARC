@@ -20568,3 +20568,46 @@ def test_gpu_yukawa_multipole_force_matches_potential_gradient():
             fd[i] = -(energy_at(x + e) - energy_at(x - e)) / (2.0 * h)
         f = force_at(x)
         assert np.linalg.norm(f - fd) / max(np.linalg.norm(fd), 1e-30) < 1e-5
+
+
+def test_nam_parallel_worker_uses_run_one_with_recycling():
+    """The multiprocessing worker must run the same physics as the serial
+    run_one, including the Luty-McCammon-Zhou outer-region recycling. Driving the
+    worker in-process, each trajectory must match run_one reseeded with the same
+    per-trajectory seed, so any worker that skips recycling or uses a different
+    integrator would diverge from run_one and fail this check."""
+    import numpy as np
+    from pystarc.simulation.nam_simulator import (
+        NAMParameters as _NAMParameters,
+        NAMSimulator as _NAMSimulator,
+        _run_trajectory_worker,
+        _worker_init,
+    )
+
+    mol1 = Molecule(name="m1")
+    mol1.atoms = [Atom(x=0, y=0, z=0, charge=1.0, radius=2.0)]
+    mol2 = Molecule(name="m2")
+    mol2.atoms = [Atom(x=0, y=0, z=0, charge=-1.0, radius=2.0)]
+    mob = MobilityTensor.from_radii(20.0, 20.0)
+    pair = ContactPair(0, 0, 4.0)  # moderate cutoff so trajectories must diffuse
+    ps = PathwaySet([ReactionInterface("rxn", ReactionCriteria(pairs=[pair]))])
+    params = _NAMParameters(
+        n_trajectories=8, r_start=50.0, seed=123, max_steps=4000, verbose=False
+    )
+
+    # The outer propagator must be active, otherwise this test would not exercise
+    # the recycling it is meant to guard.
+    ref = _NAMSimulator(mol1, mol2, mob, ps, params, zero_force)
+    assert ref._outer_prop is not None
+
+    base_seed = params.seed
+    _worker_init(mol1, mol2, mob, ps, params, zero_force)
+    for idx in range(8):
+        worker_result = _run_trajectory_worker(idx)
+        direct = _NAMSimulator(mol1, mol2, mob, ps, params, zero_force)
+        direct.rng = np.random.default_rng(base_seed + idx)
+        direct.rng_bb = np.random.default_rng(base_seed + idx + 0xBB)
+        direct_result = direct.run_one()
+        assert worker_result.fate == direct_result.fate
+        assert worker_result.steps == direct_result.steps
+        assert worker_result.final_separation == direct_result.final_separation

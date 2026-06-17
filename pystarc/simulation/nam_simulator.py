@@ -133,193 +133,37 @@ class NAMParameters:
             self.r_escape = self.r_start * 1.1
 
 
-def _run_trajectory_worker(args):
+# Module-level state for the multiprocessing workers. Each worker process builds
+# one NAMSimulator in its initializer and then reuses it for every trajectory it
+# runs. This lets the parallel path call the same run_one method as the serial
+# path, so the two paths share identical physics, including the
+# Luty-McCammon-Zhou outer-region recycling. Only the random seed differs between
+# trajectories.
+_WORKER_SIM = None
+
+
+def _worker_init(mol1, mol2, mobility, pathway_set, params, force_fn):
     """
-    Run one BD trajectory. This is a top-level function because Python
-    multiprocessing requires the worker to be picklable. Each worker gets its
-    own random number generator seeded as seed + trajectory_index.
+    Build the NAMSimulator that a multiprocessing worker reuses for every
+    trajectory it runs. This runs once when each worker process starts.
     """
-    (
-        mol1,
-        mol2,
-        mol2_pos0,
-        mob,
-        pathway_set,
-        params,
-        force_fn,
-        rxn_cutoffs,
-        traj_idx,
-    ) = args
-    rng = np.random.default_rng((params.seed or 0) + traj_idx)
-    # A separate rng_bb stream (offset by 0xBB) is used for bridge sampling so
-    # that it does not perturb the main rng when comparing runs with the bridge
-    # on against runs with it off.
-    rng_bb = np.random.default_rng((params.seed or 0) + traj_idx + 0xBB)
-    # Each worker gets a private scratch molecule.
-    mol2_scratch = copy.copy(mol2)
-    mol2_scratch.atoms = [copy.copy(a) for a in mol2.atoms]
-    D_r = mob.relative_rotational_diffusion()
-    # Choose a random starting point on the b-sphere.
-    v = rng.standard_normal(3)
-    v /= np.linalg.norm(v)
-    pos = v * params.r_start
-    ori = random_quaternion(rng)
-    # The Brownian bridge state holds the pair distances from the top of the
-    # previous iteration, the dt used in the previous outer step, and the
-    # diffusion coefficient at the start of that step. It is None on the first
-    # iteration. The bridge code path runs only when the flag is True and the
-    # pathway_set has reactions to track.
-    _has_reactions = pathway_set is not None and len(pathway_set.reactions) > 0
-    _bb_active = params.use_brownian_bridge and _has_reactions
-    prev_pair_dists = None
-    prev_dt_outer = 0.0
-    prev_D_eff_bb = 0.0
-    for step in range(params.max_steps):
-        # Place mol2 by rotating its pre-centred positions and translating
-        # them, done in a single vectorised operation.
-        R = ori.to_rotation_matrix()
-        new_pos = (R @ mol2_pos0.T).T + pos
-        for atom, p in zip(mol2_scratch.atoms, new_pos):
-            atom.x = float(p[0])
-            atom.y = float(p[1])
-            atom.z = float(p[2])
-        # Compute the current pair distances when the bridge is active.
-        if _bb_active:
-            cur_pair_dists = compute_pair_distances(
-                mol1,
-                _mol2_positions(mol2_scratch),
-                pathway_set,
-            )
-        else:
-            cur_pair_dists = None
-        # The reaction check is bridge-aware when prior state is available.
-        # Otherwise it is the endpoint-only test through pathway_set.check_all,
-        # which already applies the ghost-atom AND logic.
-        if (
-            _bb_active
-            and prev_pair_dists is not None
-            and cur_pair_dists is not None
-            and prev_dt_outer > 0.0
-            and prev_D_eff_bb > 0.0
-        ):
-            rxn = check_reaction_with_bridge(
-                mol1,
-                mol2_scratch,
-                pathway_set,
-                prev_pair_dists,
-                cur_pair_dists,
-                prev_D_eff_bb,
-                prev_dt_outer,
-                rng,
-                rng_bb=rng_bb,
-            )
-        else:
-            rxn = pathway_set.check_all(mol1, mol2_scratch, rng)
-        if rxn is not None:
-            return TrajectoryResult(
-                Fate.REACTED, step, step * params.dt, float(np.linalg.norm(pos)), rxn
-            )
-        # Check for escape.
-        r = float(np.linalg.norm(pos))
-        if r >= params.r_escape:
-            return TrajectoryResult(Fate.ESCAPED, step, step * params.dt, r)
-        # Evaluate the forces through the force engine.
-        force, torque, _ = force_fn(mol1, mol2_scratch)
-        # With Rotne-Prager-Yamakawa hydrodynamics the relative translational
-        # diffusion depends on position.
-        D_t = mob.relative_translational_diffusion(pos)
-        # Choose the time step using the simple two-value adaptive scheme.
-        rxn_min = min(rxn_cutoffs) if rxn_cutoffs else 5.0
-        dt = params.dt_rxn if r < 1.5 * rxn_min else params.dt
-        # Draw the Wiener increments for this step.
-        dW_t = math.sqrt(dt) * rng.standard_normal(3)
-        dW_r = math.sqrt(dt) * rng.standard_normal(3)
-        pos_old, ori_old, force_old = pos, ori, force.copy()
-        # Take the BD step using the pre-drawn Wiener increments.
-        pos, ori = bd_step_wiener(pos, ori, force, torque, D_t, D_r, dt, dW_t, dW_r)
-        # Check whether the force changed too much over the step. If it did,
-        # subdivide the Wiener step into two half-steps.
-        if params.use_hard_sphere or True:
-            # Evaluate the forces at the new position so they can be compared.
-            R_trial = ori.to_rotation_matrix()
-            trial_pos_arr = (R_trial @ mol2_pos0.T).T + pos
-            for atom, p in zip(mol2_scratch.atoms, trial_pos_arr):
-                atom.x = float(p[0])
-                atom.y = float(p[1])
-                atom.z = float(p[2])
-            force_new, torque_new, _ = force_fn(mol1, mol2_scratch)
-            if backstep_due_to_force(
-                force_new,
-                force_old,
-                pos,
-                pos_old,
-                dt,
-                params.dt_rxn,
-                radius=mob.radius2,
-            ):
-                # Subdivide the Wiener path by splitting dW at its midpoint in
-                # an unbiased way.
-                s = math.sqrt(dt / 4.0)  # Noise amplitude of a half step.
-                dW_mid_t = 0.5 * dW_t + s * rng.standard_normal(3)
-                dW_mid_r = 0.5 * dW_r + s * rng.standard_normal(3)
-                hdt = dt / 2.0
-                # Take the first half-step.
-                pos, ori = bd_step_wiener(
-                    pos_old,
-                    ori_old,
-                    force_old,
-                    torque,
-                    D_t,
-                    D_r,
-                    hdt,
-                    dW_mid_t,
-                    dW_mid_r,
-                )
-                # Take the second half-step using the new forces.
-                R2 = ori.to_rotation_matrix()
-                p2 = (R2 @ mol2_pos0.T).T + pos
-                for atom, p in zip(mol2_scratch.atoms, p2):
-                    atom.x = float(p[0])
-                    atom.y = float(p[1])
-                    atom.z = float(p[2])
-                f2, t2, _ = force_fn(mol1, mol2_scratch)
-                dW_2nd_t = dW_t - dW_mid_t
-                dW_2nd_r = dW_r - dW_mid_r
-                D_t2 = mob.relative_translational_diffusion(pos)
-                pos, ori = bd_step_wiener(
-                    pos, ori, f2, t2, D_t2, D_r, hdt, dW_2nd_t, dW_2nd_r
-                )
-        # Reject the step if it produces a hard-sphere collision.
-        if params.use_hard_sphere:
-            R_hs = ori.to_rotation_matrix()
-            hs_pos = (R_hs @ mol2_pos0.T).T + pos
-            for atom, p in zip(mol2_scratch.atoms, hs_pos):
-                atom.x = float(p[0])
-                atom.y = float(p[1])
-                atom.z = float(p[2])
-            if _check_hard_sphere_overlap(mol1, mol2_scratch):
-                # Redraw the step from the same starting point.
-                dW_t2 = math.sqrt(dt) * rng.standard_normal(3)
-                dW_r2 = math.sqrt(dt) * rng.standard_normal(3)
-                D_t_old = mob.relative_translational_diffusion(pos_old)
-                pos, ori = bd_step_wiener(
-                    pos_old, ori_old, force_old, torque, D_t_old, D_r, dt, dW_t2, dW_r2
-                )
-        # Save the bridge state for the next iteration. The pair distances in
-        # cur_pair_dists were captured before this step. The recorded dt is the
-        # local dt actually used, since the simple two-value scheme does not
-        # change dt because of a backstep here. The diffusion at pos_old is the
-        # correct bridge diffusion over the interval from pos_old to pos.
-        if _bb_active:
-            prev_pair_dists = cur_pair_dists
-            prev_dt_outer = float(dt)
-            prev_D_eff_bb = float(mob.relative_translational_diffusion(pos_old))
-    return TrajectoryResult(
-        Fate.MAX_STEPS,
-        params.max_steps,
-        params.max_steps * params.dt,
-        float(np.linalg.norm(pos)),
-    )
+    global _WORKER_SIM
+    _WORKER_SIM = NAMSimulator(mol1, mol2, mobility, pathway_set, params, force_fn)
+
+
+def _run_trajectory_worker(traj_idx):
+    """
+    Run one Brownian dynamics trajectory in a worker process by delegating to
+    NAMSimulator.run_one, so the parallel path uses exactly the same physics as
+    the serial path, including the Luty-McCammon-Zhou recycling at the outer
+    boundary. The random number generators are reseeded as seed + traj_idx so
+    that each trajectory is independent and reproducible.
+    """
+    sim = _WORKER_SIM
+    base_seed = sim.params.seed if sim.params.seed is not None else 0
+    sim.rng = np.random.default_rng(base_seed + traj_idx)
+    sim.rng_bb = np.random.default_rng(base_seed + traj_idx + 0xBB)
+    return sim.run_one()
 
 
 class NAMSimulator:
@@ -614,22 +458,24 @@ class NAMSimulator:
         n_workers = min(self.params.n_threads, n, mp.cpu_count())
         if self.params.verbose:
             print(f"  Parallel: {n_workers} workers, {n} trajectories")
-        args = [
-            (
-                self.mol1,
-                self.mol2,
-                self._mol2_pos0,
-                self.mobility,
-                self.pathway_set,
-                self.params,
-                self.force_fn,
-                self._rxn_cutoffs,
-                i,
-            )
-            for i in range(n)
-        ]
-        with mp.Pool(n_workers) as pool:
-            for result in pool.map(_run_trajectory_worker, args):
+        # Each worker process builds its own NAMSimulator once, through the
+        # initializer, and then runs trajectories by index. Every trajectory is
+        # handled by the same run_one method the serial path uses, so the
+        # parallel path reproduces the serial physics, including the
+        # Luty-McCammon-Zhou recycling, and differs only in the per-trajectory
+        # random seed.
+        init_args = (
+            self.mol1,
+            self.mol2,
+            self.mobility,
+            self.pathway_set,
+            self.params,
+            self.force_fn,
+        )
+        with mp.Pool(
+            n_workers, initializer=_worker_init, initargs=init_args
+        ) as pool:
+            for result in pool.map(_run_trajectory_worker, range(n)):
                 self._record(result)
 
     def _record(self, result: TrajectoryResult):
