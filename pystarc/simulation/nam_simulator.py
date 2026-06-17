@@ -124,6 +124,14 @@ class NAMParameters:
     # PathwaySet the bridge code path is simply skipped.
     use_brownian_bridge: bool = True
     verbose: bool = False
+    # Physical conditions used by the outer-propagator (Luty-McCammon-Zhou)
+    # screening and diffusion, in PySTARC units of Å, ps, and kBT. The defaults
+    # are water at about 300 K and physiological ionic strength; set them
+    # explicitly for a different temperature, solvent, or salt concentration.
+    temperature_kT: float = 0.5961  # Thermal energy kBT in kcal/mol.
+    viscosity: float = 1.002e-3 * 1e-4 / 1e-12  # Water viscosity in kcal·ps/Å³.
+    dielectric: float = 78.54  # Relative solvent permittivity.
+    debye_length: float = 8.0  # Debye length in Å.
 
     def __post_init__(self):
         if self.r_escape == 0.0:
@@ -231,12 +239,14 @@ class NAMSimulator:
                 Dtrans=mobility.D_trans2,
                 Drot=mobility.D_rot2,
             )
-            # Physical constants expressed in PySTARC units of Å, ps, and kBT.
-            kT = 0.5961  # kBT in kcal/mol at 298.15 K.
-            viscosity = 1.002e-3 * 1e-4 / 1e-12  # Viscosity of water at 20 °C, converted from Pa·s to kcal·ps/Å³.
-            dielectric = 78.54
+            # Physical conditions, taken from the parameters so they can be set
+            # for a given temperature, solvent, and ionic strength. The defaults
+            # reproduce water at about 300 K and physiological ionic strength.
+            kT = params.temperature_kT
+            viscosity = params.viscosity
+            dielectric = params.dielectric
             vacuum_perm = 1.0 / (4 * math.pi * 332.0636)  # Vacuum permittivity in e²/(kcal·Å).
-            debye_len = 8.0  # Debye length in Å at physiological ionic strength.
+            debye_len = params.debye_length
             max_mol_r = max(mol1.bounding_radius(), mol2.bounding_radius())
             self._outer_prop = OuterPropagator(
                 b_radius=params.r_start,
