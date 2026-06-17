@@ -117,9 +117,8 @@ The chain force pipeline has been validated for:
 - **Stable integration**: 100-step Euler integration of 10-residue
   heteropolymer doesn't blow up
 
-See `tests/test_pystarc.py` `TestCOFFDROPTabulatedForces` class for the
-full test suite (~25 tests covering force machinery, sidechain
-topology, and validation).
+See the `TestCOFFDROPTabulatedForces` class in `tests/test_pystarc.py` for the
+force-machinery, sidechain-topology, and validation tests.
 
 ## Performance
 
