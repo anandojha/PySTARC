@@ -314,7 +314,11 @@ def _parse_pdb_chain_for_beads(
                     "resid": resid,
                     "atoms": {},
                 })
-            residues[-1]["atoms"][atom_name] = np.array([x, y, z])
+            # For a repeated atom name within one residue (alternate
+            # conformers), keep the first one seen, which is the primary
+            # conformer (altLoc A) in a conventionally ordered PDB.
+            if atom_name not in residues[-1]["atoms"]:
+                residues[-1]["atoms"][atom_name] = np.array([x, y, z])
 
     if chain_id is None and len(chains_seen) > 1:
         raise ValueError(
