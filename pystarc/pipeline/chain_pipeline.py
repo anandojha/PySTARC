@@ -117,6 +117,28 @@ def _ensure_chain_apbs_grids(config: PySTARCConfig) -> None:
             f"expected '{{mol_name}}1.dx' pattern (e.g. 'thrombin1.dx')"
         )
 
+    # run_apbs writes the electrostatic grids as {mol_name}0.dx (coarse) and
+    # {mol_name}1.dx (fine, used for runtime force evaluation), where mol_name
+    # is the requested stem with its trailing level digit removed. A
+    # target_grid_dx whose filename lacks that trailing digit (for example
+    # "target.dx" rather than "target1.dx") therefore names a file APBS will
+    # never produce: the APBS run would succeed yet leave the requested path
+    # absent, and the later DXGrid.from_file(cc.target_grid_dx) would fail with
+    # a bare FileNotFoundError that does not explain the naming mismatch.
+    # Validate the expected pattern up front and raise a clear error instead.
+    produced_elec_names = {f"{mol_name}0.dx", f"{mol_name}1.dx"}
+    if target_dx.name not in produced_elec_names:
+        raise ValueError(
+            f"target_grid_dx '{target_dx.name}' does not match the "
+            f"'{{mol_name}}1.dx' naming pattern produced by APBS. With "
+            f"mol_name='{mol_name}', APBS writes the electrostatic grids "
+            f"'{mol_name}0.dx' (coarse) and '{mol_name}1.dx' (fine) in "
+            f"{apbs_work_dir}, neither of which is the requested file, so it "
+            f"would be absent after the APBS run. Rename target_grid_dx to "
+            f"'{mol_name}1.dx' (the fine grid used for force evaluation), or "
+            f"point it at an existing DX grid."
+        )
+
     src_pqr = Path(config.receptor_pqr)
     if not src_pqr.exists():
         raise FileNotFoundError(
