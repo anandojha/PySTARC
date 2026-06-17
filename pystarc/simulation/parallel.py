@@ -38,11 +38,10 @@ from pystarc.simulation.nam_simulator import (
 from pystarc.transforms.quaternion import Quaternion, random_quaternion
 from pystarc.molsystem.system_state import Fate, TrajectoryResult
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from pystarc.motion.do_bd_step import bd_step, bd_step_adaptive
 from pystarc.hydrodynamics.rotne_prager import MobilityTensor
 from pystarc.pathways.reaction_interface import PathwaySet
-from pystarc.structures.molecules import Molecule, Atom
-from typing import Callable, List, Optional, Dict
+from pystarc.structures.molecules import Molecule
+from typing import List, Optional, Dict
 from dataclasses import dataclass
 import multiprocessing as mp
 from enum import Enum, auto
@@ -50,8 +49,6 @@ import numpy as np
 import copy
 import math
 import time
-import sys
-import os
 
 try:
     import cupy as cp
