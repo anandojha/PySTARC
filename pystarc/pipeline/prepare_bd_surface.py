@@ -623,8 +623,17 @@ def write_input_xml(
 
 
 # The main pipeline driver and its helpers.
-def run_cmd(cmd: str, cwd: Path = None, step: str = "") -> str:
-    """Run a shell command and raise RuntimeError if it exits with a non-zero status."""
+def run_cmd(cmd: str, cwd: Path = None, step: str = "", output_path: Path = None) -> str:
+    """
+    Run a command without a shell and raise RuntimeError on a non-zero exit.
+
+    The command string is split into arguments and run with shell=False, so the
+    shell is not involved and shell features such as output redirection with a
+    greater-than sign are not interpreted. To send a command's output to a file,
+    pass output_path. The captured standard output is then written to that file,
+    which is the safe equivalent of a shell redirection, and is also returned.
+    When output_path is None the standard output is only returned.
+    """
     result = subprocess.run(shlex.split(cmd), shell=False, cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(
@@ -632,6 +641,8 @@ def run_cmd(cmd: str, cwd: Path = None, step: str = "") -> str:
             f"  stdout: {result.stdout[-1000:]}\n"
             f"  stderr: {result.stderr[-500:]}"
         )
+    if output_path is not None:
+        Path(output_path).write_text(result.stdout)
     return result.stdout
 
 
@@ -702,10 +713,17 @@ def prepare_bd_surface(cfg: BDSurfaceConfig, input_xml_dir: Path):
     print(f"\n[3] ambpdb: parm7 + inpcrd -> {combined_pqr_name} ...")
     combined_pqr = W / combined_pqr_name
     run_cmd(
-        f"ambpdb -p {parm} -c {inpcrd.name} -pqr > {combined_pqr_name}",
+        f"ambpdb -p {parm} -c {inpcrd.name} -pqr",
         cwd=W,
         step="ambpdb",
+        output_path=combined_pqr,
     )
+    if not combined_pqr.exists() or combined_pqr.stat().st_size == 0:
+        raise RuntimeError(
+            f"Step 'ambpdb' produced no output at {combined_pqr}. Check that "
+            f"ambpdb is installed and that the topology and coordinate files are "
+            f"valid."
+        )
     print(f"  -> {combined_pqr.name}")
     # Step 4: split the combined PQR into separate receptor and ligand atom lists.
     print("\n[4] Splitting PQR into receptor and ligand ...")

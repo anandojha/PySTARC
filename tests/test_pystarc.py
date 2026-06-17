@@ -20704,3 +20704,36 @@ def test_effective_charges_all_zero_layout_raises():
             EffectiveCharges.from_xml(path)
     finally:
         os.unlink(path)
+
+
+def test_run_cmd_output_path_writes_captured_stdout(tmp_path):
+    """run_cmd must send a command's standard output to output_path. This is the
+    safe, shell-free way to capture a tool's output to a file (the ambpdb step
+    relies on it to write the combined PQR)."""
+    import shlex
+    import sys
+    from pystarc.pipeline.prepare_bd_surface import run_cmd
+
+    out = tmp_path / "combined.pqr"
+    marker = "REMARK combined pqr content 12345"
+    script = f"import sys; sys.stdout.write({marker!r})"
+    cmd = f"{sys.executable} -c {shlex.quote(script)}"
+    returned = run_cmd(cmd, step="ambpdb-like", output_path=out)
+    assert out.read_text() == marker
+    assert returned == marker
+
+
+def test_run_cmd_does_not_interpret_shell_redirection(tmp_path):
+    """run_cmd runs with shell=False, so a greater-than sign in the command is a
+    literal argument and never redirects to a file. Capturing output must go
+    through output_path instead."""
+    import shlex
+    import sys
+    from pystarc.pipeline.prepare_bd_surface import run_cmd
+
+    target = tmp_path / "redirect_target"
+    script = "import sys; sys.stdout.write(' '.join(sys.argv[1:]))"
+    cmd = f"{sys.executable} -c {shlex.quote(script)} -pqr > {target}"
+    returned = run_cmd(cmd, step="redir", cwd=tmp_path)
+    assert not target.exists()
+    assert ">" in returned
