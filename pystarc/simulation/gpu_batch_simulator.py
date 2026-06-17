@@ -73,6 +73,18 @@ class GPUBatchResult:
     def reaction_probability_ci(self, confidence: float = 0.95):
         n = self.n_completed
         if n == 0:
+            # No completed trajectories, so the reaction probability is
+            # undefined. Make this case explicit rather than silently returning
+            # a fully uninformative interval, since it usually signals that the
+            # simulation produced no usable data (for example every trajectory
+            # hit the max-steps limit). The returned values are unchanged.
+            warnings.warn(
+                "reaction_probability_ci: no completed trajectories "
+                "(n_reacted + n_escaped == 0); the reaction probability is "
+                "undefined and the returned CI [0, 1] is uninformative.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             return (0.0, 1.0)
         z = float(stats.norm.ppf(0.5 + confidence / 2.0))
         p = self.reaction_probability
@@ -97,7 +109,21 @@ class GPUBatchResult:
             # Smoluchowski fallback used when there is no potential.
             k_D = 4.0 * math.pi * D_rel * self.r_start
             beta = self.r_start / self.r_escape
-            return CONV * k_D * P / (1.0 - P * (1.0 - beta))
+            denom = 1.0 - P * (1.0 - beta)
+            # The denominator can approach zero for P near 1 and beta near 0,
+            # which would produce a divide-by-zero or a nonsensically large
+            # rate. Guard the degenerate case with a clear error. The healthy
+            # path (denom well away from zero) is byte-identical to before.
+            if abs(denom) < 1e-12:
+                raise ValueError(
+                    "Smoluchowski rate denominator (1 - P*(1 - beta)) is "
+                    f"{denom:.3e}, too close to zero "
+                    f"(P_rxn={P:.6f}, beta=r_start/r_escape={beta:.6f}); the "
+                    "rate is ill-defined. This usually means the reaction "
+                    "probability is near 1 with a very small r_start/r_escape "
+                    "ratio."
+                )
+            return CONV * k_D * P / denom
 
     def rate_constant_ci(
         self, D_rel: float, k_b: float = 0.0, confidence: float = 0.95
@@ -112,7 +138,19 @@ class GPUBatchResult:
                 return CONV * k_b * P
             k_D = 4.0 * math.pi * D_rel * self.r_start
             beta = self.r_start / self.r_escape
-            return CONV * k_D * P / (1 - P * (1 - beta))
+            denom = 1 - P * (1 - beta)
+            # Same degenerate-denominator guard as rate_constant. The healthy
+            # path is byte-identical to before.
+            if abs(denom) < 1e-12:
+                raise ValueError(
+                    "Smoluchowski rate-CI denominator (1 - P*(1 - beta)) is "
+                    f"{denom:.3e}, too close to zero "
+                    f"(P_rxn={P:.6f}, beta=r_start/r_escape={beta:.6f}); the "
+                    "rate is ill-defined. This usually means the reaction "
+                    "probability is near 1 with a very small r_start/r_escape "
+                    "ratio."
+                )
+            return CONV * k_D * P / denom
 
         return (_k(p_lo), _k(p_hi))
 
