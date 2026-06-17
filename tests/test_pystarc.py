@@ -20515,3 +20515,56 @@ def test_chain_rigid_body_resistance_handles_barstar_230_bead():
     assert np.isfinite(A).all()
     assert np.isfinite(C).all()
     assert np.isfinite(hc).all()
+
+
+def test_gpu_yukawa_multipole_force_matches_potential_gradient():
+    """The GPU screened multipole far-field force must equal minus the gradient
+    of the potential it returns, F = -q grad(phi), for the full monopole,
+    dipole, and quadrupole expansion. This matters most for net-neutral hosts,
+    where the monopole and dipole vanish and the quadrupole term carries the
+    steering. The check finite-differences the returned energy and compares it to
+    the returned force."""
+    import types
+    import numpy as np
+    import pystarc.forces.gpu_batch_engine as gbe
+
+    if not getattr(gbe, "_CUPY", False):
+        gbe.cp = np  # the kernel calls cp.*; numpy is API-compatible on CPU
+
+    cls = next(
+        c for c in vars(gbe).values()
+        if isinstance(c, type) and "_yukawa_forces_gpu" in c.__dict__
+    )
+    yuk = cls._yukawa_forces_gpu
+
+    rng = np.random.default_rng(7)
+    M = rng.normal(size=(3, 3))
+    quad = M + M.T
+    quad -= np.eye(3) * np.trace(quad) / 3.0  # symmetric traceless quadrupole
+    dipole = rng.normal(size=3)
+    self = types.SimpleNamespace(
+        _debye=9.0,
+        _V_factor=2.5,            # non-zero monopole
+        _multipole=object(),      # truthy so dipole and quadrupole are included
+        _mp_dipole_gpu=dipole,
+        _mp_quad_gpu=quad,
+        _mp_four_pi_eps=1.0,
+    )
+
+    def energy_at(x):
+        return float(yuk(self, x.reshape(1, 1, 3), np.array([1.0]))[2][0])
+
+    def force_at(x):
+        return yuk(self, x.reshape(1, 1, 3), np.array([1.0]))[0][0]
+
+    h = 1e-6
+    for _ in range(200):
+        x = rng.normal(size=3)
+        x = x / np.linalg.norm(x) * rng.uniform(15.0, 55.0)
+        fd = np.empty(3)
+        for i in range(3):
+            e = np.zeros(3)
+            e[i] = h
+            fd[i] = -(energy_at(x + e) - energy_at(x - e)) / (2.0 * h)
+        f = force_at(x)
+        assert np.linalg.norm(f - fd) / max(np.linalg.norm(fd), 1e-30) < 1e-5

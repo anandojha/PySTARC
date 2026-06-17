@@ -514,7 +514,7 @@ class GPUBatchForceEngine:
                     * (
                         -3.0 / safe_r**4
                         - 3.0 / (safe_r**3 * lam)
-                        - 1.0 / (safe_r**2 * lam**2)
+                        - 4.0 / (3.0 * safe_r**2 * lam**2)
                         - 1.0 / (3.0 * safe_r * lam**3)
                     )
                 )
@@ -542,6 +542,31 @@ class GPUBatchForceEngine:
                 p_gpu_t[None, None, :] - p_dot_r_t[:, :, None] * r_hat
             )  # shape (N_traj, N_atoms, 3)
             grad_phi = grad_phi + transverse_factor[:, :, None] * p_perp
+        # The quadrupole potential also carries angular dependence, through the
+        # scalar r̂ᵀ Q r̂, so its gradient has a transverse component that a
+        # radial-only formula would drop. Writing the quadrupole potential as
+        # h(r) times r̂ᵀ Q r̂, the transverse part is h(r) times the gradient of
+        # r̂ᵀ Q r̂, which equals (2/r) (Q r̂ - (r̂ᵀ Q r̂) r̂). The combined factor
+        # is 2 (1 + r/λ + r²/(3λ²)) exp(-r/λ) / (4πε r⁴). Including this term is
+        # what gives the quadrupolar orientational steering for neutral hosts,
+        # where the monopole and dipole both vanish.
+        if (
+            self._multipole is not None
+            and float(cp.linalg.norm(self._mp_quad_gpu)) > 1e-9
+        ):
+            Q_gpu_t = self._mp_quad_gpu
+            fpe_t = self._mp_four_pi_eps
+            lam_t = debye
+            quad_transverse_factor = (
+                2.0
+                * (1.0 + safe_r / lam_t + safe_r**2 / (3.0 * lam_t**2))
+                * exp_term
+                / (fpe_t * safe_r**4)
+            )
+            Q_rhat = cp.einsum("ij,...j->...i", Q_gpu_t, r_hat)
+            rQr_t = cp.sum(r_hat * Q_rhat, axis=2)
+            q_perp = Q_rhat - rQr_t[:, :, None] * r_hat
+            grad_phi = grad_phi + quad_transverse_factor[:, :, None] * q_perp
         # The force on each atom is F_i = -q_i × ∇φ.
         q_3d = charges_gpu[None, :, None]
         atom_forces = -q_3d * grad_phi
