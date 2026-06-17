@@ -283,7 +283,7 @@ def _parse_pdb_chain_for_beads(
     """
     residues: List[dict] = []
     chains_seen: set = set()
-    last_resid = None
+    last_key = None
     with open(pdb_path) as fh:
         for line in fh:
             if not line.startswith("ATOM"):
@@ -305,8 +305,10 @@ def _parse_pdb_chain_for_beads(
             except ValueError:
                 continue
             resname = line[17:20].strip()
-            if resid != last_resid:
-                last_resid = resid
+            icode = line[26:27].strip()
+            res_key = (ch, resid, icode)
+            if res_key != last_key:
+                last_key = res_key
                 residues.append({
                     "resname": resname,
                     "resid": resid,
