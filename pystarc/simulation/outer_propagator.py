@@ -19,8 +19,8 @@ The change of variables s = 1/r turns the semi-infinite integral over
 [b, ∞) into the finite interval [0, 1/b]. Here V(r) is the Yukawa monopole
 potential Q₁Q₂/(4πε r) × exp(-r/λ), and D_∥(r) is the distance-dependent
 parallel diffusion coefficient that includes Rotne-Prager-Yamakawa
-hydrodynamic interactions. The integral is evaluated by Romberg quadrature
-(adaptive Richardson extrapolation) to roughly 10⁻⁸ relative accuracy.
+hydrodynamic interactions. The integral is evaluated by adaptive
+Gauss-Kronrod quadrature (QUADPACK) to roughly 10⁻⁶ relative accuracy.
 
 When a trajectory diffuses out beyond the escape sphere at r_esc = 2b, we
 must decide whether it returns to the b-surface or escapes to infinity. The
