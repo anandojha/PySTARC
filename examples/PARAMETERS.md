@@ -10,9 +10,7 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 ## 1. Two charged spheres
 
-**Purpose.** This complex validates the BD engine against the exact analytical Smoluchowski solution for two uniformly charged spheres interacting via a screened Coulombic potential.
-
-**System.** Two spherical ions with charges Q<sub>rec</sub> = +1e and Q<sub>lig</sub> = −1e, each with radius 1.0 Å. This is a purely analytical test of the BD propagator.
+This complex validates the BD engine against the exact analytical Smoluchowski solution for two uniformly charged spheres interacting via a screened Coulombic potential. Two spherical ions with charges Q<sub>rec</sub> = +1e and Q<sub>lig</sub> = −1e, each with radius 1.0 Å. This is a purely analytical test of the BD propagator.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
@@ -33,9 +31,7 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 ## 2. Trypsin-benzamidine complex
 
-**Purpose.** The trypsin-benzamidine complex validates PySTARC for a protein and a small molecule complex with well-characterized experimental kinetics.
-
-**System.** Trypsin protein contains 3220 atoms with a net charge of +6e and a maximum radius of 28.4 Å. Benzamidine contains 18 atoms with a net charge of +1e and a maximum radius of 3.7 Å. Both molecules are positively charged, resulting in repulsive electrostatics.
+The trypsin-benzamidine complex validates PySTARC for a protein and a small molecule complex with well-characterized experimental kinetics. Trypsin protein contains 3220 atoms with a net charge of +6e and a maximum radius of 28.4 Å. Benzamidine contains 18 atoms with a net charge of +1e and a maximum radius of 3.7 Å. Both molecules are positively charged, resulting in repulsive electrostatics.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
@@ -61,9 +57,7 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 ## 3. β-cyclodextrin host-guest complexes
 
-**Purpose.** Seven small molecule guests binding β-cyclodextrin test PySTARC on a host-guest benchmark where experimental association rates span an order of magnitude.
-
-**System.** β-cyclodextrin contains 147 atoms with zero net charge and a maximum radius of 8.6 Å. All seven guest molecules also carry a net charge of zero and have radii ranging from 3 to 5 Å. Because all molecules are electrically neutral, no electrostatic steering occurs. The seven guests are 1-butanol, 1-propanol, tert-butanol, methyl butyrate, aspirin, 1-naphthylethanol, and 2-naphthylethanol.
+Seven small molecule guests binding β-cyclodextrin test PySTARC on a host-guest benchmark where experimental association rates span an order of magnitude. β-cyclodextrin contains 147 atoms with zero net charge and a maximum radius of 8.6 Å. All seven guest molecules also carry a net charge of zero and have radii ranging from 3 to 5 Å. Because all molecules are electrically neutral, no electrostatic steering occurs. The seven guests are 1-butanol, 1-propanol, tert-butanol, methyl butyrate, aspirin, 1-naphthylethanol, and 2-naphthylethanol.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
@@ -99,9 +93,7 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 ## 4. Thrombin-thrombomodulin complex
 
-**Purpose.** This complex represents a strongly electrostatically steered protein-protein association.
-
-**System.** Thrombin contains 4727 atoms with a net charge of +3e and a maximum radius of 34.7 Å. Thrombomodulin EGF domains 4–6 contain 1650 atoms with a net charge of −15e and a maximum radius of 40.6 Å. Strong electrostatic complementarity drives fast association. Pre-computed PQR files with AMBER partial charges were used directly.
+This complex represents a strongly electrostatically steered protein-protein association. Thrombin contains 4727 atoms with a net charge of +3e and a maximum radius of 34.7 Å. Thrombomodulin EGF domains 4–6 contain 1650 atoms with a net charge of −15e and a maximum radius of 40.6 Å. Strong electrostatic complementarity drives fast association. Pre-computed PQR files with AMBER partial charges were used directly.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
@@ -135,9 +127,8 @@ Barnase-barstar is the classic electrostatically steered protein-protein associa
 
 ## 6. p38 MAPK - SB203580 complex
 
-**Purpose.** This complex validates PySTARC on a kinase-inhibitor system where the ligand is electrically neutral and the receptor carries a large net negative charge.
+This complex validates PySTARC on a kinase-inhibitor system where the ligand is electrically neutral and the receptor carries a large net negative charge. p38 MAPK alpha in the DFG-in conformation from PDB 1A9U (chain A, residues 4–354) contains 5658 atoms with a net charge of −9e and a maximum radius of 37.8 Å. SB203580 is a type I kinase inhibitor with 27 atoms and zero net charge. The receptor is parameterized with ff14SB and the ligand with GAFF2 + AM1-BCC via antechamber. The ligand binds in the ATP pocket at the hinge.
 
-**System.** p38 MAPK alpha in the DFG-in conformation from PDB 1A9U (chain A, residues 4–354) contains 5658 atoms with a net charge of −9e and a maximum radius of 37.8 Å. SB203580 is a type I kinase inhibitor with 27 atoms and zero net charge. The receptor is parameterized with ff14SB and the ligand with GAFF2 + AM1-BCC via antechamber. The ligand binds in the ATP pocket at the hinge.
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
 | b surface radius | 60.0 Å | The sum of maximum radii (37.8 + 7.8 = 45.6 Å) plus ~14 Å of clearance. |
@@ -149,15 +140,14 @@ Barnase-barstar is the classic electrostatically steered protein-protein associa
 | Trajectories | 5,000,000 | Production run (earlier validation used 100,000). |
 
 **Reaction criterion (from rxns.xml).** Four crystal-structure contacts (hinge MET106 backbone–pyridine N; catalytic LYS50 NZ–imidazole N; VAL102 O and THR103 N–fluorine) at a uniform 7.0 Å cutoff, with **n_needed = 3** (raised from the earlier 2).
+
 **Result.** k<sub>on</sub> = 2.86 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 1.5 × 10⁷ M⁻¹s⁻¹ (ratio 1.91×, relative SE 1.1%).
 
 ---
 
 ## 7. Carbonic anhydrase sulfonamide inhibitors
 
-**Purpose.** Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII, CA I, CA II) test PySTARC on a multi-target protein-ligand benchmark where all ligands carry the same charge (−1e) and bind the same Zn-coordinating sulfonamide motif but differ in scaffold, size, and isozyme.
-
-**System.** All ligands are deprotonated sulfonamides (net charge −1e); the intrinsic k<sub>on</sub> corrected for the protonation equilibrium is the correct BD comparison target. Five systems use CA XIII (PDB 3CZV), one CA I (2NMX), one CA II (3HS4). The active-site Zn²⁺ is included via `frcmod.ions234lm_126_tip3p`. Ligands are built from SMILES via rdkit, converted with obabel, and parameterized with antechamber (GAFF2 + AM1-BCC).
+Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII, CA I, CA II) test PySTARC on a multi-target protein-ligand benchmark where all ligands carry the same charge (−1e) and bind the same Zn-coordinating sulfonamide motif but differ in scaffold, size, and isozyme. All ligands are deprotonated sulfonamides (net charge −1e); the intrinsic k<sub>on</sub> corrected for the protonation equilibrium is the correct BD comparison target. Five systems use CA XIII (PDB 3CZV), one CA I (2NMX), one CA II (3HS4). The active-site Zn²⁺ is included via `frcmod.ions234lm_126_tip3p`. Ligands are built from SMILES via rdkit, converted with obabel, and parameterized with antechamber (GAFF2 + AM1-BCC).
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
@@ -187,9 +177,7 @@ Barnase-barstar is the classic electrostatically steered protein-protein associa
 
 ## 8. TTK (MPS1) kinase inhibitors
 
-**Purpose.** Eight inhibitors of the mitotic kinase TTK/MPS1 test PySTARC across a single-target series spanning roughly two orders of magnitude in experimental k<sub>on</sub>.
-
-**System.** Eight TTK co-crystal structures (PDB 2X9E, 3GFW, 3H9F, 5LJJ, 5N7V, 5N84, 5N93, 5NAD), each parameterized with ff14SB (receptor) and GAFF2 + AM1-BCC (ligand). Ligand charge assignment uses the OpenEye toolkits (license required).
+Eight inhibitors of the mitotic kinase TTK/MPS1 test PySTARC across a single-target series spanning roughly two orders of magnitude in experimental k<sub>on</sub>. Eight TTK co-crystal structures (PDB 2X9E, 3GFW, 3H9F, 5LJJ, 5N7V, 5N84, 5N93, 5NAD), each parameterized with ff14SB (receptor) and GAFF2 + AM1-BCC (ligand). Ligand charge assignment uses the OpenEye toolkits (license required).
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
@@ -219,9 +207,7 @@ Barnase-barstar is the classic electrostatically steered protein-protein associa
 
 ## 9. HSP90 inhibitors
 
-**Purpose.** Six neutral HSP90 inhibitors test PySTARC on a single-target series of uncharged ligands, isolating the diffusion-limited encounter rate in the absence of electrostatic steering.
-
-**System.** Six HSP90 N-terminal domain co-complexes (systems 31, 37, 43, 62, 65, 70), each with a neutral inhibitor. Receptor parameterized with ff14SB; ligands with GAFF2 + AM1-BCC (OpenEye toolkits, license required).
+Six neutral HSP90 inhibitors test PySTARC on a single-target series of uncharged ligands, isolating the diffusion-limited encounter rate in the absence of electrostatic steering. Six HSP90 N-terminal domain co-complexes (systems 31, 37, 43, 62, 65, 70), each with a neutral inhibitor. Receptor parameterized with ff14SB; ligands with GAFF2 + AM1-BCC (OpenEye toolkits, license required).
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
