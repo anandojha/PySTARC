@@ -124,9 +124,7 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 ## 5. Barnase-barstar (flexible chain Brownian dynamics)
 
-**Purpose.** Barnase-barstar is the classic electrostatically steered protein-protein association benchmark, included here as a sample for PySTARC's chain BD module, which extends the rigid-body engine to internal conformational degrees of freedom.
-
-**System.** Barnase (chain A of PDB 1BRS) and barstar (chain D), parameterized with AMBER ff14SB. Unlike the rigid-body examples, the chain BD treatment retains internal flexibility rather than freezing each partner as a rigid body.
+Barnase-barstar is the classic electrostatically steered protein-protein association benchmark, included here as a sample for PySTARC's chain BD module, which extends the rigid-body engine to internal conformational degrees of freedom. It pairs barnase (chain A of PDB 1BRS) and barstar (chain D), parameterized with AMBER ff14SB; unlike the rigid-body examples, the chain BD treatment retains internal flexibility rather than freezing each partner as a rigid body.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
