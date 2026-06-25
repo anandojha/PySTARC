@@ -33,25 +33,25 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 ## 2. Trypsin-benzamidine complex
 
-**Purpose.** This complex validates PySTARC for a protein and a small-molecule complex with well-characterized experimental kinetics.
+**Purpose.** The trypsin-benzamidine complex validates PySTARC for a protein and a small molecule complex with well-characterized experimental kinetics.
 
-**System.** Trypsin contains 3220 atoms with a net charge of +6e and a maximum radius of 28.4 Å. Benzamidine contains 18 atoms with a net charge of +1e and a maximum radius of 3.7 Å. Both molecules are positively charged, resulting in repulsive electrostatics. The PDB structure comes from the seekrflow manuscript (doi.org/10.1101/2025.08.13.669965).
+**System.** Trypsin protein contains 3220 atoms with a net charge of +6e and a maximum radius of 28.4 Å. Benzamidine contains 18 atoms with a net charge of +1e and a maximum radius of 3.7 Å. Both molecules are positively charged, resulting in repulsive electrostatics.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| b surface radius | 45.0 Å | The sum of the maximum molecular radii (28.4 + 3.7 = 32.1 Å) plus ~13 Å of clearance. |
-| Receptor hydrodynamic radius | 22.5 Å | Stokes radius from molecular dimensions, approximately 0.79 × R<sub>max</sub> for a globular protein of this size. |
+| b-surface radius | 45.0 Å | The sum of the maximum molecular radii (28.4 + 3.7 = 32.1 Å) plus clearance. |
+| Receptor hydrodynamic radius | 22.5 Å | Stokes radius from molecular dimensions, approximately 0.80 × R<sub>max</sub> for a globular protein of this size. |
 | Ligand hydrodynamic radius | 5.0 Å | Stokes radius for a small planar organic molecule with 18 atoms. |
 | Debye length | 7.86 Å | Corresponds to 150 mM ionic strength. |
-| APBS fine grid length | 96 Å | Covers ±48 Å. At the b surface, the outermost benzamidine atoms reach b + R<sub>max, lig</sub> = 48.7 Å, marginally beyond the grid edge; the Yukawa multipole fallback handles the ~0.7 Å overshoot for those atoms. |
+| APBS fine grid length | 96 Å | Covers ±48 Å. At the b-surface, the outermost benzamidine atoms reach b + R<sub>max, lig</sub> = 48.7 Å, marginally beyond the grid edge. |
 | APBS grid dimension | 257 | Yields a grid spacing of ~0.37 Å on the fine grid. |
-| Max timestep cap | 0 (no cap) | The adaptive timestep at r = 45 Å is ~191 ps, giving drift/noise ≈ 3.4, acceptable for a small, rapidly diffusing ligand. |
+| Max timestep cap | 0 (no cap) | The adaptive timestep at r = 45 Å is ~191 ps, giving drift/noise ≈ 3.4. This is acceptable for a small, rapidly diffusing ligand. |
 | Trajectories | 10,000,000 | The low reaction probability requires many trajectories for statistical convergence. |
 | Contact cutoff (search) | 6.0 Å | Maximum distance in the crystal structure used to identify binding contacts. |
 | Buffer | 3.0 Å | Added to the crystal distance to set the reaction cutoff, accounting for the rigid-body approach. |
 | Number of pairs | 10 | The top 10 closest polar contacts from the crystal structure. |
 | Contacts needed | 6 | Six of the 10 pairs must be satisfied simultaneously. |
-| Contact mode | Polar | Only N/O/S donor-acceptor pairs are considered, corresponding to hydrogen-bonding contacts. |
+| Contact mode | Polar | Only N/O/S donor-acceptor pairs are considered, corresponding to hydrogen bonding contacts. |
 
 **Reaction criterion construction.** The setup script identifies the closest heavy-atom contacts between receptor and ligand in the crystal structure, filters for polar atoms (N, O, S on both sides), retains the top 10 contacts with one per receptor residue, and sets each cutoff to the crystal distance plus 3.0 Å, rounded to the nearest 0.5 Å. The resulting 10 pairs have cutoffs ranging from 6.0 to 8.5 Å.
 
