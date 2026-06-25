@@ -1,4 +1,4 @@
-# Parameter selection for PySTARC simulations
+# Parameter selection
 
 ## Overview
 
