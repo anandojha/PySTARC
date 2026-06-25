@@ -95,8 +95,6 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 | 1-naphthylethanol | 4.7 × 10⁸ | 6.89 × 10⁷ | 0.15× | 0.9% |
 | 2-naphthylethanol | 2.9 × 10⁸ | 6.18 × 10⁸ | 2.13× | 0.3% |
 
-**Key physics.** All guests are neutral, so BD computes only the diffusion-limited encounter rate with no electrostatic enhancement. PySTARC predicts encounter rates of order 10⁸ for most guests; the experimental variation arises from conformational gating and desolvation barriers that rigid-body BD cannot capture, so rank-order discrimination among neutral guests is not expected.
-
 ---
 
 ## 4. Thrombin-thrombomodulin complex
@@ -151,12 +149,9 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 ## 6. p38 MAPK - SB203580 complex
 
-**Purpose.** This complex validates PySTARC on a kinase-inhibitor system where the ligand is electrically neutral and the receptor carries a large net negative charge, and provides a comparison point against published Browndye2 BD results.
+**Purpose.** This complex validates PySTARC on a kinase-inhibitor system where the ligand is electrically neutral and the receptor carries a large net negative charge.
 
 **System.** p38 MAPK alpha in the DFG-in conformation from PDB 1A9U (chain A, residues 4–354) contains 5658 atoms with a net charge of −9e and a maximum radius of 37.8 Å. SB203580 is a type I kinase inhibitor with 27 atoms and zero net charge. The receptor is parameterized with ff14SB and the ligand with GAFF2 + AM1-BCC via antechamber. The ligand binds in the ATP pocket at the hinge.
-
-> *Parameter table carried from the prior validated p38 setup. report.txt reports this system's reaction criterion and result individually but not its parameter block; confirm the b surface and APBS grid against `p38_mapk_sb203580/input.xml`.*
-
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
 | b surface radius | 60.0 Å | The sum of maximum radii (37.8 + 7.8 = 45.6 Å) plus ~14 Å of clearance. |
@@ -168,12 +163,7 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 | Trajectories | 5,000,000 | Production run (earlier validation used 100,000). |
 
 **Reaction criterion (from rxns.xml).** Four crystal-structure contacts (hinge MET106 backbone–pyridine N; catalytic LYS50 NZ–imidazole N; VAL102 O and THR103 N–fluorine) at a uniform 7.0 Å cutoff, with **n_needed = 3** (raised from the earlier 2).
-
-**Key physics.** SB203580 is neutral, so there is no electrostatic steering; association is diffusion-limited and governed by the geometric accessibility of the partially buried ATP pocket.
-
-**References.** Experimental k<sub>on</sub> = 1.5 × 10⁷ M⁻¹s⁻¹ (Miao et al., 2018); Browndye2 BD result k<sub>on</sub> = 6.6 × 10⁷ M⁻¹s⁻¹ (Huang, 2021).
-
-**Result.** k<sub>on</sub> = 2.86 × 10⁷ M⁻¹s⁻¹ (ratio 1.91× vs experiment, relative SE 1.1%) — between the experimental and Browndye2 values.
+**Result.** k<sub>on</sub> = 2.86 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 1.5 × 10⁷ M⁻¹s⁻¹ (ratio 1.91×, relative SE 1.1%).
 
 ---
 
@@ -207,10 +197,6 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 | CA XIII-VD12-09 | CA XIII | 3.3 × 10⁵ | 5.63 × 10⁶ | 17.06× | 2.4% |
 | CA II-VD11-4-2 | CA II | 1.8 × 10⁶ | 3.62 × 10⁵ | 0.20× | 9.5% (not converged) |
 
-**Key physics.** PySTARC predicts a roughly uniform diffusion-limited encounter rate of order 10⁶ M⁻¹s⁻¹ for the CA XIII active site. Systems with experimental k<sub>on</sub> ≈ 5 × 10⁵ (VD12-09, VD11-25) are over-predicted because the experimental rate is dominated by post-diffusional gating that rigid-body BD cannot capture. CA II-VD11-4-2 is under-predicted and has the weakest convergence; CA II has near-neutral net charge versus weakly negative CA XIII, giving weaker electrostatic steering of the anionic ligand.
-
-**Reference.** Linkuviene et al. (2018). Intrinsic thermodynamics of inhibitor binding to human carbonic anhydrase isozymes I, II, VII, XII, and XIII. *J. Med. Chem.*, 61(16), 7500–7512.
-
 ---
 
 ## 8. TTK (MPS1) kinase inhibitors
@@ -243,10 +229,6 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 | 5NAD | BAY-1217389 | 3.79 × 10⁵ | 1.21 × 10⁷ | 31.94× | 1.1% |
 | 3H9F | Mps1-IN-2 | 1.19 × 10⁶ | 8.32 × 10⁶ | 6.99× | 1.3% |
 
-**Key physics.** Most systems fall within a few-fold of experiment, consistent with diffusion-limited encounter at this active site. The largest outliers (BAY-1217389 over-predicted; TC-Mps1-12 under-predicted) reflect the limits of rigid-body BD where the measured rate is set by post-diffusional steps.
-
-**Reference.** Experimental k<sub>on</sub> values are from Uitdehaag et al. (2017), *J. Mol. Biol.* 429(14), 2211–2230; the same eight values are tabulated in Votapka et al. (2024), *J. Phys. Chem. Lett.* 15, 10473–10478 (Table S2), the SEEKR2/metaD study on these identical TTK systems.
-
 ---
 
 ## 9. HSP90 inhibitors
@@ -276,10 +258,6 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 | 62 | 1.21 × 10⁵ | 4.10 × 10⁵ | 3.39× | 5.9% (not converged) |
 | 65 | 2.08 × 10⁵ | 1.08 × 10⁶ | 5.20× | 3.7% |
 | 70 | 1.04 × 10⁴ | 6.10 × 10⁵ | 58.68× | 5.0% |
-
-**Key physics.** All ligands are neutral, so PySTARC reports the diffusion-limited encounter rate with no electrostatic enhancement. The systematic over-prediction grows for the slowest experimental binders (e.g. system 70), consistent with rigid-body BD being unable to model the non-diffusional gating that sets the experimental rate for slow binders.
-
-**Reference.** Experimental k<sub>on</sub> values are from the SPR measurements of Kokh et al. (2018), *J. Chem. Theory Comput.* 14(7), 3859–3869 (SI Table 5).
 
 ---
 
