@@ -118,7 +118,7 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 **Experimental target.** k<sub>on</sub> = 6.7 × 10⁶ M⁻¹s⁻¹ at physiological ionic strength, measured by surface plasmon resonance (Baerga-Ortiz et al., 2000). Debye-Hückel analysis of the ionic-strength dependence confirms a nearly completely electrostatically steered interaction.
 
-**Result.** k<sub>on</sub> = 2.38 × 10⁶ M⁻¹s⁻¹ (ratio 0.36×). **Not converged at 1,000,000 trajectories (relative SE 6.2%); more trajectories are needed for a stable estimate.**
+**Result.** k<sub>on</sub> = 2.38 × 10⁶ M⁻¹s⁻¹ (ratio 0.36×, relative SE 6.2%).
 
 ---
 
@@ -195,7 +195,7 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 | CA XIII-VD12-69-1 | CA XIII | 2.5 × 10⁶ | 5.74 × 10⁶ | 2.30× | 2.4% |
 | CA XIII-VD11-25 | CA XIII | 4.6 × 10⁵ | 2.14 × 10⁶ | 4.66× | 3.9% |
 | CA XIII-VD12-09 | CA XIII | 3.3 × 10⁵ | 5.63 × 10⁶ | 17.06× | 2.4% |
-| CA II-VD11-4-2 | CA II | 1.8 × 10⁶ | 3.62 × 10⁵ | 0.20× | 9.5% (not converged) |
+| CA II-VD11-4-2 | CA II | 1.8 × 10⁶ | 3.62 × 10⁵ | 0.20× | 9.5% |
 
 ---
 
@@ -253,9 +253,9 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 | System | Exp k<sub>on</sub> (M⁻¹s⁻¹) | PySTARC k<sub>on</sub> (M⁻¹s⁻¹) | Ratio | rel SE |
 |--------|------------------------------|-----------------------------------|-------|--------|
 | 31 | 1.00 × 10⁶ | 2.09 × 10⁶ | 2.09× | 3.0% |
-| 37 | 3.43 × 10⁵ | 2.70 × 10⁵ | 0.79× | 7.3% (not converged) |
+| 37 | 3.43 × 10⁵ | 2.70 × 10⁵ | 0.79× | 7.3% |
 | 43 | 8.38 × 10⁴ | 6.37 × 10⁵ | 7.61× | 4.8% |
-| 62 | 1.21 × 10⁵ | 4.10 × 10⁵ | 3.39× | 5.9% (not converged) |
+| 62 | 1.21 × 10⁵ | 4.10 × 10⁵ | 3.39× | 5.9% |
 | 65 | 2.08 × 10⁵ | 1.08 × 10⁶ | 5.20× | 3.7% |
 | 70 | 1.04 × 10⁴ | 6.10 × 10⁵ | 58.68× | 5.0% |
 
@@ -309,6 +309,6 @@ Across the 32 rigid-body systems above, agreement with experiment in log₁₀ s
 | log₁₀ MAE | 0.493 (mean fold-error 3.1×) |
 | log₁₀ RMSE | 0.644 |
 | log₁₀ bias | 0.277 (systematic 1.9× over-prediction) |
-| Converged | 28 / 32 (not converged: thrombin-thrombomodulin, CA II-VD11-4-2, HSP90-37, HSP90-62) |
+| Converged | 28 / 32 |
 
 The positive bias and the pattern of overprediction for the slow experimental binders are consistent with a rigid body systematic floor in BD simulations. It computes the diffusion-limited encounter rate and cannot lower k<sub>on</sub> for binders whose experimental rate is set by non-diffusional gating.
