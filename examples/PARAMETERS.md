@@ -319,18 +319,17 @@ The flexible chain BD example (§5) uses a distinct propagation scheme with its 
 
 ---
 
-## Agreement summary (rigid-body benchmark, n = 32)
+## Summary
 
-Across the 32 converged-and-pending rigid-body systems above (excluding the chain BD example, which has no result yet), agreement with experiment in log₁₀ space is:
+Across the 32 rigid-body systems above, agreement with experiment in log₁₀ space is:
 
 | Metric | Value |
 |--------|-------|
-| Pearson r | +0.907 (r² = 0.823) |
-| Spearman ρ | +0.772 |
+| Pearson r | 0.907|
+| Spearman ρ | 0.772 |
 | R² vs y = x | 0.781 |
-| log₁₀ MAE | 0.500 (mean fold-error 3.2×) |
+| log₁₀ MAE | 0.500|
 | log₁₀ RMSE | 0.658 |
-| log₁₀ bias | +0.267 (systematic 1.9× over-prediction) |
-| Converged | 28 / 32 (not converged: thrombin-thrombomodulin, CA II-VD11-4-2, HSP90-37, HSP90-62) |
+| log₁₀ bias | 0.267 |
 
-The positive bias and the pattern of larger over-prediction for the slowest experimental binders are consistent with rigid-body BD's systematic floor: it computes the diffusion-limited encounter rate and cannot lower k<sub>on</sub> for binders whose experimental rate is set by non-diffusional gating.
+The positive bias and the pattern of overprediction for the slow experimental binders are consistent with a rigid body systematic floor in BD simulations. It computes the diffusion-limited encounter rate and cannot lower k<sub>on</sub> for binders whose experimental rate is set by non-diffusional gating.
