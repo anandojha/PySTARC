@@ -67,23 +67,22 @@ Forces combine Adaptive Poisson-Boltzmann Solver (APBS) electrostatic grids near
 ### Physical model
 
 - **Brownian-bridge reactions.** P = exp(-x₀·x₁ / (D_eff·Δt)), exact at constant cost per step.
-- **Yukawa multipole far field.** Monopole, dipole, and quadrupole; the higher terms steer neutral molecules such as β-cyclodextrin (Q = 0).
-- **Rotne-Prager-Yamakawa hydrodynamics.** Zuk et al. (2014), valid through the sphere-overlap regime.
-- **Monte Carlo hydrodynamic radius.** Solvent-excluded surface with a Kirkwood double sum; within ~1% of the analytical value.
-- **Bidirectional Born desolvation.** Receptor-in-ligand and ligand-in-receptor fields, coupled by Newton's third law.
+- **Yukawa multipole far field.** Monopole, dipole, and quadrupole.
+- **Rotne-Prager-Yamakawa hydrodynamics.** Valid through the sphere-overlap regime.
+- **Monte Carlo hydrodynamic radius.** Solvent-excluded surface with a Kirkwood double sum within ~1% of the analytical value.
+- **Bidirectional Born desolvation.** Receptor in ligand and ligand in receptor fields, coupled by Newton's third law.
 - **Wilson score interval.** Valid for any P<sub>rxn</sub> and any N ≥ 1.
-- **Adaptive timestep.** A user-set `max_dt` ceiling prevents b-surface overshoot.
-- **Quaternion rotation.** Direct composition, with no interpolation error.
+- **Adaptive timestep.** A user-configurable `max_dt` ceiling prevents b-surface overshoot.
+- **Quaternion rotation.** Direct composition with no interpolation error.
 
 ### Automation
 
-- **Scripted setup.** `setup.py` builds PQR files, APBS grids, reaction criteria, and `input.xml` from a PDB and topology.
-- **Convergence diagnostics.** Relative standard error, Wilson interval, convergence curve, split-half test, target-N estimate.
-- **Structured output.** Trajectories, encounters, first-passage times, radial densities, occupancy maps, pose clusters, fluxes, transition matrices, commitment probabilities, energetics.
+- **Scripted setup.** `setup.py` builds PQR files, APBS grids, reaction criteria, and `input.xml` from PDB and topology files.
+- **Convergence diagnostics.** Relative standard error, Wilson interval, convergence curve, and split-half test.
+- **Structured output.** Trajectories, encounters, first passage times, radial densities, occupancy maps, pose clusters, fluxes, transition matrices, commitment probabilities, and energetics.
 - **Live progress.** k<sub>on</sub> and P<sub>rxn</sub> reported at a configurable interval.
 - **Checkpointing.** Long runs save and resume.
-- **Continuous integration.** Tests with coverage on every push; installable via `pip install pystarc`.
-
+- 
 ## Installation
 
 **GPU (Linux / HPC):**
