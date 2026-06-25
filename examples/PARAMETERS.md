@@ -2,7 +2,7 @@
 
 ## Overview
 
-All complexes use the AMBER ff14SB force field for receptor charge assignment (GAFF2 + AM1-BCC for small-molecule ligands), APBS for electrostatic potential grids, and the Northrup-Allison-McCammon framework for computing bimolecular association rate constants. All numerical values in this guide are taken from the on-disk `input.xml`, `rxns.xml`, and `results.json` of each example (mirrored in `report.txt`); experimental targets are from the literature cited per section.
+All complexes use the AMBER ff14SB force field for receptor charge assignment (GAFF2 + AM1-BCC for small molecule ligands), APBS for electrostatic potential grids, and the Northrup-Allison-McCammon framework for computing bimolecular association rate constants. All numerical values in this guide are taken from the on-disk `input.xml`, `rxns.xml`, and `results.json` files for each example.
 
 > **Note on sources.** Where a reaction-criterion *value* (cutoff, number of pairs, contacts needed) appears below, it is read directly from the corresponding `rxns.xml`/`setup.py`.
 
@@ -12,7 +12,7 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 **Purpose.** This complex validates the BD engine against the exact analytical Smoluchowski solution for two uniformly charged spheres interacting via a screened Coulombic potential.
 
-**System.** Two spherical ions with charges Q<sub>rec</sub> = +1e and Q<sub>lig</sub> = −1e, each with radius 1.0 Å. There is no molecular structure, as this is a purely analytical test of the BD propagator, the outer-propagator return probability, and the k<sub>b</sub> integral.
+**System.** Two spherical ions with charges Q<sub>rec</sub> = +1e and Q<sub>lig</sub> = −1e, each with radius 1.0 Å. This is a purely analytical test of the BD propagator.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
