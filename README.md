@@ -50,19 +50,19 @@ GPU-accelerated rigid-body and flexible chain Brownian dynamics for bimolecular 
 
 ## Overview
 
-PySTARC computes bimolecular association rate constants (k<sub>on</sub>) by rigid-body Brownian dynamics under the Northrup-Allison-McCammon formalism: k<sub>on</sub> is the diffusion-limited rate of reaching an outer b-surface times the probability of then reaching the reactive contact before escaping. Trajectories run in parallel on the GPU through CuPy, with a NumPy CPU fallback. Applications include protein-ligand and protein-protein association and other diffusion-controlled encounters.
+PySTARC computes the bimolecular association rate constants (k<sub>on</sub>) by implementing rigid body Brownian dynamics within the Northrup-Allison-McCammon formalism. k<sub>on</sub> is the diffusion limited rate of reaching an outer surface, multiplied by the probability of subsequently reaching reactive contact before escaping. Trajectories run in parallel on the GPU with a NumPy CPU fallback. Applications include protein-ligand and protein-protein association, as well as other diffusion-controlled encounters.
 
 ## Method
 
-Forces combine APBS electrostatic grids near the receptor, a screened-Coulomb (Yukawa) multipole far field outside the grid, Rotne-Prager-Yamakawa hydrodynamics, and Born desolvation. Reactions are captured by the closed-form Brownian-bridge crossing probability, so a crossing between two recorded positions is detected without shrinking the timestep. Diffusion constants come from a Monte Carlo hydrodynamic radius. Setup from a PDB and topology to a runnable input is scripted.
+Forces combine Adaptive Poisson-Boltzmann Solver (APBS) electrostatic grids near the receptor, a screened-Coulomb (Yukawa) multipole far field outside the grid, Rotne-Prager-Yamakawa hydrodynamics, and Born desolvation. Reactions are captured by the closed-form Brownian bridge crossing probability, such that a crossing between two recorded positions is detected without shrinking the timestep. Diffusion constants come from a Monte Carlo hydrodynamic radius. 
 
 ## Features
 
 ### Performance
 
-- **Batch propagation.** All trajectories advance as GPU arrays; about 400,000 steps/s for a two-atom system on one RTX 6000 Ada.
-- **Multi-GPU.** Trajectories split across GPUs that share APBS grids, pooled by `combine_data.py`.
-- **Memory-bounded Born forces.** Reverse-direction desolvation is chunked to fit GPU memory.
+- **Batch propagation.** All trajectories advance as GPU arrays.
+- **Multi-GPU.** Trajectories split across GPUs share APBS grids.
+- **Memory-bounded Born forces.** Reverse direction desolvation is chunked to fit GPU memory.
 
 ### Physical model
 
