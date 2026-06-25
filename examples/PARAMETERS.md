@@ -55,7 +55,7 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 **Reaction criterion construction.** The setup script identifies the closest heavy-atom contacts between the receptor and ligand in the crystal structure, filters for polar atoms (N, O, S on both sides), retains the top 10 contacts with one per receptor residue, and sets each cutoff to the crystal distance. The resulting 10 pairs have cutoffs ranging from 6.0 to 8.5 Å.
 
-**Result.** k<sub>on</sub> = 5.31 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 2.9 × 10⁷ M⁻¹s⁻¹.
+**Result.** k<sub>on</sub> = 5.39 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 2.9 × 10⁷ M⁻¹s⁻¹ (ratio 1.86×, relative SE 0.5%).
 
 ---
 
@@ -87,13 +87,13 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 | Guest | Exp k<sub>on</sub> (M⁻¹s⁻¹) | PySTARC k<sub>on</sub> (M⁻¹s⁻¹) | Ratio | rel SE |
 |-------|------------------------------|-----------------------------------|-------|--------|
-| 1-butanol | 2.8 × 10⁸ | 4.77 × 10⁸ | 1.70× | 0.4% |
-| 1-propanol | 5.1 × 10⁸ | 5.31 × 10⁸ | 1.04× | 0.4% |
-| tert-butanol | 3.6 × 10⁸ | 6.70 × 10⁸ | 1.86× | 0.3% |
-| methyl butyrate | 3.7 × 10⁸ | 3.56 × 10⁸ | 0.96× | 0.4% |
-| aspirin | 7.2 × 10⁸ | 2.77 × 10⁸ | 0.38× | 0.5% |
-| 1-naphthylethanol | 4.7 × 10⁸ | 6.64 × 10⁷ | 0.14× | 1.0% |
-| 2-naphthylethanol | 2.9 × 10⁸ | 5.49 × 10⁸ | 1.89× | 0.3% |
+| 1-butanol | 2.8 × 10⁸ | 6.28 × 10⁸ | 2.24× | 0.3% |
+| 1-propanol | 5.1 × 10⁸ | 5.94 × 10⁸ | 1.17× | 0.3% |
+| tert-butanol | 3.6 × 10⁸ | 6.30 × 10⁸ | 1.75× | 0.3% |
+| methyl butyrate | 3.7 × 10⁸ | 4.53 × 10⁸ | 1.22× | 0.4% |
+| aspirin | 7.2 × 10⁸ | 4.19 × 10⁸ | 0.58× | 0.4% |
+| 1-naphthylethanol | 4.7 × 10⁸ | 6.89 × 10⁷ | 0.15× | 0.9% |
+| 2-naphthylethanol | 2.9 × 10⁸ | 6.18 × 10⁸ | 2.13× | 0.3% |
 
 **Key physics.** All guests are neutral, so BD computes only the diffusion-limited encounter rate with no electrostatic enhancement. PySTARC predicts encounter rates of order 10⁸ for most guests; the experimental variation arises from conformational gating and desolvation barriers that rigid-body BD cannot capture, so rank-order discrimination among neutral guests is not expected.
 
@@ -120,7 +120,7 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 **Experimental target.** k<sub>on</sub> = 6.7 × 10⁶ M⁻¹s⁻¹ at physiological ionic strength, measured by surface plasmon resonance (Baerga-Ortiz et al., 2000). Debye-Hückel analysis of the ionic-strength dependence confirms a nearly completely electrostatically steered interaction.
 
-**Result.** k<sub>on</sub> = 1.93 × 10⁶ M⁻¹s⁻¹ (ratio 0.29×). **Not converged at 1,000,000 trajectories (relative SE 6.9%); more trajectories are needed for a stable estimate.**
+**Result.** k<sub>on</sub> = 2.38 × 10⁶ M⁻¹s⁻¹ (ratio 0.36×). **Not converged at 1,000,000 trajectories (relative SE 6.2%); more trajectories are needed for a stable estimate.**
 
 ---
 
@@ -173,7 +173,7 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 **References.** Experimental k<sub>on</sub> = 1.5 × 10⁷ M⁻¹s⁻¹ (Miao et al., 2018); Browndye2 BD result k<sub>on</sub> = 6.6 × 10⁷ M⁻¹s⁻¹ (Huang, 2021).
 
-**Result.** k<sub>on</sub> = 5.03 × 10⁷ M⁻¹s⁻¹ (ratio 3.35× vs experiment, relative SE 0.8%) — between the experimental and Browndye2 values.
+**Result.** k<sub>on</sub> = 2.86 × 10⁷ M⁻¹s⁻¹ (ratio 1.91× vs experiment, relative SE 1.1%) — between the experimental and Browndye2 values.
 
 ---
 
@@ -199,13 +199,13 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 | System | Isozyme | Exp k<sub>on</sub> (M⁻¹s⁻¹) | PySTARC k<sub>on</sub> (M⁻¹s⁻¹) | Ratio | rel SE |
 |--------|---------|------------------------------|-----------------------------------|-------|--------|
-| CA I-VD12-69-1 | CA I | 2.7 × 10⁶ | 2.11 × 10⁶ | 0.78× | 4.0% |
-| CA XIII-AZM | CA XIII | 1.5 × 10⁶ | 1.88 × 10⁶ | 1.26× | 4.6% |
-| CA XIII-VD11-26 | CA XIII | 1.5 × 10⁶ | 2.44 × 10⁶ | 1.63× | 3.7% |
-| CA XIII-VD12-69-1 | CA XIII | 2.5 × 10⁶ | 5.62 × 10⁶ | 2.25× | 2.5% |
-| CA XIII-VD11-25 | CA XIII | 4.6 × 10⁵ | 2.29 × 10⁶ | 4.97× | 3.8% |
-| CA XIII-VD12-09 | CA XIII | 3.3 × 10⁵ | 5.82 × 10⁶ | 17.62× | 2.4% |
-| CA II-VD11-4-2 | CA II | 1.8 × 10⁶ | 3.83 × 10⁵ | 0.21× | 9.3% (not converged) |
+| CA I-VD12-69-1 | CA I | 2.7 × 10⁶ | 2.35 × 10⁶ | 0.87× | 3.8% |
+| CA XIII-AZM | CA XIII | 1.5 × 10⁶ | 1.79 × 10⁶ | 1.20× | 4.7% |
+| CA XIII-VD11-26 | CA XIII | 1.5 × 10⁶ | 2.35 × 10⁶ | 1.57× | 3.8% |
+| CA XIII-VD12-69-1 | CA XIII | 2.5 × 10⁶ | 5.74 × 10⁶ | 2.30× | 2.4% |
+| CA XIII-VD11-25 | CA XIII | 4.6 × 10⁵ | 2.14 × 10⁶ | 4.66× | 3.9% |
+| CA XIII-VD12-09 | CA XIII | 3.3 × 10⁵ | 5.63 × 10⁶ | 17.06× | 2.4% |
+| CA II-VD11-4-2 | CA II | 1.8 × 10⁶ | 3.62 × 10⁵ | 0.20× | 9.5% (not converged) |
 
 **Key physics.** PySTARC predicts a roughly uniform diffusion-limited encounter rate of order 10⁶ M⁻¹s⁻¹ for the CA XIII active site. Systems with experimental k<sub>on</sub> ≈ 5 × 10⁵ (VD12-09, VD11-25) are over-predicted because the experimental rate is dominated by post-diffusional gating that rigid-body BD cannot capture. CA II-VD11-4-2 is under-predicted and has the weakest convergence; CA II has near-neutral net charge versus weakly negative CA XIII, giving weaker electrostatic steering of the anionic ligand.
 
@@ -234,14 +234,14 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 | System | Inhibitor | Exp k<sub>on</sub> (M⁻¹s⁻¹) | PySTARC k<sub>on</sub> (M⁻¹s⁻¹) | Ratio | rel SE |
 |--------|-----------|------------------------------|-----------------------------------|-------|--------|
-| 5LJJ | Reversine | 2.08 × 10⁶ | 4.29 × 10⁶ | 2.06× | 1.9% |
-| 2X9E | NMS-P715 | 6.41 × 10⁵ | 2.44 × 10⁶ | 3.81× | 2.3% |
+| 5LJJ | Reversine | 2.08 × 10⁶ | 4.91 × 10⁶ | 2.36× | 1.8% |
+| 2X9E | NMS-P715 | 6.41 × 10⁵ | 2.37 × 10⁶ | 3.70× | 2.3% |
 | 5N84 | Mps-BAY2b | 2.60 × 10⁶ | 1.51 × 10⁶ | 0.58× | 3.2% |
-| 3GFW | Mps1-IN-1 | 3.79 × 10⁵ | 9.36 × 10⁵ | 2.47× | 4.0% |
-| 5N7V | MPI-0479605 | 1.96 × 10⁶ | 3.32 × 10⁶ | 1.69× | 2.2% |
-| 5N93 | TC-Mps1-12 | 2.16 × 10⁷ | 3.05 × 10⁶ | 0.14× | 2.3% |
-| 5NAD | BAY-1217389 | 3.79 × 10⁵ | 1.26 × 10⁷ | 33.19× | 1.1% |
-| 3H9F | Mps1-IN-2 | 1.19 × 10⁶ | 6.42 × 10⁶ | 5.39× | 1.5% |
+| 3GFW | Mps1-IN-1 | 3.79 × 10⁵ | 9.32 × 10⁵ | 2.46× | 4.0% |
+| 5N7V | MPI-0479605 | 1.96 × 10⁶ | 3.62 × 10⁶ | 1.85× | 2.1% |
+| 5N93 | TC-Mps1-12 | 2.16 × 10⁷ | 3.15 × 10⁶ | 0.15× | 2.3% |
+| 5NAD | BAY-1217389 | 3.79 × 10⁵ | 1.21 × 10⁷ | 31.94× | 1.1% |
+| 3H9F | Mps1-IN-2 | 1.19 × 10⁶ | 8.32 × 10⁶ | 6.99× | 1.3% |
 
 **Key physics.** Most systems fall within a few-fold of experiment, consistent with diffusion-limited encounter at this active site. The largest outliers (BAY-1217389 over-predicted; TC-Mps1-12 under-predicted) reflect the limits of rigid-body BD where the measured rate is set by post-diffusional steps.
 
@@ -270,12 +270,12 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 | System | Exp k<sub>on</sub> (M⁻¹s⁻¹) | PySTARC k<sub>on</sub> (M⁻¹s⁻¹) | Ratio | rel SE |
 |--------|------------------------------|-----------------------------------|-------|--------|
-| 31 | 1.00 × 10⁶ | 2.08 × 10⁶ | 2.08× | 3.1% |
-| 37 | 3.43 × 10⁵ | 3.14 × 10⁵ | 0.92× | 6.8% (not converged) |
-| 43 | 8.38 × 10⁴ | 6.78 × 10⁵ | 8.09× | 4.6% |
-| 62 | 1.21 × 10⁵ | 4.18 × 10⁵ | 3.46× | 5.9% (not converged) |
-| 65 | 2.08 × 10⁵ | 1.03 × 10⁶ | 4.96× | 3.7% |
-| 70 | 1.04 × 10⁴ | 7.61 × 10⁵ | 73.13× | 4.4% |
+| 31 | 1.00 × 10⁶ | 2.09 × 10⁶ | 2.09× | 3.0% |
+| 37 | 3.43 × 10⁵ | 2.70 × 10⁵ | 0.79× | 7.3% (not converged) |
+| 43 | 8.38 × 10⁴ | 6.37 × 10⁵ | 7.61× | 4.8% |
+| 62 | 1.21 × 10⁵ | 4.10 × 10⁵ | 3.39× | 5.9% (not converged) |
+| 65 | 2.08 × 10⁵ | 1.08 × 10⁶ | 5.20× | 3.7% |
+| 70 | 1.04 × 10⁴ | 6.10 × 10⁵ | 58.68× | 5.0% |
 
 **Key physics.** All ligands are neutral, so PySTARC reports the diffusion-limited encounter rate with no electrostatic enhancement. The systematic over-prediction grows for the slowest experimental binders (e.g. system 70), consistent with rigid-body BD being unable to model the non-diffusional gating that sets the experimental rate for slow binders.
 
@@ -325,10 +325,12 @@ Across the 32 rigid-body systems above, agreement with experiment in log₁₀ s
 
 | Metric | Value |
 |--------|-------|
-| Pearson r | 0.907|
-| Spearman ρ | 0.772 |
-| log₁₀ MAE | 0.500|
-| log₁₀ RMSE | 0.658 |
-| log₁₀ bias | 0.267 |
+| Pearson r | 0.913 (r² = 0.833) |
+| Spearman ρ | 0.796 |
+| R² vs y = x | 0.790 |
+| log₁₀ MAE | 0.493 (mean fold-error 3.1×) |
+| log₁₀ RMSE | 0.644 |
+| log₁₀ bias | 0.277 (systematic 1.9× over-prediction) |
+| Converged | 28 / 32 (not converged: thrombin-thrombomodulin, CA II-VD11-4-2, HSP90-37, HSP90-62) |
 
 The positive bias and the pattern of overprediction for the slow experimental binders are consistent with a rigid body systematic floor in BD simulations. It computes the diffusion-limited encounter rate and cannot lower k<sub>on</sub> for binders whose experimental rate is set by non-diffusional gating.
