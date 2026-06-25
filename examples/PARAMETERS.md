@@ -17,10 +17,10 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
 | b surface radius | 10.0 Å | Five times the contact distance of 2.0 Å. The system is small and has no molecular extent. |
-| Hydrodynamic radii | 0 / 0 (point charges) | No hydrodynamic radius is assigned; the spheres are treated as point particles for the analytical comparison. |
+| Hydrodynamic radii | 0 / 0 (point charges) | No hydrodynamic radius is assigned as the spheres are treated as point particles for the analytical comparison. |
 | Debye length | 7.828 Å | Corresponds to ~150 mM ionic strength. |
 | Protein / solvent dielectric | 78.0 / 78.0 | Uniform dielectric. Unlike the molecular systems, no low-dielectric interior is defined for the analytical test. |
-| APBS fine grid | None (fglen = 0) | The screened-Coulomb potential between two point charges is evaluated analytically; no APBS grid is generated. |
+| APBS fine grid | None (fglen = 0) | The screened Coulomb potential between the two point charges is evaluated analytically and no APBS grid is generated. |
 | APBS grid dimension | 129 | Vestigial for the analytic potential. |
 | Max timestep cap | 0 (no cap) | The adaptive timestep at r = 10 Å is ~10 ps, giving drift/noise ≈ 0.5. |
 | Trajectories | 1,000,000 | Sufficient for less than 1% relative standard error. |
