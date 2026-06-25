@@ -145,11 +145,18 @@ examples/
 ## Requirements
 
 - Python 3.11+
-- AmberTools (tleap, cpptraj, ambpdb), APBS, OpenBabel
-- RDKit (ligand setup from SMILES)
-- OpenEye Toolkits — only for the hsp90 and ttk examples (AM1-BCC charges); requires a license (academic license available)
-- NumPy, SciPy, Click, Numba, Matplotlib, pdb2pqr
-- CuPy with an NVIDIA GPU (CUDA 12+) for GPU runs; NumPy CPU fallback otherwise
+- AmberTools
+- APBS
+- OpenBabel
+- RDKit
+- OpenEye Toolkits
+- NumPy
+- SciPy
+- Click
+- Numba
+- Matplotlib
+- pdb2pqr
+- CuPy
 
 ## License
 
