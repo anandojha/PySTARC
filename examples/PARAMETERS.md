@@ -71,7 +71,7 @@ Seven small molecule guests binding β-cyclodextrin test PySTARC on a host-guest
 | Trajectories | 2,000,000 | Per host-guest complex. |
 | Contact cutoff (search) | 5.0 Å | A tight cutoff appropriate for the small host-guest complex. |
 | Buffer | 2.0 Å | Smaller than the protein complexes because the molecules are smaller and the contacts are tighter. |
-| Number of pairs | 7–8 | Up to 8 contact pairs. |
+| Number of pairs | 7-8 | Up to 8 contact pairs. |
 | Contacts needed | 4 | Four pairs must be satisfied. |
 | Contact mode | All heavy atoms | The host-guest interface has few polar atoms. |
 
@@ -93,7 +93,7 @@ Seven small molecule guests binding β-cyclodextrin test PySTARC on a host-guest
 
 ## 4. Thrombin-thrombomodulin complex
 
-This complex represents a strongly electrostatically steered protein-protein association. Thrombin contains 4727 atoms with a net charge of +3e and a maximum radius of 34.7 Å. Thrombomodulin EGF domains 4–6 contain 1650 atoms with a net charge of −15e and a maximum radius of 40.6 Å. Strong electrostatic complementarity drives fast association. Pre-computed PQR files with AMBER partial charges were used directly.
+This complex represents a strongly electrostatically steered protein-protein association. Thrombin contains 4727 atoms with a net charge of +3e and a maximum radius of 34.7 Å. Thrombomodulin EGF domains 4-6 contain 1650 atoms with a net charge of −15e and a maximum radius of 40.6 Å. Strong electrostatic complementarity drives fast association. Pre-computed PQR files with AMBER partial charges were used directly.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
@@ -101,12 +101,12 @@ This complex represents a strongly electrostatically steered protein-protein ass
 | Receptor hydrodynamic radius | 25.58 Å | Stokes radius from molecular dimensions, ~0.74 × R<sub>max</sub>. |
 | Ligand hydrodynamic radius | 21.88 Å | ~0.54 × R<sub>max</sub>; the lower ratio reflects the elongated EGF-domain fragment. |
 | Debye length | 7.86 Å | Corresponds to 150 mM ionic strength. |
-| APBS fine grid length | 192 Å | Covers ±96 Å. At b = 85, ligand atoms span 44–126 Å from the origin; the grid encompasses the vast majority of encounter geometries. |
+| APBS fine grid length | 192 Å | Covers ±96 Å. At b = 85, ligand atoms span 44-126 Å from the origin; the grid encompasses the vast majority of encounter geometries. |
 | APBS grid dimension | 257 | Yields a grid spacing of ~0.75 Å. |
 | Base timestep | 1.0 ps | Larger base step appropriate at the large b surface. |
 | Max timestep cap | 100 ps | Critical. Without the cap the adaptive timestep at r = 85 Å reaches ~1806 ps (drift/noise ≈ 5.4), producing ballistic trajectories that skip the electrostatic steering region. The cap restores drift/noise ≈ 2. |
-| Trajectories | 1,000,000 | — |
-| Contacts needed | 4 | Four interfacial hydrogen-bonding contacts must be satisfied simultaneously. (The full pair list is in `rxns.xml`; it was not re-parsed into report.txt — confirm pair count/cutoffs against the file.) |
+| Trajectories | 1,000,000 | - |
+| Contacts needed | 4 | Four interfacial hydrogen-bonding contacts must be satisfied simultaneously. (The full pair list is in `rxns.xml`; it was not re-parsed into report.txt - confirm pair count/cutoffs against the file.) |
 
 **Experimental target.** k<sub>on</sub> = 6.7 × 10⁶ M⁻¹s⁻¹ at physiological ionic strength, measured by surface plasmon resonance (Baerga-Ortiz et al., 2000). Debye-Hückel analysis of the ionic-strength dependence confirms a nearly completely electrostatically steered interaction.
 
@@ -127,7 +127,7 @@ Barnase-barstar is the classic electrostatically steered protein-protein associa
 
 ## 6. p38 MAPK - SB203580 complex
 
-This complex validates PySTARC on a kinase-inhibitor system where the ligand is electrically neutral and the receptor carries a large net negative charge. p38 MAPK alpha in the DFG-in conformation from PDB 1A9U (chain A, residues 4–354) contains 5658 atoms with a net charge of −9e and a maximum radius of 37.8 Å. SB203580 is a type I kinase inhibitor with 27 atoms and zero net charge. The receptor is parameterized with ff14SB and the ligand with GAFF2 + AM1-BCC via antechamber. The ligand binds in the ATP pocket at the hinge.
+This complex validates PySTARC on a kinase-inhibitor system where the ligand is electrically neutral and the receptor carries a large net negative charge. p38 MAPK alpha in the DFG-in conformation from PDB 1A9U (chain A, residues 4-354) contains 5658 atoms with a net charge of −9e and a maximum radius of 37.8 Å. SB203580 is a type I kinase inhibitor with 27 atoms and zero net charge. The receptor is parameterized with ff14SB and the ligand with GAFF2 + AM1-BCC via antechamber. The ligand binds in the ATP pocket at the hinge.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
@@ -139,7 +139,7 @@ This complex validates PySTARC on a kinase-inhibitor system where the ligand is 
 | Max timestep cap | 0 (no cap) | The adaptive timestep at r = 60 Å is moderate for a small, highly diffusive ligand. |
 | Trajectories | 5,000,000 | Production run (earlier validation used 100,000). |
 
-**Reaction criterion (from rxns.xml).** Four crystal-structure contacts (hinge MET106 backbone–pyridine N; catalytic LYS50 NZ–imidazole N; VAL102 O and THR103 N–fluorine) at a uniform 7.0 Å cutoff, with **n_needed = 3** (raised from the earlier 2).
+**Reaction criterion (from rxns.xml).** Four crystal-structure contacts (hinge MET106 backbone-pyridine N; catalytic LYS50 NZ-imidazole N; VAL102 O and THR103 N-fluorine) at a uniform 7.0 Å cutoff, with **n_needed = 3** (raised from the earlier 2).
 
 **Result.** k<sub>on</sub> = 2.86 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 1.5 × 10⁷ M⁻¹s⁻¹ (ratio 1.91×, relative SE 1.1%).
 
@@ -151,7 +151,7 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| b surface radius | 60.0 Å | Receptor R<sub>max</sub> ≈ 27 Å plus ligand 4–8 Å plus ~25 Å clearance. |
+| b surface radius | 60.0 Å | Receptor R<sub>max</sub> ≈ 27 Å plus ligand 4-8 Å plus ~25 Å clearance. |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
 | Debye length | 9.62 Å | Corresponds to 100 mM ionic strength, matching the SPR conditions of Linkuviene et al. (2018). |
 | Ion concentration | 0.10 M | 100 mM NaCl. |
@@ -259,10 +259,10 @@ The variable-timestep scheme uses Δt<sub>pair</sub> = f²r²/(2D), with f = 0.1
 | Charged spheres | 10 | 10 | 0.5 | No |
 | β-cyclodextrin host-guest | 30 | 90 | 1.5 | No |
 | Trypsin-benzamidine | 45 | 191 | 3.4 | No |
-| HSP90 inhibitors | 55 | — | — | No (max_dt = 0) |
+| HSP90 inhibitors | 55 | - | - | No (max_dt = 0) |
 | p38 MAPK - SB203580 | 60 | ~360 | ~3.0 | No |
 | Carbonic anhydrase inhibitors | 60 | ~360 | ~3.0 | No |
-| TTK inhibitors | 60 | — | — | No (max_dt = 0) |
+| TTK inhibitors | 60 | - | - | No (max_dt = 0) |
 | Thrombin-thrombomodulin | 85 | 1806 | 5.4 | Yes, 100 ps |
 
 The flexible chain BD example (§5) uses a distinct propagation scheme with its own timestep handling; parameters will be documented there once the run is finalized.
