@@ -93,7 +93,7 @@ cd PySTARC
 bash install_PySTARC.sh
 ```
 
-The `hsp90_inhibitors/` and `ttk_inhibitors/` examples need the OpenEye Toolkits (AM1-BCC charges) and a license (academic license available, https://www.eyesopen.com). No other example needs OpenEye.
+The `hsp90_inhibitors/` and `ttk_inhibitors/` examples require the OpenEye Toolkits (academic license available, https://www.eyesopen.com).
 
 **Mac / CPU:**
 
