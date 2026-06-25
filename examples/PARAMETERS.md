@@ -16,7 +16,7 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| b surface radius | 10.0 Å | Five times the contact distance of 2.0 Å. The system is small and has no molecular extent. |
+| b-surface radius | 10.0 Å | Five times the contact distance of 2.0 Å. The system is small and has no molecular extent. |
 | Hydrodynamic radii | 0 / 0 (point charges) | No hydrodynamic radius is assigned as the spheres are treated as point particles for the analytical comparison. |
 | Debye length | 7.828 Å | Corresponds to ~150 mM ionic strength. |
 | Protein / solvent dielectric | 78.0 / 78.0 | Uniform dielectric. Unlike the molecular systems, no low-dielectric interior is defined for the analytical test. |
@@ -61,23 +61,23 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 ## 3. β-cyclodextrin host-guest complexes
 
-**Purpose.** Seven small-molecule guests binding β-cyclodextrin test PySTARC on a neutral host-guest benchmark where experimental association rates span an order of magnitude.
+**Purpose.** Seven small molecule guests binding β-cyclodextrin test PySTARC on a host-guest benchmark where experimental association rates span an order of magnitude.
 
-**System.** β-cyclodextrin contains 147 atoms with zero net charge and a maximum radius of 8.6 Å. All seven guest molecules also carry a net charge of zero and have radii ranging from 3 to 5 Å. Because all molecules are electrically neutral, no electrostatic steering occurs. Structures were taken from the qmrebind manuscript (doi.org/10.1039/D3SC04195F). The seven guests are 1-butanol, 1-propanol, tert-butanol, methyl butyrate, aspirin, 1-naphthylethanol, and 2-naphthylethanol.
+**System.** β-cyclodextrin contains 147 atoms with zero net charge and a maximum radius of 8.6 Å. All seven guest molecules also carry a net charge of zero and have radii ranging from 3 to 5 Å. Because all molecules are electrically neutral, no electrostatic steering occurs. The seven guests are 1-butanol, 1-propanol, tert-butanol, methyl butyrate, aspirin, 1-naphthylethanol, and 2-naphthylethanol.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| b surface radius | 30.0 Å | The sum of molecular radii (8.6 + 3 ≈ 11.6 Å) plus ~18 Å of clearance. |
+| b-surface radius | 30.0 Å | The sum of molecular radii (8.6 + 3 ≈ 11.6 Å) plus clearance. |
 | Hydrodynamic radii | Auto-computed | Determined from the PQR files via Monte Carlo surface integration. |
 | Debye length | 7.86 Å | Corresponds to 150 mM ionic strength. |
 | APBS fine grid length | 96 Å | Covers ±48 Å. The sum b + R<sub>max, lig</sub> ≈ 33 Å is well within the grid. |
 | APBS grid dimension | 257 | Yields a grid spacing of ~0.37 Å. |
 | Max timestep cap | 0 (no cap) | The adaptive timestep at r = 30 Å is ~90 ps, giving drift/noise ≈ 1.5. |
-| Overlap check | Enabled (true) | Retained for these host-guest systems; the tight, apolar interface does not trigger the false rejections seen for H-bonding protein criteria (see Common parameters). |
-| Trajectories | 2,000,000 | Per guest complex. |
+| Overlap check | Enabled (true) | Retained for the host-guest complexes. The tight, apolar interface does not trigger the false rejections seen for H-bonding protein criteria. |
+| Trajectories | 2,000,000 | Per host-guest complex. |
 | Contact cutoff (search) | 5.0 Å | A tight cutoff appropriate for the small host-guest complex. |
 | Buffer | 2.0 Å | Smaller than the protein complexes because the molecules are smaller and the contacts are tighter. |
-| Number of pairs | 7–8 | Up to 8 contacts. |
+| Number of pairs | 7–8 | Up to 8 contact pairs. |
 | Contacts needed | 4 | Four pairs must be satisfied. |
 | Contact mode | All heavy atoms | The host-guest interface has few polar atoms. |
 
@@ -327,7 +327,6 @@ Across the 32 rigid-body systems above, agreement with experiment in log₁₀ s
 |--------|-------|
 | Pearson r | 0.907|
 | Spearman ρ | 0.772 |
-| R² vs y = x | 0.781 |
 | log₁₀ MAE | 0.500|
 | log₁₀ RMSE | 0.658 |
 | log₁₀ bias | 0.267 |
