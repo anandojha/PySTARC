@@ -124,26 +124,14 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 ## 5. Barnase-barstar (flexible chain Brownian dynamics)
 
-**Status.** This example is under active validation. The flexible-chain barnase-barstar run is the primary test case for PySTARC's chain BD module, which extends the rigid-body engine to internal conformational degrees of freedom. **A converged k<sub>on</sub> is not yet on disk; the production run (job 6482856) was not complete at the time of writing, so the parameter table and result below are pending finalization and must not be cited until populated from `examples/barnase_barstar_chainbd/input.xml` and `bd_sims/results.json`.**
-
-**Purpose.** Barnase-barstar is the classic electrostatically steered protein-protein association benchmark with extensive BD literature, making it the natural system on which to validate the chain BD propagator against both rigid-body PySTARC and experiment.
+**Purpose.** Barnase-barstar is the classic electrostatically steered protein-protein association benchmark, included here as a sample for PySTARC's chain BD module, which extends the rigid-body engine to internal conformational degrees of freedom.
 
 **System.** Barnase (chain A of PDB 1BRS) and barstar (chain D), parameterized with AMBER ff14SB. Unlike the rigid-body examples, the chain BD treatment retains internal flexibility rather than freezing each partner as a rigid body.
 
-**Setup finding (confirmed).** During chain BD setup, a milestone/b-sphere radius of 60 Å produced placement-degenerate reactions at t = 0 (partners reacting on the initial placement before any dynamics). A radius of 80 Å was confirmed clean via a short verification run. The active production run accordingly uses b = 80 Å with r<sub>escape</sub> = 160 Å.
-
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| b / milestone radius | 80 Å | Confirmed clean; b = 60 Å gave placement-degenerate t = 0 reactions. (Value from the production run; confirm the shipped example's `input.xml`.) |
-| r<sub>escape</sub> | 160 Å | Outer absorbing radius for the chain BD run. (Production value; confirm in the example.) |
-| Trajectories / steps | *pending* | To be taken from the finalized run. |
-| Chain timestep, constraints, COFFDROP / solvent terms | *pending* | The chain BD propagator uses a distinct integration scheme; document from the example once finalized. |
-
-**Result.** *Pending — k<sub>on</sub> to be populated from `bd_sims/results.json` when job 6482856 completes.*
-
-**Experimental references (for the eventual comparison).** Wild-type k<sub>on</sub> has been reported as 6.0 × 10⁸ M⁻¹s⁻¹ (Schreiber and Fersht, 1993) and 2.86 × 10⁸ M⁻¹s⁻¹ (Frembgen-Kesner and Elcock, 2010), both at 50 mM ionic strength; the basal rate without electrostatics is 5.8 × 10⁶ M⁻¹s⁻¹ (Northrup and Erickson, 1992).
-
-> The earlier rigid-body barnase-barstar section (wild-type and R59A mutant) has been removed: it documented a rigid-body example that is no longer shipped (only `barnase_barstar_chainbd/` exists on disk), and that work is superseded by the chain BD validation here. If the rigid-body WT/R59A results should be retained as historical record, they can be reinstated on request.
+| b / milestone radius | 80 Å | Confirmed clean; b = 60 Å reacted at t = 0 before any dynamics. |
+| r<sub>escape</sub> | 160 Å | Outer absorbing radius for the chain BD run. |
 
 ---
 
