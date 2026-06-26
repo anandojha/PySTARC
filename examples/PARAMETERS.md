@@ -25,7 +25,7 @@ This complex validates the BD engine against the exact analytical Smoluchowski s
 | Reaction criterion | 1 pair at 2.0 Å contact distance | The sum of radii defines exact contact. |
 | Contacts needed | 1 | Single contact. |
 
-**Result.** PySTARC reproduces the analytical Smoluchowski rate to within 0.1%: k<sub>on</sub> = 1.56 × 10¹⁰ M⁻¹s⁻¹ versus the exact value of 1.56 × 10¹⁰ M⁻¹s⁻¹ (relative SE 0.1%).
+PySTARC reproduces the analytical Smoluchowski rate to within 0.1%: k<sub>on</sub> = 1.56 × 10¹⁰ M⁻¹s⁻¹ versus the exact value of 1.56 × 10¹⁰ M⁻¹s⁻¹ (relative SE 0.1%).
 
 ---
 
@@ -73,9 +73,7 @@ Seven small molecule guests binding β-cyclodextrin test PySTARC on a host-guest
 | Contacts needed | 4 | Four pairs must be satisfied. |
 | Contact mode | All heavy atoms | The host-guest interface has few polar atoms. |
 
-**Per-guest reaction criteria (from rxns.xml).** All use 7 pairs with n_needed = 4. Cutoffs: 1-butanol 5.0/6.0/6.5 Å; 1-propanol 5.5/6.0/6.5 Å; tert-butanol 5.5/6.0 Å; methyl butyrate 5.5/6.0/6.5 Å; aspirin 5.0/5.5/6.0 Å; 1-naphthylethanol 5.0/5.5/6.0 Å; 2-naphthylethanol 5.5/6.0 Å. The O5 glycosidic oxygens of β-cyclodextrin (atoms 15, 57, 99) recur as receptor contact atoms across all complexes, providing a consistent anchor.
-
-**Results.**
+All use 7 pairs with n_needed = 4. Cutoffs: 1-butanol 5.0/6.0/6.5 Å; 1-propanol 5.5/6.0/6.5 Å; tert-butanol 5.5/6.0 Å; methyl butyrate 5.5/6.0/6.5 Å; aspirin 5.0/5.5/6.0 Å; 1-naphthylethanol 5.0/5.5/6.0 Å; 2-naphthylethanol 5.5/6.0 Å. The O5 glycosidic oxygens of β-cyclodextrin (atoms 15, 57, 99) recur as receptor contact atoms across all complexes, providing a consistent anchor.
 
 | Guest | Exp k<sub>on</sub> (M⁻¹s⁻¹) | PySTARC k<sub>on</sub> (M⁻¹s⁻¹) | Ratio | rel SE |
 |-------|------------------------------|-----------------------------------|-------|--------|
@@ -106,9 +104,7 @@ This complex represents a strongly electrostatically steered protein-protein ass
 | Trajectories | 1,000,000 | - |
 | Contacts needed | 4 | Four interfacial hydrogen-bonding contacts must be satisfied simultaneously. (The full pair list is in `rxns.xml`; it was not re-parsed into report.txt - confirm pair count/cutoffs against the file.) |
 
-**Experimental target.** k<sub>on</sub> = 6.7 × 10⁶ M⁻¹s⁻¹ at physiological ionic strength, measured by surface plasmon resonance (Baerga-Ortiz et al., 2000). Debye-Hückel analysis of the ionic-strength dependence confirms a nearly completely electrostatically steered interaction.
-
-**Result.** k<sub>on</sub> = 2.38 × 10⁶ M⁻¹s⁻¹ (ratio 0.36×, relative SE 6.2%).
+The experimental k<sub>on</sub> is 6.7 × 10⁶ M⁻¹s⁻¹ at physiological ionic strength, measured by surface plasmon resonance (Baerga-Ortiz et al., 2000), and Debye-Hückel analysis of the ionic-strength dependence confirms a nearly completely electrostatically steered interaction. PySTARC gives k<sub>on</sub> = 2.38 × 10⁶ M⁻¹s⁻¹ (ratio 0.36×, relative SE 6.2%).
 
 ---
 
@@ -157,8 +153,6 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 | Trajectories | 5,000,000 | Per system. |
 | Reaction criterion | 2 pairs (THR199 OG1 / GLU106 OE1 to sulfonamide N and amide N), cutoff 3.5 Å, n_needed = 2 | Both Zn-coordinating / proton-shuttle hydrogen bonds required. |
 
-**Results.**
-
 | System | Isozyme | Exp k<sub>on</sub> (M⁻¹s⁻¹) | PySTARC k<sub>on</sub> (M⁻¹s⁻¹) | Ratio | rel SE |
 |--------|---------|------------------------------|-----------------------------------|-------|--------|
 | CA I-VD12-69-1 | CA I | 2.7 × 10⁶ | 2.35 × 10⁶ | 0.87× | 3.8% |
@@ -185,8 +179,6 @@ Eight inhibitors of the mitotic kinase TTK/MPS1 test PySTARC across a single-tar
 | Max timestep cap | 0 (no cap) | b < 80 Å; no cap required. |
 | Trajectories | 10,000,000 | Per system. |
 | Reaction criterion | 3 polar crystal contacts (GLU603 O, GLY605 O, GLY605 N to ligand N9/N2/N3), uniform 4.5 Å cutoff, n_needed = 3 | A single flat cutoff applied uniformly across all eight systems. |
-
-**Results.**
 
 | System | Inhibitor | Exp k<sub>on</sub> (M⁻¹s⁻¹) | PySTARC k<sub>on</sub> (M⁻¹s⁻¹) | Ratio | rel SE |
 |--------|-----------|------------------------------|-----------------------------------|-------|--------|
@@ -215,8 +207,6 @@ Six neutral HSP90 inhibitors test PySTARC on a single-target series of uncharged
 | Max timestep cap | 0 (no cap) | b < 80 Å; no cap required. |
 | Trajectories | 10,000,000 | Per system. |
 | Reaction criterion | 8 pairs (contact method; SER37/ALA40/ASN36 CA anchors to ligand O2x/C15x/N1x), uniform 5.0 Å cutoff, n_needed = 6 | A single flat 5.0 Å cutoff applied across all six systems. |
-
-**Results.**
 
 | System | Exp k<sub>on</sub> (M⁻¹s⁻¹) | PySTARC k<sub>on</sub> (M⁻¹s⁻¹) | Ratio | rel SE |
 |--------|------------------------------|-----------------------------------|-------|--------|
