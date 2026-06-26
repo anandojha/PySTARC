@@ -73,7 +73,7 @@ Seven small molecule guests binding β-cyclodextrin test PySTARC on a host-guest
 | Contacts needed | 4 | Four pairs must be satisfied. |
 | Contact mode | All heavy atoms | The host-guest interface has few polar atoms. |
 
-All use 7 pairs with n_needed = 4. Cutoffs: 1-butanol 5.0/6.0/6.5 Å; 1-propanol 5.5/6.0/6.5 Å; tert-butanol 5.5/6.0 Å; methyl butyrate 5.5/6.0/6.5 Å; aspirin 5.0/5.5/6.0 Å; 1-naphthylethanol 5.0/5.5/6.0 Å; 2-naphthylethanol 5.5/6.0 Å. The O5 glycosidic oxygens of β-cyclodextrin (atoms 15, 57, 99) recur as receptor contact atoms across all complexes, providing a consistent anchor.
+Each guest uses seven contact pairs, of which four must form for a reaction, at cutoffs of 5.0 to 6.5 Å taken from the crystal contacts. The O5 glycosidic oxygens of β-cyclodextrin (atoms 15, 57 and 99) recur as the receptor contact atoms across all of the guests, giving a consistent anchor.
 
 | Guest | Exp k<sub>on</sub> (M⁻¹s⁻¹) | PySTARC k<sub>on</sub> (M⁻¹s⁻¹) | Ratio | rel SE |
 |-------|------------------------------|-----------------------------------|-------|--------|
