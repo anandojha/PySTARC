@@ -75,7 +75,7 @@ Seven small molecule guests binding β-cyclodextrin test PySTARC on a host-guest
 
 Each guest uses seven contact pairs, of which four must form for a reaction, at cutoffs of 5.0 to 6.5 Å taken from the crystal contacts. The O5 glycosidic oxygens of β-cyclodextrin (atoms 15, 57 and 99) recur as the receptor contact atoms across all of the guests, giving a consistent anchor.
 
-| Guest | Exp k<sub>on</sub> (M⁻¹s⁻¹) | PySTARC k<sub>on</sub> (M⁻¹s⁻¹) | Ratio | rel SE |
+| Guest | Exp k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | PySTARC k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Ratio | rel SE |
 |-------|------------------------------|-----------------------------------|-------|--------|
 | 1-butanol | 2.8 × 10⁸ | 6.28 × 10⁸ | 2.24× | 0.3% |
 | 1-propanol | 5.1 × 10⁸ | 5.94 × 10⁸ | 1.17× | 0.3% |
@@ -153,7 +153,7 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 | Trajectories | 5,000,000 | Per system. |
 | Reaction criterion | 2 pairs (THR199 OG1 / GLU106 OE1 to sulfonamide N and amide N), cutoff 3.5 Å, n_needed = 2 | Both Zn-coordinating / proton-shuttle hydrogen bonds required. |
 
-| System | Isozyme | Exp k<sub>on</sub> (M⁻¹s⁻¹) | PySTARC k<sub>on</sub> (M⁻¹s⁻¹) | Ratio | rel SE |
+| System | Isozyme | Exp k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | PySTARC k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Ratio | rel SE |
 |--------|---------|------------------------------|-----------------------------------|-------|--------|
 | CA I-VD12-69-1 | CA I | 2.7 × 10⁶ | 2.35 × 10⁶ | 0.87× | 3.8% |
 | CA XIII-AZM | CA XIII | 1.5 × 10⁶ | 1.79 × 10⁶ | 1.20× | 4.7% |
@@ -180,7 +180,7 @@ Eight inhibitors of the mitotic kinase TTK/MPS1 test PySTARC across a single-tar
 | Trajectories | 10,000,000 | Per system. |
 | Reaction criterion | 3 polar crystal contacts (GLU603 O, GLY605 O, GLY605 N to ligand N9/N2/N3), uniform 4.5 Å cutoff, n_needed = 3 | A single flat cutoff applied uniformly across all eight systems. |
 
-| System | Inhibitor | Exp k<sub>on</sub> (M⁻¹s⁻¹) | PySTARC k<sub>on</sub> (M⁻¹s⁻¹) | Ratio | rel SE |
+| System | Inhibitor | Exp k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | PySTARC k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Ratio | rel SE |
 |--------|-----------|------------------------------|-----------------------------------|-------|--------|
 | 5LJJ | Reversine | 2.08 × 10⁶ | 4.91 × 10⁶ | 2.36× | 1.8% |
 | 2X9E | NMS-P715 | 6.41 × 10⁵ | 2.37 × 10⁶ | 3.70× | 2.3% |
@@ -208,7 +208,7 @@ Six neutral HSP90 inhibitors test PySTARC on a single-target series of uncharged
 | Trajectories | 10,000,000 | Per system. |
 | Reaction criterion | 8 pairs (contact method, SER37/ALA40/ASN36 CA anchors to ligand O2x/C15x/N1x), uniform 5.0 Å cutoff, n_needed = 6 | A single flat 5.0 Å cutoff applied across all six systems. |
 
-| System | Exp k<sub>on</sub> (M⁻¹s⁻¹) | PySTARC k<sub>on</sub> (M⁻¹s⁻¹) | Ratio | rel SE |
+| System | Exp k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | PySTARC k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Ratio | rel SE |
 |--------|------------------------------|-----------------------------------|-------|--------|
 | 31 | 1.00 × 10⁶ | 2.09 × 10⁶ | 2.09× | 3.0% |
 | 37 | 3.43 × 10⁵ | 2.70 × 10⁵ | 0.79× | 7.3% |
@@ -259,7 +259,7 @@ The flexible chain BD example (§5) uses a distinct propagation scheme with its 
 
 Across the 32 rigid-body systems above, agreement with experiment in log₁₀ space is:
 
-| Metric | Value |
+| Metric&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |
 |--------|-------|
 | Pearson r | 0.913 (r² = 0.833) |
 | Spearman ρ | 0.796 |
