@@ -12,7 +12,7 @@ All complexes use the AMBER ff14SB force field for receptor charge assignment (G
 
 This complex validates the BD engine against the exact analytical Smoluchowski solution for two uniformly charged spheres interacting via a screened Coulombic potential. The two spherical ions carry charges Q<sub>rec</sub> = +1e and Q<sub>lig</sub> = −1e and each have a radius of 1.0 Å. This is a purely analytical test of the BD propagator.
 
-| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
+| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
 | b-surface radius | 10.0 Å | Five times the contact distance of 2.0 Å. The system is small and has no molecular extent. |
 | Hydrodynamic radii | 0 / 0 (point charges) | No hydrodynamic radius is assigned as the spheres are treated as point particles for the analytical comparison. |
@@ -33,7 +33,7 @@ PySTARC reproduces the analytical Smoluchowski rate to within 0.1%: k<sub>on</su
 
 The trypsin-benzamidine complex validates PySTARC for a protein and a small molecule complex with well-characterized experimental kinetics. Trypsin protein contains 3220 atoms with a net charge of +6e and a maximum radius of 28.4 Å. Benzamidine contains 18 atoms with a net charge of +1e and a maximum radius of 3.7 Å. Both molecules are positively charged, resulting in repulsive electrostatics.
 
-| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
+| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
 | b-surface radius | 45.0 Å | The sum of the maximum molecular radii (28.4 + 3.7 = 32.1 Å) plus clearance. |
 | Receptor hydrodynamic radius | 22.5 Å | Stokes radius from molecular dimensions, approximately 0.80 × R<sub>max</sub> for a globular protein of this size. |
@@ -57,7 +57,7 @@ The setup script identifies the closest heavy-atom contacts between the receptor
 
 Seven small molecule guests binding β-cyclodextrin test PySTARC on a host-guest benchmark where experimental association rates span an order of magnitude. β-cyclodextrin contains 147 atoms with zero net charge and a maximum radius of 8.6 Å. All seven guest molecules also carry a net charge of zero and have radii ranging from 3 to 5 Å. Because all molecules are electrically neutral, no electrostatic steering occurs. The seven guests are 1-butanol, 1-propanol, tert-butanol, methyl butyrate, aspirin, 1-naphthylethanol, and 2-naphthylethanol.
 
-| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
+| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
 | b-surface radius | 30.0 Å | The sum of molecular radii (8.6 + 3 ≈ 11.6 Å) plus clearance. |
 | Hydrodynamic radii | Auto-computed | Determined from the PQR files via Monte Carlo surface integration. |
@@ -91,7 +91,7 @@ Each guest uses seven contact pairs, of which four must form for a reaction, at 
 
 This complex represents a strongly electrostatically steered protein-protein association. Thrombin contains 4727 atoms with a net charge of +3e and a maximum radius of 34.7 Å. Thrombomodulin EGF domains 4 to 6 contain 1650 atoms with a net charge of −15e and a maximum radius of 40.6 Å. Strong electrostatic complementarity drives fast association. Pre-computed PQR files with AMBER partial charges were used directly.
 
-| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
+| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
 | b surface radius | 85.0 Å | The sum of maximum molecular radii (34.7 + 40.6 = 75.3 Å) plus ~10 Å of clearance. |
 | Receptor hydrodynamic radius | 25.58 Å | Stokes radius from molecular dimensions, ~0.74 × R<sub>max</sub>. |
@@ -112,7 +112,7 @@ The experimental k<sub>on</sub> is 6.7 × 10⁶ M⁻¹s⁻¹ at physiological io
 
 Barnase-barstar is the classic electrostatically steered protein-protein association benchmark, included here as a sample for PySTARC's chain BD module, which extends the rigid-body engine to internal conformational degrees of freedom. It pairs barnase (chain A of PDB 1BRS) and barstar (chain D), parameterized with AMBER ff14SB. Unlike the rigid-body examples, the chain BD treatment retains internal flexibility rather than freezing each partner as a rigid body.
 
-| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
+| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
 | b / milestone radius | 80 Å | Milestone radius for the chain BD run. |
 | r<sub>escape</sub> | 160 Å | Outer absorbing radius for the chain BD run. |
@@ -123,7 +123,7 @@ Barnase-barstar is the classic electrostatically steered protein-protein associa
 
 This complex validates PySTARC on a kinase-inhibitor system where the ligand is electrically neutral and the receptor carries a large net negative charge. p38 MAPK alpha in the DFG-in conformation from PDB 1A9U (chain A, residues 4 to 354) contains 5658 atoms with a net charge of −9e and a maximum radius of 37.8 Å. SB203580 is a type I kinase inhibitor with 27 atoms and zero net charge. The receptor is parameterized with ff14SB and the ligand with GAFF2 + AM1-BCC via antechamber. The ligand binds in the ATP pocket at the hinge.
 
-| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
+| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
 | b surface radius | 60.0 Å | The sum of maximum radii (37.8 + 7.8 = 45.6 Å) plus ~14 Å of clearance. |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
@@ -141,7 +141,7 @@ Four crystal-structure contacts (the hinge MET106 backbone to the pyridine N, th
 
 Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII, CA I, CA II) test PySTARC on a multi-target protein-ligand benchmark where all ligands carry the same charge (−1e) and bind the same Zn-coordinating sulfonamide motif but differ in scaffold, size, and isozyme. All ligands are deprotonated sulfonamides (net charge −1e), and the intrinsic k<sub>on</sub> corrected for the protonation equilibrium is the correct BD comparison target. Five systems use CA XIII (PDB 3CZV), one CA I (2NMX), one CA II (3HS4). The active-site Zn²⁺ is included via `frcmod.ions234lm_126_tip3p`. Ligands are built from SMILES via rdkit, converted with obabel, and parameterized with antechamber (GAFF2 + AM1-BCC).
 
-| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
+| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
 | b surface radius | 60.0 Å | Receptor R<sub>max</sub> ≈ 27 Å plus ligand 4 to 8 Å plus ~25 Å clearance. |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
@@ -169,7 +169,7 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 
 Eight inhibitors of the mitotic kinase TTK/MPS1 test PySTARC across a single-target series spanning roughly two orders of magnitude in experimental k<sub>on</sub>. The systems are eight TTK co-crystal structures (PDB 2X9E, 3GFW, 3H9F, 5LJJ, 5N7V, 5N84, 5N93, 5NAD), each parameterized with ff14SB for the receptor and GAFF2 + AM1-BCC for the ligand, with ligand charges assigned by the OpenEye toolkits (license required).
 
-| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
+| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
 | b surface radius | 60.0 Å | Globular kinase plus small-molecule inhibitor with clearance. |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
@@ -197,7 +197,7 @@ Eight inhibitors of the mitotic kinase TTK/MPS1 test PySTARC across a single-tar
 
 Six neutral HSP90 inhibitors test PySTARC on a single-target series of uncharged ligands, isolating the diffusion-limited encounter rate in the absence of electrostatic steering. The six systems are HSP90 N-terminal domain co-complexes (31, 37, 43, 62, 65, 70), each with a neutral inhibitor, the receptor parameterized with ff14SB and the ligands with GAFF2 + AM1-BCC (OpenEye toolkits, license required).
 
-| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
+| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
 | b surface radius | 55.0 Å | Globular HSP90 N-domain plus small inhibitor with clearance. |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
@@ -223,7 +223,7 @@ Six neutral HSP90 inhibitors test PySTARC on a single-target series of uncharged
 
 Most complexes share the following. Exceptions are noted in the per-system sections above.
 
-| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
+| Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
 | Protein dielectric | 4.0 | Standard for BD simulations. (Exception: the two-sphere analytical test uses a uniform dielectric of 78.0.) |
 | Solvent dielectric | 78.0 | Water at 298.15 K. |
