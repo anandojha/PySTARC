@@ -49,9 +49,7 @@ The trypsin-benzamidine complex validates PySTARC for a protein and a small mole
 | Contacts needed | 6 | Six of the 10 pairs must be satisfied simultaneously. |
 | Contact mode | Polar | Only N/O/S donor-acceptor pairs are considered, corresponding to hydrogen bonding contacts. |
 
-**Reaction criterion construction.** The setup script identifies the closest heavy-atom contacts between the receptor and ligand in the crystal structure, filters for polar atoms (N, O, S on both sides), retains the top 10 contacts with one per receptor residue, and sets each cutoff to the crystal distance. The resulting 10 pairs have cutoffs ranging from 6.0 to 8.5 Å.
-
-**Result.** k<sub>on</sub> = 5.39 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 2.9 × 10⁷ M⁻¹s⁻¹ (ratio 1.86×, relative SE 0.5%).
+The setup script identifies the closest heavy-atom contacts between the receptor and ligand in the crystal structure, filters for polar atoms (N, O, S on both sides), retains the top 10 contacts with one per receptor residue, and sets each cutoff to the crystal distance. The resulting 10 pairs have cutoffs ranging from 6.0 to 8.5 Å. k<sub>on</sub> = 5.39 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 2.9 × 10⁷ M⁻¹s⁻¹ (ratio 1.86×, relative SE 0.5%).
 
 ---
 
@@ -139,9 +137,7 @@ This complex validates PySTARC on a kinase-inhibitor system where the ligand is 
 | Max timestep cap | 0 (no cap) | The adaptive timestep at r = 60 Å is moderate for a small, highly diffusive ligand. |
 | Trajectories | 5,000,000 | Production run (earlier validation used 100,000). |
 
-**Reaction criterion (from rxns.xml).** Four crystal-structure contacts (hinge MET106 backbone-pyridine N; catalytic LYS50 NZ-imidazole N; VAL102 O and THR103 N-fluorine) at a uniform 7.0 Å cutoff, with **n_needed = 3** (raised from the earlier 2).
-
-**Result.** k<sub>on</sub> = 2.86 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 1.5 × 10⁷ M⁻¹s⁻¹ (ratio 1.91×, relative SE 1.1%).
+Four crystal-structure contacts (hinge MET106 backbone-pyridine N; catalytic LYS50 NZ-imidazole N; VAL102 O and THR103 N-fluorine) at a uniform 7.0 Å cutoff, with n_needed = 3 (raised from the earlier 2). k<sub>on</sub> = 2.86 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 1.5 × 10⁷ M⁻¹s⁻¹ (ratio 1.91×, relative SE 1.1%).
 
 ---
 
