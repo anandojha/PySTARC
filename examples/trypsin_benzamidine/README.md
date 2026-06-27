@@ -15,7 +15,7 @@
 | Born desolvation       | enabled                              |
 | Hydrodynamic radii     | receptor 22.5, ligand 5.0 Å   |
 | Trajectories           | 100,000                              |
-| Experimental k<sub>on</sub> | 2.9 x 10<sup>7</sup> M<sup>-1</sup>s<sup>-1</sup> |
+| Experimental k<sub>on</sub> | 2.9 × 10<sup>7</sup> M<sup>-1</sup>s<sup>-1</sup> |
 
 ## Input files (provided)
 

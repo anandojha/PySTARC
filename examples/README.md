@@ -136,8 +136,8 @@ examples/
     ├── ligand.pqr                      Pre-generated benzamidine PQR
     ├── rxns.xml                        Reaction criterion
     ├── input.xml                       Simulation parameters
-    ├── submit_SLURM_single_GPU.sh      SLURM: 1 GPU x 10M trajectories
-    └── submit_SLURM_multi_GPUs.sh      SLURM: 4 GPUs x 2.5M trajectories, auto-combine
+    ├── submit_SLURM_single_GPU.sh      SLURM: 1 GPU × 10M trajectories
+    └── submit_SLURM_multi_GPUs.sh      SLURM: 4 GPUs × 2.5M trajectories, auto-combine
 ```
 
 ## Quick start

@@ -22,7 +22,7 @@ Same trypsin-benzamidine protein-ligand complex as `trypsin_benzamidine/`, but d
 | Born desolvation       | enabled                                                 |
 | Hydrodynamic radii     | rec 22.5, lig 5.0 (Å)                            |
 | Trajectories           | 10,000,000                                              |
-| Experimental k<sub>on</sub> | 2.9 x 10<sup>7</sup> M<sup>-1</sup>s<sup>-1</sup> (Votapka et al. 2022) |
+| Experimental k<sub>on</sub> | 2.9 × 10<sup>7</sup> M<sup>-1</sup>s<sup>-1</sup> (Votapka et al. 2022) |
 
 See [`../PARAMETERS.md`](../PARAMETERS.md) Section 2 for parameter selection rationale.
 

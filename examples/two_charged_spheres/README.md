@@ -16,7 +16,7 @@ This system has an exact analytical solution (Smoluchowski first-passage with re
 | Overlap check             | disabled                                          |
 | Trajectories              | 100,000                                           |
 | Exact P<sub>rxn</sub>     | 0.4501                                            |
-| Exact k<sub>on</sub>      | 1.56 x 10<sup>10</sup> M<sup>-1</sup>s<sup>-1</sup> |
+| Exact k<sub>on</sub>      | 1.56 × 10<sup>10</sup> M<sup>-1</sup>s<sup>-1</sup> |
 
 ## Input files (provided)
 
@@ -27,11 +27,11 @@ This system has an exact analytical solution (Smoluchowski first-passage with re
 | `rxns.xml`         | Reaction criterion: receptor atom 1 and ligand atom 1 within 2.5 Å.                 |
 | `input.xml`        | PySTARC input file with simulation parameters.                                             |
 | `analytical.py`    | Computes exact Smoluchowski solution and compares against simulation results.              |
-| `convergence.py`   | Multi-seed convergence test (4 seeds x 10k trajectories).                                  |
+| `convergence.py`   | Multi-seed convergence test (4 seeds × 10k trajectories).                                  |
 | `run.sh`           | Runs BD simulation, verifies against the analytical solution, and runs the multi-seed convergence test. |
 
 ## Run
-`run.sh` runs the BD simulation, then runs `analytical.py` to compare against the exact Smoluchowski solution, and finally runs `convergence.py` (4 seeds x 10k trajectories) to verify consistency across random seeds.
+`run.sh` runs the BD simulation, then runs `analytical.py` to compare against the exact Smoluchowski solution, and finally runs `convergence.py` (4 seeds × 10k trajectories) to verify consistency across random seeds.
 ```bash
 conda activate PySTARC
 module load cuda

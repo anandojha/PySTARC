@@ -26,7 +26,7 @@
 | `run.sh`           | Runs BD simulation in one command.                                                                   |
 
 ## Run
-`run.sh` runs the BD simulation, then runs `bb_effect.py` (4 seeds x 10k trajectories) to validate the Brownian bridge mechanism.
+`run.sh` runs the BD simulation, then runs `bb_effect.py` (4 seeds × 10k trajectories) to validate the Brownian bridge mechanism.
 ```bash
 conda activate PySTARC
 module load cuda

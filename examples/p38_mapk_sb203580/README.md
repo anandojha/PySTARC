@@ -16,8 +16,8 @@
 | Born desolvation       | enabled                                                 |
 | Hydrodynamic radii     | auto                                                    |
 | Trajectories           | 100,000                                                 |
-| Experimental k<sub>on</sub> | 1.5 x 10<sup>7</sup> M<sup>-1</sup>s<sup>-1</sup> (Miao et al., 2018) |
-| Browndye BD k<sub>on</sub> | 6.6 x 10<sup>7</sup> M<sup>-1</sup>s<sup>-1</sup> (Huang, Biophys J, 2021) |
+| Experimental k<sub>on</sub> | 1.5 × 10<sup>7</sup> M<sup>-1</sup>s<sup>-1</sup> (Miao et al., 2018) |
+| Browndye BD k<sub>on</sub> | 6.6 × 10<sup>7</sup> M<sup>-1</sup>s<sup>-1</sup> (Huang, Biophys J, 2021) |
 
 ## Files
 

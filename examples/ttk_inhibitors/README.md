@@ -5,14 +5,14 @@ This example covers eight inhibitors of the TTK (MPS1) kinase domain. Each syste
 
 | Directory | PDB  | Inhibitor    | Exp k<sub>on</sub> (M<sup>-1</sup>s<sup>-1</sup>) |
 |-----------|------|--------------|-----------------------------------------------------|
-| `2X9E`    | 2X9E | NMS-P715     | 6.4 x 10<sup>5</sup>  |
-| `3GFW`    | 3GFW | Mps1-IN-1    | 3.8 x 10<sup>5</sup>  |
-| `3H9F`    | 3H9F | Mps1-IN-2    | 1.2 x 10<sup>6</sup>  |
-| `5LJJ`    | 5LJJ | Reversine    | 2.1 x 10<sup>6</sup>  |
-| `5N7V`    | 5N7V | MPI-0479605  | 2.0 x 10<sup>6</sup>  |
-| `5N84`    | 5N84 | Mps-BAY2b    | 2.6 x 10<sup>6</sup>  |
-| `5N93`    | 5N93 | TC-Mps1-12   | 2.2 x 10<sup>7</sup>  |
-| `5NAD`    | 5NAD | BAY-1217389  | 3.8 x 10<sup>5</sup>  |
+| `2X9E`    | 2X9E | NMS-P715     | 6.4 × 10<sup>5</sup>  |
+| `3GFW`    | 3GFW | Mps1-IN-1    | 3.8 × 10<sup>5</sup>  |
+| `3H9F`    | 3H9F | Mps1-IN-2    | 1.2 × 10<sup>6</sup>  |
+| `5LJJ`    | 5LJJ | Reversine    | 2.1 × 10<sup>6</sup>  |
+| `5N7V`    | 5N7V | MPI-0479605  | 2.0 × 10<sup>6</sup>  |
+| `5N84`    | 5N84 | Mps-BAY2b    | 2.6 × 10<sup>6</sup>  |
+| `5N93`    | 5N93 | TC-Mps1-12   | 2.2 × 10<sup>7</sup>  |
+| `5NAD`    | 5NAD | BAY-1217389  | 3.8 × 10<sup>5</sup>  |
 
 Experimental k<sub>on</sub> values are from Uitdehaag et al. (2017). Verify the exact citation against the primary source before external use. See the Notes on `3GFW` below.
 

@@ -5,12 +5,12 @@ All 6 receptor-ligand complexes share the same HSP90 N-terminal domain receptor 
 
 | Receptor-ligand complex | Exp k<sub>on</sub> (M<sup>-1</sup>s<sup>-1</sup>) |
 |-------------------------|-----------------------------------------------------|
-| `31`                    | 1.0 x 10<sup>6</sup>  |
-| `37`                    | 3.4 x 10<sup>5</sup>  |
-| `43`                    | 8.4 x 10<sup>4</sup>  |
-| `62`                    | 1.2 x 10<sup>5</sup>  |
-| `65`                    | 2.1 x 10<sup>5</sup>  |
-| `70`                    | 1.0 x 10<sup>4</sup>  |
+| `31`                    | 1.0 × 10<sup>6</sup>  |
+| `37`                    | 3.4 × 10<sup>5</sup>  |
+| `43`                    | 8.4 × 10<sup>4</sup>  |
+| `62`                    | 1.2 × 10<sup>5</sup>  |
+| `65`                    | 2.1 × 10<sup>5</sup>  |
+| `70`                    | 1.0 × 10<sup>4</sup>  |
 
 ## Shared parameters
 

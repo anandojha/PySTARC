@@ -6,13 +6,13 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 
 | System | Isozyme | PDB | Ligand | Exp k<sub>on</sub> (M<sup>-1</sup>s<sup>-1</sup>) |
 |--------|---------|-----|--------|-----------------------------------------------------|
-| `ca13_azm` | CA XIII | 3CZV | Acetazolamide (AZM) | 1.5 x 10<sup>6</sup> |
-| `ca13_vd1125` | CA XIII | 3CZV | VD11-25 | 4.6 x 10<sup>5</sup> |
-| `ca13_vd1126` | CA XIII | 3CZV | VD11-26 | 1.5 x 10<sup>6</sup> |
-| `ca13_vd1209` | CA XIII | 3CZV | VD12-09 | 3.3 x 10<sup>5</sup> |
-| `ca13_vd1269` | CA XIII | 3CZV | VD12-69-1 | 2.5 x 10<sup>6</sup> |
-| `ca1_vd1269` | CA I | 2NMX | VD12-69-1 | 2.7 x 10<sup>6</sup> |
-| `ca2_vd1142` | CA II | 3HS4 | VD11-4-2 | 1.8 x 10<sup>6</sup> |
+| `ca13_azm` | CA XIII | 3CZV | Acetazolamide (AZM) | 1.5 × 10<sup>6</sup> |
+| `ca13_vd1125` | CA XIII | 3CZV | VD11-25 | 4.6 × 10<sup>5</sup> |
+| `ca13_vd1126` | CA XIII | 3CZV | VD11-26 | 1.5 × 10<sup>6</sup> |
+| `ca13_vd1209` | CA XIII | 3CZV | VD12-09 | 3.3 × 10<sup>5</sup> |
+| `ca13_vd1269` | CA XIII | 3CZV | VD12-69-1 | 2.5 × 10<sup>6</sup> |
+| `ca1_vd1269` | CA I | 2NMX | VD12-69-1 | 2.7 × 10<sup>6</sup> |
+| `ca2_vd1142` | CA II | 3HS4 | VD11-4-2 | 1.8 × 10<sup>6</sup> |
 
 Experimental k<sub>on</sub> values are intrinsic association rates from Linkuviene et al., J. Med. Chem. 2018.
 
