@@ -1,7 +1,7 @@
 # TTK (MPS1) kinase-inhibitor complexes
 
 ## Receptor-ligand complexes
-Eight inhibitors of the TTK (MPS1) kinase domain. Each system is a separate crystal structure (the PDB accession is the directory name) paired with its co-crystallized inhibitor. BD models the diffusion-limited encounter of each inhibitor with the ATP-binding site of the kinase.
+This example covers eight inhibitors of the TTK (MPS1) kinase domain. Each system is a separate crystal structure (the PDB accession is the directory name) paired with its co-crystallized inhibitor. BD models the diffusion-limited encounter of each inhibitor with the ATP-binding site of the kinase.
 
 | Directory | PDB  | Inhibitor    | Exp k<sub>on</sub> (M<sup>-1</sup>s<sup>-1</sup>) |
 |-----------|------|--------------|-----------------------------------------------------|
@@ -14,7 +14,7 @@ Eight inhibitors of the TTK (MPS1) kinase domain. Each system is a separate crys
 | `5N93`    | 5N93 | TC-Mps1-12   | 2.2 x 10<sup>7</sup>  |
 | `5NAD`    | 5NAD | BAY-1217389  | 3.8 x 10<sup>5</sup>  |
 
-Experimental k<sub>on</sub> values are from Uitdehaag et al. (2017); verify the exact citation against the primary source before external use. See the Notes on `3GFW` below.
+Experimental k<sub>on</sub> values are from Uitdehaag et al. (2017). Verify the exact citation against the primary source before external use. See the Notes on `3GFW` below.
 
 ## Shared parameters
 
@@ -48,7 +48,7 @@ The following script is in the `ttk_inhibitors/` directory:
 | `run.sh`   | Runs setup and BD simulation for all 8 complexes sequentially, then compares rates against experiment and saves `summary.txt`. |
 
 ## What setup.py generates
-No parameterized files are shipped; `setup.py` builds everything from scratch each run. If the source `<PDB>.pdb` is already present (as shipped) it is used directly; otherwise setup downloads it from the RCSB PDB. Running `python setup.py` produces:
+No parameterized files are shipped. `setup.py` builds everything from scratch each run. If the source `<PDB>.pdb` is already present (as shipped) it is used directly. Otherwise setup downloads it from the RCSB PDB. Running `python setup.py` produces:
 
 | Generated file   | Description                                                                                                                        |
 |------------------|------------------------------------------------------------------------------------------------------------------------------------|
@@ -77,7 +77,7 @@ cd examples/ttk_inhibitors
 chmod +x run.sh
 bash run.sh
 ```
-`run.sh` performs the following for each of the 8 complexes: cleans any previous output files (keeping the source PDB), runs `setup.py` to parameterize and generate the PQR files and input XMLs, then runs the BD simulation. After all simulations complete, on-rates are printed to terminal and saved to `summary.txt`. The comparison includes PySTARC k<sub>on</sub>, experimental k<sub>on</sub>, their ratio, P<sub>rxn</sub>, and a Spearman rank correlation across the systems (with `3GFW` excluded; see Notes).
+`run.sh` performs the following for each of the 8 complexes: cleans any previous output files (keeping the source PDB), runs `setup.py` to parameterize and generate the PQR files and input XMLs, then runs the BD simulation. After all simulations complete, on-rates are printed to terminal and saved to `summary.txt`. The comparison includes PySTARC k<sub>on</sub>, experimental k<sub>on</sub>, their ratio, P<sub>rxn</sub>, and a Spearman rank correlation across the systems (with `3GFW` excluded, see Notes).
 
 ## Output files
 After a simulation completes, all results are written to `bd_sims/` within each receptor-ligand complex directory.
@@ -105,5 +105,5 @@ A timestamped log file (`pystarc_YYYYMMDD_HHMMSS.log`) is also written to `bd_si
 ## Notes
 - The source PDB is shipped with each system, so setup runs offline. If the PDB is removed, setup downloads it from `https://files.rcsb.org/download/<PDB>.pdb`, which requires network access.
 - The reaction criterion is explicit per system (defined in each `setup.py`), not auto-discovered. Each pair uses a 4.5 Angstrom cutoff and `n_needed=3`.
-- Receptor parameters are ff14SB (tleap); ligand charges are AM1-BCC (OpenEye) and ligand parameters are GAFF2 (antechamber/parmchk2). PQR files are generated via `cpptraj` and `ambpdb`.
+- Receptor parameters are ff14SB (tleap). Ligand charges are AM1-BCC (OpenEye) and ligand parameters are GAFF2 (antechamber/parmchk2). PQR files are generated via `cpptraj` and `ambpdb`.
 - `3GFW` is included for completeness but its reaction criterion is too loose: the chosen contacts do not discriminate the bound pose, producing spurious reactions and an unreliable k<sub>on</sub>. It is excluded from the rank-correlation statistic and its reported rate should not be trusted without rebuilding the criterion.

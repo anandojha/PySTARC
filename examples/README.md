@@ -26,9 +26,9 @@ examples/
 │
 ├── two_charged_spheres/                Analytical validation (exact Smoluchowski solution)
 │   ├── README.md
-│   ├── receptor.pqr                    Single-atom receptor (+1 e)
-│   ├── ligand.pqr                      Single-atom ligand (-1 e)
-│   ├── rxns.xml                        Reaction criterion (contact at 2.0 A)
+│   ├── receptor.pqr                    Single-atom receptor (+1e)
+│   ├── ligand.pqr                      Single-atom ligand (−1e)
+│   ├── rxns.xml                        Reaction criterion (contact at 2.0 Å)
 │   ├── input.xml                       Simulation parameters
 │   ├── analytical.py                   Exact solution comparison script
 │   ├── convergence.py                  Multi-seed convergence test

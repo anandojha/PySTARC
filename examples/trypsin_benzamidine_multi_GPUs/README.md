@@ -4,8 +4,8 @@
 
 Same trypsin-benzamidine protein-ligand complex as `trypsin_benzamidine/`, but demonstrating how to run PySTARC on an HPC cluster with SLURM. Two SLURM scripts are provided:
 
-- `submit_SLURM_single_GPU.sh` — runs the entire simulation on one GPU
-- `submit_SLURM_multi_GPUs.sh` — splits the simulation across 4 GPUs on one node and combines the results
+- `submit_SLURM_single_GPU.sh` - runs the entire simulation on one GPU
+- `submit_SLURM_multi_GPUs.sh` - splits the simulation across 4 GPUs on one node and combines the results
 
 | Property               | Value                                                   |
 |------------------------|---------------------------------------------------------|
@@ -52,7 +52,7 @@ Both scripts activate the `PySTARC` conda environment automatically via `conda s
 
 ## Single-GPU SLURM run
 
-One GPU, 32 CPU threads, 4h walltime. Submits one job that runs setup and the full BD simulation sequentially.
+This run uses one GPU, 32 CPU threads, and a 4h walltime. It submits one job that runs setup and the full BD simulation sequentially.
 
 ```bash
 cd examples/trypsin_benzamidine_multi_GPUs
@@ -73,7 +73,7 @@ Output files are written to `bd_sims/` in the example directory.
 
 ## Multi-GPU SLURM run
 
-Four GPUs on one node, each running 1/4 of the trajectories in parallel. The `multi_GPU_runs.py` splitter generates four `bd_sims/bd_{1..4}/` subdirectories with symlinked DX files and split random seeds. After all four finish, `combine_data.py` pools the results into a single `bd_sims/combined_results.json`.
+This run uses four GPUs on one node, each running 1/4 of the trajectories in parallel. The `multi_GPU_runs.py` splitter generates four `bd_sims/bd_{1..4}/` subdirectories with symlinked DX files and split random seeds. After all four finish, `combine_data.py` pools the results into a single `bd_sims/combined_results.json`.
 
 ```bash
 cd examples/trypsin_benzamidine_multi_GPUs
