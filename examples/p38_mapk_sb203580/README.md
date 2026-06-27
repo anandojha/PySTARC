@@ -7,11 +7,11 @@
 | PDB                    | 1A9U (Wang et al., 1998)                                |
 | Receptor               | p38 MAPK alpha, DFG-in conformation (5658 atoms, Q = -9 e) |
 | Ligand                 | SB203580, type I inhibitor (27 atoms, Q = 0 e)          |
-| b-surface              | 60.0 Angstrom                                           |
-| Escape sphere          | 120.0 Angstrom                                          |
-| Debye length           | 7.86 Angstrom (150 mM NaCl)                             |
+| b-surface              | 60.0 Å                                           |
+| Escape sphere          | 120.0 Å                                          |
+| Debye length           | 7.86 Å (150 mM NaCl)                             |
 | Reaction pairs         | 4 (MET106-NB1, LYS50-NC3, VAL102-FD3, THR103-FD3)      |
-| Reaction cutoff        | 7.0 Angstrom (all pairs)                                |
+| Reaction cutoff        | 7.0 Å (all pairs)                                |
 | n_needed               | 2                                                       |
 | Born desolvation       | enabled                                                 |
 | Hydrodynamic radii     | auto                                                    |
@@ -105,4 +105,4 @@ With `n_needed=2`, any two of the four contacts firing simultaneously counts as 
 - The His-tag residues (residues 1-3 in PDB 1A9U) are excluded from the receptor to avoid artifacts from the expression construct.
 - The ligand is parameterized separately from the protein using antechamber (GAFF2 + AM1-BCC), then each molecule gets its own AMBER topology and PQR file.
 - PQR files are generated from the AMBER topology via `cpptraj` and `ambpdb`.
-- The geometry check reports that b + R<sub>max, lig</sub> = 68 Angstrom slightly exceeds the fine grid half-extent of 64 Angstrom. The Yukawa multipole fallback handles the overshoot for the outermost ligand atoms at the b-surface.
+- The geometry check reports that b + R<sub>max, lig</sub> = 68 Å slightly exceeds the fine grid half-extent of 64 Å. The Yukawa multipole fallback handles the overshoot for the outermost ligand atoms at the b-surface.

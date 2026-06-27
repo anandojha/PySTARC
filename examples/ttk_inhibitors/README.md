@@ -22,9 +22,9 @@ Experimental k<sub>on</sub> values are from Uitdehaag et al. (2017). Verify the 
 |------------------------|--------------------------------------|
 | Receptor               | TTK (MPS1) kinase domain             |
 | Ligand charge          | neutral                              |
-| b-surface              | 60.0 Angstrom                        |
-| Debye length           | 7.86 Angstrom (150 mM, 0.15 M)       |
-| Reaction cutoff        | 4.5 Angstrom (per-pair)              |
+| b-surface              | 60.0 Å                        |
+| Debye length           | 7.86 Å (150 mM, 0.15 M)       |
+| Reaction cutoff        | 4.5 Å (per-pair)              |
 | n_needed               | 3                                    |
 | Born desolvation       | enabled                              |
 | Hydrodynamic interactions | enabled                           |
@@ -57,7 +57,7 @@ No parameterized files are shipped. `setup.py` builds everything from scratch ea
 | `receptor.pdb`, `ligand.pdb`     | Clean receptor and ligand PDBs.                                                                     |
 | `receptor.pqr`   | Receptor PQR file with atom positions, partial charges, and radii.                                                              |
 | `ligand.pqr`     | Ligand PQR file with atom positions, partial charges, and radii.                                                                |
-| `rxns.xml`       | Reaction criterion file with the per-system atom pairs and 4.5 Angstrom cutoffs.                                                |
+| `rxns.xml`       | Reaction criterion file with the per-system atom pairs and 4.5 Å cutoffs.                                                |
 | `input.xml`      | PySTARC input file with all simulation parameters (b-surface, electrostatics, trajectories, GPU, and convergence).               |
 
 ## Setup and run (single complex)
@@ -104,6 +104,6 @@ A timestamped log file (`pystarc_YYYYMMDD_HHMMSS.log`) is also written to `bd_si
 
 ## Notes
 - The source PDB is shipped with each system, so setup runs offline. If the PDB is removed, setup downloads it from `https://files.rcsb.org/download/<PDB>.pdb`, which requires network access.
-- The reaction criterion is explicit per system (defined in each `setup.py`), not auto-discovered. Each pair uses a 4.5 Angstrom cutoff and `n_needed=3`.
+- The reaction criterion is explicit per system (defined in each `setup.py`), not auto-discovered. Each pair uses a 4.5 Å cutoff and `n_needed=3`.
 - Receptor parameters are ff14SB (tleap). Ligand charges are AM1-BCC (OpenEye) and ligand parameters are GAFF2 (antechamber/parmchk2). PQR files are generated via `cpptraj` and `ambpdb`.
 - `3GFW` is included for completeness but its reaction criterion is too loose: the chosen contacts do not discriminate the bound pose, producing spurious reactions and an unreliable k<sub>on</sub>. It is excluded from the rank-correlation statistic and its reported rate should not be trusted without rebuilding the criterion.

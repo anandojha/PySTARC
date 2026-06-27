@@ -6,14 +6,14 @@
 |------------------------|--------------------------------------|
 | Receptor               | Trypsin (3220 atoms, Q = +6 e)       |
 | Ligand                 | Benzamidine (18 atoms, Q = +1 e)     |
-| b-surface              | 45.0 Angstrom                        |
-| Escape sphere          | 90.0 Angstrom                        |
-| Debye length           | 7.86 Angstrom (150 mM NaCl)          |
+| b-surface              | 45.0 Å                        |
+| Escape sphere          | 90.0 Å                        |
+| Debye length           | 7.86 Å (150 mM NaCl)          |
 | Contact mode           | polar (N/O/S on both sides)          |
-| Contact cutoff         | 6.0 Angstrom                         |
-| Buffer                 | 3.0 Angstrom                         |
+| Contact cutoff         | 6.0 Å                         |
+| Buffer                 | 3.0 Å                         |
 | Born desolvation       | enabled                              |
-| Hydrodynamic radii     | receptor 22.5, ligand 5.0 Angstrom   |
+| Hydrodynamic radii     | receptor 22.5, ligand 5.0 Å   |
 | Trajectories           | 100,000                              |
 | Experimental k<sub>on</sub> | 2.9 x 10<sup>7</sup> M<sup>-1</sup>s<sup>-1</sup> |
 

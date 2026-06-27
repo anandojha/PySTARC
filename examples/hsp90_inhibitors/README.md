@@ -18,10 +18,10 @@ All 6 receptor-ligand complexes share the same HSP90 N-terminal domain receptor 
 |------------------------|--------------------------------------|
 | Receptor               | HSP90 N-terminal domain              |
 | Ligand charge          | neutral (auto-detected from formal charges) |
-| b-surface              | 55.0 Angstrom                        |
-| Debye length           | 7.86 Angstrom (150 mM, 0.15 M)       |
+| b-surface              | 55.0 Å                        |
+| Debye length           | 7.86 Å (150 mM, 0.15 M)       |
 | Contact mode           | all (any heavy-atom contacts)        |
-| Contact cutoff         | 5.0 Angstrom                         |
+| Contact cutoff         | 5.0 Å                         |
 | Pairs / n_needed       | up to 8 (one per residue) / 6        |
 | Born desolvation       | enabled                              |
 | Hydrodynamic interactions | enabled                           |
@@ -101,5 +101,5 @@ A timestamped log file (`pystarc_YYYYMMDD_HHMMSS.log`) is also written to `bd_si
 - All 6 complexes use identical `setup.py` parameters, and only the source `complex.pdb` differs per system.
 - Receptor charges and parameters are from ff14SB (tleap). Ligand charges are AM1-BCC (OpenEye) and ligand parameters are GAFF2 (antechamber/parmchk2).
 - PQR files are generated from the AMBER topology via `cpptraj` and `ambpdb`.
-- Reaction contacts are identified automatically by `setup.py` from the bound-state PDB structure (contact method, 5.0 Angstrom cutoff, n_needed=6).
+- Reaction contacts are identified automatically by `setup.py` from the bound-state PDB structure (contact method, 5.0 Å cutoff, n_needed=6).
 - All ligands modeled here are neutral. The charged member of the original Kokh et al. set is excluded.

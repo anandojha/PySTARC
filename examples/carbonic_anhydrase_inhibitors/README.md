@@ -21,10 +21,10 @@ Experimental k<sub>on</sub> values are intrinsic association rates from Linkuvie
 | Property               | Value                                |
 |------------------------|--------------------------------------|
 | Ligand charge          | -1 e (deprotonated sulfonamide)      |
-| b-surface              | 60.0 Angstrom                        |
-| Escape sphere          | 120.0 Angstrom                       |
-| Debye length           | 9.62 Angstrom (100 mM NaCl)         |
-| Reaction cutoff        | 3.5 Angstrom                         |
+| b-surface              | 60.0 Å                        |
+| Escape sphere          | 120.0 Å                       |
+| Debye length           | 9.62 Å (100 mM NaCl)         |
+| Reaction cutoff        | 3.5 Å                         |
 | Reaction pairs         | 2 (THR199 OG1 - sulfonamide N, GLU106 OE1 - amide N) |
 | n_needed               | 2                                    |
 | Born desolvation       | enabled                              |
@@ -133,7 +133,7 @@ Two crystal-structure contacts between the protein active site and the sulfonami
 | 1    | THR199 OG1 (gatekeeper)        | Sulfonamide N    | Zn-coordinating H-bond        |
 | 2    | GLU106 OE1 (proton shuttle)    | Amide N          | Relay H-bond                  |
 
-Residue numbers are after tleap renumbering (offset -3 from PDB numbering). With `n_needed=2`, both contacts must be satisfied simultaneously. The 3.5 Angstrom cutoff reflects the tight active-site geometry of carbonic anhydrases.
+Residue numbers are after tleap renumbering (offset -3 from PDB numbering). With `n_needed=2`, both contacts must be satisfied simultaneously. The 3.5 Å cutoff reflects the tight active-site geometry of carbonic anhydrases.
 
 ## Notes
 

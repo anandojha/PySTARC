@@ -34,7 +34,7 @@ See `examples/coffdrop_chain_intro.py` for a complete working example.
 
 The chain builder constructs a `ChainCommon` with:
 
-- **Backbone bonds**: CA-CA between consecutive residues (eq length 3.8 A)
+- **Backbone bonds**: CA-CA between consecutive residues (eq length 3.8 Å)
 - **Sidechain bonds**: per-residue linear chains (CA-CB, CB-CG, CB-NG, CB-OG, CB-SB, CG-CD)
 - **Backbone angles**: CA(r)-CA(r+1)-CA(r+2) for each consecutive triple
 - **Sidechain-backbone angles**: SC1(r)-CA(r)-CA(r+/-1) where SC1 is the first sidechain bead

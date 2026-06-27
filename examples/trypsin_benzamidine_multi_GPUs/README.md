@@ -12,15 +12,15 @@ Same trypsin-benzamidine protein-ligand complex as `trypsin_benzamidine/`, but d
 | PDB                    | seekrflow manuscript (doi.org/10.1101/2025.08.13.669965)|
 | Receptor               | Trypsin (3220 atoms, Q = +6 e)                          |
 | Ligand                 | Benzamidine (18 atoms, Q = +1 e)                        |
-| b-surface              | 45.0 Angstrom                                           |
-| Escape sphere          | 90.0 Angstrom                                           |
-| Debye length           | 7.86 Angstrom (150 mM NaCl)                             |
+| b-surface              | 45.0 Å                                           |
+| Escape sphere          | 90.0 Å                                           |
+| Debye length           | 7.86 Å (150 mM NaCl)                             |
 | Reaction pairs         | 10 polar contacts                                       |
-| Reaction cutoff        | 6.0-8.5 Angstrom (per pair)                             |
+| Reaction cutoff        | 6.0-8.5 Å (per pair)                             |
 | n_needed               | 4                                                       |
 | max_dt                 | 0 (no cap)                                              |
 | Born desolvation       | enabled                                                 |
-| Hydrodynamic radii     | rec 22.5, lig 5.0 (Angstrom)                            |
+| Hydrodynamic radii     | rec 22.5, lig 5.0 (Å)                            |
 | Trajectories           | 10,000,000                                              |
 | Experimental k<sub>on</sub> | 2.9 x 10<sup>7</sup> M<sup>-1</sup>s<sup>-1</sup> (Votapka et al. 2022) |
 

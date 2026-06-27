@@ -19,12 +19,12 @@ All 7 receptor-ligand complexes share the same beta-cyclodextrin (BCD/MGO) recep
 |------------------------|--------------------------------------|
 | Receptor               | beta-cyclodextrin (MGO), 147 atoms   |
 | Ligand                 | APN                                  |
-| b-surface              | 30.0 Angstrom                        |
-| Escape sphere          | 60.0 Angstrom                        |
-| Debye length           | 7.86 Angstrom (150 mM NaCl)          |
+| b-surface              | 30.0 Å                        |
+| Escape sphere          | 60.0 Å                        |
+| Debye length           | 7.86 Å (150 mM NaCl)          |
 | Contact mode           | all (any heavy-atom contacts)        |
-| Contact cutoff         | 5.0 Angstrom                         |
-| Buffer                 | 2.0 Angstrom                         |
+| Contact cutoff         | 5.0 Å                         |
+| Buffer                 | 2.0 Å                         |
 | Born desolvation       | enabled                              |
 | Trajectories           | 100,000 per complex                  |
 

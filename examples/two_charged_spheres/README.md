@@ -5,12 +5,12 @@ This system has an exact analytical solution (Smoluchowski first-passage with re
 
 | Parameter                 | Value                                             |
 |---------------------------|---------------------------------------------------|
-| Receptor                  | single atom, charge = +1 e, radius = 1.0 Angstrom |
-| Ligand                    | single atom, charge = -1 e, radius = 1.0 Angstrom |
-| b-surface                 | 10.0 Angstrom                                     |
-| Escape sphere             | 20.0 Angstrom                                     |
-| Contact criterion         | r < 2.5 Angstrom                                  |
-| Debye length              | 7.828 Angstrom                                    |
+| Receptor                  | single atom, charge = +1 e, radius = 1.0 Å |
+| Ligand                    | single atom, charge = -1 e, radius = 1.0 Å |
+| b-surface                 | 10.0 Å                                     |
+| Escape sphere             | 20.0 Å                                     |
+| Contact criterion         | r < 2.5 Å                                  |
+| Debye length              | 7.828 Å                                    |
 | Born desolvation          | disabled                                          |
 | Hydrodynamic interactions | disabled                                          |
 | Overlap check             | disabled                                          |
@@ -22,9 +22,9 @@ This system has an exact analytical solution (Smoluchowski first-passage with re
 
 | File               | Description                                                                                |
 |--------------------|--------------------------------------------------------------------------------------------|
-| `receptor.pqr`     | Single-atom receptor PQR (charge +1 e, radius 1.0 Angstrom). Hand-crafted, no PDB needed.  |
-| `ligand.pqr`       | Single-atom ligand PQR (charge -1 e, radius 1.0 Angstrom). Hand-crafted, no PDB needed.    |
-| `rxns.xml`         | Reaction criterion: receptor atom 1 and ligand atom 1 within 2.5 Angstrom.                 |
+| `receptor.pqr`     | Single-atom receptor PQR (charge +1 e, radius 1.0 Å). Hand-crafted, no PDB needed.  |
+| `ligand.pqr`       | Single-atom ligand PQR (charge -1 e, radius 1.0 Å). Hand-crafted, no PDB needed.    |
+| `rxns.xml`         | Reaction criterion: receptor atom 1 and ligand atom 1 within 2.5 Å.                 |
 | `input.xml`        | PySTARC input file with simulation parameters.                                             |
 | `analytical.py`    | Computes exact Smoluchowski solution and compares against simulation results.              |
 | `convergence.py`   | Multi-seed convergence test (4 seeds x 10k trajectories).                                  |

@@ -6,9 +6,9 @@
 |------------------------|-------------------------------------------|
 | Receptor               | Thrombin                                  |
 | Ligand                 | Thrombomodulin                            |
-| b-surface              | 175.0 Angstrom                            |
-| Escape sphere          | 350.0 Angstrom                            |
-| Debye length           | 7.86 Angstrom (150 mM NaCl)               |
+| b-surface              | 175.0 Å                            |
+| Escape sphere          | 350.0 Å                            |
+| Debye length           | 7.86 Å (150 mM NaCl)               |
 | Born desolvation       | enabled                                   |
 | Hydrodynamic interactions | enabled                                |
 | Overlap check          | enabled                                   |
