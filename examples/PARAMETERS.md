@@ -10,7 +10,7 @@ For force field parameterization, receptor charges are assigned with the AMBER f
 
 ## 1. Two charged spheres
 
-This complex validates the BD engine against the exact analytical Smoluchowski solution for two uniformly charged spheres interacting via a screened Coulombic potential. The two spherical ions carry charges Q<sub>rec</sub> = +1e and Q<sub>lig</sub> = −1e and each have a radius of 1.0 Å. This is a purely analytical test of the BD propagator.
+Two uniformly charged spheres interacting through a screened Coulomb potential. The ions carry charges Q<sub>rec</sub> = +1e and Q<sub>lig</sub> = −1e, each with a radius of 1.0 Å.
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
