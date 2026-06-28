@@ -25,13 +25,13 @@ This complex validates the BD engine against the exact analytical Smoluchowski s
 | Reaction criterion | 1 pair at 2.0 Å contact distance | The sum of radii defines exact contact. |
 | Contacts needed | 1 | Single contact. |
 
-PySTARC reproduces the analytical Smoluchowski rate to within 0.1%: k<sub>on</sub> = 1.56 × 10¹⁰ M⁻¹s⁻¹ versus the exact value of 1.56 × 10¹⁰ M⁻¹s⁻¹ (relative SE 0.1%).
+The analytical Smoluchowski rate is reproduced to within 0.1%, with k<sub>on</sub> = 1.56 × 10¹⁰ M⁻¹s⁻¹ versus the exact value of 1.56 × 10¹⁰ M⁻¹s⁻¹ (relative SE 0.1%).
 
 ---
 
 ## 2. Trypsin-benzamidine complex
 
-The trypsin-benzamidine complex validates PySTARC for a protein and a small molecule complex with well-characterized experimental kinetics. Trypsin protein contains 3220 atoms with a net charge of +6e and a maximum radius of 28.4 Å. Benzamidine contains 18 atoms with a net charge of +1e and a maximum radius of 3.7 Å. Both molecules are positively charged, resulting in repulsive electrostatics.
+The trypsin-benzamidine complex is a protein and small molecule system with well-characterized experimental kinetics. Trypsin protein contains 3220 atoms with a net charge of +6e and a maximum radius of 28.4 Å. Benzamidine contains 18 atoms with a net charge of +1e and a maximum radius of 3.7 Å. Both molecules are positively charged, resulting in repulsive electrostatics.
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -55,7 +55,7 @@ The setup script identifies the closest heavy-atom contacts between the receptor
 
 ## 3. β-cyclodextrin host-guest complexes
 
-Seven small molecule guests binding β-cyclodextrin test PySTARC on a host-guest benchmark where experimental association rates span an order of magnitude. β-cyclodextrin contains 147 atoms with zero net charge and a maximum radius of 8.6 Å. All seven guest molecules also carry a net charge of zero and have radii ranging from 3 to 5 Å. Because all molecules are electrically neutral, no electrostatic steering occurs. The seven guests are 1-butanol, 1-propanol, tert-butanol, methyl butyrate, aspirin, 1-naphthylethanol, and 2-naphthylethanol.
+Seven small molecule guests binding β-cyclodextrin form a host-guest benchmark in which the experimental association rates span an order of magnitude. β-cyclodextrin contains 147 atoms with zero net charge and a maximum radius of 8.6 Å. All seven guests are also neutral, with radii of 3 to 5 Å. Because every molecule is neutral, there is no electrostatic steering. The seven guests are 1-butanol, 1-propanol, tert-butanol, methyl butyrate, aspirin, 1-naphthylethanol, and 2-naphthylethanol.
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -104,7 +104,7 @@ This complex represents a strongly electrostatically steered protein-protein ass
 | Trajectories | 1,000,000 | - |
 | Contacts needed | 4 | Four interfacial hydrogen-bonding contacts must be satisfied simultaneously. The full pair list is in `rxns.xml`. |
 
-The experimental k<sub>on</sub> is 6.7 × 10⁶ M⁻¹s⁻¹ at physiological ionic strength, measured by surface plasmon resonance (Baerga-Ortiz et al., 2000), and Debye-Hückel analysis of the ionic-strength dependence confirms a nearly completely electrostatically steered interaction. PySTARC gives k<sub>on</sub> = 2.38 × 10⁶ M⁻¹s⁻¹ (ratio 0.36×, relative SE 6.2%).
+The experimental k<sub>on</sub> is 6.7 × 10⁶ M⁻¹s⁻¹ at physiological ionic strength, measured by surface plasmon resonance (Baerga-Ortiz et al., 2000), and Debye-Hückel analysis of the ionic-strength dependence confirms a nearly completely electrostatically steered interaction. The computed k<sub>on</sub> is 2.38 × 10⁶ M⁻¹s⁻¹ (ratio 0.36×, relative SE 6.2%).
 
 ---
 
@@ -121,7 +121,7 @@ Barnase-barstar is the classic electrostatically steered protein-protein associa
 
 ## 6. p38 MAPK - SB203580 complex
 
-This complex validates PySTARC on a kinase-inhibitor system where the ligand is electrically neutral and the receptor carries a large net negative charge. p38 MAPK alpha in the DFG-in conformation from PDB 1A9U (chain A, residues 4 to 354) contains 5658 atoms with a net charge of −9e and a maximum radius of 37.8 Å. SB203580 is a type I kinase inhibitor with 27 atoms and zero net charge. The receptor is parameterized with ff14SB and the ligand with GAFF2 + AM1-BCC via antechamber. The ligand binds in the ATP pocket at the hinge.
+This complex is a kinase-inhibitor system in which the ligand is neutral and the receptor carries a large net negative charge. p38 MAPK alpha in the DFG-in conformation from PDB 1A9U (chain A, residues 4 to 354) contains 5658 atoms with a net charge of −9e and a maximum radius of 37.8 Å. SB203580 is a type I kinase inhibitor with 27 atoms and zero net charge. The receptor is parameterized with ff14SB and the ligand with GAFF2 + AM1-BCC via antechamber. The ligand binds in the ATP pocket at the hinge.
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -139,7 +139,7 @@ Four crystal-structure contacts (the hinge MET106 backbone to the pyridine N, th
 
 ## 7. Carbonic anhydrase sulfonamide inhibitors
 
-Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII, CA I, CA II) test PySTARC on a multi-target protein-ligand benchmark where all ligands carry the same charge (−1e) and bind the same Zn-coordinating sulfonamide motif but differ in scaffold, size, and isozyme. All ligands are deprotonated sulfonamides (net charge −1e), and the intrinsic k<sub>on</sub> corrected for the protonation equilibrium is the correct BD comparison target. Five systems use CA XIII (PDB 3CZV), one CA I (2NMX), one CA II (3HS4). The active-site Zn²⁺ is included via `frcmod.ions234lm_126_tip3p`. Ligands are built from SMILES via rdkit, converted with obabel, and parameterized with antechamber (GAFF2 + AM1-BCC).
+Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII, CA I, CA II) form a multi-target benchmark in which all ligands carry the same charge (−1e) and bind the same Zn-coordinating sulfonamide motif but differ in scaffold, size, and isozyme. All ligands are deprotonated sulfonamides (net charge −1e), and the intrinsic k<sub>on</sub> corrected for the protonation equilibrium is the correct BD comparison target. Five systems use CA XIII (PDB 3CZV), one CA I (2NMX), one CA II (3HS4). The active-site Zn²⁺ is included via `frcmod.ions234lm_126_tip3p`. Ligands are built from SMILES via rdkit, converted with obabel, and parameterized with antechamber (GAFF2 + AM1-BCC).
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -167,7 +167,7 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 
 ## 8. TTK (MPS1) kinase inhibitors
 
-Eight inhibitors of the mitotic kinase TTK/MPS1 test PySTARC across a single-target series spanning roughly two orders of magnitude in experimental k<sub>on</sub>. The systems are eight TTK co-crystal structures (PDB 2X9E, 3GFW, 3H9F, 5LJJ, 5N7V, 5N84, 5N93, 5NAD), each parameterized with ff14SB for the receptor and GAFF2 + AM1-BCC for the ligand, with ligand charges assigned by the OpenEye toolkits (license required).
+Eight inhibitors of the mitotic kinase TTK/MPS1 form a single-target series spanning roughly two orders of magnitude in experimental k<sub>on</sub>. The systems are eight TTK co-crystal structures (PDB 2X9E, 3GFW, 3H9F, 5LJJ, 5N7V, 5N84, 5N93, 5NAD), each parameterized with ff14SB for the receptor and GAFF2 + AM1-BCC for the ligand, with ligand charges assigned by the OpenEye toolkits (license required).
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -195,7 +195,7 @@ Eight inhibitors of the mitotic kinase TTK/MPS1 test PySTARC across a single-tar
 
 ## 9. HSP90 inhibitors
 
-Six neutral HSP90 inhibitors test PySTARC on a single-target series of uncharged ligands, isolating the diffusion-limited encounter rate in the absence of electrostatic steering. The six systems are HSP90 N-terminal domain co-complexes (31, 37, 43, 62, 65, 70), each with a neutral inhibitor, the receptor parameterized with ff14SB and the ligands with GAFF2 + AM1-BCC (OpenEye toolkits, license required).
+Six neutral HSP90 inhibitors form a single-target series of uncharged ligands, isolating the diffusion-limited encounter rate in the absence of electrostatic steering. The six systems are HSP90 N-terminal domain co-complexes (31, 37, 43, 62, 65, 70), each with a neutral inhibitor, the receptor parameterized with ff14SB and the ligands with GAFF2 + AM1-BCC (OpenEye toolkits, license required).
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
