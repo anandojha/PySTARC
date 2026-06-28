@@ -6,12 +6,12 @@ All 6 receptor-ligand complexes share the same HSP90 N-terminal domain receptor 
 <table width="100%">
 <thead><tr><th width="50%" align="left">Receptor-ligand complex</th><th width="50%" align="left">Exp k<sub>on</sub> (M<sup>-1</sup>s<sup>-1</sup>)</th></tr></thead>
 <tbody>
-<tr><td><code>31</code></td><td>1.0 × 10<sup>6</sup></td></tr>
-<tr><td><code>37</code></td><td>3.4 × 10<sup>5</sup></td></tr>
-<tr><td><code>43</code></td><td>8.4 × 10<sup>4</sup></td></tr>
-<tr><td><code>62</code></td><td>1.2 × 10<sup>5</sup></td></tr>
-<tr><td><code>65</code></td><td>2.1 × 10<sup>5</sup></td></tr>
-<tr><td><code>70</code></td><td>1.0 × 10<sup>4</sup></td></tr>
+<tr><td width="50%"><code>31</code></td><td width="50%">1.0 × 10<sup>6</sup></td></tr>
+<tr><td width="50%"><code>37</code></td><td width="50%">3.4 × 10<sup>5</sup></td></tr>
+<tr><td width="50%"><code>43</code></td><td width="50%">8.4 × 10<sup>4</sup></td></tr>
+<tr><td width="50%"><code>62</code></td><td width="50%">1.2 × 10<sup>5</sup></td></tr>
+<tr><td width="50%"><code>65</code></td><td width="50%">2.1 × 10<sup>5</sup></td></tr>
+<tr><td width="50%"><code>70</code></td><td width="50%">1.0 × 10<sup>4</sup></td></tr>
 </tbody>
 </table>
 
@@ -20,17 +20,17 @@ All 6 receptor-ligand complexes share the same HSP90 N-terminal domain receptor 
 <table width="100%">
 <thead><tr><th width="50%" align="left">Parameter</th><th width="50%" align="left">Value</th></tr></thead>
 <tbody>
-<tr><td>Receptor</td><td>HSP90 N-terminal domain</td></tr>
-<tr><td>Ligand charge</td><td>neutral (auto-detected from formal charges)</td></tr>
-<tr><td>b-surface</td><td>55.0 Å</td></tr>
-<tr><td>Debye length</td><td>7.86 Å (150 mM, 0.15 M)</td></tr>
-<tr><td>Contact mode</td><td>all (any heavy-atom contacts)</td></tr>
-<tr><td>Contact cutoff</td><td>5.0 Å</td></tr>
-<tr><td>Pairs / n_needed</td><td>up to 8 (one per residue) / 6</td></tr>
-<tr><td>Born desolvation</td><td>enabled</td></tr>
-<tr><td>Hydrodynamic interactions</td><td>enabled</td></tr>
-<tr><td>Overlap check</td><td>disabled</td></tr>
-<tr><td>Trajectories</td><td>100,000 per complex</td></tr>
+<tr><td width="50%">Receptor</td><td width="50%">HSP90 N-terminal domain</td></tr>
+<tr><td width="50%">Ligand charge</td><td width="50%">neutral (auto-detected from formal charges)</td></tr>
+<tr><td width="50%">b-surface</td><td width="50%">55.0 Å</td></tr>
+<tr><td width="50%">Debye length</td><td width="50%">7.86 Å (150 mM, 0.15 M)</td></tr>
+<tr><td width="50%">Contact mode</td><td width="50%">all (any heavy-atom contacts)</td></tr>
+<tr><td width="50%">Contact cutoff</td><td width="50%">5.0 Å</td></tr>
+<tr><td width="50%">Pairs / n_needed</td><td width="50%">up to 8 (one per residue) / 6</td></tr>
+<tr><td width="50%">Born desolvation</td><td width="50%">enabled</td></tr>
+<tr><td width="50%">Hydrodynamic interactions</td><td width="50%">enabled</td></tr>
+<tr><td width="50%">Overlap check</td><td width="50%">disabled</td></tr>
+<tr><td width="50%">Trajectories</td><td width="50%">100,000 per complex</td></tr>
 </tbody>
 </table>
 
@@ -40,8 +40,8 @@ Each system directory (`31/`, `37/`, ...) ships only the source structure and th
 <table width="100%">
 <thead><tr><th width="50%" align="left">File</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
-<tr><td><code>complex.pdb</code></td><td>Bound-state PDB containing the receptor (HSP90) and the co-crystallized inhibitor.</td></tr>
-<tr><td><code>setup.py</code></td><td>Automated setup script. Reads the PDB, parameterizes from scratch, and generates all BD input files.</td></tr>
+<tr><td width="50%"><code>complex.pdb</code></td><td width="50%">Bound-state PDB containing the receptor (HSP90) and the co-crystallized inhibitor.</td></tr>
+<tr><td width="50%"><code>setup.py</code></td><td width="50%">Automated setup script. Reads the PDB, parameterizes from scratch, and generates all BD input files.</td></tr>
 </tbody>
 </table>
 
@@ -50,7 +50,7 @@ The following script is in the `hsp90_inhibitors/` directory:
 <table width="100%">
 <thead><tr><th width="50%" align="left">File</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
-<tr><td><code>run.sh</code></td><td>Runs setup and BD simulation for all 6 complexes sequentially, then compares rates against experiment and saves <code>summary.txt</code>.</td></tr>
+<tr><td width="50%"><code>run.sh</code></td><td width="50%">Runs setup and BD simulation for all 6 complexes sequentially, then compares rates against experiment and saves <code>summary.txt</code>.</td></tr>
 </tbody>
 </table>
 
@@ -60,13 +60,13 @@ Unlike the pre-generated examples, no parameterized files are shipped: `setup.py
 <table width="100%">
 <thead><tr><th width="50%" align="left">Generated file</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
-<tr><td><code>protein.prmtop</code>, <code>protein.rst7</code></td><td>Receptor AMBER topology and coordinates from tleap (ff14SB).</td></tr>
-<tr><td><code>ligand.prmtop</code>, <code>ligand.rst7</code></td><td>Ligand AMBER topology and coordinates from antechamber/tleap (GAFF2, AM1-BCC charges).</td></tr>
-<tr><td><code>receptor.pdb</code>, <code>ligand.pdb</code></td><td>Clean receptor and ligand PDBs from tleap.</td></tr>
-<tr><td><code>receptor.pqr</code></td><td>Receptor PQR file with atom positions, partial charges, and radii for the HSP90 host.</td></tr>
-<tr><td><code>ligand.pqr</code></td><td>Ligand PQR file with atom positions, partial charges, and radii for the inhibitor.</td></tr>
-<tr><td><code>rxns.xml</code></td><td>Reaction criterion file with atom pairs and cutoff distances identified automatically from the bound-state PDB.</td></tr>
-<tr><td><code>input.xml</code></td><td>PySTARC input file with all simulation parameters (b-surface, electrostatics, trajectories, GPU, and convergence).</td></tr>
+<tr><td width="50%"><code>protein.prmtop</code>, <code>protein.rst7</code></td><td width="50%">Receptor AMBER topology and coordinates from tleap (ff14SB).</td></tr>
+<tr><td width="50%"><code>ligand.prmtop</code>, <code>ligand.rst7</code></td><td width="50%">Ligand AMBER topology and coordinates from antechamber/tleap (GAFF2, AM1-BCC charges).</td></tr>
+<tr><td width="50%"><code>receptor.pdb</code>, <code>ligand.pdb</code></td><td width="50%">Clean receptor and ligand PDBs from tleap.</td></tr>
+<tr><td width="50%"><code>receptor.pqr</code></td><td width="50%">Receptor PQR file with atom positions, partial charges, and radii for the HSP90 host.</td></tr>
+<tr><td width="50%"><code>ligand.pqr</code></td><td width="50%">Ligand PQR file with atom positions, partial charges, and radii for the inhibitor.</td></tr>
+<tr><td width="50%"><code>rxns.xml</code></td><td width="50%">Reaction criterion file with atom pairs and cutoff distances identified automatically from the bound-state PDB.</td></tr>
+<tr><td width="50%"><code>input.xml</code></td><td width="50%">PySTARC input file with all simulation parameters (b-surface, electrostatics, trajectories, GPU, and convergence).</td></tr>
 </tbody>
 </table>
 
@@ -95,21 +95,21 @@ After a simulation completes, all results are written to `bd_sims/` within each 
 <table width="100%">
 <thead><tr><th width="50%" align="left">Output file</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
-<tr><td><code>results.json</code></td><td>k<sub>on</sub>, P<sub>rxn</sub>, Wilson 95% CI, k<sub>b</sub>, D<sub>rel</sub>, wall time, and GPU info.</td></tr>
-<tr><td><code>convergence.json</code></td><td>Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.</td></tr>
-<tr><td><code>trajectories.csv</code></td><td>Per-trajectory record: number of steps, starting pose, minimum distance reached, and number of returns from the escape sphere.</td></tr>
-<tr><td><code>encounters.csv</code></td><td>Binding encounter poses for reacted trajectories: final position, orientation, and contact distances.</td></tr>
-<tr><td><code>near_misses.csv</code></td><td>Trajectories that approached the reaction surface but escaped.</td></tr>
-<tr><td><code>fpt_distribution.csv</code></td><td>First-passage times for reacted trajectories.</td></tr>
-<tr><td><code>pose_clusters.csv</code></td><td>Clustered binding poses from encounter geometries.</td></tr>
-<tr><td><code>paths.npz</code></td><td>Full trajectory coordinates sampled at configurable intervals.</td></tr>
-<tr><td><code>energetics.npz</code></td><td>Per-step energies and forces along trajectories.</td></tr>
-<tr><td><code>radial_density.csv</code></td><td>Radial probability density as a function of distance from the receptor.</td></tr>
-<tr><td><code>angular_map.npz</code></td><td>Angular occupancy map (theta, phi) on the b-surface.</td></tr>
-<tr><td><code>contact_frequency.csv</code></td><td>Per-pair contact frequencies for the reaction criterion atom pairs.</td></tr>
-<tr><td><code>milestone_flux.csv</code></td><td>Net flux across radial shells.</td></tr>
-<tr><td><code>transition_matrix.npz</code></td><td>Radial shell-to-shell transition counts.</td></tr>
-<tr><td><code>p_commit.npz</code></td><td>Commitment probabilities at each radial shell.</td></tr>
+<tr><td width="50%"><code>results.json</code></td><td width="50%">k<sub>on</sub>, P<sub>rxn</sub>, Wilson 95% CI, k<sub>b</sub>, D<sub>rel</sub>, wall time, and GPU info.</td></tr>
+<tr><td width="50%"><code>convergence.json</code></td><td width="50%">Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.</td></tr>
+<tr><td width="50%"><code>trajectories.csv</code></td><td width="50%">Per-trajectory record: number of steps, starting pose, minimum distance reached, and number of returns from the escape sphere.</td></tr>
+<tr><td width="50%"><code>encounters.csv</code></td><td width="50%">Binding encounter poses for reacted trajectories: final position, orientation, and contact distances.</td></tr>
+<tr><td width="50%"><code>near_misses.csv</code></td><td width="50%">Trajectories that approached the reaction surface but escaped.</td></tr>
+<tr><td width="50%"><code>fpt_distribution.csv</code></td><td width="50%">First-passage times for reacted trajectories.</td></tr>
+<tr><td width="50%"><code>pose_clusters.csv</code></td><td width="50%">Clustered binding poses from encounter geometries.</td></tr>
+<tr><td width="50%"><code>paths.npz</code></td><td width="50%">Full trajectory coordinates sampled at configurable intervals.</td></tr>
+<tr><td width="50%"><code>energetics.npz</code></td><td width="50%">Per-step energies and forces along trajectories.</td></tr>
+<tr><td width="50%"><code>radial_density.csv</code></td><td width="50%">Radial probability density as a function of distance from the receptor.</td></tr>
+<tr><td width="50%"><code>angular_map.npz</code></td><td width="50%">Angular occupancy map (theta, phi) on the b-surface.</td></tr>
+<tr><td width="50%"><code>contact_frequency.csv</code></td><td width="50%">Per-pair contact frequencies for the reaction criterion atom pairs.</td></tr>
+<tr><td width="50%"><code>milestone_flux.csv</code></td><td width="50%">Net flux across radial shells.</td></tr>
+<tr><td width="50%"><code>transition_matrix.npz</code></td><td width="50%">Radial shell-to-shell transition counts.</td></tr>
+<tr><td width="50%"><code>p_commit.npz</code></td><td width="50%">Commitment probabilities at each radial shell.</td></tr>
 </tbody>
 </table>
 
