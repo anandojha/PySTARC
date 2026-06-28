@@ -9,12 +9,12 @@ Ten validation examples of increasing complexity:
 <tr><td><code>trypsin_benzamidine/</code></td><td>Trypsin-benzamidine</td><td>Protein-ligand</td></tr>
 <tr><td><code>beta_cyclodextrin_guests/</code></td><td>7 BCD host-guest complexes</td><td>Host-guest</td></tr>
 <tr><td><code>thrombin_thrombomodulin/</code></td><td>Thrombin-thrombomodulin</td><td>Protein-protein</td></tr>
-<tr><td><code>barnase_barstar_chainbd/</code></td><td>Barnase-barstar (flexible chain)</td><td>Chain BD / protein-protein</td></tr>
 <tr><td><code>p38_mapk_sb203580/</code></td><td>p38 MAPK / SB203580</td><td>Protein-ligand</td></tr>
 <tr><td><code>carbonic_anhydrase_inhibitors/</code></td><td>7 CA sulfonamide inhibitors (3 isozymes)</td><td>Protein-ligand</td></tr>
 <tr><td><code>hsp90_inhibitors/</code></td><td>6 HSP90 inhibitors</td><td>Protein-ligand</td></tr>
 <tr><td><code>ttk_inhibitors/</code></td><td>8 TTK (MPS1) kinase inhibitors</td><td>Protein-ligand</td></tr>
 <tr><td><code>trypsin_benzamidine_multi_GPUs/</code></td><td>Trypsin-benzamidine (SLURM, 1 and 4 GPUs)</td><td>Cluster / multi-GPU demonstration</td></tr>
+<tr><td><code>barnase_barstar_chainbd/</code></td><td>Barnase-barstar (flexible chain)</td><td>Chain BD / protein-protein</td></tr>
 </tbody>
 </table>
 
@@ -76,8 +76,6 @@ examples/
 │   ├── bb_effect.py                    Brownian bridge diagnostic script
 │   └── run.sh                          Run simulation + BB diagnostic
 │
-├── barnase_barstar_chainbd/            Flexible chain BD (protein-protein, under active validation)
-│
 ├── p38_mapk_sb203580/                  Protein-ligand (neutral kinase inhibitor)
 │   ├── README.md
 │   ├── 1A9U.pdb                        Crystal structure
@@ -130,17 +128,19 @@ examples/
 │   ├── 5N93/                           TTK + TC-Mps1-12
 │   └── 5NAD/                           TTK + BAY-1217389
 │
-└── trypsin_benzamidine_multi_GPUs/     Cluster SLURM demonstration (single-GPU and multi-GPU)
-    ├── README.md
-    ├── complex.pdb                     Bound-state PDB
-    ├── complex.prmtop                  AMBER topology
-    ├── setup.py                        Generates PQR, rxns.xml, input.xml
-    ├── receptor.pqr                    Pre-generated trypsin PQR
-    ├── ligand.pqr                      Pre-generated benzamidine PQR
-    ├── rxns.xml                        Reaction criterion
-    ├── input.xml                       Simulation parameters
-    ├── submit_SLURM_single_GPU.sh      SLURM: 1 GPU × 10M trajectories
-    └── submit_SLURM_multi_GPUs.sh      SLURM: 4 GPUs × 2.5M trajectories, auto-combine
+├── trypsin_benzamidine_multi_GPUs/     Cluster SLURM demonstration (single-GPU and multi-GPU)
+│   ├── README.md
+│   ├── complex.pdb                     Bound-state PDB
+│   ├── complex.prmtop                  AMBER topology
+│   ├── setup.py                        Generates PQR, rxns.xml, input.xml
+│   ├── receptor.pqr                    Pre-generated trypsin PQR
+│   ├── ligand.pqr                      Pre-generated benzamidine PQR
+│   ├── rxns.xml                        Reaction criterion
+│   ├── input.xml                       Simulation parameters
+│   ├── submit_SLURM_single_GPU.sh      SLURM: 1 GPU × 10M trajectories
+│   └── submit_SLURM_multi_GPUs.sh      SLURM: 4 GPUs × 2.5M trajectories, auto-combine
+│
+└── barnase_barstar_chainbd/            Flexible chain BD (protein-protein, under active validation)
 ```
 
 ## Quick start
