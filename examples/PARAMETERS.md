@@ -2,9 +2,9 @@
 
 ## Overview
 
-For force field parameterization, receptor charges are assigned with the AMBER ff14SB force field, and small molecule ligand charges with GAFF2 + AM1-BCC. Electrostatic potential grids are generated with the Adaptive Poisson-Boltzmann Solver (APBS), and bimolecular association rate constants are computed within the Northrup-Allison-McCammon framework. All numerical values in this guide are taken from the on-disk `input.xml`, `rxns.xml`, and `results.json` files for each example. Brownian dynamics trajectories begin on the b-surface, a sphere of radius b around the receptor, and the b-surface radius is the principal length scale that varies between systems.
+For force field parameterization, receptor charges are assigned with the AMBER ff14SB force field, and small molecule ligand charges with GAFF2 + AM1-BCC. Electrostatic potential grids are generated with the Adaptive Poisson-Boltzmann Solver (APBS), and bimolecular association rate constants are computed within the Northrup-Allison-McCammon framework. All numerical values in this guide are taken from the on disk `input.xml`, `rxns.xml`, and `results.json` files for each example. Brownian dynamics trajectories begin on the b-surface, a sphere of radius b around the receptor, and the b-surface radius is the principal length scale that varies between systems.
 
-> **Note on sources.** Where a reaction-criterion *value* (cutoff, number of pairs, and contacts needed) appears below, it is read directly from the corresponding `rxns.xml`/`setup.py`.
+> **Note on sources.** Where a reaction criterion *value* (cutoff, number of pairs, and contacts needed) appears below, it is read directly from the corresponding `rxns.xml`/`setup.py`.
 
 ---
 
@@ -17,7 +17,7 @@ This complex validates the BD engine against the exact analytical Smoluchowski s
 | b-surface radius | 10.0 Å | Five times the contact distance of 2.0 Å. The system is small and has no molecular extent. |
 | Hydrodynamic radii | 0 / 0 (point charges) | No hydrodynamic radius is assigned as the spheres are treated as point particles for the analytical comparison. |
 | Debye length | 7.828 Å | Corresponds to ~150 mM ionic strength. |
-| Protein / solvent dielectric | 78.0 / 78.0 | Uniform dielectric. Unlike the molecular complexes, no low-dielectric interior is defined for the analytical test. |
+| Protein / solvent dielectric | 78.0 / 78.0 | Uniform dielectric. Unlike the molecular complexes, no low dielectric interior is defined for the analytical test. |
 | APBS fine grid | None | The screened Coulomb potential between the two point charges is evaluated analytically and no APBS grid is generated. |
 | APBS grid dimension | 129 | Vestigial for the analytic potential. |
 | Max timestep cap | 0 (no cap) | The adaptive timestep at r = 10 Å is ~10 ps, giving drift/noise ≈ 0.5. |
@@ -31,7 +31,7 @@ The analytical Smoluchowski rate is reproduced to within 0.1%, with k<sub>on</su
 
 ## 2. Trypsin-benzamidine complex
 
-Trypsin-benzamidine is a protein-ligand complex with well-characterized experimental kinetics. Trypsin protein contains 3220 atoms with a net charge of +6e and a maximum radius of 28.4 Å. Benzamidine contains 18 atoms with a net charge of +1e and a maximum radius of 3.7 Å. Both molecules are positively charged, resulting in repulsive electrostatics.
+Trypsin-benzamidine is a protein-ligand complex with well characterized experimental kinetics. Trypsin protein contains 3220 atoms with a net charge of +6e and a maximum radius of 28.4 Å. Benzamidine contains 18 atoms with a net charge of +1e and a maximum radius of 3.7 Å. Both molecules are positively charged, resulting in repulsive electrostatics.
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -44,12 +44,12 @@ Trypsin-benzamidine is a protein-ligand complex with well-characterized experime
 | Max timestep cap | 0 (no cap) | The adaptive timestep at r = 45 Å is ~191 ps, giving drift/noise ≈ 3.4. This is acceptable for a small, rapidly diffusing ligand. |
 | Trajectories | 10,000,000 | The low reaction probability requires many trajectories for statistical convergence. |
 | Contact cutoff (search) | 6.0 Å | Maximum distance in the crystal structure used to identify binding contacts. |
-| Buffer | 3.0 Å | Added to the crystal distance to set the reaction cutoff, accounting for the rigid-body approach. |
+| Buffer | 3.0 Å | Added to the crystal distance to set the reaction cutoff, accounting for the rigid body approach. |
 | Number of pairs | 10 | The top 10 closest polar contacts from the crystal structure. |
 | Contacts needed | 6 | Six of the 10 pairs must be satisfied simultaneously. |
 | Contact mode | Polar | Only N/O/S donor-acceptor pairs are considered, corresponding to hydrogen bonding contacts. |
 
-The setup script identifies the closest heavy-atom contacts between the receptor and ligand in the crystal structure, filters for polar atoms (N, O, and S on both sides), retains the top 10 contacts with one per receptor residue, and sets each cutoff to the crystal distance. The resulting 10 pairs have cutoffs ranging from 6.0 to 8.5 Å. k<sub>on</sub> = 5.39 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 2.9 × 10⁷ M⁻¹s⁻¹ (ratio 1.86×, relative SE 0.5%).
+The setup script identifies the closest heavy atom contacts between the receptor and ligand in the crystal structure, filters for polar atoms (N, O, and S on both sides), retains the top 10 contacts with one per receptor residue, and sets each cutoff to the crystal distance. The resulting 10 pairs have cutoffs ranging from 6.0 to 8.5 Å. k<sub>on</sub> = 5.39 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 2.9 × 10⁷ M⁻¹s⁻¹ (ratio 1.86×, relative SE 0.5%).
 
 ---
 
@@ -65,7 +65,7 @@ Seven small molecule guests binding β-cyclodextrin form a host-guest benchmark 
 | APBS fine grid length | 96 Å | Covers ±48 Å. The sum b + R<sub>max, lig</sub> ≈ 33 Å is well within the grid. |
 | APBS grid dimension | 257 | Yields a grid spacing of ~0.37 Å. |
 | Max timestep cap | 0 (no cap) | The adaptive timestep at r = 30 Å is ~90 ps, giving drift/noise ≈ 1.5. |
-| Overlap check | Enabled (true) | Retained for the host-guest complexes. The tight, apolar interface does not trigger the false rejections seen for H-bonding protein criteria. |
+| Overlap check | Enabled (true) | Retained for the host-guest complexes. The tight, apolar interface does not trigger the false rejections seen for hydrogen bonding protein criteria. |
 | Trajectories | 2,000,000 | Per host-guest complex. |
 | Contact cutoff (search) | 5.0 Å | A tight cutoff appropriate for the small host-guest complex. |
 | Buffer | 2.0 Å | Smaller than the protein complexes because the molecules are smaller and the contacts are tighter. |
@@ -95,22 +95,22 @@ This complex represents a strongly electrostatically steered protein-protein ass
 |-----------|-------|-----------|
 | b-surface radius | 85.0 Å | The sum of maximum molecular radii (34.7 + 40.6 = 75.3 Å) plus ~10 Å of separation. |
 | Receptor hydrodynamic radius | 25.58 Å | Stokes radius from molecular dimensions, ~0.74 × R<sub>max</sub>. |
-| Ligand hydrodynamic radius | 21.88 Å | ~0.54 × R<sub>max</sub>, with the lower ratio reflecting the elongated EGF-domain fragment. |
+| Ligand hydrodynamic radius | 21.88 Å | ~0.54 × R<sub>max</sub>, with the lower ratio reflecting the elongated EGF domain fragment. |
 | Debye length | 7.86 Å | Corresponds to 150 mM ionic strength. |
 | APBS fine grid length | 192 Å | Covers ±96 Å. At b = 85, ligand atoms span 44 to 126 Å from the origin, and the grid encompasses the vast majority of encounter geometries. |
 | APBS grid dimension | 257 | Yields a grid spacing of ~0.75 Å. |
 | Base timestep | 1.0 ps | Larger base step appropriate at the large b-surface. |
 | Max timestep cap | 100 ps | Critical. Without the cap the adaptive timestep at r = 85 Å reaches ~1806 ps (drift/noise ≈ 5.4), producing ballistic trajectories that skip the electrostatic steering region. The cap restores drift/noise ≈ 2. |
 | Trajectories | 1,000,000 | - |
-| Contacts needed | 4 | Four interfacial hydrogen-bonding contacts must be satisfied simultaneously. The full pair list is in `rxns.xml`. |
+| Contacts needed | 4 | Four interfacial hydrogen bonding contacts must be satisfied simultaneously. The full pair list is in `rxns.xml`. |
 
-The experimental k<sub>on</sub> is 6.7 × 10⁶ M⁻¹s⁻¹ at physiological ionic strength, measured by surface plasmon resonance, and Debye-Hückel analysis of the ionic-strength dependence confirms a nearly completely electrostatically steered interaction. The computed k<sub>on</sub> is 2.38 × 10⁶ M⁻¹s⁻¹ (ratio 0.36×, relative SE 6.2%).
+The experimental k<sub>on</sub> is 6.7 × 10⁶ M⁻¹s⁻¹ at physiological ionic strength, measured by surface plasmon resonance, and Debye-Hückel analysis of the ionic strength dependence confirms a nearly completely electrostatically steered interaction. The computed k<sub>on</sub> is 2.38 × 10⁶ M⁻¹s⁻¹ (ratio 0.36×, relative SE 6.2%).
 
 ---
 
 ## 5. Barnase-barstar (flexible chain Brownian dynamics)
 
-Barnase-barstar is the classic electrostatically steered protein-protein association benchmark, included here as a sample for PySTARC's chain BD module, which extends the rigid-body engine to internal conformational degrees of freedom. It pairs barnase (chain A of PDB 1BRS) and barstar (chain D), parameterized with AMBER ff14SB. Unlike the rigid-body examples, the chain BD treatment retains internal flexibility rather than freezing each partner as a rigid body.
+Barnase-barstar is the classic electrostatically steered protein-protein association benchmark, included here as a sample for PySTARC's chain BD module, which extends the rigid body engine to internal conformational degrees of freedom. It pairs barnase (chain A of PDB 1BRS) and barstar (chain D), parameterized with AMBER ff14SB. Unlike the rigid body examples, the chain BD treatment retains internal flexibility rather than freezing each partner as a rigid body.
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -121,25 +121,25 @@ Barnase-barstar is the classic electrostatically steered protein-protein associa
 
 ## 6. p38 MAPK - SB203580 complex
 
-This is a kinase-inhibitor complex in which the ligand is neutral and the receptor carries a large net negative charge. p38 MAPK alpha in the DFG-in conformation from PDB 1A9U (chain A, residues 4 to 354) contains 5658 atoms with a net charge of −9e and a maximum radius of 37.8 Å. SB203580 is a type I kinase inhibitor with 27 atoms and zero net charge. The receptor is parameterized with ff14SB and the ligand with GAFF2 + AM1-BCC via antechamber. The ligand binds in the ATP pocket at the hinge.
+This is a kinase inhibitor complex in which the ligand is neutral and the receptor carries a large net negative charge. p38 MAPK alpha in the DFG-in conformation from PDB 1A9U (chain A, residues 4 to 354) contains 5658 atoms with a net charge of −9e and a maximum radius of 37.8 Å. SB203580 is a type I kinase inhibitor with 27 atoms and zero net charge. The receptor is parameterized with ff14SB and the ligand with GAFF2 + AM1-BCC via antechamber. The ligand binds in the ATP pocket at the hinge.
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
 | b-surface radius | 60.0 Å | The sum of maximum radii (37.8 + 7.8 = 45.6 Å) plus ~14 Å of separation. |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
 | Debye length | 7.86 Å | 150 mM ionic strength. |
-| APBS fine grid length | 128 Å | Covers ±64 Å, and the multipole fallback handles outermost-atom overshoot at the b-surface. |
-| APBS grid dimension | 257 | ~0.50 Å fine-grid spacing. |
+| APBS fine grid length | 128 Å | Covers ±64 Å, and the multipole fallback handles outermost atom overshoot at the b-surface. |
+| APBS grid dimension | 257 | ~0.50 Å fine grid spacing. |
 | Max timestep cap | 0 (no cap) | The adaptive timestep at r = 60 Å is moderate for a small, highly diffusive ligand. |
 | Trajectories | 5,000,000 | Production run. |
 
-Four crystal-structure contacts (the hinge MET106 backbone to the pyridine N, the catalytic LYS50 NZ to an imidazole N, and the VAL102 O and THR103 N to the fluorine) at a uniform 7.0 Å cutoff, with n_needed = 3. k<sub>on</sub> = 2.86 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 1.5 × 10⁷ M⁻¹s⁻¹ (ratio 1.91×, relative SE 1.1%).
+Four crystal structure contacts (the hinge MET106 backbone to the pyridine N, the catalytic LYS50 NZ to an imidazole N, and the VAL102 O and THR103 N to the fluorine) at a uniform 7.0 Å cutoff, with n_needed = 3. k<sub>on</sub> = 2.86 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 1.5 × 10⁷ M⁻¹s⁻¹ (ratio 1.91×, relative SE 1.1%).
 
 ---
 
 ## 7. Carbonic anhydrase sulfonamide inhibitors
 
-Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII, CA I, and CA II) form a multi-target benchmark in which all ligands carry the same charge (−1e) and bind the same Zn-coordinating sulfonamide motif but differ in scaffold, size, and isozyme. All ligands are deprotonated sulfonamides (net charge −1e), and the intrinsic k<sub>on</sub> corrected for the protonation equilibrium is the correct BD comparison target. Five complexes use CA XIII (PDB 3CZV), one CA I (2NMX), one CA II (3HS4). The active-site Zn²⁺ is included via `frcmod.ions234lm_126_tip3p`. Ligands are built from SMILES via rdkit, converted with obabel, and parameterized with antechamber (GAFF2 + AM1-BCC).
+Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII, CA I, and CA II) form a multi target benchmark in which all ligands carry the same charge (−1e) and bind the same Zn-coordinating sulfonamide motif but differ in scaffold, size, and isozyme. All ligands are deprotonated sulfonamides (net charge −1e), and the intrinsic k<sub>on</sub> corrected for the protonation equilibrium is the correct BD comparison target. Five complexes use CA XIII (PDB 3CZV), one CA I (2NMX), one CA II (3HS4). The active site Zn²⁺ is included via `frcmod.ions234lm_126_tip3p`. Ligands are built from SMILES via rdkit, converted with obabel, and parameterized with antechamber (GAFF2 + AM1-BCC).
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -148,10 +148,10 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 | Debye length | 9.62 Å | Corresponds to 100 mM ionic strength. |
 | Ion concentration | 0.10 M | 100 mM NaCl. |
 | APBS fine grid length | 128 Å | Covers ±64 Å, and the multipole fallback handles overshoot. |
-| APBS grid dimension | 257 | ~0.50 Å fine-grid spacing. |
+| APBS grid dimension | 257 | ~0.50 Å fine grid spacing. |
 | Max timestep cap | 0 (no cap) | Moderate adaptive timestep for small, highly diffusive ligands. |
 | Trajectories | 5,000,000 | Per complex. |
-| Reaction criterion | 2 pairs (THR199 OG1 / GLU106 OE1 to sulfonamide N and amide N), cutoff 3.5 Å, n_needed = 2 | Both Zn-coordinating / proton-shuttle hydrogen bonds required. |
+| Reaction criterion | 2 pairs (THR199 OG1 / GLU106 OE1 to sulfonamide N and amide N), cutoff 3.5 Å, n_needed = 2 | Both Zn-coordinating / proton shuttle hydrogen bonds required. |
 
 | Complex | Isozyme | Exp k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | PySTARC k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Ratio | rel SE |
 |--------|---------|------------------------------|-----------------------------------|-------|--------|
@@ -167,15 +167,15 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 
 ## 8. TTK (MPS1) kinase inhibitors
 
-Eight inhibitors of the mitotic kinase TTK/MPS1 form a single-target series spanning roughly two orders of magnitude in experimental k<sub>on</sub>. The complexes are eight TTK co-crystal structures (PDB 2X9E, 3GFW, 3H9F, 5LJJ, 5N7V, 5N84, 5N93, and 5NAD), each parameterized with ff14SB for the receptor and GAFF2 + AM1-BCC for the ligand, with ligand charges assigned by the OpenEye toolkits (license required).
+Eight inhibitors of the mitotic kinase TTK/MPS1 form a single target series spanning roughly two orders of magnitude in experimental k<sub>on</sub>. The complexes are eight TTK co-crystal structures (PDB 2X9E, 3GFW, 3H9F, 5LJJ, 5N7V, 5N84, 5N93, and 5NAD), each parameterized with ff14SB for the receptor and GAFF2 + AM1-BCC for the ligand, with ligand charges assigned by the OpenEye toolkits (license required).
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
-| b-surface radius | 60.0 Å | Globular kinase plus small-molecule inhibitor with a separation margin. |
+| b-surface radius | 60.0 Å | Globular kinase plus small molecule inhibitor with a separation margin. |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
 | Debye length | 7.86 Å | 150 mM ionic strength. |
 | APBS fine grid length | 144 Å | Covers ±72 Å. |
-| APBS grid dimension | 257 | ~0.56 Å fine-grid spacing. |
+| APBS grid dimension | 257 | ~0.56 Å fine grid spacing. |
 | Max timestep cap | 0 (no cap) | b < 80 Å, so no cap is required. |
 | Trajectories | 10,000,000 | Per complex. |
 | Reaction criterion | 3 polar crystal contacts (GLU603 O, GLY605 O, and GLY605 N to ligand N9/N2/N3), uniform 4.5 Å cutoff, n_needed = 3 | A single flat cutoff applied uniformly across all eight complexes. |
@@ -195,7 +195,7 @@ Eight inhibitors of the mitotic kinase TTK/MPS1 form a single-target series span
 
 ## 9. HSP90 inhibitors
 
-Six neutral HSP90 inhibitors form a single-target series of uncharged ligands, isolating the diffusion-limited encounter rate in the absence of electrostatic steering. The six complexes are HSP90 N-terminal domain co-crystal structures (31, 37, 43, 62, 65, and 70), each with a neutral inhibitor, the receptor parameterized with ff14SB and the ligands with GAFF2 + AM1-BCC (OpenEye toolkits, license required).
+Six neutral HSP90 inhibitors form a single target series of uncharged ligands, isolating the diffusion limited encounter rate in the absence of electrostatic steering. The six complexes are HSP90 N-terminal domain co-crystal structures (31, 37, 43, 62, 65, and 70), each with a neutral inhibitor, the receptor parameterized with ff14SB and the ligands with GAFF2 + AM1-BCC (OpenEye toolkits, license required).
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -203,7 +203,7 @@ Six neutral HSP90 inhibitors form a single-target series of uncharged ligands, i
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
 | Debye length | 7.86 Å | 150 mM ionic strength. |
 | APBS fine grid length | 144 Å | Covers ±72 Å. |
-| APBS grid dimension | 257 | ~0.56 Å fine-grid spacing. |
+| APBS grid dimension | 257 | ~0.56 Å fine grid spacing. |
 | Max timestep cap | 0 (no cap) | b < 80 Å, so no cap is required. |
 | Trajectories | 10,000,000 | Per complex. |
 | Reaction criterion | 8 pairs (contact method, SER37/ALA40/ASN36 CA anchors to ligand O2x/C15x/N1x), uniform 5.0 Å cutoff, n_needed = 6 | A single flat 5.0 Å cutoff applied across all six complexes. |
@@ -225,14 +225,14 @@ Most complexes share the following. Exceptions are noted in the sections above.
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
-| Protein dielectric | 4.0 | Standard for BD simulations. (Exception: the two-sphere analytical test uses a uniform dielectric of 78.0.) |
+| Protein dielectric | 4.0 | Standard for BD simulations. (Exception: the two sphere analytical test uses a uniform dielectric of 78.0.) |
 | Solvent dielectric | 78.0 | Water at 298.15 K. |
 | Solvent probe radius | 1.4 Å | Water molecule radius. |
 | Desolvation coupling | 0.0795775 | Equal to 1/(4π), the Born desolvation coupling constant. |
 | Hydrodynamic interactions | Enabled | Included in the k<sub>b</sub> integral. |
-| Overlap check | System-dependent | **Disabled (false)** for the protein-ligand and protein-protein hydrogen-bonding criteria, where the atom-pair overlap check would otherwise reject valid near-contact binding poses, and **enabled (true)** for the β-cyclodextrin host-guest complexes. |
+| Overlap check | System-dependent | **Disabled (false)** for the protein-ligand and protein-protein hydrogen bonding criteria, where the atom pair overlap check would otherwise reject valid near contact binding poses, and **enabled (true)** for the β-cyclodextrin host-guest complexes. |
 | Multipole fallback | Enabled | Monopole, dipole, and quadrupole Yukawa expansions are used beyond the APBS grid boundary. |
-| Lennard-Jones forces | Disabled | Standard for rigid-body BD. |
+| Lennard-Jones forces | Disabled | Standard for rigid body BD. |
 | Temperature | 298.15 K | Room temperature, k<sub>B</sub>T = 1.0 in reduced units. |
 | Base timestep | 0.2 ps | Minimum core timestep near the receptor surface. (Exception: thrombin-thrombomodulin uses 1.0 ps.) |
 
@@ -264,9 +264,9 @@ Across the protein-ligand, protein-protein, and host-guest complexes, the agreem
 | Pearson r | 0.913 (r² = 0.833) |
 | Spearman ρ | 0.796 |
 | R² vs y = x | 0.790 |
-| log₁₀ MAE | 0.493 (mean fold-error 3.1×) |
+| log₁₀ MAE | 0.493 (mean fold error 3.1×) |
 | log₁₀ RMSE | 0.644 |
-| log₁₀ bias | 0.277 (systematic 1.9× over-prediction) |
+| log₁₀ bias | 0.277 (systematic 1.9× overprediction) |
 | Converged | 28 / 32 |
 
-The systematic over-prediction, largest for the slowest experimental binders, reflects the diffusion-limited floor of rigid-body BD, which cannot lower k<sub>on</sub> for binders whose rate is set by non-diffusional gating.
+The systematic overprediction, largest for the slowest experimental binders, reflects the diffusion limited floor of rigid body BD, which cannot lower k<sub>on</sub> for binders whose rate is set by non-diffusional gating.
