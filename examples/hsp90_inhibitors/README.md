@@ -4,7 +4,7 @@
 All 6 receptor-ligand complexes share the same HSP90 N-terminal domain receptor with different small-molecule inhibitors. The systems are a subset of the HSP90 inhibitor kinetics dataset of Kokh et al. (2018). The charged member of the original set is excluded so that all ligands modeled here are neutral. System indices (31, 37, ...) are dataset indices from that study.
 
 <table width="100%">
-<thead><tr><th align="left">Receptor-ligand complex</th><th align="left">Exp k<sub>on</sub> (M<sup>-1</sup>s<sup>-1</sup>)</th></tr></thead>
+<thead><tr><th width="50%" align="left">Receptor-ligand complex</th><th width="50%" align="left">Exp k<sub>on</sub> (M<sup>-1</sup>s<sup>-1</sup>)</th></tr></thead>
 <tbody>
 <tr><td><code>31</code></td><td>1.0 × 10<sup>6</sup></td></tr>
 <tr><td><code>37</code></td><td>3.4 × 10<sup>5</sup></td></tr>
@@ -18,7 +18,7 @@ All 6 receptor-ligand complexes share the same HSP90 N-terminal domain receptor 
 ## Shared parameters
 
 <table width="100%">
-<thead><tr><th align="left">Parameter</th><th align="left">Value</th></tr></thead>
+<thead><tr><th width="50%" align="left">Parameter</th><th width="50%" align="left">Value</th></tr></thead>
 <tbody>
 <tr><td>Receptor</td><td>HSP90 N-terminal domain</td></tr>
 <tr><td>Ligand charge</td><td>neutral (auto-detected from formal charges)</td></tr>
@@ -38,7 +38,7 @@ All 6 receptor-ligand complexes share the same HSP90 N-terminal domain receptor 
 Each system directory (`31/`, `37/`, ...) ships only the source structure and the setup script:
 
 <table width="100%">
-<thead><tr><th align="left">File</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">File</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>complex.pdb</code></td><td>Bound-state PDB containing the receptor (HSP90) and the co-crystallized inhibitor.</td></tr>
 <tr><td><code>setup.py</code></td><td>Automated setup script. Reads the PDB, parameterizes from scratch, and generates all BD input files.</td></tr>
@@ -48,7 +48,7 @@ Each system directory (`31/`, `37/`, ...) ships only the source structure and th
 The following script is in the `hsp90_inhibitors/` directory:
 
 <table width="100%">
-<thead><tr><th align="left">File</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">File</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>run.sh</code></td><td>Runs setup and BD simulation for all 6 complexes sequentially, then compares rates against experiment and saves <code>summary.txt</code>.</td></tr>
 </tbody>
@@ -58,7 +58,7 @@ The following script is in the `hsp90_inhibitors/` directory:
 Unlike the pre-generated examples, no parameterized files are shipped: `setup.py` builds everything from scratch each run. Running `python setup.py` produces:
 
 <table width="100%">
-<thead><tr><th align="left">Generated file</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">Generated file</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>protein.prmtop</code>, <code>protein.rst7</code></td><td>Receptor AMBER topology and coordinates from tleap (ff14SB).</td></tr>
 <tr><td><code>ligand.prmtop</code>, <code>ligand.rst7</code></td><td>Ligand AMBER topology and coordinates from antechamber/tleap (GAFF2, AM1-BCC charges).</td></tr>
@@ -93,7 +93,7 @@ bash run.sh
 After a simulation completes, all results are written to `bd_sims/` within each receptor-ligand complex directory.
 
 <table width="100%">
-<thead><tr><th align="left">Output file</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">Output file</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>results.json</code></td><td>k<sub>on</sub>, P<sub>rxn</sub>, Wilson 95% CI, k<sub>b</sub>, D<sub>rel</sub>, wall time, and GPU info.</td></tr>
 <tr><td><code>convergence.json</code></td><td>Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.</td></tr>

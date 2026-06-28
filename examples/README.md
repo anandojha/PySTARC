@@ -3,7 +3,7 @@
 Ten validation examples of increasing complexity:
 
 <table width="100%">
-<thead><tr><th align="left">Example</th><th align="left">System</th><th align="left">Type</th></tr></thead>
+<thead><tr><th width="34%" align="left">Example</th><th width="33%" align="left">System</th><th width="33%" align="left">Type</th></tr></thead>
 <tbody>
 <tr><td><code>two_charged_spheres/</code></td><td>Two oppositely charged spheres</td><td>Analytical validation</td></tr>
 <tr><td><code>trypsin_benzamidine/</code></td><td>Trypsin-benzamidine</td><td>Protein-ligand</td></tr>

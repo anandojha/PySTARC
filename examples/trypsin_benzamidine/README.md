@@ -3,7 +3,7 @@
 ## System
 
 <table width="100%">
-<thead><tr><th align="left">Property</th><th align="left">Value</th></tr></thead>
+<thead><tr><th width="50%" align="left">Property</th><th width="50%" align="left">Value</th></tr></thead>
 <tbody>
 <tr><td>Receptor</td><td>Trypsin (3220 atoms, Q = +6 e)</td></tr>
 <tr><td>Ligand</td><td>Benzamidine (18 atoms, Q = +1 e)</td></tr>
@@ -23,7 +23,7 @@
 ## Input files (provided)
 
 <table width="100%">
-<thead><tr><th align="left">File</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">File</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>complex.pdb</code></td><td>Bound-state PDB containing trypsin, benzamidine, water, and ions.</td></tr>
 <tr><td><code>complex.prmtop</code></td><td>AMBER topology file that provides partial charges, atom types, and connectivity for PQR generation.</td></tr>
@@ -36,7 +36,7 @@
 Running `python setup.py` produces:
 
 <table width="100%">
-<thead><tr><th align="left">Generated file</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">Generated file</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>receptor.pqr</code></td><td>Receptor PQR file. Water and ions are stripped automatically.</td></tr>
 <tr><td><code>ligand.pqr</code></td><td>Ligand PQR file.</td></tr>
@@ -67,7 +67,7 @@ bash run.sh
 After the simulation completes, all results are written to `bd_sims/`.
 
 <table width="100%">
-<thead><tr><th align="left">Output file</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">Output file</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>results.json</code></td><td>k<sub>on</sub>, P<sub>rxn</sub>, Wilson 95% CI, k<sub>b</sub>, D<sub>rel</sub>, wall time, and GPU info.</td></tr>
 <tr><td><code>convergence.json</code></td><td>Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.</td></tr>

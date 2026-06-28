@@ -3,7 +3,7 @@
 ## System
 
 <table width="100%">
-<thead><tr><th align="left">Parameter</th><th align="left">Value</th></tr></thead>
+<thead><tr><th width="50%" align="left">Parameter</th><th width="50%" align="left">Value</th></tr></thead>
 <tbody>
 <tr><td>Receptor</td><td>Thrombin</td></tr>
 <tr><td>Ligand</td><td>Thrombomodulin</td></tr>
@@ -20,7 +20,7 @@
 ## Input files (provided)
 
 <table width="100%">
-<thead><tr><th align="left">File</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">File</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>receptor.pqr</code></td><td>Thrombin PQR file (pre-computed).</td></tr>
 <tr><td><code>ligand.pqr</code></td><td>Thrombomodulin PQR file (pre-computed).</td></tr>
@@ -52,7 +52,7 @@ python bb_effect.py                       # Brownian bridge diagnostic only
 After a simulation completes, all results are written to `bd_sims/`.
 
 <table width="100%">
-<thead><tr><th align="left">Output file</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">Output file</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>results.json</code></td><td>k<sub>on</sub>, P<sub>rxn</sub>, Wilson 95% CI, k<sub>b</sub>, D<sub>rel</sub>, wall time, and GPU info.</td></tr>
 <tr><td><code>convergence.json</code></td><td>Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.</td></tr>

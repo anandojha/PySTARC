@@ -4,7 +4,7 @@
 All 7 receptor-ligand complexes share the same beta-cyclodextrin (BCD/MGO) receptor with different guest molecules.
 
 <table width="100%">
-<thead><tr><th align="left">Receptor-ligand complex</th><th align="left">Ligand</th></tr></thead>
+<thead><tr><th width="50%" align="left">Receptor-ligand complex</th><th width="50%" align="left">Ligand</th></tr></thead>
 <tbody>
 <tr><td>BCD_1-propanol</td><td>1-propanol</td></tr>
 <tr><td>BCD_1-butanol</td><td>1-butanol</td></tr>
@@ -19,7 +19,7 @@ All 7 receptor-ligand complexes share the same beta-cyclodextrin (BCD/MGO) recep
 ## Shared parameters 
 
 <table width="100%">
-<thead><tr><th align="left">Parameter</th><th align="left">Value</th></tr></thead>
+<thead><tr><th width="50%" align="left">Parameter</th><th width="50%" align="left">Value</th></tr></thead>
 <tbody>
 <tr><td>Receptor</td><td>beta-cyclodextrin (MGO), 147 atoms</td></tr>
 <tr><td>Ligand</td><td>APN</td></tr>
@@ -38,7 +38,7 @@ All 7 receptor-ligand complexes share the same beta-cyclodextrin (BCD/MGO) recep
 Each `BCD_*/` directory contains the following files:
 
 <table width="100%">
-<thead><tr><th align="left">File</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">File</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>complex.pdb</code></td><td>Bound-state PDB containing receptor (MGO), ligand (APN), and water (WAT).</td></tr>
 <tr><td><code>complex.parm7</code></td><td>AMBER topology file that provides partial charges, atom types, and connectivity for PQR generation.</td></tr>
@@ -49,7 +49,7 @@ Each `BCD_*/` directory contains the following files:
 The following scripts are in the `beta_cyclodextrin_guests/` directory:
 
 <table width="100%">
-<thead><tr><th align="left">File</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">File</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>run.sh</code></td><td>Runs setup and BD simulation for all 7 complexes sequentially, then compares rates against experiment.</td></tr>
 <tr><td><code>compare_rates.py</code></td><td>Collects k<sub>on</sub> from all 7 complexes, compares against experimental values, computes Spearman rank correlation, and saves <code>summary.txt</code>.</td></tr>
@@ -60,7 +60,7 @@ The following scripts are in the `beta_cyclodextrin_guests/` directory:
 Running `python setup.py` produces:
 
 <table width="100%">
-<thead><tr><th align="left">Generated file</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">Generated file</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>receptor.pqr</code></td><td>Receptor PQR file extracted from the topology. Contains atom positions, partial charges, and radii for the beta-cyclodextrin host.</td></tr>
 <tr><td><code>ligand.pqr</code></td><td>Ligand PQR file extracted from the topology. Contains atom positions, partial charges, and radii for the guest molecule.</td></tr>
@@ -92,7 +92,7 @@ bash run.sh
 After a simulation completes, all results are written to `bd_sims/` within each receptor-ligand complex directory.
 
 <table width="100%">
-<thead><tr><th align="left">Output file</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">Output file</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>results.json</code></td><td>k<sub>on</sub>, P<sub>rxn</sub>, Wilson 95% CI, k<sub>b</sub>, D<sub>rel</sub>, wall time, and GPU info.</td></tr>
 <tr><td><code>convergence.json</code></td><td>Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.</td></tr>

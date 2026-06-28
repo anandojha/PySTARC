@@ -4,7 +4,7 @@
 This example covers eight inhibitors of the TTK (MPS1) kinase domain. Each system is a separate crystal structure (the PDB accession is the directory name) paired with its co-crystallized inhibitor. BD models the diffusion-limited encounter of each inhibitor with the ATP-binding site of the kinase.
 
 <table width="100%">
-<thead><tr><th align="left">Directory</th><th align="left">PDB</th><th align="left">Inhibitor</th><th align="left">Exp k<sub>on</sub> (M<sup>-1</sup>s<sup>-1</sup>)</th></tr></thead>
+<thead><tr><th width="25%" align="left">Directory</th><th width="25%" align="left">PDB</th><th width="25%" align="left">Inhibitor</th><th width="25%" align="left">Exp k<sub>on</sub> (M<sup>-1</sup>s<sup>-1</sup>)</th></tr></thead>
 <tbody>
 <tr><td><code>2X9E</code></td><td>2X9E</td><td>NMS-P715</td><td>6.4 × 10<sup>5</sup></td></tr>
 <tr><td><code>3GFW</code></td><td>3GFW</td><td>Mps1-IN-1</td><td>3.8 × 10<sup>5</sup></td></tr>
@@ -22,7 +22,7 @@ Experimental k<sub>on</sub> values are from Uitdehaag et al. (2017). Verify the 
 ## Shared parameters
 
 <table width="100%">
-<thead><tr><th align="left">Parameter</th><th align="left">Value</th></tr></thead>
+<thead><tr><th width="50%" align="left">Parameter</th><th width="50%" align="left">Value</th></tr></thead>
 <tbody>
 <tr><td>Receptor</td><td>TTK (MPS1) kinase domain</td></tr>
 <tr><td>Ligand charge</td><td>neutral</td></tr>
@@ -43,7 +43,7 @@ Unlike the host-guest examples, the reaction criterion here is defined explicitl
 Each system directory ships only the source structure and the setup script:
 
 <table width="100%">
-<thead><tr><th align="left">File</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">File</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>&lt;PDB&gt;.pdb</code></td><td>Crystal structure (protein + co-crystallized inhibitor), named by PDB accession (e.g. <code>2X9E.pdb</code>).</td></tr>
 <tr><td><code>setup.py</code></td><td>Automated setup script. Extracts protein and ligand, parameterizes from scratch, and generates all BD input files.</td></tr>
@@ -53,7 +53,7 @@ Each system directory ships only the source structure and the setup script:
 The following script is in the `ttk_inhibitors/` directory:
 
 <table width="100%">
-<thead><tr><th align="left">File</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">File</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>run.sh</code></td><td>Runs setup and BD simulation for all 8 complexes sequentially, then compares rates against experiment and saves <code>summary.txt</code>.</td></tr>
 </tbody>
@@ -63,7 +63,7 @@ The following script is in the `ttk_inhibitors/` directory:
 No parameterized files are shipped. `setup.py` builds everything from scratch each run. If the source `<PDB>.pdb` is already present (as shipped) it is used directly. Otherwise setup downloads it from the RCSB PDB. Running `python setup.py` produces:
 
 <table width="100%">
-<thead><tr><th align="left">Generated file</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">Generated file</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>protein.prmtop</code>, <code>protein.rst7</code></td><td>Receptor AMBER topology and coordinates from tleap (ff14SB).</td></tr>
 <tr><td><code>ligand.prmtop</code>, <code>ligand.rst7</code></td><td>Ligand AMBER topology and coordinates from antechamber/tleap (GAFF2, AM1-BCC charges).</td></tr>
@@ -98,7 +98,7 @@ bash run.sh
 After a simulation completes, all results are written to `bd_sims/` within each receptor-ligand complex directory.
 
 <table width="100%">
-<thead><tr><th align="left">Output file</th><th align="left">Description</th></tr></thead>
+<thead><tr><th width="50%" align="left">Output file</th><th width="50%" align="left">Description</th></tr></thead>
 <tbody>
 <tr><td><code>results.json</code></td><td>k<sub>on</sub>, P<sub>rxn</sub>, Wilson 95% CI, k<sub>b</sub>, D<sub>rel</sub>, wall time, and GPU info.</td></tr>
 <tr><td><code>convergence.json</code></td><td>Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.</td></tr>
