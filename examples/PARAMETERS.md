@@ -269,4 +269,4 @@ Across the protein-ligand, protein-protein, and host-guest complexes, the agreem
 | log₁₀ bias | 0.277 (systematic 1.9× over-prediction) |
 | Converged | 28 / 32 |
 
-The positive bias and the pattern of overprediction for the slow experimental binders are consistent with a rigid body systematic floor in BD simulations. It computes the diffusion-limited encounter rate and cannot lower k<sub>on</sub> for binders whose experimental rate is set by non-diffusional gating.
+The systematic over-prediction, largest for the slowest experimental binders, reflects the diffusion-limited floor of rigid-body BD, which cannot lower k<sub>on</sub> for binders whose rate is set by non-diffusional gating.
