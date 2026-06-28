@@ -78,11 +78,11 @@ Forces combine Adaptive Poisson-Boltzmann Solver (APBS) electrostatic grids near
 ### Automation
 
 - **Scripted setup.** `setup.py` builds PQR files, APBS grids, reaction criteria, and `input.xml` from PDB and topology files.
-- **Convergence diagnostics.** Relative standard error, Wilson interval, convergence curve, and split-half test.
-- **Structured output.** Trajectories, encounters, first passage times, radial densities, occupancy maps, pose clusters, fluxes, transition matrices, commitment probabilities, and energetics.
-- **Live progress.** k<sub>on</sub> and P<sub>rxn</sub> reported at a configurable interval.
-- **Checkpointing.** Long runs save and resume.
-- 
+- **Convergence diagnostics.** Convergence is tracked by the relative standard error, the Wilson interval, a convergence curve, and a split-half test.
+- **Structured output.** Each run produces trajectories, encounters, first passage times, radial densities, occupancy maps, pose clusters, fluxes, transition matrices, commitment probabilities, and energetics.
+- **Live progress.** k<sub>on</sub> and P<sub>rxn</sub> are reported at a configurable interval.
+- **Checkpointing.** Long runs can be saved and resumed.
+
 ## Installation
 
 **GPU (Linux / HPC):**
