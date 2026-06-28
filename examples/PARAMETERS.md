@@ -104,7 +104,7 @@ This complex represents a strongly electrostatically steered protein-protein ass
 | Trajectories | 1,000,000 | - |
 | Contacts needed | 4 | Four interfacial hydrogen-bonding contacts must be satisfied simultaneously. The full pair list is in `rxns.xml`. |
 
-The experimental k<sub>on</sub> is 6.7 × 10⁶ M⁻¹s⁻¹ at physiological ionic strength, measured by surface plasmon resonance (Baerga-Ortiz et al., 2000), and Debye-Hückel analysis of the ionic-strength dependence confirms a nearly completely electrostatically steered interaction. The computed k<sub>on</sub> is 2.38 × 10⁶ M⁻¹s⁻¹ (ratio 0.36×, relative SE 6.2%).
+The experimental k<sub>on</sub> is 6.7 × 10⁶ M⁻¹s⁻¹ at physiological ionic strength, measured by surface plasmon resonance, and Debye-Hückel analysis of the ionic-strength dependence confirms a nearly completely electrostatically steered interaction. The computed k<sub>on</sub> is 2.38 × 10⁶ M⁻¹s⁻¹ (ratio 0.36×, relative SE 6.2%).
 
 ---
 
@@ -145,7 +145,7 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 |-----------|-------|-----------|
 | b surface radius | 60.0 Å | Receptor R<sub>max</sub> ≈ 27 Å plus ligand 4 to 8 Å plus ~25 Å clearance. |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
-| Debye length | 9.62 Å | Corresponds to 100 mM ionic strength, matching the SPR conditions of Linkuviene et al. (2018). |
+| Debye length | 9.62 Å | Corresponds to 100 mM ionic strength. |
 | Ion concentration | 0.10 M | 100 mM NaCl. |
 | APBS fine grid length | 128 Å | Covers ±64 Å, and the multipole fallback handles overshoot. |
 | APBS grid dimension | 257 | ~0.50 Å fine-grid spacing. |
