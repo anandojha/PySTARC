@@ -4,7 +4,7 @@
 
 For force field parameterization, receptor charges are assigned with the AMBER ff14SB force field, and small molecule ligand charges with GAFF2 + AM1-BCC. Electrostatic potential grids are generated with the Adaptive Poisson-Boltzmann Solver (APBS), and bimolecular association rate constants are computed within the Northrup-Allison-McCammon framework. All numerical values in this guide are taken from the on-disk `input.xml`, `rxns.xml`, and `results.json` files for each example. Brownian dynamics trajectories begin on the b-surface, a sphere of radius b around the receptor, and the b-surface radius is the principal length scale that varies between systems.
 
-> **Note on sources.** Where a reaction-criterion *value* (cutoff, number of pairs, contacts needed) appears below, it is read directly from the corresponding `rxns.xml`/`setup.py`.
+> **Note on sources.** Where a reaction-criterion *value* (cutoff, number of pairs, and contacts needed) appears below, it is read directly from the corresponding `rxns.xml`/`setup.py`.
 
 ---
 
@@ -49,7 +49,7 @@ Trypsin-benzamidine is a protein-ligand complex with well-characterized experime
 | Contacts needed | 6 | Six of the 10 pairs must be satisfied simultaneously. |
 | Contact mode | Polar | Only N/O/S donor-acceptor pairs are considered, corresponding to hydrogen bonding contacts. |
 
-The setup script identifies the closest heavy-atom contacts between the receptor and ligand in the crystal structure, filters for polar atoms (N, O, S on both sides), retains the top 10 contacts with one per receptor residue, and sets each cutoff to the crystal distance. The resulting 10 pairs have cutoffs ranging from 6.0 to 8.5 Å. k<sub>on</sub> = 5.39 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 2.9 × 10⁷ M⁻¹s⁻¹ (ratio 1.86×, relative SE 0.5%).
+The setup script identifies the closest heavy-atom contacts between the receptor and ligand in the crystal structure, filters for polar atoms (N, O, and S on both sides), retains the top 10 contacts with one per receptor residue, and sets each cutoff to the crystal distance. The resulting 10 pairs have cutoffs ranging from 6.0 to 8.5 Å. k<sub>on</sub> = 5.39 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 2.9 × 10⁷ M⁻¹s⁻¹ (ratio 1.86×, relative SE 0.5%).
 
 ---
 
@@ -73,7 +73,7 @@ Seven small molecule guests binding β-cyclodextrin form a host-guest benchmark 
 | Contacts needed | 4 | Four pairs must be satisfied. |
 | Contact mode | All heavy atoms | The host-guest interface has few polar atoms. |
 
-Each guest uses seven contact pairs, of which four must form for a reaction, at cutoffs of 5.0 to 6.5 Å taken from the crystal contacts. The O5 glycosidic oxygens of β-cyclodextrin (atoms 15, 57 and 99) recur as the receptor contact atoms across all of the guests, giving a consistent anchor.
+Each guest uses seven contact pairs, of which four must form for a reaction, at cutoffs of 5.0 to 6.5 Å taken from the crystal contacts. The O5 glycosidic oxygens of β-cyclodextrin (atoms 15, 57, and 99) recur as the receptor contact atoms across all of the guests, giving a consistent anchor.
 
 | Guest | Exp k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | PySTARC k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Ratio | rel SE |
 |-------|------------------------------|-----------------------------------|-------|--------|
@@ -139,7 +139,7 @@ Four crystal-structure contacts (the hinge MET106 backbone to the pyridine N, th
 
 ## 7. Carbonic anhydrase sulfonamide inhibitors
 
-Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII, CA I, CA II) form a multi-target benchmark in which all ligands carry the same charge (−1e) and bind the same Zn-coordinating sulfonamide motif but differ in scaffold, size, and isozyme. All ligands are deprotonated sulfonamides (net charge −1e), and the intrinsic k<sub>on</sub> corrected for the protonation equilibrium is the correct BD comparison target. Five complexes use CA XIII (PDB 3CZV), one CA I (2NMX), one CA II (3HS4). The active-site Zn²⁺ is included via `frcmod.ions234lm_126_tip3p`. Ligands are built from SMILES via rdkit, converted with obabel, and parameterized with antechamber (GAFF2 + AM1-BCC).
+Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII, CA I, and CA II) form a multi-target benchmark in which all ligands carry the same charge (−1e) and bind the same Zn-coordinating sulfonamide motif but differ in scaffold, size, and isozyme. All ligands are deprotonated sulfonamides (net charge −1e), and the intrinsic k<sub>on</sub> corrected for the protonation equilibrium is the correct BD comparison target. Five complexes use CA XIII (PDB 3CZV), one CA I (2NMX), one CA II (3HS4). The active-site Zn²⁺ is included via `frcmod.ions234lm_126_tip3p`. Ligands are built from SMILES via rdkit, converted with obabel, and parameterized with antechamber (GAFF2 + AM1-BCC).
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -167,7 +167,7 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 
 ## 8. TTK (MPS1) kinase inhibitors
 
-Eight inhibitors of the mitotic kinase TTK/MPS1 form a single-target series spanning roughly two orders of magnitude in experimental k<sub>on</sub>. The complexes are eight TTK co-crystal structures (PDB 2X9E, 3GFW, 3H9F, 5LJJ, 5N7V, 5N84, 5N93, 5NAD), each parameterized with ff14SB for the receptor and GAFF2 + AM1-BCC for the ligand, with ligand charges assigned by the OpenEye toolkits (license required).
+Eight inhibitors of the mitotic kinase TTK/MPS1 form a single-target series spanning roughly two orders of magnitude in experimental k<sub>on</sub>. The complexes are eight TTK co-crystal structures (PDB 2X9E, 3GFW, 3H9F, 5LJJ, 5N7V, 5N84, 5N93, and 5NAD), each parameterized with ff14SB for the receptor and GAFF2 + AM1-BCC for the ligand, with ligand charges assigned by the OpenEye toolkits (license required).
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -178,7 +178,7 @@ Eight inhibitors of the mitotic kinase TTK/MPS1 form a single-target series span
 | APBS grid dimension | 257 | ~0.56 Å fine-grid spacing. |
 | Max timestep cap | 0 (no cap) | b < 80 Å, so no cap is required. |
 | Trajectories | 10,000,000 | Per complex. |
-| Reaction criterion | 3 polar crystal contacts (GLU603 O, GLY605 O, GLY605 N to ligand N9/N2/N3), uniform 4.5 Å cutoff, n_needed = 3 | A single flat cutoff applied uniformly across all eight complexes. |
+| Reaction criterion | 3 polar crystal contacts (GLU603 O, GLY605 O, and GLY605 N to ligand N9/N2/N3), uniform 4.5 Å cutoff, n_needed = 3 | A single flat cutoff applied uniformly across all eight complexes. |
 
 | Complex | Inhibitor | Exp k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | PySTARC k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Ratio | rel SE |
 |--------|-----------|------------------------------|-----------------------------------|-------|--------|
@@ -195,7 +195,7 @@ Eight inhibitors of the mitotic kinase TTK/MPS1 form a single-target series span
 
 ## 9. HSP90 inhibitors
 
-Six neutral HSP90 inhibitors form a single-target series of uncharged ligands, isolating the diffusion-limited encounter rate in the absence of electrostatic steering. The six complexes are HSP90 N-terminal domain co-crystal structures (31, 37, 43, 62, 65, 70), each with a neutral inhibitor, the receptor parameterized with ff14SB and the ligands with GAFF2 + AM1-BCC (OpenEye toolkits, license required).
+Six neutral HSP90 inhibitors form a single-target series of uncharged ligands, isolating the diffusion-limited encounter rate in the absence of electrostatic steering. The six complexes are HSP90 N-terminal domain co-crystal structures (31, 37, 43, 62, 65, and 70), each with a neutral inhibitor, the receptor parameterized with ff14SB and the ligands with GAFF2 + AM1-BCC (OpenEye toolkits, license required).
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
