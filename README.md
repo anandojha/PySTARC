@@ -61,19 +61,19 @@ Forces combine Adaptive Poisson-Boltzmann Solver (APBS) electrostatic grids near
 ### Performance
 
 - **Batch propagation.** All trajectories advance as GPU arrays.
-- **Multi-GPU.** Trajectories split across GPUs share APBS grids.
-- **Memory bounded Born forces.** Reverse direction desolvation is split into blocks to fit GPU memory.
+- **Multi-GPU.** Trajectories are divided across the available GPUs, while every GPU uses the same APBS grids.
+- **Blocked Born desolvation.** The reverse-direction desolvation is evaluated in blocks so it fits in GPU memory.
 
 ### Physical model
 
-- **Brownian bridge reactions.** P = exp(-x₀·x₁ / (D_eff·Δt)), exact at constant cost per step.
-- **Yukawa multipole far field.** Monopole, dipole, and quadrupole.
-- **Rotne-Prager-Yamakawa hydrodynamics.** Valid through the sphere overlap regime.
-- **Monte Carlo hydrodynamic radius.** Solvent-excluded surface with a Kirkwood double sum within ~1% of the analytical value.
-- **Bidirectional Born desolvation.** Receptor in ligand and ligand in receptor fields, coupled by Newton's third law.
-- **Wilson score interval.** Valid for any P<sub>rxn</sub> and any N ≥ 1.
+- **Brownian bridge reactions.** The crossing probability between two recorded positions is P = exp(-x₀·x₁ / (D_eff·Δt)), exact at a constant cost per step.
+- **Yukawa multipole far field.** Outside the APBS grid the screened (Yukawa) potential is expanded as a multipole series through the monopole, dipole, and quadrupole terms.
+- **Rotne-Prager-Yamakawa hydrodynamics.** The mobility tensor stays valid through the sphere overlap regime.
+- **Monte Carlo hydrodynamic radius.** The radius comes from the solvent-excluded surface using a Kirkwood double sum, within ~1% of the analytical value.
+- **Bidirectional Born desolvation.** Both the receptor in the ligand field and the ligand in the receptor field are evaluated, coupled by Newton's third law.
+- **Wilson score interval.** The confidence interval holds for any P<sub>rxn</sub> and any N ≥ 1.
 - **Adaptive timestep.** A user configurable `max_dt` ceiling prevents b-surface overshoot.
-- **Quaternion rotation.** Direct composition with no interpolation error.
+- **Quaternion rotation.** Orientations compose directly, with no interpolation error.
 
 ### Automation
 
@@ -134,12 +134,12 @@ examples/
 ├── trypsin_benzamidine/              Protein-ligand (charged ligand, surface pocket)
 ├── beta_cyclodextrin_guests/         Host-guest (7 neutral guests, same receptor)
 ├── thrombin_thrombomodulin/          Protein-protein (electrostatically steered)
-├── barnase_barstar_chainbd/          Flexible chain BD (protein-protein, under active validation)
 ├── p38_mapk_sb203580/                Protein-ligand (neutral kinase inhibitor)
 ├── carbonic_anhydrase_inhibitors/    Protein-ligand (7 sulfonamides, 3 CA isozymes)
 ├── hsp90_inhibitors/                 Protein-ligand (6 HSP90 inhibitors)
 ├── ttk_inhibitors/                   Protein-ligand (8 TTK/MPS1 kinase inhibitors)
-└── trypsin_benzamidine_multi_GPUs/   Cluster SLURM demo (single-GPU and multi-GPU)
+├── trypsin_benzamidine_multi_GPUs/   Cluster SLURM demo (single-GPU and multi-GPU)
+└── barnase_barstar_chainbd/          Flexible chain BD (protein-protein, under active validation)
 ```
 
 ## Requirements
