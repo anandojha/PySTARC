@@ -3,18 +3,18 @@
 Ten validation examples of increasing complexity:
 
 <table width="100%">
-<thead><tr><th width="34%" align="left">Example</th><th width="33%" align="left">System</th><th width="33%" align="left">Type</th></tr></thead>
+<thead><tr><th align="left">Example</th><th align="left">System</th><th align="left">Type</th></tr></thead>
 <tbody>
-<tr><td width="34%"><code>two_charged_spheres/</code></td><td width="33%">Two oppositely charged spheres</td><td width="33%">Analytical validation</td></tr>
-<tr><td width="34%"><code>trypsin_benzamidine/</code></td><td width="33%">Trypsin-benzamidine</td><td width="33%">Protein-ligand</td></tr>
-<tr><td width="34%"><code>beta_cyclodextrin_guests/</code></td><td width="33%">7 BCD host-guest complexes</td><td width="33%">Host-guest</td></tr>
-<tr><td width="34%"><code>thrombin_thrombomodulin/</code></td><td width="33%">Thrombin-thrombomodulin</td><td width="33%">Protein-protein</td></tr>
-<tr><td width="34%"><code>barnase_barstar_chainbd/</code></td><td width="33%">Barnase-barstar (flexible chain)</td><td width="33%">Chain BD / protein-protein</td></tr>
-<tr><td width="34%"><code>p38_mapk_sb203580/</code></td><td width="33%">p38 MAPK / SB203580</td><td width="33%">Protein-ligand</td></tr>
-<tr><td width="34%"><code>carbonic_anhydrase_inhibitors/</code></td><td width="33%">7 CA sulfonamide inhibitors (3 isozymes)</td><td width="33%">Protein-ligand</td></tr>
-<tr><td width="34%"><code>hsp90_inhibitors/</code></td><td width="33%">6 HSP90 inhibitors</td><td width="33%">Protein-ligand</td></tr>
-<tr><td width="34%"><code>ttk_inhibitors/</code></td><td width="33%">8 TTK (MPS1) kinase inhibitors</td><td width="33%">Protein-ligand</td></tr>
-<tr><td width="34%"><code>trypsin_benzamidine_multi_GPUs/</code></td><td width="33%">Trypsin-benzamidine (SLURM, 1 and 4 GPUs)</td><td width="33%">Cluster / multi-GPU demonstration</td></tr>
+<tr><td><code>two_charged_spheres/</code></td><td>Two oppositely charged spheres</td><td>Analytical validation</td></tr>
+<tr><td><code>trypsin_benzamidine/</code></td><td>Trypsin-benzamidine</td><td>Protein-ligand</td></tr>
+<tr><td><code>beta_cyclodextrin_guests/</code></td><td>7 BCD host-guest complexes</td><td>Host-guest</td></tr>
+<tr><td><code>thrombin_thrombomodulin/</code></td><td>Thrombin-thrombomodulin</td><td>Protein-protein</td></tr>
+<tr><td><code>barnase_barstar_chainbd/</code></td><td>Barnase-barstar (flexible chain)</td><td>Chain BD / protein-protein</td></tr>
+<tr><td><code>p38_mapk_sb203580/</code></td><td>p38 MAPK / SB203580</td><td>Protein-ligand</td></tr>
+<tr><td><code>carbonic_anhydrase_inhibitors/</code></td><td>7 CA sulfonamide inhibitors (3 isozymes)</td><td>Protein-ligand</td></tr>
+<tr><td><code>hsp90_inhibitors/</code></td><td>6 HSP90 inhibitors</td><td>Protein-ligand</td></tr>
+<tr><td><code>ttk_inhibitors/</code></td><td>8 TTK (MPS1) kinase inhibitors</td><td>Protein-ligand</td></tr>
+<tr><td><code>trypsin_benzamidine_multi_GPUs/</code></td><td>Trypsin-benzamidine (SLURM, 1 and 4 GPUs)</td><td>Cluster / multi-GPU demonstration</td></tr>
 </tbody>
 </table>
 
