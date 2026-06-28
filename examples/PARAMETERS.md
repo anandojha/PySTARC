@@ -17,7 +17,7 @@ This complex validates the BD engine against the exact analytical Smoluchowski s
 | b-surface radius | 10.0 Å | Five times the contact distance of 2.0 Å. The system is small and has no molecular extent. |
 | Hydrodynamic radii | 0 / 0 (point charges) | No hydrodynamic radius is assigned as the spheres are treated as point particles for the analytical comparison. |
 | Debye length | 7.828 Å | Corresponds to ~150 mM ionic strength. |
-| Protein / solvent dielectric | 78.0 / 78.0 | Uniform dielectric. Unlike the molecular systems, no low-dielectric interior is defined for the analytical test. |
+| Protein / solvent dielectric | 78.0 / 78.0 | Uniform dielectric. Unlike the molecular complexes, no low-dielectric interior is defined for the analytical test. |
 | APBS fine grid | None | The screened Coulomb potential between the two point charges is evaluated analytically and no APBS grid is generated. |
 | APBS grid dimension | 129 | Vestigial for the analytic potential. |
 | Max timestep cap | 0 (no cap) | The adaptive timestep at r = 10 Å is ~10 ps, giving drift/noise ≈ 0.5. |
@@ -31,7 +31,7 @@ The analytical Smoluchowski rate is reproduced to within 0.1%, with k<sub>on</su
 
 ## 2. Trypsin-benzamidine complex
 
-The trypsin-benzamidine complex is a protein and small molecule system with well-characterized experimental kinetics. Trypsin protein contains 3220 atoms with a net charge of +6e and a maximum radius of 28.4 Å. Benzamidine contains 18 atoms with a net charge of +1e and a maximum radius of 3.7 Å. Both molecules are positively charged, resulting in repulsive electrostatics.
+Trypsin-benzamidine is a protein-ligand complex with well-characterized experimental kinetics. Trypsin protein contains 3220 atoms with a net charge of +6e and a maximum radius of 28.4 Å. Benzamidine contains 18 atoms with a net charge of +1e and a maximum radius of 3.7 Å. Both molecules are positively charged, resulting in repulsive electrostatics.
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -121,7 +121,7 @@ Barnase-barstar is the classic electrostatically steered protein-protein associa
 
 ## 6. p38 MAPK - SB203580 complex
 
-This complex is a kinase-inhibitor system in which the ligand is neutral and the receptor carries a large net negative charge. p38 MAPK alpha in the DFG-in conformation from PDB 1A9U (chain A, residues 4 to 354) contains 5658 atoms with a net charge of −9e and a maximum radius of 37.8 Å. SB203580 is a type I kinase inhibitor with 27 atoms and zero net charge. The receptor is parameterized with ff14SB and the ligand with GAFF2 + AM1-BCC via antechamber. The ligand binds in the ATP pocket at the hinge.
+This is a kinase-inhibitor complex in which the ligand is neutral and the receptor carries a large net negative charge. p38 MAPK alpha in the DFG-in conformation from PDB 1A9U (chain A, residues 4 to 354) contains 5658 atoms with a net charge of −9e and a maximum radius of 37.8 Å. SB203580 is a type I kinase inhibitor with 27 atoms and zero net charge. The receptor is parameterized with ff14SB and the ligand with GAFF2 + AM1-BCC via antechamber. The ligand binds in the ATP pocket at the hinge.
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -139,7 +139,7 @@ Four crystal-structure contacts (the hinge MET106 backbone to the pyridine N, th
 
 ## 7. Carbonic anhydrase sulfonamide inhibitors
 
-Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII, CA I, CA II) form a multi-target benchmark in which all ligands carry the same charge (−1e) and bind the same Zn-coordinating sulfonamide motif but differ in scaffold, size, and isozyme. All ligands are deprotonated sulfonamides (net charge −1e), and the intrinsic k<sub>on</sub> corrected for the protonation equilibrium is the correct BD comparison target. Five systems use CA XIII (PDB 3CZV), one CA I (2NMX), one CA II (3HS4). The active-site Zn²⁺ is included via `frcmod.ions234lm_126_tip3p`. Ligands are built from SMILES via rdkit, converted with obabel, and parameterized with antechamber (GAFF2 + AM1-BCC).
+Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII, CA I, CA II) form a multi-target benchmark in which all ligands carry the same charge (−1e) and bind the same Zn-coordinating sulfonamide motif but differ in scaffold, size, and isozyme. All ligands are deprotonated sulfonamides (net charge −1e), and the intrinsic k<sub>on</sub> corrected for the protonation equilibrium is the correct BD comparison target. Five complexes use CA XIII (PDB 3CZV), one CA I (2NMX), one CA II (3HS4). The active-site Zn²⁺ is included via `frcmod.ions234lm_126_tip3p`. Ligands are built from SMILES via rdkit, converted with obabel, and parameterized with antechamber (GAFF2 + AM1-BCC).
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -150,10 +150,10 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 | APBS fine grid length | 128 Å | Covers ±64 Å, and the multipole fallback handles overshoot. |
 | APBS grid dimension | 257 | ~0.50 Å fine-grid spacing. |
 | Max timestep cap | 0 (no cap) | Moderate adaptive timestep for small, highly diffusive ligands. |
-| Trajectories | 5,000,000 | Per system. |
+| Trajectories | 5,000,000 | Per complex. |
 | Reaction criterion | 2 pairs (THR199 OG1 / GLU106 OE1 to sulfonamide N and amide N), cutoff 3.5 Å, n_needed = 2 | Both Zn-coordinating / proton-shuttle hydrogen bonds required. |
 
-| System | Isozyme | Exp k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | PySTARC k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Ratio | rel SE |
+| Complex | Isozyme | Exp k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | PySTARC k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Ratio | rel SE |
 |--------|---------|------------------------------|-----------------------------------|-------|--------|
 | CA I-VD12-69-1 | CA I | 2.7 × 10⁶ | 2.35 × 10⁶ | 0.87× | 3.8% |
 | CA XIII-AZM | CA XIII | 1.5 × 10⁶ | 1.79 × 10⁶ | 1.20× | 4.7% |
@@ -167,7 +167,7 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 
 ## 8. TTK (MPS1) kinase inhibitors
 
-Eight inhibitors of the mitotic kinase TTK/MPS1 form a single-target series spanning roughly two orders of magnitude in experimental k<sub>on</sub>. The systems are eight TTK co-crystal structures (PDB 2X9E, 3GFW, 3H9F, 5LJJ, 5N7V, 5N84, 5N93, 5NAD), each parameterized with ff14SB for the receptor and GAFF2 + AM1-BCC for the ligand, with ligand charges assigned by the OpenEye toolkits (license required).
+Eight inhibitors of the mitotic kinase TTK/MPS1 form a single-target series spanning roughly two orders of magnitude in experimental k<sub>on</sub>. The complexes are eight TTK co-crystal structures (PDB 2X9E, 3GFW, 3H9F, 5LJJ, 5N7V, 5N84, 5N93, 5NAD), each parameterized with ff14SB for the receptor and GAFF2 + AM1-BCC for the ligand, with ligand charges assigned by the OpenEye toolkits (license required).
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -177,10 +177,10 @@ Eight inhibitors of the mitotic kinase TTK/MPS1 form a single-target series span
 | APBS fine grid length | 144 Å | Covers ±72 Å. |
 | APBS grid dimension | 257 | ~0.56 Å fine-grid spacing. |
 | Max timestep cap | 0 (no cap) | b < 80 Å, so no cap is required. |
-| Trajectories | 10,000,000 | Per system. |
-| Reaction criterion | 3 polar crystal contacts (GLU603 O, GLY605 O, GLY605 N to ligand N9/N2/N3), uniform 4.5 Å cutoff, n_needed = 3 | A single flat cutoff applied uniformly across all eight systems. |
+| Trajectories | 10,000,000 | Per complex. |
+| Reaction criterion | 3 polar crystal contacts (GLU603 O, GLY605 O, GLY605 N to ligand N9/N2/N3), uniform 4.5 Å cutoff, n_needed = 3 | A single flat cutoff applied uniformly across all eight complexes. |
 
-| System | Inhibitor | Exp k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | PySTARC k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Ratio | rel SE |
+| Complex | Inhibitor | Exp k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | PySTARC k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Ratio | rel SE |
 |--------|-----------|------------------------------|-----------------------------------|-------|--------|
 | 5LJJ | Reversine | 2.08 × 10⁶ | 4.91 × 10⁶ | 2.36× | 1.8% |
 | 2X9E | NMS-P715 | 6.41 × 10⁵ | 2.37 × 10⁶ | 3.70× | 2.3% |
@@ -195,7 +195,7 @@ Eight inhibitors of the mitotic kinase TTK/MPS1 form a single-target series span
 
 ## 9. HSP90 inhibitors
 
-Six neutral HSP90 inhibitors form a single-target series of uncharged ligands, isolating the diffusion-limited encounter rate in the absence of electrostatic steering. The six systems are HSP90 N-terminal domain co-complexes (31, 37, 43, 62, 65, 70), each with a neutral inhibitor, the receptor parameterized with ff14SB and the ligands with GAFF2 + AM1-BCC (OpenEye toolkits, license required).
+Six neutral HSP90 inhibitors form a single-target series of uncharged ligands, isolating the diffusion-limited encounter rate in the absence of electrostatic steering. The six complexes are HSP90 N-terminal domain co-crystal structures (31, 37, 43, 62, 65, 70), each with a neutral inhibitor, the receptor parameterized with ff14SB and the ligands with GAFF2 + AM1-BCC (OpenEye toolkits, license required).
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -205,10 +205,10 @@ Six neutral HSP90 inhibitors form a single-target series of uncharged ligands, i
 | APBS fine grid length | 144 Å | Covers ±72 Å. |
 | APBS grid dimension | 257 | ~0.56 Å fine-grid spacing. |
 | Max timestep cap | 0 (no cap) | b < 80 Å, so no cap is required. |
-| Trajectories | 10,000,000 | Per system. |
-| Reaction criterion | 8 pairs (contact method, SER37/ALA40/ASN36 CA anchors to ligand O2x/C15x/N1x), uniform 5.0 Å cutoff, n_needed = 6 | A single flat 5.0 Å cutoff applied across all six systems. |
+| Trajectories | 10,000,000 | Per complex. |
+| Reaction criterion | 8 pairs (contact method, SER37/ALA40/ASN36 CA anchors to ligand O2x/C15x/N1x), uniform 5.0 Å cutoff, n_needed = 6 | A single flat 5.0 Å cutoff applied across all six complexes. |
 
-| System | Exp k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | PySTARC k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Ratio | rel SE |
+| Complex | Exp k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | PySTARC k<sub>on</sub> (M⁻¹s⁻¹)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Ratio | rel SE |
 |--------|------------------------------|-----------------------------------|-------|--------|
 | 31 | 1.00 × 10⁶ | 2.09 × 10⁶ | 2.09× | 3.0% |
 | 37 | 3.43 × 10⁵ | 2.70 × 10⁵ | 0.79× | 7.3% |
@@ -221,7 +221,7 @@ Six neutral HSP90 inhibitors form a single-target series of uncharged ligands, i
 
 ## Common parameters
 
-Most complexes share the following. Exceptions are noted in the per-system sections above.
+Most complexes share the following. Exceptions are noted in the sections above.
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
@@ -230,7 +230,7 @@ Most complexes share the following. Exceptions are noted in the per-system secti
 | Solvent probe radius | 1.4 Å | Water molecule radius. |
 | Desolvation coupling | 0.0795775 | Equal to 1/(4π), the Born desolvation coupling constant. |
 | Hydrodynamic interactions | Enabled | Included in the k<sub>b</sub> integral. |
-| Overlap check | System-dependent | **Disabled (false)** for the protein-ligand and protein-protein hydrogen-bonding criteria, where the atom-pair overlap check would otherwise reject valid near-contact binding poses, and **enabled (true)** for the β-cyclodextrin host-guest systems. |
+| Overlap check | System-dependent | **Disabled (false)** for the protein-ligand and protein-protein hydrogen-bonding criteria, where the atom-pair overlap check would otherwise reject valid near-contact binding poses, and **enabled (true)** for the β-cyclodextrin host-guest complexes. |
 | Multipole fallback | Enabled | Monopole, dipole, and quadrupole Yukawa expansions are used beyond the APBS grid boundary. |
 | Lennard-Jones forces | Disabled | Standard for rigid-body BD. |
 | Temperature | 298.15 K | Room temperature, k<sub>B</sub>T = 1.0 in reduced units. |
