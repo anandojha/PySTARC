@@ -259,14 +259,17 @@ The flexible chain BD example (§5) uses a distinct propagation scheme with its 
 
 Across the protein-ligand, protein-protein, and host-guest complexes, the agreement between the computed and experimental association rate constants in log₁₀ space is summarized below.
 
-| Metric&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |
-|--------|-------|
-| Pearson r | 0.913 (r² = 0.833) |
-| Spearman ρ | 0.796 |
-| R² vs y = x | 0.790 |
-| log₁₀ MAE | 0.493 (mean fold error 3.1×) |
-| log₁₀ RMSE | 0.644 |
-| log₁₀ bias | 0.277 (systematic 1.9× overprediction) |
-| Converged | 28 / 32 |
+<table width="100%">
+<thead><tr><th align="left">Metric</th><th align="left">Value</th></tr></thead>
+<tbody>
+<tr><td>Pearson r</td><td>0.913 (r² = 0.833)</td></tr>
+<tr><td>Spearman ρ</td><td>0.796</td></tr>
+<tr><td>R² vs y = x</td><td>0.790</td></tr>
+<tr><td>log₁₀ MAE</td><td>0.493 (mean fold error 3.1×)</td></tr>
+<tr><td>log₁₀ RMSE</td><td>0.644</td></tr>
+<tr><td>log₁₀ bias</td><td>0.277 (systematic 1.9× overprediction)</td></tr>
+<tr><td>Converged</td><td>28 / 32</td></tr>
+</tbody>
+</table>
 
 The systematic overprediction, largest for the slowest experimental binders, reflects the diffusion limited floor of rigid body BD, which cannot lower k<sub>on</sub> for binders whose rate is set by non-diffusional gating.
