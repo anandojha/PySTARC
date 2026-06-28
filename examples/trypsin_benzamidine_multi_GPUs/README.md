@@ -107,7 +107,7 @@ Workflow:
 
 1. Cleans previous bd_sims and stale output files.
 2. Runs `setup.py` to regenerate PQR, rxns.xml, input.xml.
-3. Splits input.xml into 4 chunks via `multi_GPU_runs.py`.
+3. Splits input.xml into 4 parts via `multi_GPU_runs.py`.
 4. Launches 4 parallel BD processes, one per GPU (`CUDA_VISIBLE_DEVICES=0..3`).
 5. Waits for all 4 to finish.
 6. Runs `combine_data.py` to pool results.

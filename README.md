@@ -11,7 +11,7 @@
 
 ### Python Simulation Toolkit for Association Rate Constants
 
-GPU-accelerated rigid-body and flexible chain Brownian dynamics for bimolecular association rate constants (k<sub>on</sub>)
+GPU-accelerated rigid body and flexible chain Brownian dynamics for bimolecular association rate constants (k<sub>on</sub>)
 
 <br>
 
@@ -50,11 +50,11 @@ GPU-accelerated rigid-body and flexible chain Brownian dynamics for bimolecular 
 
 ## Overview
 
-PySTARC computes the bimolecular association rate constants (k<sub>on</sub>) by implementing rigid body Brownian dynamics within the Northrup-Allison-McCammon formalism. k<sub>on</sub> is the diffusion limited rate of reaching an outer surface, multiplied by the probability of subsequently reaching reactive contact before escaping. Trajectories run in parallel on the GPU with a NumPy CPU fallback. Applications include protein-ligand and protein-protein association, as well as other diffusion-controlled encounters.
+PySTARC computes the bimolecular association rate constants (k<sub>on</sub>) by implementing rigid body Brownian dynamics within the Northrup-Allison-McCammon formalism. k<sub>on</sub> is the diffusion limited rate of reaching an outer surface, multiplied by the probability of subsequently reaching reactive contact before escaping. Trajectories run in parallel on the GPU with a NumPy CPU fallback. Applications include protein-ligand and protein-protein association, as well as other diffusion controlled encounters.
 
 ## Method
 
-Forces combine Adaptive Poisson-Boltzmann Solver (APBS) electrostatic grids near the receptor, a screened-Coulomb (Yukawa) multipole far field outside the grid, Rotne-Prager-Yamakawa hydrodynamics, and Born desolvation. Reactions are captured by the closed-form Brownian bridge crossing probability, such that a crossing between two recorded positions is detected without shrinking the timestep. Diffusion constants come from a Monte Carlo hydrodynamic radius. 
+Forces combine Adaptive Poisson-Boltzmann Solver (APBS) electrostatic grids near the receptor, a screened Coulomb (Yukawa) multipole far field outside the grid, Rotne-Prager-Yamakawa hydrodynamics, and Born desolvation. Reactions are captured by the closed form Brownian bridge crossing probability, such that a crossing between two recorded positions is detected without shrinking the timestep. Diffusion constants come from a Monte Carlo hydrodynamic radius. 
 
 ## Features
 
@@ -62,17 +62,17 @@ Forces combine Adaptive Poisson-Boltzmann Solver (APBS) electrostatic grids near
 
 - **Batch propagation.** All trajectories advance as GPU arrays.
 - **Multi-GPU.** Trajectories split across GPUs share APBS grids.
-- **Memory-bounded Born forces.** Reverse direction desolvation is chunked to fit GPU memory.
+- **Memory bounded Born forces.** Reverse direction desolvation is split into blocks to fit GPU memory.
 
 ### Physical model
 
-- **Brownian-bridge reactions.** P = exp(-x₀·x₁ / (D_eff·Δt)), exact at constant cost per step.
+- **Brownian bridge reactions.** P = exp(-x₀·x₁ / (D_eff·Δt)), exact at constant cost per step.
 - **Yukawa multipole far field.** Monopole, dipole, and quadrupole.
-- **Rotne-Prager-Yamakawa hydrodynamics.** Valid through the sphere-overlap regime.
+- **Rotne-Prager-Yamakawa hydrodynamics.** Valid through the sphere overlap regime.
 - **Monte Carlo hydrodynamic radius.** Solvent-excluded surface with a Kirkwood double sum within ~1% of the analytical value.
 - **Bidirectional Born desolvation.** Receptor in ligand and ligand in receptor fields, coupled by Newton's third law.
 - **Wilson score interval.** Valid for any P<sub>rxn</sub> and any N ≥ 1.
-- **Adaptive timestep.** A user-configurable `max_dt` ceiling prevents b-surface overshoot.
+- **Adaptive timestep.** A user configurable `max_dt` ceiling prevents b-surface overshoot.
 - **Quaternion rotation.** Direct composition with no interpolation error.
 
 ### Automation
