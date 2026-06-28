@@ -13,7 +13,7 @@ Ten validation examples of increasing complexity:
 | `carbonic_anhydrase_inhibitors/`      | 7 CA sulfonamide inhibitors (3 isozymes) | Protein-ligand             |
 | `hsp90_inhibitors/`                   | 6 HSP90 inhibitors                       | Protein-ligand             |
 | `ttk_inhibitors/`                     | 8 TTK (MPS1) kinase inhibitors           | Protein-ligand             |
-| `trypsin_benzamidine_multi_GPUs/`     | Trypsin-benzamidine (SLURM, 1 and 4 GPUs)| Cluster / multi-GPU demo   |
+| `trypsin_benzamidine_multi_GPUs/`     | Trypsin-benzamidine (SLURM, 1 and 4 GPUs)| Cluster / multi-GPU demonstration   |
 
 Each example directory contains its own `README.md` with system parameters, input files, run instructions, and output file descriptions. See [`PARAMETERS.md`](PARAMETERS.md) for a detailed parameter selection guide covering all benchmark complexes.
 
@@ -127,7 +127,7 @@ examples/
 │   ├── 5N93/                           TTK + TC-Mps1-12
 │   └── 5NAD/                           TTK + BAY-1217389
 │
-└── trypsin_benzamidine_multi_GPUs/     Cluster SLURM demo (single-GPU and multi-GPU)
+└── trypsin_benzamidine_multi_GPUs/     Cluster SLURM demonstration (single-GPU and multi-GPU)
     ├── README.md
     ├── complex.pdb                     Bound-state PDB
     ├── complex.prmtop                  AMBER topology

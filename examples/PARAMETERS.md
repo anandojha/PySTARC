@@ -10,7 +10,7 @@ For force field parameterization, receptor charges are assigned with the AMBER f
 
 ## 1. Two charged spheres
 
-Two uniformly charged spheres interacting through a screened Coulomb potential. The ions carry charges Q<sub>rec</sub> = +1e and Q<sub>lig</sub> = −1e, each with a radius of 1.0 Å.
+Two uniformly charged spheres interact through a screened Coulomb potential. The ions carry charges Q<sub>rec</sub> = +1e and Q<sub>lig</sub> = −1e, each with a radius of 1.0 Å.
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
