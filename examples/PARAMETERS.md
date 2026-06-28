@@ -204,7 +204,7 @@ Eight inhibitors of the mitotic kinase TTK/MPS1 form a single target series span
 <tr><td>Debye length</td><td>7.86 Å</td><td>150 mM ionic strength.</td></tr>
 <tr><td>APBS fine grid length</td><td>144 Å</td><td>Covers ±72 Å.</td></tr>
 <tr><td>APBS grid dimension</td><td>257</td><td>~0.56 Å fine grid spacing.</td></tr>
-<tr><td>Max timestep cap</td><td>0 (no cap)</td><td>b < 80 Å, so no cap is required.</td></tr>
+<tr><td>Max timestep cap</td><td>0 (no cap)</td><td>b &lt; 80 Å, so no cap is required.</td></tr>
 <tr><td>Trajectories</td><td>10,000,000</td><td>Per complex.</td></tr>
 <tr><td>Reaction criterion</td><td>3 polar crystal contacts (GLU603 O, GLY605 O, and GLY605 N to ligand N9/N2/N3), uniform 4.5 Å cutoff, n_needed = 3</td><td>A single flat cutoff applied uniformly across all eight complexes.</td></tr>
 </tbody>
@@ -238,7 +238,7 @@ Six neutral HSP90 inhibitors form a single target series of uncharged ligands, i
 <tr><td>Debye length</td><td>7.86 Å</td><td>150 mM ionic strength.</td></tr>
 <tr><td>APBS fine grid length</td><td>144 Å</td><td>Covers ±72 Å.</td></tr>
 <tr><td>APBS grid dimension</td><td>257</td><td>~0.56 Å fine grid spacing.</td></tr>
-<tr><td>Max timestep cap</td><td>0 (no cap)</td><td>b < 80 Å, so no cap is required.</td></tr>
+<tr><td>Max timestep cap</td><td>0 (no cap)</td><td>b &lt; 80 Å, so no cap is required.</td></tr>
 <tr><td>Trajectories</td><td>10,000,000</td><td>Per complex.</td></tr>
 <tr><td>Reaction criterion</td><td>8 pairs (contact method, SER37/ALA40/ASN36 CA anchors to ligand O2x/C15x/N1x), uniform 5.0 Å cutoff, n_needed = 6</td><td>A single flat 5.0 Å cutoff applied across all six complexes.</td></tr>
 </tbody>

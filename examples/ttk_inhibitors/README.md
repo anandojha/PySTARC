@@ -3,62 +3,77 @@
 ## Receptor-ligand complexes
 This example covers eight inhibitors of the TTK (MPS1) kinase domain. Each system is a separate crystal structure (the PDB accession is the directory name) paired with its co-crystallized inhibitor. BD models the diffusion-limited encounter of each inhibitor with the ATP-binding site of the kinase.
 
-| Directory | PDB  | Inhibitor    | Exp k<sub>on</sub> (M<sup>-1</sup>s<sup>-1</sup>) |
-|-----------|------|--------------|-----------------------------------------------------|
-| `2X9E`    | 2X9E | NMS-P715     | 6.4 × 10<sup>5</sup>  |
-| `3GFW`    | 3GFW | Mps1-IN-1    | 3.8 × 10<sup>5</sup>  |
-| `3H9F`    | 3H9F | Mps1-IN-2    | 1.2 × 10<sup>6</sup>  |
-| `5LJJ`    | 5LJJ | Reversine    | 2.1 × 10<sup>6</sup>  |
-| `5N7V`    | 5N7V | MPI-0479605  | 2.0 × 10<sup>6</sup>  |
-| `5N84`    | 5N84 | Mps-BAY2b    | 2.6 × 10<sup>6</sup>  |
-| `5N93`    | 5N93 | TC-Mps1-12   | 2.2 × 10<sup>7</sup>  |
-| `5NAD`    | 5NAD | BAY-1217389  | 3.8 × 10<sup>5</sup>  |
+<table width="100%">
+<thead><tr><th align="left">Directory</th><th align="left">PDB</th><th align="left">Inhibitor</th><th align="left">Exp k<sub>on</sub> (M<sup>-1</sup>s<sup>-1</sup>)</th></tr></thead>
+<tbody>
+<tr><td><code>2X9E</code></td><td>2X9E</td><td>NMS-P715</td><td>6.4 × 10<sup>5</sup></td></tr>
+<tr><td><code>3GFW</code></td><td>3GFW</td><td>Mps1-IN-1</td><td>3.8 × 10<sup>5</sup></td></tr>
+<tr><td><code>3H9F</code></td><td>3H9F</td><td>Mps1-IN-2</td><td>1.2 × 10<sup>6</sup></td></tr>
+<tr><td><code>5LJJ</code></td><td>5LJJ</td><td>Reversine</td><td>2.1 × 10<sup>6</sup></td></tr>
+<tr><td><code>5N7V</code></td><td>5N7V</td><td>MPI-0479605</td><td>2.0 × 10<sup>6</sup></td></tr>
+<tr><td><code>5N84</code></td><td>5N84</td><td>Mps-BAY2b</td><td>2.6 × 10<sup>6</sup></td></tr>
+<tr><td><code>5N93</code></td><td>5N93</td><td>TC-Mps1-12</td><td>2.2 × 10<sup>7</sup></td></tr>
+<tr><td><code>5NAD</code></td><td>5NAD</td><td>BAY-1217389</td><td>3.8 × 10<sup>5</sup></td></tr>
+</tbody>
+</table>
 
 Experimental k<sub>on</sub> values are from Uitdehaag et al. (2017). Verify the exact citation against the primary source before external use. See the Notes on `3GFW` below.
 
 ## Shared parameters
 
-| Parameter              | Value                                |
-|------------------------|--------------------------------------|
-| Receptor               | TTK (MPS1) kinase domain             |
-| Ligand charge          | neutral                              |
-| b-surface              | 60.0 Å                        |
-| Debye length           | 7.86 Å (150 mM, 0.15 M)       |
-| Reaction cutoff        | 4.5 Å (per-pair)              |
-| n_needed               | 3                                    |
-| Born desolvation       | enabled                              |
-| Hydrodynamic interactions | enabled                           |
-| Overlap check          | disabled                             |
-| Trajectories           | 100,000 per complex                  |
+<table width="100%">
+<thead><tr><th align="left">Parameter</th><th align="left">Value</th></tr></thead>
+<tbody>
+<tr><td>Receptor</td><td>TTK (MPS1) kinase domain</td></tr>
+<tr><td>Ligand charge</td><td>neutral</td></tr>
+<tr><td>b-surface</td><td>60.0 Å</td></tr>
+<tr><td>Debye length</td><td>7.86 Å (150 mM, 0.15 M)</td></tr>
+<tr><td>Reaction cutoff</td><td>4.5 Å (per-pair)</td></tr>
+<tr><td>n_needed</td><td>3</td></tr>
+<tr><td>Born desolvation</td><td>enabled</td></tr>
+<tr><td>Hydrodynamic interactions</td><td>enabled</td></tr>
+<tr><td>Overlap check</td><td>disabled</td></tr>
+<tr><td>Trajectories</td><td>100,000 per complex</td></tr>
+</tbody>
+</table>
 
 Unlike the host-guest examples, the reaction criterion here is defined explicitly per system: each `setup.py` lists the receptor residue / ligand atom pairs taken from the crystal pose (for example, for `2X9E`: GLU603 O - N15, GLY605 O - N18, GLY605 N - N15). With `n_needed=3`, three such contacts must be satisfied simultaneously for a binding event.
 
 ## Input files (provided)
 Each system directory ships only the source structure and the setup script:
 
-| File          | Description                                                                                          |
-|---------------|------------------------------------------------------------------------------------------------------|
-| `<PDB>.pdb`   | Crystal structure (protein + co-crystallized inhibitor), named by PDB accession (e.g. `2X9E.pdb`).  |
-| `setup.py`    | Automated setup script. Extracts protein and ligand, parameterizes from scratch, and generates all BD input files. |
+<table width="100%">
+<thead><tr><th align="left">File</th><th align="left">Description</th></tr></thead>
+<tbody>
+<tr><td><code>&lt;PDB&gt;.pdb</code></td><td>Crystal structure (protein + co-crystallized inhibitor), named by PDB accession (e.g. <code>2X9E.pdb</code>).</td></tr>
+<tr><td><code>setup.py</code></td><td>Automated setup script. Extracts protein and ligand, parameterizes from scratch, and generates all BD input files.</td></tr>
+</tbody>
+</table>
 
 The following script is in the `ttk_inhibitors/` directory:
 
-| File       | Description                                                                                                          |
-|------------|----------------------------------------------------------------------------------------------------------------------|
-| `run.sh`   | Runs setup and BD simulation for all 8 complexes sequentially, then compares rates against experiment and saves `summary.txt`. |
+<table width="100%">
+<thead><tr><th align="left">File</th><th align="left">Description</th></tr></thead>
+<tbody>
+<tr><td><code>run.sh</code></td><td>Runs setup and BD simulation for all 8 complexes sequentially, then compares rates against experiment and saves <code>summary.txt</code>.</td></tr>
+</tbody>
+</table>
 
 ## What setup.py generates
 No parameterized files are shipped. `setup.py` builds everything from scratch each run. If the source `<PDB>.pdb` is already present (as shipped) it is used directly. Otherwise setup downloads it from the RCSB PDB. Running `python setup.py` produces:
 
-| Generated file   | Description                                                                                                                        |
-|------------------|------------------------------------------------------------------------------------------------------------------------------------|
-| `protein.prmtop`, `protein.rst7` | Receptor AMBER topology and coordinates from tleap (ff14SB).                                        |
-| `ligand.prmtop`, `ligand.rst7`   | Ligand AMBER topology and coordinates from antechamber/tleap (GAFF2, AM1-BCC charges).             |
-| `receptor.pdb`, `ligand.pdb`     | Clean receptor and ligand PDBs.                                                                     |
-| `receptor.pqr`   | Receptor PQR file with atom positions, partial charges, and radii.                                                              |
-| `ligand.pqr`     | Ligand PQR file with atom positions, partial charges, and radii.                                                                |
-| `rxns.xml`       | Reaction criterion file with the per-system atom pairs and 4.5 Å cutoffs.                                                |
-| `input.xml`      | PySTARC input file with all simulation parameters (b-surface, electrostatics, trajectories, GPU, and convergence).               |
+<table width="100%">
+<thead><tr><th align="left">Generated file</th><th align="left">Description</th></tr></thead>
+<tbody>
+<tr><td><code>protein.prmtop</code>, <code>protein.rst7</code></td><td>Receptor AMBER topology and coordinates from tleap (ff14SB).</td></tr>
+<tr><td><code>ligand.prmtop</code>, <code>ligand.rst7</code></td><td>Ligand AMBER topology and coordinates from antechamber/tleap (GAFF2, AM1-BCC charges).</td></tr>
+<tr><td><code>receptor.pdb</code>, <code>ligand.pdb</code></td><td>Clean receptor and ligand PDBs.</td></tr>
+<tr><td><code>receptor.pqr</code></td><td>Receptor PQR file with atom positions, partial charges, and radii.</td></tr>
+<tr><td><code>ligand.pqr</code></td><td>Ligand PQR file with atom positions, partial charges, and radii.</td></tr>
+<tr><td><code>rxns.xml</code></td><td>Reaction criterion file with the per-system atom pairs and 4.5 Å cutoffs.</td></tr>
+<tr><td><code>input.xml</code></td><td>PySTARC input file with all simulation parameters (b-surface, electrostatics, trajectories, GPU, and convergence).</td></tr>
+</tbody>
+</table>
 
 ## Setup and run (single complex)
 ```bash
@@ -82,23 +97,26 @@ bash run.sh
 ## Output files
 After a simulation completes, all results are written to `bd_sims/` within each receptor-ligand complex directory.
 
-| Output file              | Description                                                                                                                    |
-|--------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| `results.json`           | k<sub>on</sub>, P<sub>rxn</sub>, Wilson 95% CI, k<sub>b</sub>, D<sub>rel</sub>, wall time, and GPU info.                      |
-| `convergence.json`       | Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.           |
-| `trajectories.csv`       | Per-trajectory record: number of steps, starting pose, minimum distance reached, and number of returns from the escape sphere. |
-| `encounters.csv`         | Binding encounter poses for reacted trajectories: final position, orientation, and contact distances.                          |
-| `near_misses.csv`        | Trajectories that approached the reaction surface but escaped.                                                                 |
-| `fpt_distribution.csv`   | First-passage times for reacted trajectories.                                                                                  |
-| `pose_clusters.csv`      | Clustered binding poses from encounter geometries.                                                                             |
-| `paths.npz`              | Full trajectory coordinates sampled at configurable intervals.                                                                 |
-| `energetics.npz`         | Per-step energies and forces along trajectories.                                                                               |
-| `radial_density.csv`     | Radial probability density as a function of distance from the receptor.                                                        |
-| `angular_map.npz`        | Angular occupancy map (theta, phi) on the b-surface.                                                                           |
-| `contact_frequency.csv`  | Per-pair contact frequencies for the reaction criterion atom pairs.                                                            |
-| `milestone_flux.csv`     | Net flux across radial shells.                                                                                                 |
-| `transition_matrix.npz`  | Radial shell-to-shell transition counts.                                                                                       |
-| `p_commit.npz`           | Commitment probabilities at each radial shell.                                                                                 |
+<table width="100%">
+<thead><tr><th align="left">Output file</th><th align="left">Description</th></tr></thead>
+<tbody>
+<tr><td><code>results.json</code></td><td>k<sub>on</sub>, P<sub>rxn</sub>, Wilson 95% CI, k<sub>b</sub>, D<sub>rel</sub>, wall time, and GPU info.</td></tr>
+<tr><td><code>convergence.json</code></td><td>Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.</td></tr>
+<tr><td><code>trajectories.csv</code></td><td>Per-trajectory record: number of steps, starting pose, minimum distance reached, and number of returns from the escape sphere.</td></tr>
+<tr><td><code>encounters.csv</code></td><td>Binding encounter poses for reacted trajectories: final position, orientation, and contact distances.</td></tr>
+<tr><td><code>near_misses.csv</code></td><td>Trajectories that approached the reaction surface but escaped.</td></tr>
+<tr><td><code>fpt_distribution.csv</code></td><td>First-passage times for reacted trajectories.</td></tr>
+<tr><td><code>pose_clusters.csv</code></td><td>Clustered binding poses from encounter geometries.</td></tr>
+<tr><td><code>paths.npz</code></td><td>Full trajectory coordinates sampled at configurable intervals.</td></tr>
+<tr><td><code>energetics.npz</code></td><td>Per-step energies and forces along trajectories.</td></tr>
+<tr><td><code>radial_density.csv</code></td><td>Radial probability density as a function of distance from the receptor.</td></tr>
+<tr><td><code>angular_map.npz</code></td><td>Angular occupancy map (theta, phi) on the b-surface.</td></tr>
+<tr><td><code>contact_frequency.csv</code></td><td>Per-pair contact frequencies for the reaction criterion atom pairs.</td></tr>
+<tr><td><code>milestone_flux.csv</code></td><td>Net flux across radial shells.</td></tr>
+<tr><td><code>transition_matrix.npz</code></td><td>Radial shell-to-shell transition counts.</td></tr>
+<tr><td><code>p_commit.npz</code></td><td>Commitment probabilities at each radial shell.</td></tr>
+</tbody>
+</table>
 
 A timestamped log file (`pystarc_YYYYMMDD_HHMMSS.log`) is also written to `bd_sims/` containing the full simulation output.
 

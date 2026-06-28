@@ -3,56 +3,71 @@
 ## Receptor-ligand complexes
 All 7 receptor-ligand complexes share the same beta-cyclodextrin (BCD/MGO) receptor with different guest molecules.
 
-| Receptor-ligand complex | Ligand            | 
-|-------------------------|-------------------|
-| BCD_1-propanol          | 1-propanol        |
-| BCD_1-butanol           | 1-butanol         | 
-| BCD_tertbutanol         | tert-butanol      |
-| BCD_methyl_butyrate     | methyl butyrate   |
-| BCD_aspirin             | aspirin           | 
-| BCD_1-naphthylethanol   | 1-naphthylethanol |
-| BCD_2-naphthylethanol   | 2-naphthylethanol |
+<table width="100%">
+<thead><tr><th align="left">Receptor-ligand complex</th><th align="left">Ligand</th></tr></thead>
+<tbody>
+<tr><td>BCD_1-propanol</td><td>1-propanol</td></tr>
+<tr><td>BCD_1-butanol</td><td>1-butanol</td></tr>
+<tr><td>BCD_tertbutanol</td><td>tert-butanol</td></tr>
+<tr><td>BCD_methyl_butyrate</td><td>methyl butyrate</td></tr>
+<tr><td>BCD_aspirin</td><td>aspirin</td></tr>
+<tr><td>BCD_1-naphthylethanol</td><td>1-naphthylethanol</td></tr>
+<tr><td>BCD_2-naphthylethanol</td><td>2-naphthylethanol</td></tr>
+</tbody>
+</table>
 
 ## Shared parameters 
 
-| Parameter              | Value                                |
-|------------------------|--------------------------------------|
-| Receptor               | beta-cyclodextrin (MGO), 147 atoms   |
-| Ligand                 | APN                                  |
-| b-surface              | 30.0 Å                        |
-| Escape sphere          | 60.0 Å                        |
-| Debye length           | 7.86 Å (150 mM NaCl)          |
-| Contact mode           | all (any heavy-atom contacts)        |
-| Contact cutoff         | 5.0 Å                         |
-| Buffer                 | 2.0 Å                         |
-| Born desolvation       | enabled                              |
-| Trajectories           | 100,000 per complex                  |
+<table width="100%">
+<thead><tr><th align="left">Parameter</th><th align="left">Value</th></tr></thead>
+<tbody>
+<tr><td>Receptor</td><td>beta-cyclodextrin (MGO), 147 atoms</td></tr>
+<tr><td>Ligand</td><td>APN</td></tr>
+<tr><td>b-surface</td><td>30.0 Å</td></tr>
+<tr><td>Escape sphere</td><td>60.0 Å</td></tr>
+<tr><td>Debye length</td><td>7.86 Å (150 mM NaCl)</td></tr>
+<tr><td>Contact mode</td><td>all (any heavy-atom contacts)</td></tr>
+<tr><td>Contact cutoff</td><td>5.0 Å</td></tr>
+<tr><td>Buffer</td><td>2.0 Å</td></tr>
+<tr><td>Born desolvation</td><td>enabled</td></tr>
+<tr><td>Trajectories</td><td>100,000 per complex</td></tr>
+</tbody>
+</table>
 
 ## Input files (provided)
 Each `BCD_*/` directory contains the following files:
 
-| File                | Description                                                                                         |
-|---------------------|-----------------------------------------------------------------------------------------------------|
-| `complex.pdb`       | Bound-state PDB containing receptor (MGO), ligand (APN), and water (WAT).                           |
-| `complex.parm7`     | AMBER topology file that provides partial charges, atom types, and connectivity for PQR generation. |
-| `setup.py`          | Automated setup script. Reads the PDB and topology, generates files for BD simulation.              |
+<table width="100%">
+<thead><tr><th align="left">File</th><th align="left">Description</th></tr></thead>
+<tbody>
+<tr><td><code>complex.pdb</code></td><td>Bound-state PDB containing receptor (MGO), ligand (APN), and water (WAT).</td></tr>
+<tr><td><code>complex.parm7</code></td><td>AMBER topology file that provides partial charges, atom types, and connectivity for PQR generation.</td></tr>
+<tr><td><code>setup.py</code></td><td>Automated setup script. Reads the PDB and topology, generates files for BD simulation.</td></tr>
+</tbody>
+</table>
 
 The following scripts are in the `beta_cyclodextrin_guests/` directory:
 
-| File                | Description                                                                                                                            |
-|---------------------|----------------------------------------------------------------------------------------------------------------------------------------|
-| `run.sh`            | Runs setup and BD simulation for all 7 complexes sequentially, then compares rates against experiment.                                 |
-| `compare_rates.py`  | Collects k<sub>on</sub> from all 7 complexes, compares against experimental values, computes Spearman rank correlation, and saves `summary.txt`. |
+<table width="100%">
+<thead><tr><th align="left">File</th><th align="left">Description</th></tr></thead>
+<tbody>
+<tr><td><code>run.sh</code></td><td>Runs setup and BD simulation for all 7 complexes sequentially, then compares rates against experiment.</td></tr>
+<tr><td><code>compare_rates.py</code></td><td>Collects k<sub>on</sub> from all 7 complexes, compares against experimental values, computes Spearman rank correlation, and saves <code>summary.txt</code>.</td></tr>
+</tbody>
+</table>
 
 ## What setup.py generates
 Running `python setup.py` produces:
 
-| Generated file   | Description                                                                                                                        |
-|------------------|------------------------------------------------------------------------------------------------------------------------------------|
-| `receptor.pqr`   | Receptor PQR file extracted from the topology. Contains atom positions, partial charges, and radii for the beta-cyclodextrin host. |
-| `ligand.pqr`     | Ligand PQR file extracted from the topology. Contains atom positions, partial charges, and radii for the guest molecule.           |
-| `rxns.xml`       | Reaction criterion file that contains atom pairs and cutoff distances identified automatically from the bound-state PDB.   |
-| `input.xml`      | PySTARC input file that contains all simulation parameters (b-surface, electrostatics, trajectories, GPU, and convergence).        |
+<table width="100%">
+<thead><tr><th align="left">Generated file</th><th align="left">Description</th></tr></thead>
+<tbody>
+<tr><td><code>receptor.pqr</code></td><td>Receptor PQR file extracted from the topology. Contains atom positions, partial charges, and radii for the beta-cyclodextrin host.</td></tr>
+<tr><td><code>ligand.pqr</code></td><td>Ligand PQR file extracted from the topology. Contains atom positions, partial charges, and radii for the guest molecule.</td></tr>
+<tr><td><code>rxns.xml</code></td><td>Reaction criterion file that contains atom pairs and cutoff distances identified automatically from the bound-state PDB.</td></tr>
+<tr><td><code>input.xml</code></td><td>PySTARC input file that contains all simulation parameters (b-surface, electrostatics, trajectories, GPU, and convergence).</td></tr>
+</tbody>
+</table>
 
 ## Setup and run (single complex)
 ```bash
@@ -76,23 +91,26 @@ bash run.sh
 ## Output files
 After a simulation completes, all results are written to `bd_sims/` within each receptor-ligand complex directory.
 
-| Output file              | Description                                                                                                                    |
-|--------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| `results.json`           | k<sub>on</sub>, P<sub>rxn</sub>, Wilson 95% CI, k<sub>b</sub>, D<sub>rel</sub>, wall time, and GPU info.                      |
-| `convergence.json`       | Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.           |
-| `trajectories.csv`       | Per-trajectory record: number of steps, starting pose, minimum distance reached, and number of returns from the escape sphere. |
-| `encounters.csv`         | Binding encounter poses for reacted trajectories: final position, orientation, and contact distances.                          |
-| `near_misses.csv`        | Trajectories that approached the reaction surface but escaped.                                                                 |
-| `fpt_distribution.csv`   | First-passage times for reacted trajectories.                                                                                  |
-| `pose_clusters.csv`      | Clustered binding poses from encounter geometries.                                                                             |
-| `paths.npz`              | Full trajectory coordinates sampled at configurable intervals.                                                                 |
-| `energetics.npz`         | Per-step energies and forces along trajectories.                                                                               |
-| `radial_density.csv`     | Radial probability density as a function of distance from the receptor.                                                        |
-| `angular_map.npz`        | Angular occupancy map (theta, phi) on the b-surface.                                                                           |
-| `contact_frequency.csv`  | Per-pair contact frequencies for the reaction criterion atom pairs.                                                            |
-| `milestone_flux.csv`     | Net flux across radial shells.                                                                                                 |
-| `transition_matrix.npz`  | Radial shell-to-shell transition counts.                                                                                       |
-| `p_commit.npz`           | Commitment probabilities at each radial shell.                                                                                 |
+<table width="100%">
+<thead><tr><th align="left">Output file</th><th align="left">Description</th></tr></thead>
+<tbody>
+<tr><td><code>results.json</code></td><td>k<sub>on</sub>, P<sub>rxn</sub>, Wilson 95% CI, k<sub>b</sub>, D<sub>rel</sub>, wall time, and GPU info.</td></tr>
+<tr><td><code>convergence.json</code></td><td>Convergence analysis: SE, relative SE, Wilson CI, convergence verdict, and trajectory estimates for target precision.</td></tr>
+<tr><td><code>trajectories.csv</code></td><td>Per-trajectory record: number of steps, starting pose, minimum distance reached, and number of returns from the escape sphere.</td></tr>
+<tr><td><code>encounters.csv</code></td><td>Binding encounter poses for reacted trajectories: final position, orientation, and contact distances.</td></tr>
+<tr><td><code>near_misses.csv</code></td><td>Trajectories that approached the reaction surface but escaped.</td></tr>
+<tr><td><code>fpt_distribution.csv</code></td><td>First-passage times for reacted trajectories.</td></tr>
+<tr><td><code>pose_clusters.csv</code></td><td>Clustered binding poses from encounter geometries.</td></tr>
+<tr><td><code>paths.npz</code></td><td>Full trajectory coordinates sampled at configurable intervals.</td></tr>
+<tr><td><code>energetics.npz</code></td><td>Per-step energies and forces along trajectories.</td></tr>
+<tr><td><code>radial_density.csv</code></td><td>Radial probability density as a function of distance from the receptor.</td></tr>
+<tr><td><code>angular_map.npz</code></td><td>Angular occupancy map (theta, phi) on the b-surface.</td></tr>
+<tr><td><code>contact_frequency.csv</code></td><td>Per-pair contact frequencies for the reaction criterion atom pairs.</td></tr>
+<tr><td><code>milestone_flux.csv</code></td><td>Net flux across radial shells.</td></tr>
+<tr><td><code>transition_matrix.npz</code></td><td>Radial shell-to-shell transition counts.</td></tr>
+<tr><td><code>p_commit.npz</code></td><td>Commitment probabilities at each radial shell.</td></tr>
+</tbody>
+</table>
 
 A timestamped log file (`pystarc_YYYYMMDD_HHMMSS.log`) is also written to `bd_sims/` containing the full simulation output.
 

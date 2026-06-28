@@ -2,18 +2,21 @@
 
 Ten validation examples of increasing complexity:
 
-| Example                               | System                                   | Type                       |
-|---------------------------------------|------------------------------------------|----------------------------|
-| `two_charged_spheres/`                | Two oppositely charged spheres           | Analytical validation      |
-| `trypsin_benzamidine/`                | Trypsin-benzamidine                      | Protein-ligand             |
-| `beta_cyclodextrin_guests/`           | 7 BCD host-guest complexes               | Host-guest                 |
-| `thrombin_thrombomodulin/`            | Thrombin-thrombomodulin                  | Protein-protein            |
-| `barnase_barstar_chainbd/`            | Barnase-barstar (flexible chain)         | Chain BD / protein-protein |
-| `p38_mapk_sb203580/`                  | p38 MAPK / SB203580                      | Protein-ligand             |
-| `carbonic_anhydrase_inhibitors/`      | 7 CA sulfonamide inhibitors (3 isozymes) | Protein-ligand             |
-| `hsp90_inhibitors/`                   | 6 HSP90 inhibitors                       | Protein-ligand             |
-| `ttk_inhibitors/`                     | 8 TTK (MPS1) kinase inhibitors           | Protein-ligand             |
-| `trypsin_benzamidine_multi_GPUs/`     | Trypsin-benzamidine (SLURM, 1 and 4 GPUs)| Cluster / multi-GPU demonstration   |
+<table width="100%">
+<thead><tr><th align="left">Example</th><th align="left">System</th><th align="left">Type</th></tr></thead>
+<tbody>
+<tr><td><code>two_charged_spheres/</code></td><td>Two oppositely charged spheres</td><td>Analytical validation</td></tr>
+<tr><td><code>trypsin_benzamidine/</code></td><td>Trypsin-benzamidine</td><td>Protein-ligand</td></tr>
+<tr><td><code>beta_cyclodextrin_guests/</code></td><td>7 BCD host-guest complexes</td><td>Host-guest</td></tr>
+<tr><td><code>thrombin_thrombomodulin/</code></td><td>Thrombin-thrombomodulin</td><td>Protein-protein</td></tr>
+<tr><td><code>barnase_barstar_chainbd/</code></td><td>Barnase-barstar (flexible chain)</td><td>Chain BD / protein-protein</td></tr>
+<tr><td><code>p38_mapk_sb203580/</code></td><td>p38 MAPK / SB203580</td><td>Protein-ligand</td></tr>
+<tr><td><code>carbonic_anhydrase_inhibitors/</code></td><td>7 CA sulfonamide inhibitors (3 isozymes)</td><td>Protein-ligand</td></tr>
+<tr><td><code>hsp90_inhibitors/</code></td><td>6 HSP90 inhibitors</td><td>Protein-ligand</td></tr>
+<tr><td><code>ttk_inhibitors/</code></td><td>8 TTK (MPS1) kinase inhibitors</td><td>Protein-ligand</td></tr>
+<tr><td><code>trypsin_benzamidine_multi_GPUs/</code></td><td>Trypsin-benzamidine (SLURM, 1 and 4 GPUs)</td><td>Cluster / multi-GPU demonstration</td></tr>
+</tbody>
+</table>
 
 Each example directory contains its own `README.md` with system parameters, input files, run instructions, and output file descriptions. See [`PARAMETERS.md`](PARAMETERS.md) for a detailed parameter selection guide covering all benchmark complexes.
 
