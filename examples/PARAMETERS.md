@@ -257,7 +257,7 @@ The flexible chain BD example (§5) uses a distinct propagation scheme with its 
 
 ## Summary
 
-Across the 32 rigid-body systems above, agreement with experiment in log₁₀ space is:
+Across the protein-ligand, protein-protein, and host-guest complexes, the agreement between the computed and experimental association rate constants in log₁₀ space is summarized below.
 
 | Metric&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |
 |--------|-------|
