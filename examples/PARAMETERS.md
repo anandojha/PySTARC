@@ -14,7 +14,7 @@ Two uniformly charged spheres interact through a screened Coulomb potential. The
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
-| b-surface radius | 10.0 Å | The sum of the radii (1.0 + 1.0 = 2.0 Å) plus ~8 Å of separation. |
+| b-surface radius | 10.0 Å | ~8 Å beyond the combined maximum radii (1.0 + 1.0 = 2.0 Å). |
 | Hydrodynamic radii | 0 / 0 (point charges) | No hydrodynamic radius is assigned as the spheres are treated as point particles for the analytical comparison. |
 | Debye length | 7.828 Å | Corresponds to ~150 mM ionic strength. |
 | Protein / solvent dielectric | 78.0 / 78.0 | Uniform dielectric. Unlike the molecular complexes, no low dielectric interior is defined for the analytical test. |
@@ -35,7 +35,7 @@ Trypsin-benzamidine is a protein-ligand complex with well characterized experime
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
-| b-surface radius | 45.0 Å | The sum of the maximum molecular radii (28.4 + 3.7 = 32.1 Å) plus ~13 Å of separation. |
+| b-surface radius | 45.0 Å | ~13 Å beyond the combined maximum radii (28.4 + 3.7 = 32.1 Å). |
 | Receptor hydrodynamic radius | 22.5 Å | Stokes radius from molecular dimensions, approximately 0.80 × R<sub>max</sub> for a globular protein of this size. |
 | Ligand hydrodynamic radius | 5.0 Å | Stokes radius for a small planar organic molecule with 18 atoms. |
 | Debye length | 7.86 Å | Corresponds to 150 mM ionic strength. |
@@ -59,7 +59,7 @@ Seven small molecule guests binding β-cyclodextrin form a host-guest benchmark 
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
-| b-surface radius | 30.0 Å | The sum of the maximum molecular radii (8.6 + 3 ≈ 11.6 Å) plus ~18 Å of separation. |
+| b-surface radius | 30.0 Å | ~18 Å beyond the combined maximum radii (8.6 + 3 ≈ 11.6 Å). |
 | Hydrodynamic radii | Auto-computed | Determined from the PQR files via Monte Carlo surface integration. |
 | Debye length | 7.86 Å | Corresponds to 150 mM ionic strength. |
 | APBS fine grid length | 96 Å | Covers ±48 Å. The sum b + R<sub>max, lig</sub> ≈ 33 Å is well within the grid. |
@@ -93,7 +93,7 @@ This complex represents a strongly electrostatically steered protein-protein ass
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
-| b-surface radius | 85.0 Å | The sum of the maximum molecular radii (34.7 + 40.6 = 75.3 Å) plus ~10 Å of separation. |
+| b-surface radius | 85.0 Å | ~10 Å beyond the combined maximum radii (34.7 + 40.6 = 75.3 Å). |
 | Receptor hydrodynamic radius | 25.58 Å | Stokes radius from molecular dimensions, ~0.74 × R<sub>max</sub>. |
 | Ligand hydrodynamic radius | 21.88 Å | ~0.54 × R<sub>max</sub>, with the lower ratio reflecting the elongated EGF domain fragment. |
 | Debye length | 7.86 Å | Corresponds to 150 mM ionic strength. |
@@ -125,7 +125,7 @@ This is a kinase inhibitor complex in which the ligand is neutral and the recept
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
-| b-surface radius | 60.0 Å | The sum of the maximum molecular radii (37.8 + 7.8 = 45.6 Å) plus ~14 Å of separation. |
+| b-surface radius | 60.0 Å | ~14 Å beyond the combined maximum radii (37.8 + 7.8 = 45.6 Å). |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
 | Debye length | 7.86 Å | 150 mM ionic strength. |
 | APBS fine grid length | 128 Å | Covers ±64 Å, and the multipole fallback handles outermost atom overshoot at the b-surface. |
@@ -143,7 +143,7 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
-| b-surface radius | 60.0 Å | The sum of the maximum molecular radii (27 + 8 = 35 Å) plus ~25 Å of separation. |
+| b-surface radius | 60.0 Å | ~25 Å beyond the combined maximum radii (27 + 8 = 35 Å). |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
 | Debye length | 9.62 Å | Corresponds to 100 mM ionic strength. |
 | Ion concentration | 0.10 M | 100 mM NaCl. |
@@ -171,7 +171,7 @@ Eight inhibitors of the mitotic kinase TTK/MPS1 form a single target series span
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
-| b-surface radius | 60.0 Å | The sum of the maximum molecular radii of the kinase and inhibitor plus a separation margin. |
+| b-surface radius | 60.0 Å | A margin beyond the combined maximum radii of the two partners. |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
 | Debye length | 7.86 Å | 150 mM ionic strength. |
 | APBS fine grid length | 144 Å | Covers ±72 Å. |
@@ -199,7 +199,7 @@ Six neutral HSP90 inhibitors form a single target series of uncharged ligands, i
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
-| b-surface radius | 55.0 Å | The sum of the maximum molecular radii of the receptor and inhibitor plus a separation margin. |
+| b-surface radius | 55.0 Å | A margin beyond the combined maximum radii of the two partners. |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
 | Debye length | 7.86 Å | 150 mM ionic strength. |
 | APBS fine grid length | 144 Å | Covers ±72 Å. |
