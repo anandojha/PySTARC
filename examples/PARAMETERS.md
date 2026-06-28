@@ -238,7 +238,7 @@ Most complexes share the following. Exceptions are noted in the per-system secti
 
 ## Adaptive timestep cap
 
-The variable-timestep scheme uses Δt<sub>pair</sub> = f²r²/(2D), with f = 0.1, keeping the RMS displacement per step below 10% of the intermolecular separation. For complexes where the b surface is below 80 Å, this yields moderate timesteps with drift/noise below ~4, and no cap is required. For the larger protein-protein b surfaces, the adaptive timestep exceeds 1000 ps at the starting radius, producing deterministic trajectories that skip the electrostatic steering region, and the max timestep parameter caps it at a user-specified ceiling (typically 100 ps), restoring proper Brownian sampling. When max timestep is 0 (default), no cap is applied.
+The variable timestep is Δt<sub>pair</sub> = f²r²/(2D) with f = 0.1, which keeps the RMS displacement per step below 10% of the intermolecular separation. A b surface below 80 Å needs no cap, but for the larger protein-protein b surfaces the timestep would exceed 1000 ps at the starting radius and skip the electrostatic steering region, so it is capped at a ceiling (typically 100 ps, or 0 for no cap).
 
 | Complex | b (Å) | Δt at b (ps) | Drift/noise | Cap |
 |---------|-------|--------------|-------------|-----|
