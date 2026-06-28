@@ -2,7 +2,7 @@
 
 ## Overview
 
-For force field parameterization, receptor charges are assigned with the AMBER ff14SB force field, and small molecule ligand charges with GAFF2 + AM1-BCC. Electrostatic potential grids are generated with the Adaptive Poisson-Boltzmann Solver (APBS), and bimolecular association rate constants are computed within the Northrup-Allison-McCammon framework. All numerical values in this guide are taken from the on-disk `input.xml`, `rxns.xml`, and `results.json` files for each example.
+For force field parameterization, receptor charges are assigned with the AMBER ff14SB force field, and small molecule ligand charges with GAFF2 + AM1-BCC. Electrostatic potential grids are generated with the Adaptive Poisson-Boltzmann Solver (APBS), and bimolecular association rate constants are computed within the Northrup-Allison-McCammon framework. All numerical values in this guide are taken from the on-disk `input.xml`, `rxns.xml`, and `results.json` files for each example. Brownian dynamics trajectories begin on the b-surface, a sphere of radius b around the receptor, and the b-surface radius is the principal length scale that varies between systems.
 
 > **Note on sources.** Where a reaction-criterion *value* (cutoff, number of pairs, contacts needed) appears below, it is read directly from the corresponding `rxns.xml`/`setup.py`.
 
@@ -93,13 +93,13 @@ This complex represents a strongly electrostatically steered protein-protein ass
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
-| b surface radius | 85.0 Å | The sum of maximum molecular radii (34.7 + 40.6 = 75.3 Å) plus ~10 Å of clearance. |
+| b-surface radius | 85.0 Å | The sum of maximum molecular radii (34.7 + 40.6 = 75.3 Å) plus ~10 Å of clearance. |
 | Receptor hydrodynamic radius | 25.58 Å | Stokes radius from molecular dimensions, ~0.74 × R<sub>max</sub>. |
 | Ligand hydrodynamic radius | 21.88 Å | ~0.54 × R<sub>max</sub>, with the lower ratio reflecting the elongated EGF-domain fragment. |
 | Debye length | 7.86 Å | Corresponds to 150 mM ionic strength. |
 | APBS fine grid length | 192 Å | Covers ±96 Å. At b = 85, ligand atoms span 44 to 126 Å from the origin, and the grid encompasses the vast majority of encounter geometries. |
 | APBS grid dimension | 257 | Yields a grid spacing of ~0.75 Å. |
-| Base timestep | 1.0 ps | Larger base step appropriate at the large b surface. |
+| Base timestep | 1.0 ps | Larger base step appropriate at the large b-surface. |
 | Max timestep cap | 100 ps | Critical. Without the cap the adaptive timestep at r = 85 Å reaches ~1806 ps (drift/noise ≈ 5.4), producing ballistic trajectories that skip the electrostatic steering region. The cap restores drift/noise ≈ 2. |
 | Trajectories | 1,000,000 | - |
 | Contacts needed | 4 | Four interfacial hydrogen-bonding contacts must be satisfied simultaneously. The full pair list is in `rxns.xml`. |
@@ -125,10 +125,10 @@ This complex is a kinase-inhibitor system in which the ligand is neutral and the
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
-| b surface radius | 60.0 Å | The sum of maximum radii (37.8 + 7.8 = 45.6 Å) plus ~14 Å of clearance. |
+| b-surface radius | 60.0 Å | The sum of maximum radii (37.8 + 7.8 = 45.6 Å) plus ~14 Å of clearance. |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
 | Debye length | 7.86 Å | 150 mM ionic strength. |
-| APBS fine grid length | 128 Å | Covers ±64 Å, and the multipole fallback handles outermost-atom overshoot at the b surface. |
+| APBS fine grid length | 128 Å | Covers ±64 Å, and the multipole fallback handles outermost-atom overshoot at the b-surface. |
 | APBS grid dimension | 257 | ~0.50 Å fine-grid spacing. |
 | Max timestep cap | 0 (no cap) | The adaptive timestep at r = 60 Å is moderate for a small, highly diffusive ligand. |
 | Trajectories | 5,000,000 | Production run. |
@@ -143,7 +143,7 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
-| b surface radius | 60.0 Å | Receptor R<sub>max</sub> ≈ 27 Å plus ligand 4 to 8 Å plus ~25 Å clearance. |
+| b-surface radius | 60.0 Å | Receptor R<sub>max</sub> ≈ 27 Å plus ligand 4 to 8 Å plus ~25 Å clearance. |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
 | Debye length | 9.62 Å | Corresponds to 100 mM ionic strength. |
 | Ion concentration | 0.10 M | 100 mM NaCl. |
@@ -171,7 +171,7 @@ Eight inhibitors of the mitotic kinase TTK/MPS1 form a single-target series span
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
-| b surface radius | 60.0 Å | Globular kinase plus small-molecule inhibitor with clearance. |
+| b-surface radius | 60.0 Å | Globular kinase plus small-molecule inhibitor with clearance. |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
 | Debye length | 7.86 Å | 150 mM ionic strength. |
 | APBS fine grid length | 144 Å | Covers ±72 Å. |
@@ -199,7 +199,7 @@ Six neutral HSP90 inhibitors form a single-target series of uncharged ligands, i
 
 | Parameter | Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Rationale |
 |-----------|-------|-----------|
-| b surface radius | 55.0 Å | Globular HSP90 N-domain plus small inhibitor with clearance. |
+| b-surface radius | 55.0 Å | Globular HSP90 N-domain plus small inhibitor with clearance. |
 | Hydrodynamic radii | Auto-computed | From the PQR files via Monte Carlo surface integration. |
 | Debye length | 7.86 Å | 150 mM ionic strength. |
 | APBS fine grid length | 144 Å | Covers ±72 Å. |
@@ -238,7 +238,7 @@ Most complexes share the following. Exceptions are noted in the per-system secti
 
 ## Adaptive timestep cap
 
-The variable timestep is Δt<sub>pair</sub> = f²r²/(2D) with f = 0.1, which keeps the RMS displacement per step below 10% of the intermolecular separation. A b surface below 80 Å needs no cap, but for the larger protein-protein b surfaces the timestep would exceed 1000 ps at the starting radius and skip the electrostatic steering region, so it is capped at a ceiling (typically 100 ps, or 0 for no cap).
+The variable timestep is Δt<sub>pair</sub> = f²r²/(2D) with f = 0.1, which keeps the RMS displacement per step below 10% of the intermolecular separation. A b-surface below 80 Å needs no cap, but for the larger protein-protein b-surfaces the timestep would exceed 1000 ps at the starting radius and skip the electrostatic steering region, so it is capped at a ceiling (typically 100 ps, or 0 for no cap).
 
 | Complex | b (Å) | Δt at b (ps) | Drift/noise | Cap |
 |---------|-------|--------------|-------------|-----|
