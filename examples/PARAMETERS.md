@@ -2,7 +2,7 @@
 
 ## Overview
 
-All complexes use the AMBER ff14SB force field for receptor charge assignment (GAFF2 + AM1-BCC for small molecule ligands), APBS for electrostatic potential grids, and the Northrup-Allison-McCammon framework for computing bimolecular association rate constants. All numerical values in this guide are taken from the on-disk `input.xml`, `rxns.xml`, and `results.json` files for each example.
+For force field parameterization, receptor charges are assigned with the AMBER ff14SB force field, and small molecule ligand charges with GAFF2 + AM1-BCC. Electrostatic potential grids are generated with APBS, and bimolecular association rate constants are computed within the Northrup-Allison-McCammon framework. All numerical values in this guide are taken from the on-disk `input.xml`, `rxns.xml`, and `results.json` files for each example.
 
 > **Note on sources.** Where a reaction-criterion *value* (cutoff, number of pairs, contacts needed) appears below, it is read directly from the corresponding `rxns.xml`/`setup.py`.
 
