@@ -51,6 +51,7 @@ def analyse_convergence(
     tol: float = 0.05,
     conv_factor: float = 6.022e8,
     work_dir: str = ".",
+    confidence: float = 0.95,
 ) -> dict:
     """
     Run the convergence analysis on a completed Brownian dynamics simulation.
@@ -80,10 +81,17 @@ def analyse_convergence(
         SE = 0.0
         relative_SE = 0.0
     SE_kon = conv_factor * k_b * SE
-    # Wilson 95% confidence interval. N is guaranteed to be nonzero here by the
-    # early return above, so no separate N=0 guard is needed. The argument of
-    # the square root is clamped to stay non-negative.
-    z = 1.96
+    # Wilson confidence interval at the requested level. N is guaranteed to be
+    # nonzero here by the early return above, so no separate N=0 guard is needed.
+    # The argument of the square root is clamped to stay non-negative. The 0.95
+    # default keeps the exact z = 1.96 used historically; other levels use the
+    # normal quantile so the interval matches the requested confidence.
+    if abs(confidence - 0.95) < 1e-9:
+        z = 1.96
+    else:
+        from scipy.stats import norm
+
+        z = float(norm.ppf(0.5 + confidence / 2.0))
     denom = 1 + z**2 / N
     centre = (P + z**2 / (2 * N)) / denom
     # Clamping the argument at zero protects against floating-point roundoff

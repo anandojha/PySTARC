@@ -63,19 +63,20 @@ DEFAULT_OBC_OFFSET = (
 )
 DEFAULT_HCT_SCALE = 0.85  # Uniform Hawkins-Cramer-Truhlar scaling factor.
 
-# Coulomb constant k_e e^2 / kBT expressed in angstrom at T = 300.15 K. The value is
+# Coulomb constant k_e e^2 / kBT expressed in angstrom at T = 298.15 K. The value is
 # recomputed from first principles as
 #
 #     COULOMB_K_KBT_A = k_e e^2 * 1e10 / (kB T)
 #
 # with k_e = 8.9875517873681764e9 N m^2 / C^2 (CODATA, 1/(4 pi eps0)),
-# e = 1.602176634e-19 C, kB = 1.380649e-23 J/K, and T = 300.15 K. The factor 1e10
-# converts the meters in k_e e^2 to angstrom. Numerically k_e e^2 = 2.30708e-18 J*A
-# and kB T = 4.14402e-21 J, so the ratio is 556.72 A in units of kBT per squared
+# e = 1.602176634e-19 C, kB = 1.380649e-23 J/K, and T = 298.15 K (T_DEFAULT, the
+# value used by the rest of the engine). The factor 1e10 converts the meters in
+# k_e e^2 to angstrom. Numerically k_e e^2 = 2.30708e-18 J*A and
+# kB T = 4.11640e-21 J, so the ratio is 560.46 A in units of kBT per squared
 # elementary charge. This constant carries only the Coulomb prefactor and temperature;
 # the water dielectric enters separately through the cf prefactor below and is taken
 # as the single consistent value WATER_DIELECTRIC = 78.5.
-COULOMB_K_KBT_A = 556.72
+COULOMB_K_KBT_A = 560.46
 
 # Single consistent water (exterior solvent) dielectric used throughout this module
 # as the default eps_out. Defining it once avoids the value drifting between nearby

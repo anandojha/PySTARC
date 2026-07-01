@@ -506,12 +506,20 @@ class NAMSimulator:
         return SimulationResult.from_simulator(self)
 
     def _run_serial(self, n: int):
+        # Reseed per trajectory exactly as the parallel workers do (seed + i),
+        # so that a serial run and a parallel run at the same seed produce
+        # identical trajectories and the result does not depend on the number of
+        # threads. Without this the serial path drew from one continuous stream
+        # and disagreed with the parallel path at the same seed.
+        base_seed = self.params.seed if self.params.seed is not None else 0
         for i in range(n):
             if self.params.verbose:
                 print(
                     f"  Trajectory {i+1}/{n}  "
                     f"(reacted={self.n_reacted}, escaped={self.n_escaped})"
                 )
+            self.rng = np.random.default_rng(base_seed + i)
+            self.rng_bb = np.random.default_rng(base_seed + i + 0xBB)
             self._record(self.run_one())
 
     def _run_parallel(self, n: int):
@@ -637,7 +645,11 @@ class SimulationResult:
             )  # Equals 6.022e8, converting Å³/ps to M⁻¹ s⁻¹.
             k_D = 4.0 * math.pi * D_rel * self.r_start  # In Å³/ps.
             beta = self.r_start / self.r_escape
-            denom = 1.0 - P * (1.0 - beta)
+            # Northrup-Allison-McCammon truncated-escape denominator. With
+            # Omega = b/q = r_start/r_escape = beta the probability that a
+            # trajectory reaching the escape sphere returns to the b-surface,
+            # the corrected rate is k_D * P / (1 - (1 - P) * beta).
+            denom = 1.0 - (1.0 - P) * beta
             return CONV_A3ps * k_D * P / denom
 
     def __repr__(self):
@@ -687,7 +699,7 @@ def _k_from_P(self, P: float, D_rel: float) -> float:
         return CONV_A3ps * self.k_db * P
     k_D = 4.0 * math.pi * D_rel * self.r_start  # In Å³/ps.
     beta = self.r_start / self.r_escape
-    return CONV_A3ps * k_D * P / (1.0 - P * (1.0 - beta))
+    return CONV_A3ps * k_D * P / (1.0 - (1.0 - P) * beta)
 
 
 def _rate_constant_ci(self, D_rel: float, confidence: float = 0.95):

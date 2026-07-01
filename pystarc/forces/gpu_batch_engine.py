@@ -642,11 +642,10 @@ class GPUBatchForceEngine:
             sr12 = sr6 * sr6
             f_mag = eps * (12.0 * sr12 - 6.0 * sr6) / r2  # shape (nc, N_lig, N_rec)
             f_mag = cp.where(in_range, f_mag, 0.0)
-            # Force on each ligand atom from each receptor atom,
-            # f_mag × (lig - rec) / r.
-            f_vec = (
-                f_mag[:, :, :, None] * diff / r[:, :, :, None]
-            )  # shape (nc, N_lig, N_rec, 3)
+            # Force on each ligand atom from each receptor atom. f_mag already
+            # carries the 1/r^2 factor (|F|/r), so the vector force is
+            # f_mag * (lig - rec) with no further division by r.
+            f_vec = f_mag[:, :, :, None] * diff  # shape (nc, N_lig, N_rec, 3)
             # Force per ligand atom, summed over receptor atoms, shape (nc,
             # N_lig, 3).
             f_per_lig = f_vec.sum(axis=2)

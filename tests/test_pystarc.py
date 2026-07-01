@@ -23308,7 +23308,8 @@ def test_zero_stored_k_db_falls_back_to_smoluchowski():
     CONV_A3ps = 6.022e23 * 1e-30 / 1e-12 / 1e-3
     k_D = 4.0 * math.pi * D_rel * res.r_start
     beta = res.r_start / res.r_escape
-    expected = CONV_A3ps * k_D * P / (1.0 - P * (1.0 - beta))
+    # Corrected NAM truncated-escape denominator 1 - (1 - P) * beta.
+    expected = CONV_A3ps * k_D * P / (1.0 - (1.0 - P) * beta)
 
     k = res.rate_constant(D_rel)
 
@@ -24158,31 +24159,33 @@ def _make_result_test_lowsev_gpu_sim_guards(n_reacted, n_escaped, r_start, r_esc
 
 
 def test_rate_constant_guard_raises_on_degenerate_denominator():
-    # P_rxn == 1 (all completed trajectories reacted) and a tiny
-    # r_start/r_escape ratio drive beta toward zero, so the denominator
-    # 1 - P*(1 - beta) approaches zero.
+    # The corrected NAM denominator 1 - (1 - P)*beta vanishes only for the
+    # unphysical case beta >= 1 (r_escape <= r_start). With P = 0.5 and
+    # r_start = 2, r_escape = 1 (beta = 2) it is exactly zero, so the guard
+    # must raise rather than divide by zero.
     res = _make_result_test_lowsev_gpu_sim_guards(
-        n_reacted=100, n_escaped=0, r_start=1.0, r_escape=1.0e30
+        n_reacted=50, n_escaped=50, r_start=2.0, r_escape=1.0
     )
-    assert res.reaction_probability == 1.0
+    assert res.reaction_probability == 0.5
     with pytest.raises(ValueError, match="denominator"):
         res.rate_constant(D_rel=1.0, k_b=0.0)
 
 
-def test_rate_constant_ci_guard_raises_on_degenerate_denominator():
-    # The CI path uses the upper bound of the probability interval. With every
-    # completed trajectory reacted the upper CI bound is 1, so the same
-    # degenerate denominator appears inside the closure.
+def test_rate_constant_ci_finite_at_p_max():
+    # At P == 1 with beta -> 0 the OLD (P/beta-swapped) denominator vanished and
+    # the CI raised. The corrected denominator 1 - (1 - P)*beta -> 1 there, so
+    # the confidence interval is finite and ordered and no longer raises.
     res = _make_result_test_lowsev_gpu_sim_guards(
         n_reacted=100, n_escaped=0, r_start=1.0, r_escape=1.0e30
     )
-    with pytest.raises(ValueError, match="denominator"):
-        res.rate_constant_ci(D_rel=1.0, k_b=0.0)
+    lo, hi = res.rate_constant_ci(D_rel=1.0, k_b=0.0)
+    assert 0.0 <= lo <= hi
+    assert math.isfinite(hi)
 
 
 def test_rate_constant_healthy_path_unchanged():
-    # A non-degenerate denominator must give exactly the original formula
-    # CONV * k_D * P / (1 - P*(1 - beta)) with no guard interference.
+    # A non-degenerate denominator must give exactly the corrected NAM formula
+    # CONV * k_D * P / (1 - (1 - P)*beta) with no guard interference.
     res = _make_result_test_lowsev_gpu_sim_guards(
         n_reacted=30, n_escaped=70, r_start=10.0, r_escape=50.0
     )
@@ -24191,7 +24194,7 @@ def test_rate_constant_healthy_path_unchanged():
     CONV = 6.022e23 * 1e-30 / 1e-12 / 1e-3
     k_D = 4.0 * math.pi * D_rel * res.r_start
     beta = res.r_start / res.r_escape
-    expected = CONV * k_D * P / (1.0 - P * (1.0 - beta))
+    expected = CONV * k_D * P / (1.0 - (1.0 - P) * beta)
     assert res.rate_constant(D_rel=D_rel, k_b=0.0) == expected
 
 
@@ -25192,12 +25195,12 @@ def _recompute_coulomb_k_kbt_a() -> float:
 
     The expression is COULOMB_K_KBT_A = k_e e^2 * 1e10 / (kB T) with k_e the Coulomb
     constant in N m^2 / C^2, e the elementary charge in C, kB the Boltzmann constant
-    in J/K, and T = 300.15 K. The factor 1e10 converts meters to angstrom.
+    in J/K, and T = 298.15 K (T_DEFAULT). The factor 1e10 converts meters to angstrom.
     """
     k_e = 8.9875517873681764e9  # Coulomb constant, N m^2 / C^2
     e = 1.602176634e-19  # elementary charge, C
     kB = 1.380649e-23  # Boltzmann constant, J/K
-    T = 300.15  # K
+    T = 298.15  # K (T_DEFAULT, consistent with the rest of the engine)
     return k_e * e * e * 1e10 / (kB * T)
 
 
@@ -25206,7 +25209,7 @@ def test_coulomb_constant_matches_first_principles_value():
     expected = _recompute_coulomb_k_kbt_a()
     literal = chain_gb.COULOMB_K_KBT_A
 
-    # The recomputed value is about 556.72 A. Match to four significant figures, that
+    # The recomputed value is about 560.46 A. Match to four significant figures, that
     # is a relative tolerance of roughly 5e-5.
     rel_err = abs(literal - expected) / expected
     assert rel_err < 5e-5, (

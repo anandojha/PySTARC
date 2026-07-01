@@ -150,6 +150,17 @@ def _parse_whitespace(line: str, record_type: str) -> Optional[PQRRecord]:
     parts = line.split()
     if len(parts) < 10:
         return None
+    # Rescue a chain-bearing line whose residue index abuts the following
+    # (often negative) coordinate and collapses two fields into one token, e.g.
+    # "... A 603-12.345 6.789 ...". Splitting the leading integer off restores
+    # the 11-token chain layout instead of silently dropping the atom.
+    if len(parts) == 10 and not _is_int(parts[4]) and not _is_int(parts[5]):
+        s = parts[5]
+        j = 0
+        while j < len(s) and s[j].isdigit():
+            j += 1
+        if 0 < j < len(s):
+            parts = parts[:5] + [s[:j], s[j:]] + parts[6:]
     try:
         if len(parts) >= 11 and _is_int(parts[5]):
             chain = parts[4]

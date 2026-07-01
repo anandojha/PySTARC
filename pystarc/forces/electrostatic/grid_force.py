@@ -357,14 +357,25 @@ class DXGrid:
         pts = np.asarray(points, dtype=float)
         h = np.diag(self.delta) * 0.5  # Half the grid spacing along each axis.
         grad = np.zeros_like(pts)
+        nshape = self.data.shape
         for i in range(3):
+            dx = 2.0 * h[i]  # Full grid spacing along axis i.
+            # batch_interpolate returns 0.0 for a point whose floor index leaves
+            # [0, n-2], so a probe stepping just past the last cell would inject
+            # a large spurious gradient of the wrong sign at grid-edge atoms.
+            # Clamp the two probes into the interpolable range and divide by
+            # their actual (possibly one-sided) separation. Interior atoms, whose
+            # probes stay in range, keep the exact central difference.
+            lo = self.origin[i]
+            hi = self.origin[i] + (nshape[i] - 1 - 1e-6) * dx
             dp = pts.copy()
-            dp[:, i] += h[i]
+            dp[:, i] = np.clip(pts[:, i] + h[i], lo, hi)
             dm = pts.copy()
-            dm[:, i] -= h[i]
-            grad[:, i] = (self.batch_interpolate(dp) - self.batch_interpolate(dm)) / (
-                2 * h[i]
-            )
+            dm[:, i] = np.clip(pts[:, i] - h[i], lo, hi)
+            span = dp[:, i] - dm[:, i]
+            with np.errstate(divide="ignore", invalid="ignore"):
+                g = (self.batch_interpolate(dp) - self.batch_interpolate(dm)) / span
+            grad[:, i] = np.where(np.abs(span) > 1e-12, g, 0.0)
         return grad
 
     def batch_force_on_charges(

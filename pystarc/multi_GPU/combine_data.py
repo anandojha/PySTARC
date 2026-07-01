@@ -84,9 +84,19 @@ def main():
     # contacts / trajectory count). Prefer the value carried in results.json;
     # fall back to recovering it from the per-shard contact_frequency.csv for
     # runs written before that field existed.
-    total_contact_steps = sum(int(r.get("contact_total_steps", 0)) for r in runs)
-    if total_contact_steps == 0:
-        total_contact_steps = _recover_contact_steps(dirs_valid)
+    total_contact_steps = 0
+    _missing_steps_dirs = []
+    for _r, _d in zip(runs, dirs_valid):
+        _s = int(_r.get("contact_total_steps", 0))
+        if _s > 0:
+            total_contact_steps += _s
+        else:
+            _missing_steps_dirs.append(_d)
+    # Recover the step count per-shard for any shard whose results.json predates
+    # the contact_total_steps field, so a mix of new and legacy shards does not
+    # drop the legacy shards' steps from the pooled contact-frequency denominator.
+    if _missing_steps_dirs:
+        total_contact_steps += _recover_contact_steps(_missing_steps_dirs)
     P = nr / N if N > 0 else 0
     k_b = runs[0]["k_b"]
     D_rel = runs[0].get("D_rel", 0)

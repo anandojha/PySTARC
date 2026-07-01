@@ -273,14 +273,30 @@ def write_all(
     if output_cfg.p_commit and "outcome" in sim_data:
         outcome = sim_data["outcome"]
         spos = sim_data["start_pos"]
-        # Bin the starting positions by their radius and compute the
-        # reaction probability within each bin.
         r_start = np.linalg.norm(spos, axis=1)
-        n_bins = 50
-        bins = np.linspace(r_start.min(), r_start.max(), n_bins + 1)
+        # The committor is the fraction of committed trajectories that reacted. A
+        # trajectory is committed only if it reacted (outcome 1) or escaped
+        # (outcome 2). Trajectories that exhausted their step budget without
+        # committing are censored and must be left out of the denominator,
+        # otherwise they bias the committor low.
+        committed = (outcome == 1) | (outcome == 2)
+        # Every trajectory starts on the b-surface, so the starting radius is
+        # essentially constant and cannot resolve a committor profile. When its
+        # spread is negligible, collapse to a single bin holding the overall
+        # committor; otherwise bin by starting radius.
+        r_span = float(r_start.max() - r_start.min()) if len(r_start) else 0.0
+        if r_span < 1e-6:
+            n_bins = 1
+            r_lo = float(r_start.min()) if len(r_start) else 0.0
+            bins = np.array([r_lo, r_lo + 1.0])
+        else:
+            n_bins = 50
+            bins = np.linspace(r_start.min(), r_start.max(), n_bins + 1)
         p_react = np.zeros(n_bins)
         n_count = np.zeros(n_bins)
         for i in range(len(outcome)):
+            if not committed[i]:
+                continue
             idx = min(np.searchsorted(bins, r_start[i]) - 1, n_bins - 1)
             idx = max(idx, 0)
             n_count[idx] += 1

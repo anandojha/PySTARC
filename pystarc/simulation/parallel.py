@@ -50,6 +50,7 @@ import numpy as np
 import copy
 import math
 import time
+import warnings
 
 try:
     import cupy as cp
@@ -166,6 +167,21 @@ def _run_numpy_batch(
     applied but the memory stays allocated. This runner is best suited to large
     numbers of trajectories with zero or simple forces.
     """
+    # The vectorised backend terminates a trajectory the moment it reaches
+    # r_escape; it does not carry the Luty-McCammon-Zhou outer-region recycling
+    # that the serial and GPU paths apply through the outer propagator. For zero
+    # or short-ranged forces this is exact once the analytic truncation
+    # correction enters the rate formula, but with long-ranged forces acting
+    # beyond r_escape (electrostatics) the k_on can differ from those paths.
+    # Warn so the downgrade is visible rather than silent.
+    if force_fn is not None and force_fn is not zero_force:
+        warnings.warn(
+            "NUMPY_BATCH uses simple r_escape truncation without "
+            "Luty-McCammon-Zhou outer-region recycling; with long-ranged forces "
+            "its k_on can differ from the SERIAL and GPU backends. Use SERIAL or "
+            "GPU for long-ranged electrostatics.",
+            RuntimeWarning,
+        )
     N = params.n_trajectories
     rng = np.random.default_rng(params.seed)
     D_t = mob.relative_translational_diffusion()
@@ -267,7 +283,9 @@ def _run_numpy_batch(
             for k, i in enumerate(still_active):
                 if mask[k]:
                     dq = Quaternion.from_axis_angle(axes[k], angles[k])
-                    q = (Quaternion(*ori_arr[i]) * dq).normalized()
+                    # Left-multiply (lab-frame), matching the serial (do_bd_step)
+                    # and GPU paths which compose q_new = dq * q.
+                    q = (dq * Quaternion(*ori_arr[i])).normalized()
                     ori_arr[i] = q.to_array()
         if verbose and step % max(1, params.max_steps // 10) == 0:
             n_active = (~done).sum()

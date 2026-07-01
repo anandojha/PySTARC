@@ -108,10 +108,11 @@ class GPUBatchResult:
             # Smoluchowski fallback used when there is no potential.
             k_D = 4.0 * math.pi * D_rel * self.r_start
             beta = self.r_start / self.r_escape
-            denom = 1.0 - P * (1.0 - beta)
-            # The denominator 1 - P*(1 - beta) approaches zero for P near 1 and
-            # beta near 0, where the recollision-corrected rate diverges. Reject
-            # that ill-defined regime instead of reporting a divergent rate.
+            # NAM truncated-escape denominator 1 - (1 - P) * beta, where
+            # Omega = b/q = r_start/r_escape = beta is the escape-sphere return
+            # probability. It approaches zero only for beta -> 1 with P -> 0,
+            # where the recollision-corrected rate diverges; reject that regime.
+            denom = 1.0 - (1.0 - P) * beta
             if abs(denom) < 1e-12:
                 raise ValueError(
                     "Smoluchowski rate denominator (1 - P*(1 - beta)) is "
@@ -136,7 +137,7 @@ class GPUBatchResult:
                 return CONV * k_b * P
             k_D = 4.0 * math.pi * D_rel * self.r_start
             beta = self.r_start / self.r_escape
-            denom = 1 - P * (1 - beta)
+            denom = 1 - (1 - P) * beta
             # Reject the same ill-defined denominator regime as rate_constant.
             if abs(denom) < 1e-12:
                 raise ValueError(
@@ -309,6 +310,16 @@ class GPUBatchSimulator:
             for rxn in pathway_set.reactions:
                 if not rxn.criteria.pairs:
                     continue
+                if len(rxn.criteria.pairs) > 1:
+                    raise ValueError(
+                        f"State-machine reaction '{rxn.name}' has "
+                        f"{len(rxn.criteria.pairs)} contact pairs, but the "
+                        "state-machine path supports exactly one pair per "
+                        "reaction (the per-reaction cutoff and GHO indices use "
+                        "pair[0]). Split it into one reaction per pair, or run "
+                        "without state_machine_reactions to use the flattened "
+                        "n_needed path."
+                    )
                 pair0 = rxn.criteria.pairs[0]
                 self._sm_rxn_names.append(rxn.name)
                 self._sm_rxn_state_before.append(getattr(rxn, "state_before", None))
@@ -616,7 +627,10 @@ class GPUBatchSimulator:
         # seed so that full runs remain reproducible. The flattened-pairs path
         # keeps using the main rng so its results match the established
         # reference.
-        rng_bb = np.random.default_rng(int(self.params.seed) + 1)
+        _bb_seed = (
+            (int(self.params.seed) + 1) if self.params.seed is not None else None
+        )
+        rng_bb = np.random.default_rng(_bb_seed)
         D_t = float(self.mob.relative_translational_diffusion())
         D_r = float(self.mob.relative_rotational_diffusion())
         dt = self.params.dt
@@ -699,18 +713,29 @@ class GPUBatchSimulator:
         # Resume from a checkpoint if one is available.
         _ckpt_dir_resume = Path(getattr(self.params, "_work_dir", "bd_sims"))
         _ckpt_path_resume = _ckpt_dir_resume / "checkpoint.npz"
+        _resume_ckpt = None
         if _ckpt_path_resume.exists():
             try:
                 ckpt = np.load(str(_ckpt_path_resume), allow_pickle=True)
-                pos = cp.asarray(ckpt["pos"])
-                q = cp.asarray(ckpt["q"])
-                status = cp.asarray(ckpt["status"])
-                n_steps = cp.asarray(ckpt["n_steps"])
-                n_reacted = int(ckpt["n_reacted"])
-                n_escaped = int(ckpt["n_escaped"])
-                n_maxsteps = int(ckpt["n_maxsteps"])
-                total_steps = int(ckpt["total_steps"])
-                _resume_step = int(ckpt["step"])
+                # Read the required fields into locals first; a missing or
+                # corrupt key raises here, before any live state is mutated, so
+                # a failed resume leaves the fresh run intact instead of a mix
+                # of checkpoint and fresh state.
+                _r_pos = cp.asarray(ckpt["pos"])
+                _r_q = cp.asarray(ckpt["q"])
+                _r_status = cp.asarray(ckpt["status"])
+                _r_n_steps = cp.asarray(ckpt["n_steps"])
+                _r_nr = int(ckpt["n_reacted"])
+                _r_ne = int(ckpt["n_escaped"])
+                _r_nm = int(ckpt["n_maxsteps"])
+                _r_ts = int(ckpt["total_steps"])
+                _r_step = int(ckpt["step"])
+                # All present: commit atomically.
+                pos, q, status, n_steps = _r_pos, _r_q, _r_status, _r_n_steps
+                n_reacted, n_escaped = _r_nr, _r_ne
+                n_maxsteps, total_steps = _r_nm, _r_ts
+                _resume_step = _r_step
+                _resume_ckpt = ckpt
                 _done_resume = int((status != 0).sum())
                 print(
                     f"  Resumed from checkpoint: step={_resume_step}, "
@@ -718,9 +743,16 @@ class GPUBatchSimulator:
                     f"({n_reacted} react, {n_escaped} esc)"
                 )
                 # Offset the random-number generator so the same random
-                # sequence is not repeated after resuming.
-                rng = np.random.default_rng(self.params.seed + _resume_step)
-                rng_bb = np.random.default_rng(int(self.params.seed) + 1 + _resume_step)
+                # sequence is not repeated after resuming. Guard a None seed
+                # (int(None) would otherwise abort the resume into "start fresh").
+                if self.params.seed is None:
+                    rng = np.random.default_rng()
+                    rng_bb = np.random.default_rng()
+                else:
+                    rng = np.random.default_rng(int(self.params.seed) + _resume_step)
+                    rng_bb = np.random.default_rng(
+                        int(self.params.seed) + 1 + _resume_step
+                    )
             except Exception as e:
                 warnings.warn(
                     f"Checkpoint load failed ({type(e).__name__}: {e}); "
@@ -734,18 +766,40 @@ class GPUBatchSimulator:
         _save_interval = 10
         if _output_cfg is not None:
             _save_interval = max(getattr(_output_cfg, "save_interval", 10), 1)
-        _start_pos = cp.asnumpy(pos.copy())  # (N, 3)
-        _start_q = cp.asnumpy(q.copy())  # (N, 4)
-        _min_dist = np.full(
-            N, 1e30, dtype=np.float64
-        )  # Closest approach per trajectory.
-        _step_at_min = np.zeros(N, dtype=np.int64)
-        _total_time = np.zeros(
-            N, dtype=np.float64
-        )  # Accumulated simulation time in ps.
-        _n_returns = np.zeros(N, dtype=np.int64)
-        _bb_triggered = np.zeros(N, dtype=np.int64)
-        _prev_r = cp.linalg.norm(pos, axis=1)  # Used to detect milestone crossings.
+        if _resume_ckpt is not None and "start_pos" in _resume_ckpt.files:
+            # Restore the per-trajectory history so a resumed run continues the
+            # full record instead of capturing mid-flight positions as starts.
+            _start_pos = np.asarray(_resume_ckpt["start_pos"])
+            _start_q = np.asarray(_resume_ckpt["start_q"])
+            _min_dist = np.asarray(_resume_ckpt["min_dist"]).astype(np.float64)
+            _step_at_min = np.asarray(_resume_ckpt["step_at_min"]).astype(np.int64)
+            _total_time = np.asarray(_resume_ckpt["total_time"]).astype(np.float64)
+            _n_returns = np.asarray(_resume_ckpt["n_returns"]).astype(np.int64)
+            _bb_triggered = np.asarray(_resume_ckpt["bb_triggered"]).astype(np.int64)
+            _prev_r = cp.asarray(_resume_ckpt["prev_r"])
+            if (
+                self._sm_active
+                and np.asarray(_resume_ckpt["sm_current_state"]).size == N
+            ):
+                self._sm_current_state = cp.asarray(_resume_ckpt["sm_current_state"])
+                _saved_fc = np.asarray(_resume_ckpt["sm_rxn_fire_counts"])
+                if self._sm_rxn_fire_counts is not None and _saved_fc.size == len(
+                    self._sm_rxn_fire_counts
+                ):
+                    self._sm_rxn_fire_counts = [int(x) for x in _saved_fc]
+        else:
+            _start_pos = cp.asnumpy(pos.copy())  # (N, 3)
+            _start_q = cp.asnumpy(q.copy())  # (N, 4)
+            _min_dist = np.full(
+                N, 1e30, dtype=np.float64
+            )  # Closest approach per trajectory.
+            _step_at_min = np.zeros(N, dtype=np.int64)
+            _total_time = np.zeros(
+                N, dtype=np.float64
+            )  # Accumulated simulation time in ps.
+            _n_returns = np.zeros(N, dtype=np.int64)
+            _bb_triggered = np.zeros(N, dtype=np.int64)
+            _prev_r = cp.linalg.norm(pos, axis=1)  # Detect milestone crossings.
         # Encounter snapshots, appended whenever a reaction happens.
         _enc_pos = []
         _enc_q = []
@@ -772,8 +826,18 @@ class GPUBatchSimulator:
         _ms_flux_in = np.zeros(len(_ms_radii), dtype=np.int64)
         # Contact frequency.
         _n_rxn_pairs = len(self._rxn_cutoffs) if self._rxn_cutoffs.size > 0 else 0
-        _contact_counts = np.zeros(max(_n_rxn_pairs, 1), dtype=np.int64)
-        _contact_total_steps = 0
+        if (
+            _resume_ckpt is not None
+            and "contact_counts" in _resume_ckpt.files
+            and np.asarray(_resume_ckpt["contact_counts"]).size == max(_n_rxn_pairs, 1)
+        ):
+            _contact_counts = np.asarray(_resume_ckpt["contact_counts"]).astype(
+                np.int64
+            )
+            _contact_total_steps = int(_resume_ckpt["contact_total_steps"])
+        else:
+            _contact_counts = np.zeros(max(_n_rxn_pairs, 1), dtype=np.int64)
+            _contact_total_steps = 0
         # Transition matrix over radial bins.
         _trans_n = 50
         _trans_bins = np.linspace(0, float(r_esc * 1.2), _trans_n + 1)
@@ -1063,6 +1127,11 @@ class GPUBatchSimulator:
                 _enc_q.append(cp.asnumpy(q[newly_reacted]))
                 _enc_npairs.extend([self._rxn_n_needed] * len(_nr_np))
             r_mag = cp.linalg.norm(pos_run, axis=1)  # (N_run,)
+            # Global indices of trajectories snapped back to the b-surface this
+            # step. Their radius jumps discontinuously from the outer region to
+            # r_b, so they are excluded from the milestone-flux and transition
+            # diagnostics below to avoid counting snap artifacts as flux.
+            _snapped_gids = np.empty(0, dtype=np.int64)
             # For trajectories that reach r_escape, apply the return
             # probability.
             at_escape = (r_mag >= r_esc) & still_running_mask & ~reacted
@@ -1079,6 +1148,7 @@ class GPUBatchSimulator:
                             pos[new_ret], axis=1, keepdims=True
                         )
                         pos[new_ret] = dirs * r_b
+                        _snapped_gids = cp.asnumpy(new_ret)
                         # Apply diffusional rotation over the estimated time
                         # spent in the outer region. The snap propagator does
                         # not track the per-trajectory elapsed outer time, so we
@@ -1564,12 +1634,16 @@ class GPUBatchSimulator:
             _ti = np.clip((_theta / np.pi * _n_theta).astype(int), 0, _n_theta - 1)
             _pi = np.clip((_phi / (2 * np.pi) * _n_phi).astype(int), 0, _n_phi - 1)
             np.add.at(_ang_counts, (_ti, _pi), 1)
-            # Milestone flux.
+            # Milestone flux. Trajectories snapped back to the b-surface this
+            # step jump discontinuously in radius, so their apparent crossings
+            # are snap artifacts rather than diffusive flux; exclude them here
+            # and from the transition matrix below.
             _prev_r_np = cp.asnumpy(_prev_r[sr_idx])
+            _keep_ms = ~np.isin(_sr_np, _snapped_gids)
             for mi in range(len(_ms_radii)):
                 mr = _ms_radii[mi]
-                _out = (_prev_r_np < mr) & (_cur_r >= mr)
-                _in = (_prev_r_np >= mr) & (_cur_r < mr)
+                _out = (_prev_r_np < mr) & (_cur_r >= mr) & _keep_ms
+                _in = (_prev_r_np >= mr) & (_cur_r < mr) & _keep_ms
                 _ms_flux_out[mi] += int(_out.sum())
                 _ms_flux_in[mi] += int(_in.sum())
             # Transition matrix.
@@ -1580,8 +1654,13 @@ class GPUBatchSimulator:
                 np.searchsorted(_trans_bins, _cur_r) - 1, 0, _trans_n - 1
             )
             for j in range(len(_old_bin)):
-                _trans_mat[_old_bin[j], _new_bin[j]] += 1
-            # Contact frequency.
+                if _keep_ms[j]:
+                    _trans_mat[_old_bin[j], _new_bin[j]] += 1
+            # Contact frequency. This uses the pre-step pose (R_sr / cen_sr),
+            # deliberately matching the pose on which reactions are evaluated
+            # (see the reaction check above, which uses R and pos_run), rather
+            # than the post-step pos[sr_idx] used by the radius diagnostics. For
+            # a converged time-average either pose is an equally valid estimator.
             if self._rec_gho_pos is not None and _n_rxn_pairs > 0 and len(sr_idx) > 0:
                 _gho_mol2_cf = self._mol2_pos0[self._lig_gho_indices]
                 _lig_gho_cf = (
@@ -1703,6 +1782,31 @@ class GPUBatchSimulator:
                     n_maxsteps=n_maxsteps,
                     total_steps=total_steps,
                     step=step,
+                    # Per-trajectory history and state, so a resumed run
+                    # reconstructs the full trajectory data rather than only the
+                    # post-resume steps (true b-sphere starts, closest approach,
+                    # elapsed time, returns, milestone reference, contacts) and
+                    # the state-machine progress (current state + fire counts).
+                    start_pos=_start_pos,
+                    start_q=_start_q,
+                    min_dist=_min_dist,
+                    step_at_min=_step_at_min,
+                    total_time=_total_time,
+                    n_returns=_n_returns,
+                    bb_triggered=_bb_triggered,
+                    prev_r=cp.asnumpy(_prev_r),
+                    contact_counts=_contact_counts,
+                    contact_total_steps=_contact_total_steps,
+                    sm_current_state=(
+                        cp.asnumpy(self._sm_current_state)
+                        if self._sm_active
+                        else np.zeros(0, dtype=np.int64)
+                    ),
+                    sm_rxn_fire_counts=(
+                        np.asarray(self._sm_rxn_fire_counts, dtype=np.int64)
+                        if (self._sm_active and self._sm_rxn_fire_counts is not None)
+                        else np.zeros(0, dtype=np.int64)
+                    ),
                 )
                 print(f" Checkpoint saved ({done:,}/{N:,} done) -> {_ckpt_path}")
             # Detailed diagnostics in verbose mode, printed every 1000 steps.

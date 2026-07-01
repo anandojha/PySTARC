@@ -325,6 +325,12 @@ def run(cfg: PySTARCConfig):
         verbose=True,
         minimum_core_dt=getattr(cfg, "minimum_core_dt", 0.0),
         minimum_core_reaction_dt=getattr(cfg, "minimum_core_reaction_dt", 0.0),
+        # Forward the user's screening, temperature, and dielectric so the
+        # serial OuterPropagator computes k_db for the configured conditions
+        # rather than the NAMParameters defaults. kB = 0.0019872041 kcal/mol/K.
+        debye_length=getattr(cfg, "debye_length", 8.0),
+        temperature_kT=0.0019872041 * getattr(cfg, "temperature", 298.15),
+        dielectric=getattr(cfg, "sdie", 78.54),
     )
     sim = NAMSimulator(mol_rec, mol_lig, mob, pathway_set, params, engine)
     # Initialize gpu_sim before the GPU branch so that later code which reads it

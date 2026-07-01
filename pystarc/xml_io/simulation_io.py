@@ -65,8 +65,15 @@ def parse_reaction_xml(path: str | Path) -> PathwaySet:
                     f"(expected molecule1_index/molecule2_index or atom1/atom2); "
                     f"attributes present: {dict(c.attrib)}"
                 )
-            dist = float(c.get("distance", c.get("cutoff", "5.0")))
-            pairs.append(ContactPair(int(v1), int(v2), dist))
+            dist_raw = c.get("distance", c.get("cutoff"))
+            if dist_raw is None and c.find("distance") is not None:
+                dist_raw = (c.find("distance").text or "").strip()
+            if not dist_raw:
+                raise ValueError(
+                    f"<contact> in reaction '{name}' is missing a distance/cutoff; "
+                    "refusing to guess a default reaction distance."
+                )
+            pairs.append(ContactPair(int(v1), int(v2), float(dist_raw)))
         n_needed = int(rxn_elem.get("n_needed", "-1"))
         state_before = rxn_elem.get("state_before")
         state_after = rxn_elem.get("state_after")
