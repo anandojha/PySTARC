@@ -21070,7 +21070,21 @@ def test_gpu_yukawa_multipole_force_matches_potential_gradient():
     import numpy as np
     import pystarc.forces.gpu_batch_engine as gbe
 
-    if not getattr(gbe, "_CUPY", False):
+    # Fall back to NumPy unless the GPU is genuinely usable. A successful
+    # "import cupy" (_CUPY True) is not enough: on a node where CUDA was never
+    # loaded, CuPy imports but its first kernel launch fails to find the toolkit
+    # headers. Probe with a trivial reduction so a missing or unloaded GPU
+    # degrades to the CPU path here instead of erroring out mid-test.
+    def _gpu_usable():
+        if not getattr(gbe, "_CUPY", False):
+            return False
+        try:
+            gbe.cp.zeros(1).sum()  # forces a real device alloc and kernel compile
+            return True
+        except Exception:
+            return False
+
+    if not _gpu_usable():
         gbe.cp = np  # the kernel calls cp.*; numpy is API-compatible on CPU
     cp = gbe.cp
 
