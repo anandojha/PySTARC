@@ -5,7 +5,7 @@
 #    1. Deactivates any active conda env
 #    2. Removes existing PySTARC env (if any)
 #    3. Creates a fresh PySTARC env
-#    4. Installs all dependencies (conda + pip + GPU)
+#    4. Installs all dependencies (conda + pip; CuPy auto-detected for GPU)
 #    5. Installs PySTARC from wheel
 #    6. Runs tests to verify
 set -e
@@ -13,9 +13,30 @@ ENV_NAME="PySTARC"
 PYTHON_VERSION="3.11"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WHEEL="$SCRIPT_DIR/dist/pystarc-1.1.0-py3-none-any.whl"
+
+# --- Platform and accelerator autodetection ---
+# OS_KIND is Darwin (macOS) or Linux. GPU_MODE becomes "cuda" only when an
+# NVIDIA GPU is actually visible on Linux; otherwise it stays "cpu". macOS never
+# has a CUDA GPU and CuPy ships no macOS wheel, so macOS is always CPU. On a CUDA
+# machine the matching CuPy wheel (11x or 12x) is picked from the driver's
+# reported CUDA major version, defaulting to 12x when it cannot be read.
+OS_KIND="$(uname -s)"
+GPU_MODE="cpu"
+CUPY_PKG=""
+if [ "$OS_KIND" = "Linux" ] && command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+    GPU_MODE="cuda"
+    CUDA_MAJOR="$(nvidia-smi 2>/dev/null | sed -n 's/.*CUDA Version: *\([0-9][0-9]*\).*/\1/p' | head -1)"
+    if [ "$CUDA_MAJOR" = "11" ]; then
+        CUPY_PKG="cupy-cuda11x"
+    else
+        CUPY_PKG="cupy-cuda12x"   # CUDA 12+ (or unreadable) -> 12x wheel
+    fi
+fi
+
 echo ""
 echo "  PySTARC - Clean install"
 echo "  Date: $(date)"
+echo "  Platform: $OS_KIND    Accelerator: $GPU_MODE${CUPY_PKG:+ ($CUPY_PKG)}"
 # 1. Deactivate current env
 echo ""
 echo "[1/7] Deactivating current conda environment."
@@ -48,10 +69,16 @@ conda install -c conda-forge ambertools apbs rdkit openbabel -y
 echo "ambertools and apbs installed"
 # OpenEye Toolkits: needed for hsp90/ttk examples (AM1-BCC charges). Needs OE_LICENSE to run.
 conda install -c openeye openeye-toolkits -y || echo "  WARNING: OpenEye install failed; inhibitor examples will not run."
-# 5. GPU + pip dependencies
+# 5. GPU + pip dependencies (CuPy only when a GPU was detected)
 echo ""
-echo "[5/7] Installing pip dependencies (cupy, matplotlib, pdb2pqr)."
-"$ENV_PY" -m pip install cupy-cuda12x matplotlib pdb2pqr pytest-cov pytest-sugar
+echo "[5/7] Installing pip dependencies (matplotlib, pdb2pqr, pytest; CuPy if GPU)."
+if [ "$GPU_MODE" = "cuda" ]; then
+    echo "  NVIDIA GPU detected -> installing $CUPY_PKG for GPU acceleration."
+    "$ENV_PY" -m pip install "$CUPY_PKG" matplotlib pdb2pqr pytest-cov pytest-sugar
+else
+    echo "  No NVIDIA GPU detected ($OS_KIND) -> CPU install; GPU code paths use the NumPy fallback."
+    "$ENV_PY" -m pip install matplotlib pdb2pqr pytest-cov pytest-sugar
+fi
 echo "pip dependencies installed"
 # 6. Install PySTARC
 echo ""
@@ -67,7 +94,19 @@ echo ""
 "$ENV_PY" -c "import scipy; print(f'SciPy {scipy.__version__}')"
 "$ENV_PY" -c "import matplotlib; print(f'Matplotlib {matplotlib.__version__}')"
 "$ENV_PY" -c "import pdb2pqr; print(f'pdb2pqr')" 2>/dev/null || echo "pdb2pqr not available"
-"$ENV_PY" -c "import cupy; print(f'CuPy {cupy.__version__} (GPU ready)')" 2>/dev/null || echo "CuPy not available (no GPU on this node)"
+# On a GPU install, confirm CuPy can actually compile a kernel (it imports fine
+# even when the CUDA toolkit headers are missing). On CPU/macOS CuPy is absent
+# by design and the GPU code paths take the NumPy fallback.
+if [ "$GPU_MODE" = "cuda" ]; then
+    if "$ENV_PY" -c "import cupy as cp; cp.arange(3).sum(); print(f'CuPy {cp.__version__} (GPU ready)')" 2>/dev/null; then
+        :
+    else
+        echo "CuPy present but the GPU is not usable yet (CUDA toolkit headers not found)."
+        echo "  -> load CUDA (e.g. 'module load cuda') or set CUDA_PATH before the tests so the GPU tests compile and pass."
+    fi
+else
+    echo "CPU mode (no NVIDIA GPU) -> GPU tests run through the NumPy fallback."
+fi
 which cpptraj  >/dev/null 2>&1 && echo "cpptraj"  || echo "cpptraj not found"
 which ambpdb   >/dev/null 2>&1 && echo "ambpdb"   || echo "ambpdb not found"
 which tleap    >/dev/null 2>&1 && echo "tleap"    || echo "tleap not found"
@@ -85,7 +124,9 @@ echo "  Installation complete!"
 echo ""
 echo "  To use PySTARC:"
 echo "    conda activate $ENV_NAME"
-echo "    module load cuda                  # HPC only"
+if [ "$GPU_MODE" = "cuda" ]; then
+echo "    module load cuda                  # GPU node: load CUDA so kernels compile"
+fi
 echo "    cd examples/two_charged_spheres"
 echo "    python ../../run_pystarc.py input.xml"
 echo ""
