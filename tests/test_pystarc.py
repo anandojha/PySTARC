@@ -25557,3 +25557,182 @@ def test_hard_sphere_rejection_keeps_ligand_when_all_redraws_overlap():
     # The ligand was held at its previous position because no overlap-free
     # redraw was found.
     assert np.allclose(new_traj.position, start)
+
+
+# =============================================================================
+# Regression tests for the 2026-06 correctness-review fixes:
+#   1. parallel MULTIPROCESSING/FUTURES worker initialisation
+#   2. multi-GPU combine density (shell volume) and frequency (step count)
+#   3. rxns.xml <contact> validation (no silent atom-0 default)
+# =============================================================================
+
+
+class TestParallelBackendWorkerInit:
+    """The MULTIPROCESSING and FUTURES backends must initialise each worker's
+    NAMSimulator through _worker_init and run every trajectory to completion,
+    rather than crashing on the uninitialised _WORKER_SIM global. Run in a
+    subprocess so the multiprocessing start method is clean under any pytest
+    host."""
+
+    def test_backends_run_to_completion(self, tmp_path):
+        import os as _os
+        import sys as _sys
+        import subprocess
+        import multiprocessing as mp
+        import pystarc
+
+        if mp.cpu_count() < 2:
+            pytest.skip("needs >= 2 CPUs to exercise the parallel backends")
+        script = (
+            "from pystarc.structures.molecules import Molecule, Atom\n"
+            "from pystarc.pathways.reaction_interface import (\n"
+            "    PathwaySet, ReactionInterface, ReactionCriteria, ContactPair)\n"
+            "from pystarc.hydrodynamics.rotne_prager import MobilityTensor\n"
+            "from pystarc.simulation.nam_simulator import NAMParameters, zero_force\n"
+            "from pystarc.simulation.parallel import run_parallel, ParallelBackend\n"
+            "\n"
+            "def build():\n"
+            "    m1 = Molecule(); m1.atoms = [Atom(x=0, y=0, z=0)]\n"
+            "    m2 = Molecule(); m2.atoms = [Atom(x=2, y=0, z=0)]\n"
+            "    ps = PathwaySet([ReactionInterface(name='r1',\n"
+            "        criteria=ReactionCriteria(pairs=[ContactPair(0, 0, 5.0)]))])\n"
+            "    mob = MobilityTensor(1.0, 0.1, 1.0, 0.1)\n"
+            "    p = NAMParameters(n_trajectories=6, r_start=30.0, r_escape=40.0,\n"
+            "        seed=7, verbose=False, max_steps=200, n_threads=3)\n"
+            "    return m1, m2, mob, ps, p\n"
+            "\n"
+            "if __name__ == '__main__':\n"
+            "    for b in (ParallelBackend.MULTIPROCESSING, ParallelBackend.FUTURES):\n"
+            "        m1, m2, mob, ps, p = build()\n"
+            "        r = run_parallel(m1, m2, mob, ps, p, force_fn=zero_force, backend=b)\n"
+            "        assert (r.n_reacted + r.n_escaped + r.n_max_steps) == p.n_trajectories, b\n"
+            "    print('PARALLEL_OK')\n"
+        )
+        f = tmp_path / "smoke_parallel.py"
+        f.write_text(script)
+        repo_root = _os.path.dirname(
+            _os.path.dirname(_os.path.abspath(pystarc.__file__))
+        )
+        env = dict(_os.environ)
+        env["PYTHONPATH"] = repo_root + _os.pathsep + env.get("PYTHONPATH", "")
+        proc = subprocess.run(
+            [_sys.executable, str(f)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env=env,
+        )
+        assert proc.returncode == 0, f"parallel smoke failed:\n{proc.stderr}"
+        assert "PARALLEL_OK" in proc.stdout
+
+
+class TestMultiGpuCombineNormalization:
+    """multi-GPU combine must renormalise radial density with the shell-volume
+    factor and contact frequency by the pooled recorded-step count, matching the
+    single-run writer rather than dividing by the trajectory count."""
+
+    @staticmethod
+    def _write_shard(d, c_bin1, c_bin2, n_contacts, steps):
+        import os as _os
+
+        with open(_os.path.join(d, "radial_density.csv"), "w") as f:
+            f.write("r_center,r_low,r_high,count,density\n")
+            f.write("11.0,10.0,12.0,%d,0\n" % c_bin1)
+            f.write("13.0,12.0,14.0,%d,0\n" % c_bin2)
+        with open(_os.path.join(d, "contact_frequency.csv"), "w") as f:
+            f.write("pair_index,n_contacts,frequency\n")
+            f.write("0,%d,%.8e\n" % (n_contacts, n_contacts / steps))
+
+    def test_density_uses_shell_volume(self, tmp_path):
+        import csv
+        import math
+        from pystarc.multi_GPU.combine_data import _sum_csv
+
+        d1, d2, out = tmp_path / "s1", tmp_path / "s2", tmp_path / "out"
+        for p in (d1, d2, out):
+            p.mkdir()
+        self._write_shard(str(d1), 300, 100, 300, 1000)
+        self._write_shard(str(d2), 200, 400, 200, 1000)
+        _sum_csv(
+            [str(d1), str(d2)],
+            "radial_density.csv",
+            str(out),
+            sum_col="count",
+            recompute_col="density",
+            density_mode=True,
+        )
+        rows = list(csv.DictReader(open(out / "radial_density.csv")))
+        total = 1000.0  # (300 + 200) + (100 + 400)
+        vol1 = 4.0 / 3.0 * math.pi * (12.0**3 - 10.0**3)
+        assert int(rows[0]["count"]) == 500
+        assert abs(float(rows[0]["density"]) - 500 / (total * vol1)) < 1e-12
+        # and NOT the old count/total_N normalisation
+        assert abs(float(rows[0]["density"]) - 500 / total) > 1e-6
+
+    def test_frequency_uses_step_count(self, tmp_path):
+        import csv
+        from pystarc.multi_GPU.combine_data import _sum_csv, _recover_contact_steps
+
+        d1, d2, out = tmp_path / "s1", tmp_path / "s2", tmp_path / "out"
+        for p in (d1, d2, out):
+            p.mkdir()
+        self._write_shard(str(d1), 300, 100, 300, 1000)
+        self._write_shard(str(d2), 200, 400, 200, 1000)
+        steps = _recover_contact_steps([str(d1), str(d2)])
+        assert steps == 2000
+        _sum_csv(
+            [str(d1), str(d2)],
+            "contact_frequency.csv",
+            str(out),
+            sum_col="n_contacts",
+            recompute_col="frequency",
+            total_N=steps,
+        )
+        rows = list(csv.DictReader(open(out / "contact_frequency.csv")))
+        assert int(rows[0]["n_contacts"]) == 500
+        assert abs(float(rows[0]["frequency"]) - 500 / 2000.0) < 1e-9
+
+
+class TestReactionXmlContactValidation:
+    """A <contact> with no recognisable atom index must raise instead of silently
+    defaulting to atom 0, and the BrownDye <atom1> child-element form must
+    parse."""
+
+    @staticmethod
+    def _parse(tmp_path, xml):
+        from pystarc.xml_io.simulation_io import parse_reaction_xml
+
+        f = tmp_path / "rxns.xml"
+        f.write_text(xml)
+        return parse_reaction_xml(str(f))
+
+    def test_valid_attribute_form(self, tmp_path):
+        ps = self._parse(
+            tmp_path,
+            '<reactions first_state="unbound"><reaction name="r" n_needed="1">'
+            '<contact molecule1_index="3" molecule2_index="17" distance="5.0"/>'
+            "</reaction></reactions>",
+        )
+        pair = ps.reactions[0].criteria.pairs[0]
+        assert pair.mol1_atom_index == 3
+        assert pair.mol2_atom_index == 17
+        assert pair.distance_cutoff == 5.0
+
+    def test_child_element_form(self, tmp_path):
+        ps = self._parse(
+            tmp_path,
+            '<reactions><reaction name="r" n_needed="1"><contact distance="4.0">'
+            "<atom1>3</atom1><atom2>17</atom2></contact></reaction></reactions>",
+        )
+        pair = ps.reactions[0].criteria.pairs[0]
+        assert pair.mol1_atom_index == 3
+        assert pair.mol2_atom_index == 17
+
+    def test_missing_index_raises(self, tmp_path):
+        with pytest.raises(ValueError):
+            self._parse(
+                tmp_path,
+                '<reactions><reaction name="r" n_needed="1">'
+                '<contact atom_1="3" atom_2="17" distance="5.0"/>'
+                "</reaction></reactions>",
+            )

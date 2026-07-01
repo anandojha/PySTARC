@@ -49,10 +49,24 @@ def parse_reaction_xml(path: str | Path) -> PathwaySet:
         prob = float(rxn_elem.get("probability", "1.0"))
         pairs: List[ContactPair] = []
         for c in rxn_elem.findall("contact"):
-            i1 = int(c.get("molecule1_index", c.get("atom1", "0")))
-            i2 = int(c.get("molecule2_index", c.get("atom2", "0")))
+            # Read atom indices from an attribute (molecule1_index / atom1) or
+            # the BrownDye child-element form (<atom1>3</atom1>). A missing index
+            # is an error rather than a silent default to atom 0, which would
+            # monitor the wrong contact pair.
+            v1 = c.get("molecule1_index", c.get("atom1"))
+            if v1 is None and c.find("atom1") is not None:
+                v1 = (c.find("atom1").text or "").strip()
+            v2 = c.get("molecule2_index", c.get("atom2"))
+            if v2 is None and c.find("atom2") is not None:
+                v2 = (c.find("atom2").text or "").strip()
+            if not v1 or not v2:
+                raise ValueError(
+                    f"<contact> in reaction '{name}' is missing an atom index "
+                    f"(expected molecule1_index/molecule2_index or atom1/atom2); "
+                    f"attributes present: {dict(c.attrib)}"
+                )
             dist = float(c.get("distance", c.get("cutoff", "5.0")))
-            pairs.append(ContactPair(i1, i2, dist))
+            pairs.append(ContactPair(int(v1), int(v2), dist))
         n_needed = int(rxn_elem.get("n_needed", "-1"))
         state_before = rxn_elem.get("state_before")
         state_after = rxn_elem.get("state_after")

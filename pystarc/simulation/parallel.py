@@ -33,6 +33,7 @@ from pystarc.simulation.nam_simulator import (
     NAMParameters,
     SimulationResult,
     zero_force,
+    _worker_init,
     _run_trajectory_worker,
 )
 from pystarc.transforms.quaternion import Quaternion, random_quaternion
@@ -78,16 +79,15 @@ def _run_pool(
     params.seed plus its trajectory index, which matches the per-thread seeding
     used elsewhere.
     """
-    c0 = mol2.centroid()
-    mol2_pos0 = mol2.positions_array() - c0
-    args = [
-        (mol1, mol2, mol2_pos0, mob, pathway_set, params, force_fn, reaction_cutoffs, i)
-        for i in range(params.n_trajectories)
-    ]
+    # Each worker process builds one NAMSimulator in the initializer and reuses
+    # it, running trajectories by integer index. This is the same contract the
+    # worker expects (see nam_simulator._run_parallel), so the parallel path
+    # reproduces the serial physics and only the per-trajectory seed differs.
+    init_args = (mol1, mol2, mob, pathway_set, params, force_fn)
     if verbose:
         print(f"  [Pool] {n_workers} workers × {params.n_trajectories} trajectories")
-    with mp.Pool(processes=n_workers) as pool:
-        results = pool.map(_run_trajectory_worker, args)
+    with mp.Pool(n_workers, initializer=_worker_init, initargs=init_args) as pool:
+        results = pool.map(_run_trajectory_worker, range(params.n_trajectories))
     return results
 
 
@@ -100,22 +100,20 @@ def _run_futures(
     The physics is identical to the first tier. The progress reporting makes
     long runs easier to follow.
     """
-    c0 = mol2.centroid()
-    mol2_pos0 = mol2.positions_array() - c0
     n = params.n_trajectories
-    args = [
-        (mol1, mol2, mol2_pos0, mob, pathway_set, params, force_fn, reaction_cutoffs, i)
-        for i in range(n)
-    ]
+    # Each worker builds one NAMSimulator in the initializer and runs
+    # trajectories by integer index, matching nam_simulator._run_parallel.
+    init_args = (mol1, mol2, mob, pathway_set, params, force_fn)
     results = [None] * n
     done = 0
     reacted = 0
     escaped = 0
     t0 = time.time()
-    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+    with ProcessPoolExecutor(
+        max_workers=n_workers, initializer=_worker_init, initargs=init_args
+    ) as executor:
         future_to_idx = {
-            executor.submit(_run_trajectory_worker, arg): i
-            for i, arg in enumerate(args)
+            executor.submit(_run_trajectory_worker, i): i for i in range(n)
         }
         for future in as_completed(future_to_idx):
             idx = future_to_idx[future]
@@ -303,9 +301,11 @@ def _run_gpu(mol1, mol2, mob, pathway_set, params, force_fn, reaction_cutoffs, v
     surrounding architecture is in place through the batch state arrays of the
     third tier, but the GPU memory transfers are not yet implemented.
     """
-    try:
+    # Detect the available GPU backend. cupy is preferred when installed;
+    # otherwise torch is probed for CUDA, Apple MPS, or CPU.
+    if cp is not None:
         backend = "CuPy (CUDA)"
-    except ImportError:
+    elif torch is not None:
         try:
             if torch.cuda.is_available():
                 backend = f"PyTorch CUDA ({torch.cuda.get_device_name(0)})"
@@ -313,8 +313,10 @@ def _run_gpu(mol1, mol2, mob, pathway_set, params, force_fn, reaction_cutoffs, v
                 backend = "PyTorch MPS (Apple Silicon)"
             else:
                 backend = "PyTorch CPU"
-        except ImportError:
+        except Exception:
             backend = None
+    else:
+        backend = None
     if backend is None:
         raise RuntimeError(
             "GPU backend requested but neither cupy nor torch is installed.\n"

@@ -109,6 +109,10 @@ def write_all(
             "wall_time_sec": result.elapsed_sec,
             "steps_per_sec": result.steps_per_sec,
             "confidence_level": confidence,
+            # Total recorded contact steps, the denominator of the
+            # contact_frequency column. Persisted so multi-GPU combine can pool
+            # the frequency correctly across shards.
+            "contact_total_steps": int(sim_data.get("contact_total_steps", 0)),
         }
         if k_on > 0:
             data["log10_k_on"] = math.log10(k_on)

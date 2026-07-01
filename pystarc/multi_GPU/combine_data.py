@@ -79,6 +79,14 @@ def main():
     ne = sum(r["n_escaped"] for r in runs)
     n_max = sum(r.get("n_max_steps", 0) for r in runs)
     N = nr + ne
+    # Total recorded contact steps across shards, the denominator for the pooled
+    # contact_frequency column (frequency = contacts / recorded steps, not
+    # contacts / trajectory count). Prefer the value carried in results.json;
+    # fall back to recovering it from the per-shard contact_frequency.csv for
+    # runs written before that field existed.
+    total_contact_steps = sum(int(r.get("contact_total_steps", 0)) for r in runs)
+    if total_contact_steps == 0:
+        total_contact_steps = _recover_contact_steps(dirs_valid)
     P = nr / N if N > 0 else 0
     k_b = runs[0]["k_b"]
     D_rel = runs[0].get("D_rel", 0)
@@ -237,7 +245,7 @@ def main():
         bd_sims,
         sum_col="count",
         recompute_col="density",
-        total_N=N,
+        density_mode=True,
     )
     _sum_csv(
         dirs_valid,
@@ -245,7 +253,7 @@ def main():
         bd_sims,
         sum_col="n_contacts",
         recompute_col="frequency",
-        total_N=N,
+        total_N=total_contact_steps,
     )
     _sum_csv(
         dirs_valid,
@@ -401,6 +409,33 @@ def _concat_csv(dirs, filename, out_dir, reindex=None, offsets=None):
     print(f"    {filename} ({len(rows):,} rows, {label})")
 
 
+def _recover_contact_steps(dirs):
+    """Recover the summed contact_total_steps across shards from the per-shard
+    contact_frequency.csv files.
+
+    A fallback for runs whose results.json predates the contact_total_steps
+    field. Each shard wrote frequency = n_contacts / total_steps, so a shard's
+    total_steps is recovered as round(n_contacts / frequency) from any row with a
+    non-zero count, and the recovered per-shard totals are summed.
+    """
+    total = 0
+    for d in dirs:
+        fpath = os.path.join(d, "contact_frequency.csv")
+        if not os.path.exists(fpath):
+            continue
+        with open(fpath) as f:
+            for row in csv.DictReader(f):
+                try:
+                    n = float(row["n_contacts"])
+                    fr = float(row["frequency"])
+                except (KeyError, ValueError):
+                    continue
+                if n > 0 and fr > 0:
+                    total += int(round(n / fr))
+                    break
+    return total
+
+
 def _sum_csv(
     dirs,
     filename,
@@ -409,15 +444,24 @@ def _sum_csv(
     sum_cols=None,
     recompute_col=None,
     total_N=None,
+    density_mode=False,
 ):
     """Sum histogram-style CSV files across shards bin by bin.
 
     Rows are grouped by every column that is not being summed, so identical bins
-    from different shards are merged. The columns named in sum_col or sum_cols are
-    added together. If a recompute_col is given together with the total
-    trajectory count total_N, that column is recomputed as the summed count
-    divided by total_N, which turns a pooled count back into a normalised density
-    or frequency.
+    from different shards are merged, and the columns named in sum_col or
+    sum_cols are added together.
+
+    When recompute_col is given, that normalised column is rebuilt from the
+    pooled counts so it stays consistent with the single-run writer:
+
+      - density_mode=True renormalises a radial density as
+        count / (total_count * shell_volume), where total_count is the sum over
+        all bins and shell_volume = 4/3 pi (r_high^3 - r_low^3) read from the
+        r_low and r_high columns, matching output_writer.py's density.
+      - otherwise the column is recomputed as count / total_N, where total_N is
+        the pooled denominator supplied by the caller (the recorded step count
+        for contact_frequency, not the trajectory count).
     """
     all_data = {}
     header = None
@@ -450,10 +494,31 @@ def _sum_csv(
     if not all_data:
         return
     rows = list(all_data.values())
-    if recompute_col and sum_col and total_N and total_N > 0:
-        for row in rows:
-            row[recompute_col] = f"{float(row[sum_col]) / total_N:.8e}"
-            row[sum_col] = int(float(row[sum_col]))
+    if recompute_col and sum_col:
+        if density_mode:
+            total_count = sum(float(r[sum_col]) for r in rows)
+            for row in rows:
+                try:
+                    r_low = float(row["r_low"])
+                    r_high = float(row["r_high"])
+                    vol = 4.0 / 3.0 * math.pi * (r_high**3 - r_low**3)
+                except (KeyError, ValueError):
+                    vol = 0.0
+                cnt = float(row[sum_col])
+                dens = (
+                    cnt / (total_count * vol)
+                    if (total_count > 0 and vol > 0)
+                    else 0.0
+                )
+                row[recompute_col] = f"{dens:.8e}"
+                row[sum_col] = int(cnt)
+        else:
+            denom = total_N if (total_N and total_N > 0) else 0
+            for row in rows:
+                cnt = float(row[sum_col])
+                val = cnt / denom if denom > 0 else 0.0
+                row[recompute_col] = f"{val:.8e}"
+                row[sum_col] = int(cnt)
     elif sum_col:
         for row in rows:
             row[sum_col] = int(float(row[sum_col]))
