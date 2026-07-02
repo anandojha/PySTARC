@@ -33,7 +33,7 @@ GPU-accelerated rigid body and flexible chain Brownian dynamics for bimolecular 
 
 <div align="center">
 
-<img src="assets/pystarc_demo.gif" width="480" alt="PySTARC Brownian dynamics demonstration">
+<img src="pystarc_demo.gif" width="480" alt="PySTARC Brownian dynamics demonstration">
 
 </div>
 
