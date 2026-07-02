@@ -65,6 +65,16 @@ def _build_pathway_set(
     pairs = [
         ContactPair(t_idx, c_idx, cutoff) for (t_idx, c_idx, cutoff) in reaction_pairs
     ]
+    # n_needed = -1 means "require all pairs" (the ReactionCriteria default). Any
+    # positive value larger than the number of pairs can never be reached, so the
+    # reaction criterion would be silently unsatisfiable and k_on would come out
+    # as exactly 0. Surface that misconfiguration instead of failing quietly.
+    if n_needed != -1 and int(n_needed) > len(pairs):
+        raise ValueError(
+            f"reaction_n_needed={int(n_needed)} exceeds the number of reaction "
+            f"pairs ({len(pairs)}); the criterion can never be satisfied. Set "
+            f"reaction_n_needed <= {len(pairs)} (or -1 to require all pairs)."
+        )
     crit = ReactionCriteria(
         name="association",
         pairs=pairs,

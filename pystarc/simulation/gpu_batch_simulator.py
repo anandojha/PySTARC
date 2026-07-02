@@ -842,6 +842,37 @@ class GPUBatchSimulator:
         _trans_n = 50
         _trans_bins = np.linspace(0, float(r_esc * 1.2), _trans_n + 1)
         _trans_mat = np.zeros((_trans_n, _trans_n), dtype=np.int64)
+        # On resume, restore the diagnostic accumulators as well, so the
+        # histograms, milestone flux, transition matrix, encounter snapshots, and
+        # near-miss pose cover the whole trajectory rather than only the
+        # post-resume steps. Each restore is guarded on presence and shape;
+        # anything missing or mismatched keeps the fresh initialization above.
+        if _resume_ckpt is not None and "rad_counts" in _resume_ckpt.files:
+
+            def _restore_diag(name, ref):
+                arr = np.asarray(_resume_ckpt[name])
+                return arr.astype(ref.dtype) if arr.shape == ref.shape else ref
+
+            _nm_pos = _restore_diag("near_miss_pos", _nm_pos)
+            _nm_q = _restore_diag("near_miss_q", _nm_q)
+            _rad_counts = _restore_diag("rad_counts", _rad_counts)
+            _ang_counts = _restore_diag("ang_counts", _ang_counts)
+            _ms_flux_out = _restore_diag("ms_flux_out", _ms_flux_out)
+            _ms_flux_in = _restore_diag("ms_flux_in", _ms_flux_in)
+            _trans_mat = _restore_diag("trans_mat", _trans_mat)
+            if "enc_traj" in _resume_ckpt.files:
+                _et = np.asarray(_resume_ckpt["enc_traj"], dtype=np.int64)
+                if _et.size > 0:
+                    _enc_traj = _et.tolist()
+                    _enc_step = np.asarray(
+                        _resume_ckpt["enc_step"], dtype=np.int64
+                    ).tolist()
+                    _enc_pos = [np.asarray(_resume_ckpt["enc_pos"])]
+                    _enc_q = [np.asarray(_resume_ckpt["enc_q"])]
+                    if "enc_npairs" in _resume_ckpt.files:
+                        _enc_npairs = np.asarray(
+                            _resume_ckpt["enc_npairs"], dtype=np.int64
+                        ).tolist()
         # Pre-compute the adaptive timestep constants to avoid Python overhead
         # per step.
         _adt_debye = float(getattr(self.engine, "_debye", 7.828))
@@ -1807,6 +1838,23 @@ class GPUBatchSimulator:
                         if (self._sm_active and self._sm_rxn_fire_counts is not None)
                         else np.zeros(0, dtype=np.int64)
                     ),
+                    # Diagnostic accumulators, so a resumed run's near-miss pose,
+                    # histograms, milestone flux, transition matrix, and
+                    # encounter snapshots cover the whole trajectory and not only
+                    # the post-resume steps. near_miss_pos/q pair consistently
+                    # with the already-saved min_dist/step_at_min.
+                    near_miss_pos=_nm_pos,
+                    near_miss_q=_nm_q,
+                    rad_counts=_rad_counts,
+                    ang_counts=_ang_counts,
+                    ms_flux_out=_ms_flux_out,
+                    ms_flux_in=_ms_flux_in,
+                    trans_mat=_trans_mat,
+                    enc_pos=(np.vstack(_enc_pos) if _enc_pos else np.zeros((0, 3))),
+                    enc_q=(np.vstack(_enc_q) if _enc_q else np.zeros((0, 4))),
+                    enc_traj=np.asarray(_enc_traj, dtype=np.int64),
+                    enc_step=np.asarray(_enc_step, dtype=np.int64),
+                    enc_npairs=np.asarray(_enc_npairs, dtype=np.int64),
                 )
                 print(f" Checkpoint saved ({done:,}/{N:,} done) -> {_ckpt_path}")
             # Detailed diagnostics in verbose mode, printed every 1000 steps.

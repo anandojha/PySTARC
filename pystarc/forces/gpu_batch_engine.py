@@ -167,13 +167,25 @@ class GPUBatchForceEngine:
         # the reference units used here is 0.000142 e²/(kBT·A).
         eps_s = sdie * VACUUM_PERMITTIVITY_KBT
         self._V_factor = receptor_charge / (4.0 * math.pi * eps_s) if eps_s > 0 else 0.0
-        self._has_yukawa = abs(receptor_charge) > 1e-9 and debye_length > 0
         # Multipole expansion (dipole and quadrupole) used in the far field.
         self._multipole = multipole_expansion
         if self._multipole is not None:
             self._mp_dipole_gpu = cp.asarray(self._multipole.dipole, dtype=cp.float64)
             self._mp_quad_gpu = cp.asarray(self._multipole.quadrupole, dtype=cp.float64)
             self._mp_four_pi_eps = self._multipole.four_pi_eps
+        # The far field is active when the receptor carries either a net monopole
+        # charge or a non-negligible dipole/quadrupole. Gating on the monopole
+        # alone silently dropped the multipole steering for neutral receptors
+        # (for example beta-cyclodextrin), zeroing the far-field force outside the
+        # finest grid for the exact case the multipole expansion exists to cover.
+        # _yukawa_forces_gpu carries both the monopole and the multipole terms.
+        _has_multipole = self._multipole is not None and (
+            float(cp.linalg.norm(self._mp_dipole_gpu)) > 1e-9
+            or float(cp.linalg.norm(self._mp_quad_gpu)) > 1e-9
+        )
+        self._has_yukawa = (
+            abs(receptor_charge) > 1e-9 or _has_multipole
+        ) and debye_length > 0
         # Counter used to emit diagnostics on the first few calls.
         self._call_count = 0
         # Upload the grids to the GPU once.
@@ -635,12 +647,15 @@ class GPUBatchForceEngine:
             # WCA cutoff at r < 2^(1/6) × σ.
             r_cut = 1.122462 * sig  # 2^(1/6) ≈ 1.122462
             in_range = r < r_cut
-            # WCA force: F = eps × (12 (σ/r)¹² - 6 (σ/r)⁶) / r² × r_vec.
+            # WCA force from U = 4 eps [(σ/r)¹² - (σ/r)⁶], so
+            # F = 4 eps × (12 (σ/r)¹² - 6 (σ/r)⁶) / r² × r_vec. The leading 4
+            # sets the well depth to eps (0.1 kcal/mol); it matches the chain
+            # reference in chain_simulator.py and the LJ/WCA wall in BrownDye2.
             sr = sig / r
             sr2 = sr * sr
             sr6 = sr2 * sr2 * sr2
             sr12 = sr6 * sr6
-            f_mag = eps * (12.0 * sr12 - 6.0 * sr6) / r2  # shape (nc, N_lig, N_rec)
+            f_mag = 4.0 * eps * (12.0 * sr12 - 6.0 * sr6) / r2  # shape (nc, N_lig, N_rec)
             f_mag = cp.where(in_range, f_mag, 0.0)
             # Force on each ligand atom from each receptor atom. f_mag already
             # carries the 1/r^2 factor (|F|/r), so the vector force is

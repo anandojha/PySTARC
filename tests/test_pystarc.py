@@ -17345,8 +17345,10 @@ class TestCOFFDROPTabulatedForces:
         assert len(common.bonds) == 4
         assert len(common.angles) == 3
         assert len(common.torsions) == 2
-        # 6 non-bonded pairs (j >= i+2): (0,2)(0,3)(0,4)(1,3)(1,4)(2,4)
-        assert len(common.pair_lookups) == 6
+        # 3 non-bonded pairs (j >= i+3, excluding the 1-2 bonded and 1-3 angle
+        # neighbors so the 1-3 interaction is not double-counted with the angle
+        # term): (0,3)(0,4)(1,4)
+        assert len(common.pair_lookups) == 3
         # All angles/torsions must have type_idx >= 0 (lookups succeeded)
         assert all(
             a.type_idx >= 0 for a in common.angles
@@ -21426,7 +21428,9 @@ def test_we_rate_constant_uses_nam_unit_convention():
     D_rel = 0.02
     P = res.reaction_probability
     k_b = 4.0 * math.pi * D_rel * res.r_start
-    denom = 1.0 - P * (1.0 - res.r_start / res.r_escape)
+    # Same NAM truncated-escape denominator as nam_simulator/gpu_batch_simulator:
+    # 1 - (1 - P) * beta, with beta = r_start / r_escape.
+    denom = 1.0 - (1.0 - P) * (res.r_start / res.r_escape)
     expected = 6.022e8 * k_b * P / denom
     assert math.isclose(res.rate_constant(D_rel), expected, rel_tol=1e-12)
     assert 1e8 < res.rate_constant(D_rel) < 1e11

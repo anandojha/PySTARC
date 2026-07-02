@@ -1689,12 +1689,15 @@ def build_chain_common_from_coffdrop(
             )
         )
 
-    # Build pair_lookups for every non-bonded pair (i, j) with j >= i+2. The
-    # pair potentials use orders=(0, 0), the residues come from the actual
-    # chain residues, and the atoms are (CA, CA).
+    # Build pair_lookups for every non-bonded pair (i, j) with j >= i+3. The
+    # 1-2 bonded pair (i, i+1) and the 1-3 angle pair (i, i+2) are excluded so
+    # the 1-3 interaction is not double-counted with the angle term; this
+    # matches the sidechain builder, which excludes 1-3 pairs explicitly. The
+    # pair potentials use orders=(0, 0), the residues come from the actual chain
+    # residues, and the atoms are (CA, CA).
     pair_lookups = {}
     for i in range(n):
-        for j in range(i + 2, n):
+        for j in range(i + 3, n):
             ri = (_ri(residues[i]), _ri(residues[j]))
             ai = (ca_atom_idx, ca_atom_idx)
             orders = (0, 0)

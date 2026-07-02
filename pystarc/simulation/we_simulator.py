@@ -219,7 +219,10 @@ class WEResult:
             return 0.0
         k_b = 4.0 * math.pi * D_rel * self.r_start  # A^3/ps
         beta = self.r_start / self.r_escape
-        denom = 1.0 - P * (1.0 - beta)
+        # Northrup-Allison-McCammon truncated-escape denominator, identical to
+        # nam_simulator and gpu_batch_simulator: 1 - (1 - P) * beta with
+        # beta = r_start / r_escape the return probability from the escape sphere.
+        denom = 1.0 - (1.0 - P) * beta
         return 6.022e8 * k_b * P / denom
 
     def __repr__(self) -> str:

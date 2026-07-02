@@ -120,7 +120,11 @@ class NAMParameters:
         True  # Reject steps in which atoms overlap. This is the default.
     )
     hydrodynamic_interactions: bool = (
-        False  # Include Rotne-Prager hydrodynamic interactions.
+        # Default True to preserve the prior effective behavior: the outer
+        # propagator was hard-coded has_hi=True, so hydrodynamics was always on.
+        # The flag is now honored (see the OuterPropagator construction), so
+        # setting this False actually disables the Rotne-Prager correction.
+        True
     )
     # When use_brownian_bridge is True, the reaction check supplements the
     # endpoint test by evaluating the path-crossing probability for every
@@ -259,7 +263,7 @@ class NAMSimulator:
             self._outer_prop = OuterPropagator(
                 b_radius=params.r_start,
                 max_radius=max_mol_r,
-                has_hi=True,
+                has_hi=getattr(params, "hydrodynamic_interactions", True),
                 kT=kT,
                 viscosity=viscosity,
                 dielectric=dielectric,

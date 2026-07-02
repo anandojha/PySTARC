@@ -471,6 +471,23 @@ def run_parallel(
             f"  Done: {elapsed:.1f}s  "
             f"({total_steps/elapsed:.0f} BD steps/sec total)"
         )
+    # The MULTIPROCESSING and FUTURES workers run full NAMSimulator.run_one
+    # trajectories, which recycle through the outer propagator (LMZ) and mark
+    # ESCAPED only on a true escape to infinity. Their P_rxn must be combined
+    # with the LMZ k_db (k_on = conv * k_db * P), exactly as the serial path
+    # does, not with the Smoluchowski truncated-escape denominator. NUMPY_BATCH
+    # terminates at r_escape with no recycling, so it keeps k_db = 0 and the
+    # truncated-escape form applies.
+    k_db = 0.0
+    if backend in (ParallelBackend.MULTIPROCESSING, ParallelBackend.FUTURES):
+        from pystarc.simulation.nam_simulator import NAMSimulator
+
+        _kdb_sim = NAMSimulator(mol1, mol2, mobility, pathway_set, params, force_fn)
+        if getattr(_kdb_sim, "_outer_prop", None) is not None:
+            try:
+                k_db = _kdb_sim._outer_prop._relative_rate(params.r_start)
+            except Exception:
+                k_db = 0.0
     return SimulationResult(
         n_trajectories=params.n_trajectories,
         n_reacted=n_reacted,
@@ -480,6 +497,7 @@ def run_parallel(
         r_start=params.r_start,
         r_escape=params.r_escape,
         dt=params.dt,
+        k_db=k_db,
     )
 
 
