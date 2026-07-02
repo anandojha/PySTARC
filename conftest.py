@@ -1,13 +1,13 @@
 """Pytest configuration for PySTARC tests."""
 
-import os
+
+from pathlib import Path
 import shutil
 import sys
-from pathlib import Path
+import os
 
 _PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(_PROJECT_ROOT))
-
 
 def pytest_sessionfinish(session, exitstatus):
     """Remove directories created by tests using package defaults.
@@ -19,7 +19,7 @@ def pytest_sessionfinish(session, exitstatus):
     source (e.g. pystarc/pipeline/bd_sims/). Walk the tree recursively
     to catch them, skipping vendored and build paths.
 
-    __pycache__ is cleaned only at top-level: Python regenerates these
+    __pycache__ is cleaned only at the top-level: Python regenerates these
     on import, and recursive removal would slow subsequent sessions.
     """
     runtime_targets = {"bd_sims", "chain_bd_results"}
