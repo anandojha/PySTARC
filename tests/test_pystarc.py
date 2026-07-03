@@ -21115,6 +21115,7 @@ def test_gpu_yukawa_multipole_force_matches_potential_gradient():
         _mp_dipole_gpu=cp.asarray(dipole),
         _mp_quad_gpu=cp.asarray(quad),
         _mp_four_pi_eps=1.0,
+        _mp_trace=3.5,  # nonzero screened-trace moment, exercises the isotropic term
     )
 
     def energy_at(x):
@@ -21138,6 +21139,65 @@ def test_gpu_yukawa_multipole_force_matches_potential_gradient():
             fd[i] = -(energy_at(x + e) - energy_at(x - e)) / (2.0 * h)
         f = force_at(x)
         assert np.linalg.norm(f - fd) / max(np.linalg.norm(fd), 1e-30) < 1e-5
+
+
+def test_multipole_trace_term_matches_exact_screened_quadrupole():
+    """The screened multipole expansion reproduces the exact screened potential of
+    an explicit net-neutral, dipole-free quadrupole only when the isotropic trace
+    term (1/6) tr(M) exp(-r/lam)/(4 pi eps r lam^2) is included. A traceless-only
+    expansion (correct for Coulomb) fails for the screened Yukawa kernel."""
+    import numpy as np
+    from pystarc.forces.multipole_farfield import MultipoleExpansion
+    from pystarc.global_defs.constants import VACUUM_PERMITTIVITY_KBT
+
+    a, lam, sdie = 2.0, 7.86, 78.0
+    # Linear quadrupole on z: -2 at origin, +1 at +/-a. Q=0, dipole=0, and the
+    # primitive second-moment trace tr(M) = sum q_i |r_i|^2 = 2 a^2 is nonzero.
+    pos = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, a], [0.0, 0.0, -a]])
+    chg = np.array([-2.0, 1.0, 1.0])
+    mp = MultipoleExpansion(pos, chg, debye_length=lam, sdie=sdie)
+    assert abs(mp.Q) < 1e-12 and mp.dipole_mag < 1e-12
+    assert abs(mp.trace_moment - 2.0 * a**2) < 1e-9
+    fpe = 4.0 * np.pi * sdie * VACUUM_PERMITTIVITY_KBT
+
+    def exact(R):
+        return float(
+            np.sum(
+                [
+                    qi
+                    * np.exp(-np.linalg.norm(R - ri) / lam)
+                    / (fpe * np.linalg.norm(R - ri))
+                    for ri, qi in zip(pos, chg)
+                ]
+            )
+        )
+
+    # Far-field points at |R|=15, including the magic angle (3cos^2θ-1=0) where
+    # the traceless quadrupole vanishes and the trace term is the whole signal.
+    dirs = [
+        np.array([1.0, 0.0, 0.0]),
+        np.array([0.0, 0.0, 1.0]),
+        np.array([0.8165, 0.0, 0.5774]),  # magic angle measured from z
+    ]
+    worst_with = 0.0
+    worst_without = 0.0
+    for d in dirs:
+        R = 15.0 * d / np.linalg.norm(d)
+        r = float(np.linalg.norm(R))
+        ex = exact(R)
+        trace_V = (
+            (mp.trace_moment / (6.0 * lam**2)) / (fpe * r) * np.exp(-r / lam)
+        )
+        with_trace = mp.potential(R)
+        without_trace = with_trace - trace_V
+        worst_with = max(worst_with, abs(with_trace - ex) / abs(ex))
+        worst_without = max(worst_without, abs(without_trace - ex) / abs(ex))
+    # With the trace term, the expansion matches the exact screened potential.
+    assert worst_with < 0.08, f"trace-inclusive expansion off by {worst_with}"
+    # Dropping the trace term makes the agreement clearly worse (the original bug).
+    assert worst_without > 2.0 * worst_with, (
+        f"trace term is not doing anything: with={worst_with}, without={worst_without}"
+    )
 
 
 def test_nam_parallel_worker_uses_run_one_with_recycling():

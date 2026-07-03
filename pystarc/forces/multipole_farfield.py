@@ -106,6 +106,15 @@ class MultipoleExpansion:
                     )
                 )
         self.quadrupole *= 0.5  # apply the convention ½ Σ q(3rr - r²I)
+        # Screened-kernel isotropic (trace) term. For the Yukawa kernel
+        # ∇²G = G/λ² is nonzero (unlike Coulomb, where ∇²(1/r) = 0), so the
+        # primitive second-moment trace tr(M) = Σ q_i |r_i|² contributes an
+        # isotropic term that acts as an effective monopole of charge
+        # tr(M)/(6λ²). Keeping only the traceless quadrupole is correct for the
+        # Coulomb kernel but drops this term for a screened kernel; it is the
+        # leading far-field error for net-neutral quadrupolar hosts such as
+        # β-cyclodextrin.
+        self.trace_moment = float(np.sum(charges * r2))  # tr(M) = Σ q_i |r_i|²
         # Moment magnitudes, kept for diagnostics.
         self.dipole_mag = float(np.linalg.norm(self.dipole))
         self.quad_mag = float(np.linalg.norm(self.quadrupole))
@@ -123,6 +132,10 @@ class MultipoleExpansion:
         exp_r = math.exp(-r / lam)
         # Monopole contribution.
         V = self.Q / (self.four_pi_eps * r) * exp_r
+        # Screened isotropic trace term: acts as an effective monopole of charge
+        # tr(M)/(6λ²). It is spherically symmetric, so it has the same 1/r
+        # screened form as the monopole and carries no angular dependence.
+        V += (self.trace_moment / (6.0 * lam**2)) / (self.four_pi_eps * r) * exp_r
         # Dipole contribution.
         if self.dipole_mag > 1e-9:
             p_dot_r = float(np.dot(self.dipole, r_hat))

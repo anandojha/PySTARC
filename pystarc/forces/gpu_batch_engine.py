@@ -173,6 +173,11 @@ class GPUBatchForceEngine:
             self._mp_dipole_gpu = cp.asarray(self._multipole.dipole, dtype=cp.float64)
             self._mp_quad_gpu = cp.asarray(self._multipole.quadrupole, dtype=cp.float64)
             self._mp_four_pi_eps = self._multipole.four_pi_eps
+            # Primitive second-moment trace tr(M) = Σ q_i |r_i|²; drives the
+            # screened isotropic far-field term (an effective monopole of charge
+            # tr(M)/(6λ²)) that a traceless-only quadrupole drops for a screened
+            # kernel.
+            self._mp_trace = float(getattr(self._multipole, "trace_moment", 0.0))
         # The far field is active when the receptor carries either a net monopole
         # charge or a non-negligible dipole/quadrupole. Gating on the monopole
         # alone silently dropped the multipole steering for neutral receptors
@@ -182,6 +187,7 @@ class GPUBatchForceEngine:
         _has_multipole = self._multipole is not None and (
             float(cp.linalg.norm(self._mp_dipole_gpu)) > 1e-9
             or float(cp.linalg.norm(self._mp_quad_gpu)) > 1e-9
+            or abs(self._mp_trace) > 1e-9
         )
         self._has_yukawa = (
             abs(receptor_charge) > 1e-9 or _has_multipole
@@ -531,6 +537,21 @@ class GPUBatchForceEngine:
                     )
                 )
                 dphi_dr += dphi_quad_dr
+            # Screened isotropic trace term (effective monopole of charge
+            # Q_eff = tr(M)/(6λ²)). It is spherically symmetric, so it
+            # contributes to φ and the radial gradient only, with no transverse
+            # part. This is exactly the term a traceless-only quadrupole drops
+            # for a screened kernel (∇²G = G/λ² ≠ 0).
+            _mp_trace = float(getattr(self, "_mp_trace", 0.0))
+            if abs(_mp_trace) > 1e-12:
+                q_eff_tr = _mp_trace / (6.0 * lam**2)
+                phi += q_eff_tr / (fpe * safe_r) * exp_term
+                dphi_dr += (
+                    q_eff_tr
+                    / fpe
+                    * exp_term
+                    * (-1.0 / safe_r**2 - 1.0 / (safe_r * lam))
+                )
         # The gradient is ∇φ = (dφ/dr) r̂ plus a transverse contribution from
         # the non-spherical terms. The radial part is exact for the monopole,
         # whose potential is spherically symmetric. For the dipole the
