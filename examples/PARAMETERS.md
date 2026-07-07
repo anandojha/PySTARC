@@ -180,13 +180,13 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 <table width="100%">
 <thead><tr><th align="left">Complex</th><th align="left">Isozyme</th><th align="left">Exp k<sub>on</sub> (M⁻¹s⁻¹)</th><th align="left">PySTARC k<sub>on</sub> (M⁻¹s⁻¹)</th><th align="left">Ratio</th><th align="left">rel SE</th></tr></thead>
 <tbody>
-<tr><td>CA I-VD12-69-1</td><td>CA I</td><td>2.7 × 10⁶</td><td>2.35 × 10⁶</td><td>0.87×</td><td>3.8%</td></tr>
-<tr><td>CA XIII-AZM</td><td>CA XIII</td><td>1.5 × 10⁶</td><td>1.79 × 10⁶</td><td>1.20×</td><td>4.7%</td></tr>
-<tr><td>CA XIII-VD11-26</td><td>CA XIII</td><td>1.5 × 10⁶</td><td>2.35 × 10⁶</td><td>1.57×</td><td>3.8%</td></tr>
-<tr><td>CA XIII-VD12-69-1</td><td>CA XIII</td><td>2.5 × 10⁶</td><td>5.74 × 10⁶</td><td>2.30×</td><td>2.4%</td></tr>
-<tr><td>CA XIII-VD11-25</td><td>CA XIII</td><td>4.6 × 10⁵</td><td>2.14 × 10⁶</td><td>4.66×</td><td>3.9%</td></tr>
-<tr><td>CA XIII-VD12-09</td><td>CA XIII</td><td>3.3 × 10⁵</td><td>5.63 × 10⁶</td><td>17.06×</td><td>2.4%</td></tr>
-<tr><td>CA II-VD11-4-2</td><td>CA II</td><td>1.8 × 10⁶</td><td>3.62 × 10⁵</td><td>0.20×</td><td>9.5%</td></tr>
+<tr><td>CA I-VD12-69-1</td><td>CA I</td><td>2.7 × 10⁶</td><td>2.57 × 10⁶</td><td>0.95×</td><td>2.6%</td></tr>
+<tr><td>CA XIII-AZM</td><td>CA XIII</td><td>1.5 × 10⁶</td><td>1.87 × 10⁶</td><td>1.25×</td><td>3.3%</td></tr>
+<tr><td>CA XIII-VD11-26</td><td>CA XIII</td><td>1.5 × 10⁶</td><td>2.50 × 10⁶</td><td>1.66×</td><td>2.6%</td></tr>
+<tr><td>CA XIII-VD12-69-1</td><td>CA XIII</td><td>2.5 × 10⁶</td><td>5.30 × 10⁶</td><td>2.12×</td><td>1.8%</td></tr>
+<tr><td>CA XIII-VD11-25</td><td>CA XIII</td><td>4.6 × 10⁵</td><td>1.63 × 10⁶</td><td>3.54×</td><td>3.2%</td></tr>
+<tr><td>CA XIII-VD12-09</td><td>CA XIII</td><td>3.3 × 10⁵</td><td>6.16 × 10⁶</td><td>18.67×</td><td>1.6%</td></tr>
+<tr><td>CA II-VD11-4-2</td><td>CA II</td><td>1.8 × 10⁶</td><td>3.36 × 10⁵</td><td>0.19×</td><td>7.0%</td></tr>
 </tbody>
 </table>
 
