@@ -114,7 +114,7 @@ This complex represents a strongly electrostatically steered protein-protein ass
 <tr><td>APBS grid dimension</td><td>257</td><td>Yields a grid spacing of ~0.75 Å.</td></tr>
 <tr><td>Base timestep</td><td>1.0 ps</td><td>Larger base step appropriate at the large b-surface.</td></tr>
 <tr><td>Max timestep cap</td><td>100 ps</td><td>Critical. Without the cap the adaptive timestep at r = 85 Å reaches ~1806 ps (drift/noise ≈ 5.4), producing ballistic trajectories that skip the electrostatic steering region. The cap restores drift/noise ≈ 2.</td></tr>
-<tr><td>Trajectories</td><td>1,000,000</td><td>-</td></tr>
+<tr><td>Trajectories</td><td>5,000,000</td><td>Production run.</td></tr>
 <tr><td>Contacts needed</td><td>4</td><td>Four interfacial hydrogen bonding contacts must be satisfied simultaneously. The full pair list is in <code>rxns.xml</code>.</td></tr>
 </tbody>
 </table>
@@ -172,7 +172,7 @@ Seven sulfonamide inhibitors binding three carbonic anhydrase isozymes (CA XIII,
 <tr><td>APBS fine grid length</td><td>128 Å</td><td>Covers ±64 Å, and the multipole fallback handles overshoot.</td></tr>
 <tr><td>APBS grid dimension</td><td>257</td><td>~0.50 Å fine grid spacing.</td></tr>
 <tr><td>Max timestep cap</td><td>0 (no cap)</td><td>Moderate adaptive timestep for small, highly diffusive ligands.</td></tr>
-<tr><td>Trajectories</td><td>5,000,000</td><td>Per complex.</td></tr>
+<tr><td>Trajectories</td><td>10,000,000</td><td>Per complex.</td></tr>
 <tr><td>Reaction criterion</td><td>2 pairs (THR199 OG1 / GLU106 OE1 to sulfonamide N and amide N), cutoff 3.5 Å, n_needed = 2</td><td>Both Zn-coordinating / proton shuttle hydrogen bonds required.</td></tr>
 </tbody>
 </table>
@@ -228,7 +228,7 @@ Eight inhibitors of the mitotic kinase TTK/MPS1 form a single target series span
 
 ## 9. HSP90 inhibitors
 
-Six neutral HSP90 inhibitors form a single target series of uncharged ligands, isolating the diffusion limited encounter rate in the absence of electrostatic steering. The six complexes are HSP90 N-terminal domain co-crystal structures (31, 37, 43, 62, 65, and 70), each with a neutral inhibitor, the receptor parameterized with ff14SB and the ligands with GAFF2 + AM1-BCC (OpenEye toolkits, license required).
+Six neutral HSP90 inhibitors form a single target series of uncharged ligands, isolating the diffusion limited encounter rate in the absence of electrostatic steering. The six complexes are HSP90 N-terminal domain systems named by inhibitor scaffold (resorcinol, indazole-5LNZ, indazole-5OCI, quinazoline-6EI5, quinazoline, aminopyridine; Kokh et al. compounds 31, 37, 43, 62, 65, 70), each with a neutral inhibitor, the receptor parameterized with ff14SB and the ligands with GAFF2 + AM1-BCC (OpenEye toolkits, license required).
 
 <table width="100%">
 <thead><tr><th align="left">Parameter</th><th align="left">Value</th><th align="left">Rationale</th></tr></thead>
@@ -239,7 +239,7 @@ Six neutral HSP90 inhibitors form a single target series of uncharged ligands, i
 <tr><td>APBS fine grid length</td><td>144 Å</td><td>Covers ±72 Å.</td></tr>
 <tr><td>APBS grid dimension</td><td>257</td><td>~0.56 Å fine grid spacing.</td></tr>
 <tr><td>Max timestep cap</td><td>0 (no cap)</td><td>b &lt; 80 Å, so no cap is required.</td></tr>
-<tr><td>Trajectories</td><td>10,000,000</td><td>Per complex.</td></tr>
+<tr><td>Trajectories</td><td>20,000,000</td><td>Per complex.</td></tr>
 <tr><td>Reaction criterion</td><td>8 pairs (contact method, SER37/ALA40/ASN36 CA anchors to ligand O2x/C15x/N1x), uniform 5.0 Å cutoff, n_needed = 6</td><td>A single flat 5.0 Å cutoff applied across all six complexes.</td></tr>
 </tbody>
 </table>
@@ -247,12 +247,12 @@ Six neutral HSP90 inhibitors form a single target series of uncharged ligands, i
 <table width="100%">
 <thead><tr><th align="left">Complex</th><th align="left">Exp k<sub>on</sub> (M⁻¹s⁻¹)</th><th align="left">PySTARC k<sub>on</sub> (M⁻¹s⁻¹)</th><th align="left">Ratio</th><th align="left">rel SE</th></tr></thead>
 <tbody>
-<tr><td>31</td><td>1.00 × 10⁶</td><td>2.09 × 10⁶</td><td>2.09×</td><td>3.0%</td></tr>
-<tr><td>37</td><td>3.43 × 10⁵</td><td>2.70 × 10⁵</td><td>0.79×</td><td>7.3%</td></tr>
-<tr><td>43</td><td>8.38 × 10⁴</td><td>6.37 × 10⁵</td><td>7.61×</td><td>4.8%</td></tr>
-<tr><td>62</td><td>1.21 × 10⁵</td><td>4.10 × 10⁵</td><td>3.39×</td><td>5.9%</td></tr>
-<tr><td>65</td><td>2.08 × 10⁵</td><td>1.08 × 10⁶</td><td>5.20×</td><td>3.7%</td></tr>
-<tr><td>70</td><td>1.04 × 10⁴</td><td>6.10 × 10⁵</td><td>58.68×</td><td>5.0%</td></tr>
+<tr><td>HSP90-resorcinol</td><td>1.00 × 10⁶</td><td>1.97 × 10⁶</td><td>1.97×</td><td>2.2%</td></tr>
+<tr><td>HSP90-indazole-5LNZ</td><td>3.43 × 10⁵</td><td>2.85 × 10⁵</td><td>0.83×</td><td>5.0%</td></tr>
+<tr><td>HSP90-indazole-5OCI</td><td>8.38 × 10⁴</td><td>6.31 × 10⁵</td><td>7.53×</td><td>3.4%</td></tr>
+<tr><td>HSP90-quinazoline-6EI5</td><td>1.21 × 10⁵</td><td>3.75 × 10⁵</td><td>3.10×</td><td>4.4%</td></tr>
+<tr><td>HSP90-quinazoline</td><td>2.08 × 10⁵</td><td>1.09 × 10⁶</td><td>5.24×</td><td>2.6%</td></tr>
+<tr><td>HSP90-aminopyridine</td><td>1.04 × 10⁴</td><td>6.67 × 10⁵</td><td>64.14×</td><td>3.4%</td></tr>
 </tbody>
 </table>
 

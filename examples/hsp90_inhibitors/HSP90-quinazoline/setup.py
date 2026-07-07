@@ -13,8 +13,8 @@ LIGAND_PQR   = "ligand.pqr"
 RXNS_XML     = "rxns.xml"
 
 # Auto-discovered HSP90 pocket Ca atoms + closest ligand atoms (from crystal pose)
-RXN_TARGETS_REC = [(122, 'CA', 'PHE'), (91, 'CA', 'LEU'), (35, 'CA', 'ASN')]   # [(resid, 'CA', resname), ...]
-RXN_TARGETS_LIG = [('N2x',), ('C15x',), ('C24x',)]   # [('O2x',), ...] - original espaloma atom names
+RXN_TARGETS_REC = [(36, 'CA', 'ASN'), (123, 'CA', 'PHE'), (92, 'CA', 'LEU')]   # [(resid, 'CA', resname), ...]
+RXN_TARGETS_LIG = [('O1x',), ('O2x',), ('C21x',)]   # [('O2x',), ...] - original espaloma atom names
 RXN_CUTOFFS = [5.0, 5.0, 5.0]
 
 PARAMS = {
@@ -57,7 +57,7 @@ shutil.copy(os.path.join(TPL, "input.xml"), "input.xml")
 shutil.copy(os.path.join(TPL, "rxns.xml"),  "rxns.xml")
 
 # Step 1: Extract protein and ligand from seekrflow PDB
-print(f"Step 1: Extract protein + ligand from seekrflow PDB (62)")
+print(f"Step 1: Extract protein + ligand from seekrflow PDB (HSP90-quinazoline)")
 prot_lines, lig_lines = [], []
 with open(SOURCE_PDB) as f:
     for line in f:
@@ -236,7 +236,7 @@ for f in ["tleap_protein.in", "tleap_ligand.in", "leap_protein.log",
 if os.path.exists("protein_leap.pdb"): os.rename("protein_leap.pdb", "receptor.pdb")
 if os.path.exists("ligand_leap.pdb"): os.rename("ligand_leap.pdb", "ligand.pdb")
 
-print(f"\nSetup done: HSP90 62")
+print(f"\nSetup done: HSP90 65")
 print(f"  Receptor: HSP90 ({len(rec_pqr_lines)} atoms, Q={rec_q:+.1f} e)")
 print(f"  Ligand:   ({len(lig_pqr_lines)} atoms, Q={lig_q:+.1f} e, formal={NETQ:+d})")
 print(f"  Rxn: {len(pairs)} pairs at 7.0 A, n_needed={N_NEEDED}")

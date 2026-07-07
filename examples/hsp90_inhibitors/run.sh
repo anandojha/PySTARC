@@ -4,12 +4,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PYSTARC_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RUNNER="$PYSTARC_ROOT/run_pystarc.py"
 SYSTEMS=(
-    31
-    37
-    43
-    62
-    65
-    70
+    HSP90-resorcinol
+    HSP90-indazole-5LNZ
+    HSP90-indazole-5OCI
+    HSP90-quinazoline-6EI5
+    HSP90-quinazoline
+    HSP90-aminopyridine
 )
 
 echo "PySTARC HSP90-inhibitor simulations"
@@ -51,10 +51,10 @@ echo "================================================================"
 cd "$SCRIPT_DIR"
 python3 << 'PYEOF'
 import json, math, os, datetime
-SYSTEMS = ["31", "37", "43", "62", "65", "70"]
+SYSTEMS = ["HSP90-resorcinol", "HSP90-indazole-5LNZ", "HSP90-indazole-5OCI", "HSP90-quinazoline-6EI5", "HSP90-quinazoline", "HSP90-aminopyridine"]
 EXPT_KON = {
-    "31": 1.00e6, "37": 3.43e5, "43": 8.38e4,
-    "62": 1.21e5, "65": 2.08e5, "70": 1.04e4,
+    "HSP90-resorcinol": 1.00e6, "HSP90-indazole-5LNZ": 3.43e5, "HSP90-indazole-5OCI": 8.38e4,
+    "HSP90-quinazoline-6EI5": 1.21e5, "HSP90-quinazoline": 2.08e5, "HSP90-aminopyridine": 1.04e4,
 }
 
 def fmt(k, ke):
@@ -75,13 +75,13 @@ def out(s=""):
 out(f"HSP90-inhibitor complexes: PySTARC k_on vs experiment")
 out(f"Collected: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 out()
-out(f"  {'System':<10s}  {'PySTARC k_on':>22s}  {'Experiment k_on':>18s}  {'Ratio':>7s}  {'P_rxn':>9s}  {'Time':>6s}")
-out(f"  {'-'*10}  {'-'*22}  {'-'*18}  {'-'*7}  {'-'*9}  {'-'*6}")
+out(f"  {'System':<24s}  {'PySTARC k_on':>22s}  {'Experiment k_on':>18s}  {'Ratio':>7s}  {'P_rxn':>9s}  {'Time':>6s}")
+out(f"  {'-'*24}  {'-'*22}  {'-'*18}  {'-'*7}  {'-'*9}  {'-'*6}")
 pystarc_kons, expt_kons = [], []
 for s in SYSTEMS:
     rfile = os.path.join(s, "bd_sims", "results.json")
     if not os.path.exists(rfile):
-        out(f"  {s:<10s}  {'No results':>22s}")
+        out(f"  {s:<24s}  {'No results':>22s}")
         continue
     with open(rfile) as f:
         r = json.load(f)
@@ -91,7 +91,7 @@ for s in SYSTEMS:
     wt = r.get("wall_time_sec", 0)
     expt = EXPT_KON[s]
     ratio = k / expt if expt else 0
-    out(f"  {s:<10s}  {fmt(k, ke):>22s}  {expt:18.2e}  {ratio:6.1f}x  {p:9.6f}  {wt:5.0f}s")
+    out(f"  {s:<24s}  {fmt(k, ke):>22s}  {expt:18.2e}  {ratio:6.1f}x  {p:9.6f}  {wt:5.0f}s")
     if k > 0:
         pystarc_kons.append(k)
         expt_kons.append(expt)

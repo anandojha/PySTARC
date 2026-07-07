@@ -1,17 +1,17 @@
 # HSP90-inhibitor complexes
 
 ## Receptor-ligand complexes
-All 6 receptor-ligand complexes share the same HSP90 N-terminal domain receptor with different small-molecule inhibitors. The systems are a subset of the HSP90 inhibitor kinetics dataset of Kokh et al. (2018). The charged member of the original set is excluded so that all ligands modeled here are neutral. System indices (31, 37, ...) are dataset indices from that study.
+All 6 receptor-ligand complexes share the same HSP90 N-terminal domain receptor with different small-molecule inhibitors. The systems are a subset of the HSP90 inhibitor kinetics dataset of Kokh et al. (2018). The charged member of the original set is excluded so that all ligands modeled here are neutral. Each complex is named by its inhibitor scaffold (resorcinol, indazole, quinazoline, aminopyridine) and, where a crystal structure exists, its PDB code. These correspond to Kokh et al. compounds 31, 37, 43, 62, 65, and 70 respectively.
 
 <table width="100%">
 <thead><tr><th align="left">Receptor-ligand complex</th><th align="left">Exp k<sub>on</sub> (M<sup>-1</sup>s<sup>-1</sup>)</th></tr></thead>
 <tbody>
-<tr><td><code>31</code></td><td>1.0 × 10<sup>6</sup></td></tr>
-<tr><td><code>37</code></td><td>3.4 × 10<sup>5</sup></td></tr>
-<tr><td><code>43</code></td><td>8.4 × 10<sup>4</sup></td></tr>
-<tr><td><code>62</code></td><td>1.2 × 10<sup>5</sup></td></tr>
-<tr><td><code>65</code></td><td>2.1 × 10<sup>5</sup></td></tr>
-<tr><td><code>70</code></td><td>1.0 × 10<sup>4</sup></td></tr>
+<tr><td><code>HSP90-resorcinol</code></td><td>1.0 × 10<sup>6</sup></td></tr>
+<tr><td><code>HSP90-indazole-5LNZ</code></td><td>3.4 × 10<sup>5</sup></td></tr>
+<tr><td><code>HSP90-indazole-5OCI</code></td><td>8.4 × 10<sup>4</sup></td></tr>
+<tr><td><code>HSP90-quinazoline-6EI5</code></td><td>1.2 × 10<sup>5</sup></td></tr>
+<tr><td><code>HSP90-quinazoline</code></td><td>2.1 × 10<sup>5</sup></td></tr>
+<tr><td><code>HSP90-aminopyridine</code></td><td>1.0 × 10<sup>4</sup></td></tr>
 </tbody>
 </table>
 
@@ -30,12 +30,12 @@ All 6 receptor-ligand complexes share the same HSP90 N-terminal domain receptor 
 <tr><td>Born desolvation</td><td>enabled</td></tr>
 <tr><td>Hydrodynamic interactions</td><td>enabled</td></tr>
 <tr><td>Overlap check</td><td>disabled</td></tr>
-<tr><td>Trajectories</td><td>100,000 per complex</td></tr>
+<tr><td>Trajectories</td><td>100,000 per complex (quick demo; the published run used 20,000,000)</td></tr>
 </tbody>
 </table>
 
 ## Input files (provided)
-Each system directory (`31/`, `37/`, ...) ships only the source structure and the setup script:
+Each system directory (`HSP90-resorcinol/`, `HSP90-indazole-5LNZ/`, ...) ships only the source structure and the setup script:
 
 <table width="100%">
 <thead><tr><th align="left">File</th><th align="left">Description</th></tr></thead>
@@ -74,7 +74,7 @@ Unlike the pre-generated examples, no parameterized files are shipped: `setup.py
 ```bash
 conda activate PySTARC
 module load cuda
-cd examples/hsp90_inhibitors/31
+cd examples/hsp90_inhibitors/HSP90-resorcinol
 python setup.py
 python ../../../run_pystarc.py input.xml
 ```
