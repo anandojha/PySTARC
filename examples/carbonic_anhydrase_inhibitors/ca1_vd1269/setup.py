@@ -193,7 +193,7 @@ print("  _azm.mol2 created")
 print(f"\nStep 4: Parameterize {LIGAND_RESID} with antechamber")
 r = subprocess.run(
     f"antechamber -i _azm.mol2 -fi mol2 -o ligand.mol2 -fo mol2 "
-    f"-c bcc -at gaff2 -nc {LIGAND_NET_CHARGE} -rn {LIGAND_RESID} -pf y -j 4",
+    f"-c bcc -at gaff2 -nc {LIGAND_NET_CHARGE} -rn {LIGAND_RESID} -pf y -j 4 -dr no",
     shell=True, capture_output=True, text=True
 )
 if not os.path.exists("ligand.mol2"):
