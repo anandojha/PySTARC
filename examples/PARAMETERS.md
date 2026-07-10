@@ -119,7 +119,7 @@ This complex represents a strongly electrostatically steered protein-protein ass
 </tbody>
 </table>
 
-The experimental k<sub>on</sub> is 6.7 × 10⁶ M⁻¹s⁻¹ at physiological ionic strength, measured by surface plasmon resonance, and Debye-Hückel analysis of the ionic strength dependence confirms a nearly completely electrostatically steered interaction. The computed k<sub>on</sub> is 2.38 × 10⁶ M⁻¹s⁻¹ (ratio 0.36×, relative SE 6.2%).
+The experimental k<sub>on</sub> is 6.7 × 10⁶ M⁻¹s⁻¹ at physiological ionic strength, measured by surface plasmon resonance, and Debye-Hückel analysis of the ionic strength dependence confirms a nearly completely electrostatically steered interaction. The computed k<sub>on</sub> is 2.42 × 10⁶ M⁻¹s⁻¹ (ratio 0.36×, relative SE 2.8%).
 
 ---
 
@@ -154,7 +154,7 @@ This is a kinase inhibitor complex in which the ligand is neutral and the recept
 </tbody>
 </table>
 
-Four crystal structure contacts (the hinge MET106 backbone to the pyridine N, the catalytic LYS50 NZ to an imidazole N, and the VAL102 O and THR103 N to the fluorine) at a uniform 7.0 Å cutoff, with n_needed = 3. k<sub>on</sub> = 2.86 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 1.5 × 10⁷ M⁻¹s⁻¹ (ratio 1.91×, relative SE 1.1%).
+Four crystal structure contacts (the hinge MET106 backbone to the pyridine N, the catalytic LYS50 NZ to an imidazole N, and the VAL102 O and THR103 N to the fluorine) at a uniform 7.0 Å cutoff, with n_needed = 3. k<sub>on</sub> = 2.88 × 10⁷ M⁻¹s⁻¹ versus the experimental value of 1.5 × 10⁷ M⁻¹s⁻¹ (ratio 1.92×, relative SE 1.1%).
 
 ---
 
@@ -213,14 +213,14 @@ Eight inhibitors of the mitotic kinase TTK/MPS1 form a single target series span
 <table width="100%">
 <thead><tr><th align="left">Complex</th><th align="left">Inhibitor</th><th align="left">Exp k<sub>on</sub> (M⁻¹s⁻¹)</th><th align="left">PySTARC k<sub>on</sub> (M⁻¹s⁻¹)</th><th align="left">Ratio</th><th align="left">rel SE</th></tr></thead>
 <tbody>
-<tr><td>5LJJ</td><td>Reversine</td><td>2.08 × 10⁶</td><td>4.91 × 10⁶</td><td>2.36×</td><td>1.8%</td></tr>
-<tr><td>2X9E</td><td>NMS-P715</td><td>6.41 × 10⁵</td><td>2.37 × 10⁶</td><td>3.70×</td><td>2.3%</td></tr>
+<tr><td>5LJJ</td><td>Reversine</td><td>2.08 × 10⁶</td><td>4.87 × 10⁶</td><td>2.34×</td><td>1.8%</td></tr>
+<tr><td>2X9E</td><td>NMS-P715</td><td>6.41 × 10⁵</td><td>2.18 × 10⁶</td><td>3.39×</td><td>2.4%</td></tr>
 <tr><td>5N84</td><td>Mps-BAY2b</td><td>2.60 × 10⁶</td><td>1.51 × 10⁶</td><td>0.58×</td><td>3.2%</td></tr>
-<tr><td>3GFW</td><td>Mps1-IN-1</td><td>3.79 × 10⁵</td><td>9.32 × 10⁵</td><td>2.46×</td><td>4.0%</td></tr>
-<tr><td>5N7V</td><td>MPI-0479605</td><td>1.96 × 10⁶</td><td>3.62 × 10⁶</td><td>1.85×</td><td>2.1%</td></tr>
+<tr><td>3GFW</td><td>Mps1-IN-1</td><td>3.79 × 10⁵</td><td>9.10 × 10⁵</td><td>2.40×</td><td>4.0%</td></tr>
+<tr><td>5N7V</td><td>MPI-0479605</td><td>1.96 × 10⁶</td><td>3.68 × 10⁶</td><td>1.88×</td><td>2.1%</td></tr>
 <tr><td>5N93</td><td>TC-Mps1-12</td><td>2.16 × 10⁷</td><td>3.15 × 10⁶</td><td>0.15×</td><td>2.3%</td></tr>
 <tr><td>5NAD</td><td>BAY-1217389</td><td>3.79 × 10⁵</td><td>1.21 × 10⁷</td><td>31.94×</td><td>1.1%</td></tr>
-<tr><td>3H9F</td><td>Mps1-IN-2</td><td>1.19 × 10⁶</td><td>8.32 × 10⁶</td><td>6.99×</td><td>1.3%</td></tr>
+<tr><td>3H9F</td><td>Mps1-IN-2</td><td>1.19 × 10⁶</td><td>8.28 × 10⁶</td><td>6.96×</td><td>1.4%</td></tr>
 </tbody>
 </table>
 
@@ -307,13 +307,13 @@ Across the protein-ligand, protein-protein, and host-guest complexes, the agreem
 <table width="100%">
 <thead><tr><th align="left">Metric</th><th align="left">Value</th></tr></thead>
 <tbody>
-<tr><td>Pearson r</td><td>0.913 (r² = 0.833)</td></tr>
-<tr><td>Spearman ρ</td><td>0.796</td></tr>
+<tr><td>Pearson r</td><td>0.912 (r² = 0.832)</td></tr>
+<tr><td>Spearman ρ</td><td>0.795</td></tr>
 <tr><td>R² vs y = x</td><td>0.790</td></tr>
-<tr><td>log₁₀ MAE</td><td>0.493 (mean fold error 3.1×)</td></tr>
+<tr><td>log₁₀ MAE</td><td>0.488 (mean fold error 3.1×)</td></tr>
 <tr><td>log₁₀ RMSE</td><td>0.644</td></tr>
-<tr><td>log₁₀ bias</td><td>0.277 (systematic 1.9× overprediction)</td></tr>
-<tr><td>Converged</td><td>28 / 32</td></tr>
+<tr><td>log₁₀ bias</td><td>0.274 (systematic 1.9× overprediction)</td></tr>
+<tr><td>Converged</td><td>31 / 32</td></tr>
 </tbody>
 </table>
 
