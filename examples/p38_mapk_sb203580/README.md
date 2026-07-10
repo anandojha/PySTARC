@@ -16,7 +16,7 @@
 <tr><td>n_needed</td><td>2</td></tr>
 <tr><td>Born desolvation</td><td>enabled</td></tr>
 <tr><td>Hydrodynamic radii</td><td>auto</td></tr>
-<tr><td>Trajectories</td><td>100,000</td></tr>
+<tr><td>Trajectories</td><td>100,000 (quick demo, the published run used 5,000,000)</td></tr>
 <tr><td>Experimental k<sub>on</sub></td><td>1.5 × 10<sup>7</sup> M<sup>-1</sup>s<sup>-1</sup> (Miao et al., 2018)</td></tr>
 <tr><td>Browndye BD k<sub>on</sub></td><td>6.6 × 10<sup>7</sup> M<sup>-1</sup>s<sup>-1</sup> (Huang, Biophys J, 2021)</td></tr>
 </tbody>

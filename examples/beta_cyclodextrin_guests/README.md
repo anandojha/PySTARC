@@ -30,7 +30,7 @@ All 7 receptor-ligand complexes share the same beta-cyclodextrin (BCD/MGO) recep
 <tr><td>Contact cutoff</td><td>5.0 Å</td></tr>
 <tr><td>Buffer</td><td>2.0 Å</td></tr>
 <tr><td>Born desolvation</td><td>enabled</td></tr>
-<tr><td>Trajectories</td><td>100,000 per complex</td></tr>
+<tr><td>Trajectories</td><td>100,000 per complex (quick demo, the published run used 2,000,000)</td></tr>
 </tbody>
 </table>
 

@@ -30,7 +30,7 @@ All 6 receptor-ligand complexes share the same HSP90 N-terminal domain receptor 
 <tr><td>Born desolvation</td><td>enabled</td></tr>
 <tr><td>Hydrodynamic interactions</td><td>enabled</td></tr>
 <tr><td>Overlap check</td><td>disabled</td></tr>
-<tr><td>Trajectories</td><td>100,000 per complex (quick demo; the published run used 20,000,000)</td></tr>
+<tr><td>Trajectories</td><td>100,000 per complex (quick demo, the published run used 20,000,000)</td></tr>
 </tbody>
 </table>
 

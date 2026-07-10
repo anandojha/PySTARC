@@ -33,7 +33,7 @@ Experimental k<sub>on</sub> values are intrinsic association rates from Linkuvie
 <tr><td>n_needed</td><td>2</td></tr>
 <tr><td>Born desolvation</td><td>enabled</td></tr>
 <tr><td>Hydrodynamic radii</td><td>auto</td></tr>
-<tr><td>Trajectories</td><td>100,000</td></tr>
+<tr><td>Trajectories</td><td>100,000 (quick demo, the published run used 10,000,000)</td></tr>
 </tbody>
 </table>
 

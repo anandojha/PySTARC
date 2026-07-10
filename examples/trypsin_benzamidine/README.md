@@ -15,7 +15,7 @@
 <tr><td>Buffer</td><td>3.0 Å</td></tr>
 <tr><td>Born desolvation</td><td>enabled</td></tr>
 <tr><td>Hydrodynamic radii</td><td>receptor 22.5, ligand 5.0 Å</td></tr>
-<tr><td>Trajectories</td><td>100,000</td></tr>
+<tr><td>Trajectories</td><td>100,000 (quick demo, the published run used 10,000,000)</td></tr>
 <tr><td>Experimental k<sub>on</sub></td><td>2.9 × 10<sup>7</sup> M<sup>-1</sup>s<sup>-1</sup></td></tr>
 </tbody>
 </table>

@@ -13,7 +13,7 @@
 <tr><td>Born desolvation</td><td>enabled</td></tr>
 <tr><td>Hydrodynamic interactions</td><td>enabled</td></tr>
 <tr><td>Overlap check</td><td>enabled</td></tr>
-<tr><td>Trajectories</td><td>100,000</td></tr>
+<tr><td>Trajectories</td><td>100,000 (quick demo, the published run used 5,000,000)</td></tr>
 </tbody>
 </table>
 
