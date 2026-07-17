@@ -88,11 +88,11 @@ Each guest uses seven contact pairs, of which four must form for a reaction, at 
 <thead><tr><th align="left">Guest</th><th align="left">Exp k<sub>on</sub> (M⁻¹s⁻¹)</th><th align="left">PySTARC k<sub>on</sub> (M⁻¹s⁻¹)</th><th align="left">Ratio</th><th align="left">rel SE</th></tr></thead>
 <tbody>
 <tr><td>1-butanol</td><td>2.8 × 10⁸</td><td>6.28 × 10⁸</td><td>2.24×</td><td>0.3%</td></tr>
-<tr><td>1-propanol</td><td>5.1 × 10⁸</td><td>5.94 × 10⁸</td><td>1.17×</td><td>0.3%</td></tr>
+<tr><td>1-propanol</td><td>5.1 × 10⁸</td><td>5.91 × 10⁸</td><td>1.16×</td><td>0.3%</td></tr>
 <tr><td>tert-butanol</td><td>3.6 × 10⁸</td><td>6.30 × 10⁸</td><td>1.75×</td><td>0.3%</td></tr>
 <tr><td>methyl butyrate</td><td>3.7 × 10⁸</td><td>4.53 × 10⁸</td><td>1.22×</td><td>0.4%</td></tr>
 <tr><td>aspirin</td><td>7.2 × 10⁸</td><td>4.19 × 10⁸</td><td>0.58×</td><td>0.4%</td></tr>
-<tr><td>1-naphthylethanol</td><td>4.7 × 10⁸</td><td>6.89 × 10⁷</td><td>0.15×</td><td>0.9%</td></tr>
+<tr><td>1-naphthylethanol</td><td>4.7 × 10⁸</td><td>6.83 × 10⁷</td><td>0.15×</td><td>1.0%</td></tr>
 <tr><td>2-naphthylethanol</td><td>2.9 × 10⁸</td><td>6.18 × 10⁸</td><td>2.13×</td><td>0.3%</td></tr>
 </tbody>
 </table>
