@@ -30,6 +30,7 @@ from pathlib import Path
 import numpy as np
 import warnings
 import math
+from pystarc.global_defs.defaults import (DEBYE_LENGTH, DESOLVATION_ALPHA)
 
 try:
     from numba import njit as _njit
@@ -544,8 +545,8 @@ class PySTARCEngine:
         born_mol1: List[DXGrid] = None,
         born_mol2: List[DXGrid] = None,
         eff_charges_mol1: "EffectiveCharges" = None,
-        debye_length: float = 7.858,
-        desolvation_alpha: float = 0.07957747,
+        debye_length: float = DEBYE_LENGTH,
+        desolvation_alpha: float = DESOLVATION_ALPHA,
         lj_params: "Optional[LJParams]" = None,
         hydrophobic_params: "Optional[HydrophobicParams]" = None,
     ):
@@ -699,8 +700,8 @@ def load_dx_directory(
     directory: str | Path,
     mol1_prefix: str = "receptor",
     mol2_prefix: str = "ligand",
-    debye_length: float = 7.858,
-    desolvation_alpha: float = 0.07957747,
+    debye_length: float = DEBYE_LENGTH,
+    desolvation_alpha: float = DESOLVATION_ALPHA,
 ) -> PySTARCEngine:
     """
     Build a PySTARCEngine from a reference-implementation run directory. The

@@ -45,6 +45,8 @@ import numpy as np
 import warnings
 import math
 import copy
+from pystarc.global_defs.constants import KBT_KCAL
+from pystarc.global_defs.defaults import (DEBYE_LENGTH, HYDRODYNAMIC_INTERACTIONS, SOLVENT_DIELECTRIC, VISCOSITY)
 
 
 def _check_hard_sphere_overlap(mol1: Molecule, mol2: Molecule) -> bool:
@@ -120,11 +122,12 @@ class NAMParameters:
         True  # Reject steps in which atoms overlap. This is the default.
     )
     hydrodynamic_interactions: bool = (
-        # Default True to preserve the prior effective behavior: the outer
-        # propagator was hard-coded has_hi=True, so hydrodynamics was always on.
-        # The flag is now honored (see the OuterPropagator construction), so
-        # setting this False actually disables the Rotne-Prager correction.
-        True
+        # Squeezing solvent from between two approaching surfaces slows the
+        # approach, so enabling this can only lower k_on. It is honoured by
+        # the outer propagator alone. The inner propagator builds its
+        # mobility with use_rpy set unconditionally, so setting this False
+        # does not presently disable the correction inside the b surface.
+        HYDRODYNAMIC_INTERACTIONS
     )
     # When use_brownian_bridge is True, the reaction check supplements the
     # endpoint test by evaluating the path-crossing probability for every
@@ -138,10 +141,13 @@ class NAMParameters:
     # screening and diffusion, in PySTARC units of Å, ps, and kBT. The defaults
     # are water at about 300 K and physiological ionic strength; set them
     # explicitly for a different temperature, solvent, or salt concentration.
-    temperature_kT: float = 0.5961  # Thermal energy kBT in kcal/mol.
-    viscosity: float = 1.002e-3 * 1e-4 / 1e-12  # Water viscosity in kcal·ps/Å³.
-    dielectric: float = 78.54  # Relative solvent permittivity.
-    debye_length: float = 8.0  # Debye length in Å.
+    # Thermal energy kBT in kcal/mol at T_DEFAULT. The literal 0.5961 that
+    # stood here is kBT at 299.97 K, so the simulator was running 1.8 K
+    # warmer than every other constant in the code.
+    temperature_kT: float = KBT_KCAL
+    viscosity: float = VISCOSITY  # Water viscosity in kcal/mol·ps/Å³.
+    dielectric: float = SOLVENT_DIELECTRIC  # Relative solvent permittivity.
+    debye_length: float = DEBYE_LENGTH  # Debye length in Å.
 
     def __post_init__(self):
         if self.r_escape == 0.0:
@@ -263,7 +269,9 @@ class NAMSimulator:
             self._outer_prop = OuterPropagator(
                 b_radius=params.r_start,
                 max_radius=max_mol_r,
-                has_hi=getattr(params, "hydrodynamic_interactions", True),
+                has_hi=getattr(
+                    params, "hydrodynamic_interactions", HYDRODYNAMIC_INTERACTIONS
+                ),
                 kT=kT,
                 viscosity=viscosity,
                 dielectric=dielectric,
@@ -292,6 +300,35 @@ class NAMSimulator:
             atom.y = float(p[1])
             atom.z = float(p[2])
         return mol
+
+    def _grad_D_trans(self, pos, D_here: float, dt: float) -> np.ndarray:
+        """Return the divergence of the scalar relative diffusion, dD/dr r_hat.
+
+        The scalar D(r) the inner propagator uses is not a divergence free
+        tensor the way the full RPY pair mobility is, so the Ermak-McCammon
+        step owes this term. The derivative is central differenced on the same
+        mobility function that supplies D, which keeps the three
+        Rotne-Prager-Yamakawa regimes consistent rather than hardcoding a far
+        field formula that is wrong in the partial overlap and engulfed
+        branches. The displacement is bounded at a tenth of the random step, a
+        limit that never binds on a physical configuration and exists only to
+        contain the inverse quartic blow up at very small separations.
+        """
+        r = float(np.linalg.norm(pos))
+        if r < 1.0e-8:
+            return np.zeros(3)
+        rhat = pos / r
+        h = 1.0e-3 * max(r, 1.0)
+        if r - h <= 1.0e-8:
+            return np.zeros(3)
+        dD_dr = (
+            self.mobility.relative_translational_diffusion((r + h) * rhat)
+            - self.mobility.relative_translational_diffusion((r - h) * rhat)
+        ) / (2.0 * h)
+        if dt > 0.0:
+            cap = 0.1 * math.sqrt(2.0 * D_here / dt)
+            dD_dr = max(-cap, min(cap, dD_dr))
+        return dD_dr * rhat
 
     def run_one(self) -> TrajectoryResult:
         """Run a single trajectory. This is used by the serial path."""
@@ -401,6 +438,10 @@ class NAMSimulator:
                 dt_min=self.params.dt_rxn,
                 dt_rxn_min=self.params.dt_rxn / 4.0,
             )
+            # The divergence drift owed by the scalar collapse of the RPY
+            # tensor. Evaluated at the pre-step position, which is where D_t
+            # was evaluated.
+            grad_D_t = self._grad_D_trans(pos, D_t, dt)
             # Save the old state before stepping so a hard-sphere rejection can
             # redraw from it.
             pos_old, ori_old = pos, ori
@@ -411,7 +452,9 @@ class NAMSimulator:
             # Draw the Wiener increments and take the step.
             dW_t = math.sqrt(dt) * self.rng.standard_normal(3)
             dW_r = math.sqrt(dt) * self.rng.standard_normal(3)
-            pos, ori = bd_step_wiener(pos, ori, force, torque, D_t, D_r, dt, dW_t, dW_r)
+            pos, ori = bd_step_wiener(
+                pos, ori, force, torque, D_t, D_r, dt, dW_t, dW_r, grad_D_t
+            )
             # Backstep on a large force change, subdividing the Wiener path.
             mol2_new = self._place_mol2(pos, ori)
             force_new, _, _ = self.force_fn(self.mol1, mol2_new)
@@ -429,13 +472,32 @@ class NAMSimulator:
                 dW_mid_t = 0.5 * dW_t + s * self.rng.standard_normal(3)
                 dW_mid_r = 0.5 * dW_r + s * self.rng.standard_normal(3)
                 pos, ori = bd_step_wiener(
-                    pos_old, ori_old, force, torque, D_t, D_r, hdt, dW_mid_t, dW_mid_r
+                    pos_old,
+                    ori_old,
+                    force,
+                    torque,
+                    D_t,
+                    D_r,
+                    hdt,
+                    dW_mid_t,
+                    dW_mid_r,
+                    grad_D_t,
                 )
                 mol2_mid = self._place_mol2(pos, ori)
                 f2, t2, _ = self.force_fn(self.mol1, mol2_mid)
                 D_t2 = self.mobility.relative_translational_diffusion(pos)
+                grad_D_t2 = self._grad_D_trans(pos, D_t2, hdt)
                 pos, ori = bd_step_wiener(
-                    pos, ori, f2, t2, D_t2, D_r, hdt, dW_t - dW_mid_t, dW_r - dW_mid_r
+                    pos,
+                    ori,
+                    f2,
+                    t2,
+                    D_t2,
+                    D_r,
+                    hdt,
+                    dW_t - dW_mid_t,
+                    dW_r - dW_mid_r,
+                    grad_D_t2,
                 )
                 self._dt_ctrl._last_dt = hdt  # Record the dt actually used.
                 step_dt = hdt + hdt  # Sum of the two half steps of the backstep.
@@ -449,6 +511,7 @@ class NAMSimulator:
                     # evaluated at the previous position, which is the start of
                     # the redrawn step.
                     D_t_old = self.mobility.relative_translational_diffusion(pos_old)
+                    grad_D_old = self._grad_D_trans(pos_old, D_t_old, dt)
                     HS_MAX_REDRAWS = 5
                     pos_try, ori_try = pos_old, ori_old
                     for _ in range(HS_MAX_REDRAWS):
@@ -464,6 +527,7 @@ class NAMSimulator:
                             dt,
                             dW_t2,
                             dW_r2,
+                            grad_D_old,
                         )
                         mol2_try = self._place_mol2(pos_try, ori_try)
                         if not _check_hard_sphere_overlap(self.mol1, mol2_try):

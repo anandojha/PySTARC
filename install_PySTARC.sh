@@ -27,9 +27,9 @@ if [ "$OS_KIND" = "Linux" ] && command -v nvidia-smi >/dev/null 2>&1 && nvidia-s
     GPU_MODE="cuda"
     CUDA_MAJOR="$(nvidia-smi 2>/dev/null | sed -n 's/.*CUDA Version: *\([0-9][0-9]*\).*/\1/p' | head -1)"
     if [ "$CUDA_MAJOR" = "11" ]; then
-        CUPY_PKG="cupy-cuda11x"
+        CUPY_PKG="cupy-cuda11x[ctk]"
     else
-        CUPY_PKG="cupy-cuda12x"   # CUDA 12+ (or unreadable) -> 12x wheel
+        CUPY_PKG="cupy-cuda12x[ctk]"   # CUDA 12+ (or unreadable) -> 12x wheel
     fi
 fi
 
@@ -65,7 +65,7 @@ echo "Using interpreter: $ENV_PY"
 # 4. Conda dependencies
 echo ""
 echo "[4/7] Installing conda dependencies (ambertools, apbs)"
-conda install -c conda-forge ambertools apbs rdkit openbabel -y
+conda install -c conda-forge "numpy>=2.0,<2.6" ambertools apbs rdkit openbabel -y
 echo "ambertools and apbs installed"
 # OpenEye Toolkits: needed for hsp90/ttk examples (AM1-BCC charges). Needs OE_LICENSE to run.
 conda install -c openeye openeye-toolkits -y || echo "  WARNING: OpenEye install failed; inhibitor examples will not run."

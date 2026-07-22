@@ -36,6 +36,7 @@ import shutil
 import math
 import sys
 import os
+from pystarc.global_defs.defaults import (HYDRODYNAMIC_INTERACTIONS, INPUT_DEFAULTS, REFERENCE_DEFAULTS, REFERENCE_LOCAL_TAGS)
 
 # Residue names that count as solvent or ions and are stripped before the
 # calculation. The set is deliberately broad and covers the water and ion
@@ -122,23 +123,27 @@ class BDSurfaceConfig:
     # Ionic strength
     ion_concentration: float = 0.150  # mol/L
     ion_type: str = "NaCl"
-    debye_length: float = 0.0  # a value of 0.0 means compute it from the concentration
+    debye_length: float = REFERENCE_DEFAULTS[
+        "debye_length"
+    ]  # zero means compute it from the concentration
     # Reaction criterion
     bd_milestone_radius: float = (
         30.0  # b-sphere radius in Å, chosen ≥ 3×(r_rec + r_lig)
     )
-    bd_milestone_radius_inner: float = (
-        12.0  # inner milestone radius in Å; 0.0 disables it
-    )
+    bd_milestone_radius_inner: float = REFERENCE_DEFAULTS[
+        "bd_milestone_radius_inner"
+    ]  # inner milestone radius in Å; 0.0 disables it
     # Brownian-dynamics simulation
     n_trajectories: int = 10000
     max_n_steps: int = 100000000
     seed: int = 11111113
     n_threads: int = 24
     gpu: bool = True
-    hydrodynamic_interactions: bool = True
-    minimum_core_dt: float = 0.2
-    minimum_core_reaction_dt: float = 0.05
+    hydrodynamic_interactions: bool = HYDRODYNAMIC_INTERACTIONS
+    minimum_core_dt: float = REFERENCE_DEFAULTS["minimum_core_dt"]
+    minimum_core_reaction_dt: float = REFERENCE_DEFAULTS[
+        "minimum_core_reaction_dt"
+    ]
     desolvation_parameter: float = 1.0
     relative_viscosity: float = 1.0
     confidence_interval: float = 0.95
@@ -174,6 +179,15 @@ def parse_config(xml_path: Path) -> BDSurfaceConfig:
     root = tree.getroot()
 
     def get(tag, default=None, cast=str):
+        # This deck configures the reference binary, not PySTARC. Tags it
+        # treats differently are resolved from REFERENCE_DEFAULTS, and
+        # notably debye_length is a sentinel here whose zero means derive
+        # the screening length from the ion concentration. Everything else
+        # shares the registry so the two readers cannot drift apart.
+        if tag in REFERENCE_LOCAL_TAGS:
+            default = REFERENCE_DEFAULTS[tag]
+        elif tag in INPUT_DEFAULTS:
+            default = INPUT_DEFAULTS[tag]
         node = root.find(tag)
         if node is None or not (node.text or "").strip():
             return default
@@ -190,27 +204,27 @@ def parse_config(xml_path: Path) -> BDSurfaceConfig:
         work_dir=Path(get("work_dir", "b_surface")),
         ligand_atom_per_residue=get("ligand_atom_per_residue", True, bool),
         inject_gho=get("inject_gho", True, bool),
-        pdie=get("pdie", 4.0, float),
-        sdie=get("sdie", 78.0, float),
+        pdie=get("pdie", cast=float),
+        sdie=get("sdie", cast=float),
         apbs_fine_spacing=get("apbs_fine_spacing", 0.5, float),
         apbs_n_grids=get("apbs_n_grids", 3, int),
         apbs_srfm=get("apbs_srfm", "smol"),
         apbs_chgm=get("apbs_chgm", "spl2"),
         apbs_srad=get("apbs_srad", 1.5, float),
-        temperature=get("temperature", 298.15, float),
+        temperature=get("temperature", cast=float),
         ion_concentration=get("ion_concentration", 0.150, float),
         ion_type=get("ion_type", "NaCl"),
-        debye_length=get("debye_length", 0.0, float),
-        bd_milestone_radius=get("bd_milestone_radius", 30.0, float),
-        bd_milestone_radius_inner=get("bd_milestone_radius_inner", 12.0, float),
+        debye_length=get("debye_length", cast=float),
+        bd_milestone_radius=get("bd_milestone_radius", cast=float),
+        bd_milestone_radius_inner=get("bd_milestone_radius_inner", cast=float),
         n_trajectories=get("n_trajectories", 10000, int),
         max_n_steps=get("max_n_steps", 100000000, int),
         seed=get("seed", 11111113, int),
         n_threads=get("n_threads", 24, int),
         gpu=get("gpu", True, bool),
-        hydrodynamic_interactions=get("hydrodynamic_interactions", True, bool),
-        minimum_core_dt=get("minimum_core_dt", 0.2, float),
-        minimum_core_reaction_dt=get("minimum_core_reaction_dt", 0.05, float),
+        hydrodynamic_interactions=get("hydrodynamic_interactions", cast=bool),
+        minimum_core_dt=get("minimum_core_dt", cast=float),
+        minimum_core_reaction_dt=get("minimum_core_reaction_dt", cast=float),
         desolvation_parameter=get("desolvation_parameter", 1.0, float),
         relative_viscosity=get("relative_viscosity", 1.0, float),
         confidence_interval=get("confidence_interval", 0.95, float),

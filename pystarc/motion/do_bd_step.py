@@ -36,13 +36,23 @@ from pystarc.transforms.quaternion import Quaternion, small_rotation_quaternion
 from typing import Optional, Tuple
 import numpy as np
 import math
+from pystarc.global_defs.constants import KBT_KCAL
+from pystarc.global_defs.defaults import VISCOSITY
 
 FORCE_CHANGE_ALPHA = 0.02
-WATER_VISCOSITY = 0.243  # kBT.ps/A^3
+# The same solvent viscosity as global_defs, expressed in kBT.ps/A^3 rather
+# than kcal/mol.ps/A^3. Derived rather than written out so the two cannot
+# drift apart.
+WATER_VISCOSITY = VISCOSITY / KBT_KCAL  # kBT.ps/A^3
 
 
 def ermak_mccammon_translation(
-    position: np.ndarray, force: np.ndarray, D_trans: float, dt: float, dW_or_rng
+    position: np.ndarray,
+    force: np.ndarray,
+    D_trans: float,
+    dt: float,
+    dW_or_rng,
+    grad_D: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """Take one translational Brownian-dynamics step.
 
@@ -57,6 +67,14 @@ def ermak_mccammon_translation(
         dW = math.sqrt(dt) * dW_or_rng.standard_normal(3)
     drift = D_trans * force * dt
     noise = math.sqrt(2.0 * D_trans) * dW
+    # Ito divergence drift, owed whenever D_trans is a position dependent
+    # scalar. For an isotropic D(r) the divergence of D(r) times the identity
+    # is dD/dr r_hat, supplied by the caller. Omitting it relaxes the scheme to
+    # p ~ exp(-U)/D(r) rather than to the Boltzmann density. The full RPY pair
+    # tensor is divergence free and owes nothing, which is why the reference
+    # propagator carries no such term.
+    if grad_D is not None:
+        drift = drift + np.asarray(grad_D, dtype=float) * dt
     return position + drift + noise
 
 
@@ -106,7 +124,8 @@ def backstep_due_to_force(
     F_new - F_old, the criterion accumulates |dx|² and (1/a) × dot(dF, dx), then
     forms det = |6 × π × μ × |dx|² / ((1/a) × dot(dF, dx))|. A backstep is
     requested when both dt > 0.02 × det and dt > dt_min hold. The default
-    viscosity is 0.243 kBT.ps/A^3.
+    viscosity is WATER_VISCOSITY, derived from ETA_WATER at T_DEFAULT,
+    which is 0.2162 kBT.ps/A^3.
     """
     if dt <= dt_min:
         return False
@@ -131,11 +150,12 @@ def bd_step(
     D_rot: float,
     dt: float,
     rng: np.random.Generator,
+    grad_D: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, Quaternion]:
     """Take one combined translational and rotational step, drawing fresh Wiener increments."""
     dW_t = math.sqrt(dt) * rng.standard_normal(3)
     dW_r = math.sqrt(dt) * rng.standard_normal(3)
-    new_pos = ermak_mccammon_translation(position, force, D_trans, dt, dW_t)
+    new_pos = ermak_mccammon_translation(position, force, D_trans, dt, dW_t, grad_D)
     new_ori = ermak_mccammon_rotation(orientation, torque, D_rot, dt, dW_r)
     return new_pos, new_ori
 
@@ -150,9 +170,14 @@ def bd_step_wiener(
     dt: float,
     dW_t: np.ndarray,
     dW_r: np.ndarray,
+    grad_D: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, Quaternion]:
-    """Take one combined step using pre-drawn Wiener increments, as needed when subdividing a step."""
-    new_pos = ermak_mccammon_translation(position, force, D_trans, dt, dW_t)
+    """Take one combined step using pre-drawn Wiener increments, as needed when subdividing a step.
+
+    Rotation is untouched by grad_D: D_rot is orientation independent, so its
+    divergence vanishes.
+    """
+    new_pos = ermak_mccammon_translation(position, force, D_trans, dt, dW_t, grad_D)
     new_ori = ermak_mccammon_rotation(orientation, torque, D_rot, dt, dW_r)
     return new_pos, new_ori
 

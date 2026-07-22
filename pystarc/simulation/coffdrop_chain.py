@@ -24,6 +24,9 @@ from typing import List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 import numpy as np
 import math
+from pystarc.global_defs.constants import KBT_KCAL
+from pystarc.global_defs.defaults import (CHAIN_DT, DESOLVATION_ALPHA, VISCOSITY)
+from pystarc.global_defs.defaults import (CHAIN_DT)
 
 # A bond, angle, or dihedral involves atoms that may live either on
 # the chain itself or on a rigid core (a structured protein domain).
@@ -1079,7 +1082,9 @@ class FlexibleChain:
 class ChainForceEvaluator:
     """Evaluates all bonded and non-bonded forces on a flexible chain."""
 
-    def compute_forces(self, chain: FlexibleChain, kT: float = 0.5961) -> np.ndarray:
+    def compute_forces(
+        self, chain: FlexibleChain, kT: float = KBT_KCAL
+    ) -> np.ndarray:
         """Compute all forces on the chain beads.
 
         Returns an (n_beads, 3) force array in kBT/Å units.
@@ -1399,9 +1404,13 @@ class ChainBDPropagator:
     no hydrodynamic coupling between beads.
     """
 
-    def __init__(self, kT: float = 0.5961, viscosity: float = 8.904e-4):
+    def __init__(self, kT: float = KBT_KCAL, viscosity: float = VISCOSITY):
         self.kT = kT
-        self.eta = viscosity  # Pa*s converted to kcal*ps/A^3
+        # Solvent viscosity in kcal/mol.ps/A^3, NOT in Pa.s. The literal
+        # 8.904e-4 that stood here was raw Pa.s despite the comment claiming a
+        # conversion, which left D_trans = kT/(6 pi eta a) a factor of 143.9
+        # too large and the diffusive noise about 12 times too large.
+        self.eta = viscosity
         self._evaluator = ChainForceEvaluator()
 
     def D_trans(self, radius: float) -> float:
@@ -2851,12 +2860,12 @@ def run_chain_bd_simulation(
     target_pqr: Optional[str] = None,
     target_grid_dx: Optional[str] = None,
     born_grid_dx: Optional[str] = None,
-    desolvation_alpha: float = 0.07957747,
+    desolvation_alpha: float = DESOLVATION_ALPHA,
     reaction_pairs: Optional[list] = None,
     reaction_n_needed: int = 3,
     n_trajectories: int = 10,
     max_steps: int = 1000,
-    dt: float = 0.01,
+    dt: float = CHAIN_DT,
     r_start: float = 20.0,
     r_escape: float = 50.0,
     D_trans: Optional[float] = None,
@@ -2892,9 +2901,9 @@ def run_chain_bd_simulation(
         Born contribution. The grid is expected to be in raw APBS units;
         the per-atom force is F_i = -alpha * q_i^2 * grad(g)(r_i).
     desolvation_alpha : float
-        Born desolvation prefactor in kBT/(e^2 * grid_unit). Default
-        0.07957747 (= 1/(4*pi)) matches the rigid-body engine convention
-        for raw APBS *_born.dx grids. Ignored if born_grid_dx is None.
+        Born desolvation prefactor in kBT/(e^2 * grid_unit). Default 1.0,
+        matching the rigid-body engine. The *_born.dx grids hold a cavity
+        self energy, not an APBS potential. Ignored if born_grid_dx is None.
     D_trans, D_rot : float, optional
         Translational and rotational diffusion coefficients. If None
         (and auto_diffusion is False), defaults of 0.1 and 0.01 are used
@@ -3144,13 +3153,13 @@ def run_chain_bd_parallel(
     target_pqr: Optional[str] = None,
     target_grid_dx: Optional[str] = None,
     born_grid_dx: Optional[str] = None,
-    desolvation_alpha: float = 0.07957747,
+    desolvation_alpha: float = DESOLVATION_ALPHA,
     reaction_pairs: Optional[list] = None,
     reaction_n_needed: int = 3,
     n_workers: Optional[int] = None,
     initial_positions: Optional[np.ndarray] = None,
     max_steps: int = 1000,
-    dt: float = 0.01,
+    dt: float = CHAIN_DT,
     r_start: float = 20.0,
     r_escape: float = 50.0,
     D_trans: Optional[float] = None,
@@ -3183,9 +3192,9 @@ def run_chain_bd_parallel(
         F_i = -alpha * q_i^2 * grad(g)(r_i) is summed on top of the
         electrostatic contribution.
     desolvation_alpha : float
-        Born prefactor in kBT/(e^2 * grid_unit). Default 0.07957747
-        (= 1/(4*pi)) matches the rigid-body engine convention.
-        Ignored if born_grid_dx is None.
+        Born prefactor in kBT/(e^2 * grid_unit). Default 1.0, matching the
+        rigid-body engine. The *_born.dx grids hold a cavity self energy,
+        not an APBS potential. Ignored if born_grid_dx is None.
     n_workers : int or None
         Number of parallel workers (default: cpu_count() - 2, min 1).
     seed : int

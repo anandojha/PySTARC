@@ -310,6 +310,56 @@ def _write_apbs_input(
     return inp_path
 
 
+def _write_desolvation_grids(
+    pqr_path, mol_name, work_dir, coarse, fine, dielectric_in, dielectric_out, temp,
+    debye_length,
+):
+    """
+    Build the image (Born) desolvation grids from the partner's cavity geometry.
+
+    Desolvation is a self energy set by the partner's low-dielectric VOLUME, not
+    by its charges, so it is computed analytically from atomic radii rather than
+    from a Poisson-Boltzmann solve of the partner's charge distribution. A PB
+    potential decays as a multipole series and changes sign across the surface,
+    whereas the desolvation field is strictly positive and decays as 1/r^4. See
+    pystarc/pipeline/desolvation_grid.py for the form and references.
+    """
+    from .desolvation_grid import (
+        desolvation_field_on_grid,
+        read_pqr_geometry,
+        write_dx,
+    )
+
+    xyz, rad = read_pqr_geometry(pqr_path)
+    written = []
+    for level, params in enumerate([coarse, fine]):
+        dime = params["dime"]
+        glen = params["glen"]
+        gcent = params["gcent"]
+        spacing = [glen[k] / (dime[k] - 1) for k in range(3)]
+        origin = [gcent[k] - glen[k] / 2.0 for k in range(3)]
+        field = desolvation_field_on_grid(
+            origin,
+            spacing,
+            dime,
+            xyz,
+            rad,
+            eps_p=dielectric_in,
+            eps_s=dielectric_out,
+            temp=temp,
+            debye_length=debye_length,
+        )
+        out_path = work_dir / f"{mol_name}{level}_born.dx"
+        write_dx(out_path, field, origin, spacing, dime)
+        print(
+            f"  [4] desolvation - {mol_name} {params['label']}: "
+            f"dime={dime[0]} spacing={spacing[0]:.4f}A "
+            f"max={float(field.max()):.4g} kBT/e^2"
+        )
+        written.append(out_path)
+    return written
+
+
 def run_apbs(
     pqr_path: Path,
     mol_name: str,
@@ -394,6 +444,23 @@ def run_apbs(
         suffix = "_born" if is_born else ""
         coarse = coarse_born if is_born else coarse_elec
         fine = fine_born if is_born else fine_elec
+        if is_born:
+            # Desolvation is a cavity self energy, not a PB potential: build it
+            # from the partner's radii. APBS is still used for electrostatics.
+            dx_files.extend(
+                _write_desolvation_grids(
+                    pqr_path,
+                    mol_name,
+                    work_dir,
+                    coarse,
+                    fine,
+                    dielectric_in,
+                    dielectric_out,
+                    temp,
+                    debye_length,
+                )
+            )
+            continue
         print(f"  [4] APBS - {mol_name} {label} (2-level two-level) ...")
         # Coarse level (level 0), which has no previous DX to read.
         inp0 = _write_apbs_input(

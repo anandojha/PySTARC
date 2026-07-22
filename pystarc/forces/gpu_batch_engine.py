@@ -139,7 +139,7 @@ class GPUBatchForceEngine:
         self,
         elec_grids,
         born_grids,
-        alpha: float = 0.07957747,
+        alpha: float = 1.0,
         receptor_charge: float = 0.0,
         debye_length: float = 7.858,
         sdie: float = 78.0,
@@ -222,22 +222,25 @@ class GPUBatchForceEngine:
                 f"(fine ±{_fine_ext:.0f}Å -> coarse ±{_coarse_ext:.0f}Å)"
                 + ("  + Yukawa far-field" if self._has_yukawa else "")
             )
-        # Only the finest Born grid is retained. Near the b-surface the coarse
-        # APBS Born grid produces an outward desolvation force far larger than
-        # the screened electrostatic force at the same separation. Born
-        # desolvation is a short-range penalty that is negligible at that
-        # distance, so the large coarse-grid force is a low-resolution far-field
-        # artifact, not physical. Keeping only the finest grid removes it.
+        # Earlier versions discarded every Born grid but the finest. That was a
+        # workaround for the retired APBS-derived Born grid, which held the
+        # partner's own electrostatic potential and so decayed as 1/r instead of
+        # 1/r^4, giving a spuriously large far-field force. The desolvation grid
+        # is now a cavity self energy with genuine 1/r^4 decay, so the coarse
+        # grid is physical and must be kept: the fine Born box is only about
+        # 28 A half-width while the field has support to about 43 A, and
+        # clipping it leaves a force discontinuity of tens of kBT/A at the face.
         if len(self._born_grids_gpu) > 1:
-            _finest_born = self._born_grids_gpu[0]
-            _fineb_ext = float(
-                max(abs(_finest_born["lo"][0]), abs(_finest_born["hi"][0]))
+            _b_ext = float(
+                max(
+                    abs(self._born_grids_gpu[-1]["lo"][0]),
+                    abs(self._born_grids_gpu[-1]["hi"][0]),
+                )
             )
             print(
-                f"  Born: finest grid only (±{_fineb_ext:.0f}Å); coarse Born grid "
-                f"excluded as a low-resolution far-field artifact"
+                f"  Born: {len(self._born_grids_gpu)} desolvation grids retained "
+                f"(to {_b_ext:.0f}A)"
             )
-            self._born_grids_gpu = [_finest_born]
         # The call core_desolvation_force_on_1(state0, state1) gives the
         # receptor Born force on the ligand, and core_desolvation_force_on_1(
         # state1, state0) gives the ligand Born force on the receptor.
@@ -280,7 +283,7 @@ class GPUBatchForceEngine:
         if use_lj and rec_radii is not None and lig_radii is not None:
             self._rec_radii_gpu = cp.asarray(rec_radii, dtype=cp.float64)
             self._lig_radii_gpu = cp.asarray(lig_radii, dtype=cp.float64)
-            # WCA well depth in kBT units: 0.1 kcal/mol ÷ 0.593 kcal/mol/kBT ≈ 0.17 kBT.
+            # WCA well depth in kBT units: 0.1 kcal/mol ÷ 0.5925 kcal/mol/kBT ≈ 0.17 kBT.
             self._lj_epsilon = 0.17
             # Activation radius beyond which the LJ term is skipped. It is only
             # computed when the ligand centroid is close to the receptor.

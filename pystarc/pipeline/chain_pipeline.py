@@ -281,6 +281,9 @@ def run_chain(
         gb_obc_gamma=cc.gb_obc_gamma,
         coffdrop_active=cc.coffdrop_active,
         debye_length=config.debye_length,
+        temperature_kT=0.0019872041 * config.temperature,
+        dielectric=config.sdie,
+        hydrodynamic_interactions=config.hydrodynamic_interactions,
     )
 
     # Resolve the scalar diffusion coefficients when auto_diffusion is off. A

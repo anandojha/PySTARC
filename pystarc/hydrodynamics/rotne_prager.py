@@ -210,13 +210,14 @@ class MobilityTensor:
         correction reduces D_rel near contact (r ≈ a+b) and vanishes at
         large r, recovering the diagonal result.
 
-        The (2/3)·tr(M_12) term is the isotropic average (one third of the
-        trace) of the relative-diffusion tensor, which is the scalar used for
-        the isotropic three-dimensional inner BD step. The k_b encounter
-        integral instead uses the radial projection r̂·D_rel·r̂, the correct
-        scalar for the purely radial one-dimensional flux. These are two
-        reductions of the same anisotropic tensor and coincide at the b-surface
-        where the coupling is negligible.
+        The radial projection r̂·D_rel·r̂ is returned, the same scalar the k_b
+        encounter integral uses. It is the component that controls the
+        splitting probability between the reaction and escape surfaces. The
+        isotropic average, one third of the trace, was used here previously,
+        which left the CPU inner step disagreeing with both the k_b integrand
+        and the GPU inner step by about 8 percent at contact. The two
+        reductions do not coincide at the b-surface: their ratio is still 0.95
+        to 0.97 at ten contact radii.
         """
         D0 = self.D_trans1 + self.D_trans2
         if not self.use_rpy or r_vec is None:
@@ -226,10 +227,13 @@ class MobilityTensor:
         M12 = rpy_offdiagonal(
             r_vec, self.radius1, self.radius2, self.D_trans1, self.D_trans2
         )
-        # The scalar coupling that reduces the relative diffusion,
-        # D_rel = D_t1 + D_t2 - (2/3)·tr(M_12). The factor of two appears
-        # because both molecules feel the coupling symmetrically.
-        D_coupling = (2.0 / 3.0) * np.trace(M12)
+        # The radial projection, D_rel = D_t1 + D_t2 - 2 r̂·M_12·r̂. The factor
+        # of two appears because both molecules feel the coupling
+        # symmetrically. Written as a projection rather than a far field
+        # formula so it stays correct across all three Zuk regimes.
+        _rn = float(np.linalg.norm(r_vec))
+        rhat = np.asarray(r_vec, dtype=float) / max(_rn, 1e-12)
+        D_coupling = 2.0 * float(rhat @ M12 @ rhat)
         return max(D0 - D_coupling, 1e-12)  # clamp so the result is never negative
 
     def relative_rotational_diffusion(self) -> float:
@@ -358,9 +362,30 @@ def rpy_pair_blocks(ai, aj, r_ij):
     """
     r = float(np.linalg.norm(r_ij))
     if r < 1e-12:
-        # The two beads coincide, which is degenerate. The caller should
-        # use rpy_self_blocks for this case.
-        return np.zeros((3, 3)), np.zeros((3, 3)), np.zeros((3, 3)), np.zeros((3, 3))
+        # Two coincident beads are one bead, so their mutual mobility is the
+        # self mobility of the LARGER of them, not zero. Both limits of
+        # rpy_full_components agree on this: tt_I tends to 1/(6 pi a_max) and
+        # rr_I to 1/(8 pi a_max^3), with tt_uu, rr_uu and the cross terms
+        # tending to zero. The reference implementation carries no coincidence
+        # guard at all (BROWNDYE2 rotne_prager.hh:203-211).
+        #
+        # Returning zeros asserted instead that the two beads drag solvent
+        # independently, charging the duplicated site twice for friction. On
+        # three beads at [0,0,0], [0,0,0], [0,0,7.6] with a = 3 A that gives
+        # A_xx = 121.725 against the correct 85.240, a 42.8 percent error in
+        # translational resistance and about 30 percent in D_trans, always in
+        # the direction of too little diffusion. It never tripped the
+        # regularisation warning below, because a zeroed block stays positive
+        # definite.
+        a_max = max(ai, aj)
+        I3 = np.eye(3)
+        Z3 = np.zeros((3, 3))
+        return (
+            I3 / (6.0 * math.pi * a_max),
+            Z3,
+            Z3,
+            I3 / (8.0 * math.pi * a_max * a_max * a_max),
+        )
 
     u = np.asarray(r_ij, dtype=float) / r
     uu = np.outer(u, u)
@@ -448,6 +473,24 @@ def rpy_full_mobility_matrix(positions, radii):
             f"got radii.shape={radii.shape}, positions.shape={positions.shape}"
         )
 
+    # A non-positive or non-finite radius produces an indefinite mobility that
+    # then looks like a numerical problem far downstream. Reject it here, where
+    # the value can still be named.
+    if not np.all(np.isfinite(radii)):
+        bad = np.flatnonzero(~np.isfinite(radii))
+        raise ValueError(
+            "bead hydrodynamic radii must all be finite; non-finite at "
+            f"indices {bad[:10].tolist()} (of {bad.size} total), values "
+            f"{radii[bad[:10]].tolist()}"
+        )
+    if not np.all(radii > 0.0):
+        bad = np.flatnonzero(~(radii > 0.0))
+        raise ValueError(
+            "bead hydrodynamic radii must all be strictly positive; "
+            f"non-positive at indices {bad[:10].tolist()} (of {bad.size} "
+            f"total), values {radii[bad[:10]].tolist()}"
+        )
+
     n = positions.shape[0]
     M = np.zeros((6 * n, 6 * n), dtype=float)
 
@@ -518,6 +561,31 @@ def _translation_only_mobility(positions, radii):
     return M_tt
 
 
+def _indefiniteness_report(M, trace_avg):
+    """Describe how badly a mobility matrix fails to be positive definite.
+
+    The physical scale of an RPY translational mobility is the mean self
+    mobility 1/(6 pi a), which is 1.768e-02 per angstrom for a 3 A bead. An
+    absolute eigenvalue threshold carries no meaning against that: -8e-03
+    reads as small yet is a 49 percent violation of the matrix scale, so the
+    ratio is reported alongside.
+    """
+    if not np.all(np.isfinite(M)):
+        n_bad = int((~np.isfinite(M)).sum())
+        return f"matrix contains {n_bad} non-finite entries"
+    eigvals = np.linalg.eigvalsh(M)
+    lam_min = float(eigvals.min())
+    lam_max = float(eigvals.max())
+    n_neg = int((eigvals < 0.0).sum())
+    ratio = lam_min / abs(trace_avg) if trace_avg else float("nan")
+    return (
+        f"{n_neg} of {eigvals.size} eigenvalues are negative; "
+        f"lambda_min={lam_min:.6e}, lambda_max={lam_max:.6e}, "
+        f"mobility scale trace(M)/n={trace_avg:.6e}, "
+        f"lambda_min/scale={ratio:.4f}"
+    )
+
+
 def _build_robust_solver(M):
     """Build a callable solver(v) for M @ x = v that is robust to a
     near-singular M.
@@ -567,18 +635,30 @@ def _build_robust_solver(M):
         except np.linalg.LinAlgError:
             continue
 
-    # Third strategy, a symmetric eigendecomposition with eigenvalue
-    # clipping.
-    eigvals, eigvecs = np.linalg.eigh(M)
-    floor = max(float(abs(eigvals).max()), 1.0) * 1e-10
-    eigvals_clipped = np.maximum(eigvals, floor)
-    eigvals_inv = 1.0 / eigvals_clipped
-
-    def solver_eig(v, Q=eigvecs, di=eigvals_inv):
-        return Q @ (di * (Q.T @ v))
-
-    info = f"eigendecomp(min_eig={float(eigvals.min()):.3e}, clipped_to={floor:.3e})"
-    return solver_eig, True, info
+    # Reaching here is not ill conditioning. The largest jitter rung above is
+    # eps = 1e-6 in absolute mobility units, which is 5.7e-05 of the RPY matrix
+    # scale 1/(6 pi a) for a 3 A bead and about 4e9 times the Cholesky roundoff
+    # threshold. Any positive semi-definite M is absorbed by the jitter, so
+    # arriving here means an eigenvalue below roughly -1e-6.
+    #
+    # The RPY kernel is positive definite for every configuration with positive
+    # finite radii, so an indefinite M is a data or assembly defect rather than
+    # a numerical one. Clipping a negative eigenvalue to +floor and inverting it
+    # injected +1/floor = 1e10 into M^-1 where the correct entry is of order 1e2
+    # with the opposite sign. That is a positive semi-definite addition to
+    # A = E^T M^-1 E, so it can only shrink D_trans and D_rot, in every
+    # direction, silently. Measured on a 230-bead chain with one duplicated
+    # bead, D_trans came back 4509 times too small with nothing downstream able
+    # to tell.
+    raise np.linalg.LinAlgError(
+        "RPY mobility matrix is indefinite and cannot be factorized: "
+        + _indefiniteness_report(M, trace_avg)
+        + ". Diagonal jitter up to eps=1e-6 was tried first and failed, so "
+        "this is not conditioning or roundoff. Check (a) bead radii that are "
+        "non-positive or non-finite, and (b) beads separated by less than "
+        "1e-12 A. Beads that are merely close are not the cause: a pair "
+        "1e-11 A apart gives lambda_min = +1.1e-14 and factorizes."
+    )
 
 
 def chain_rigid_body_resistance(positions, radii):
@@ -640,10 +720,15 @@ def chain_rigid_body_resistance(positions, radii):
     solve, _was_regularized, _solver_info = _build_robust_solver(M_tt)
     if _was_regularized:
         warnings.warn(
-            f"chain_rigid_body_resistance: RPY mobility matrix M_tt required "
-            f"regularization ({_solver_info}); typically caused by "
-            f"near-coincident beads. Check chain bead distances against "
-            f"bead radii.",
+            f"chain_rigid_body_resistance: RPY mobility matrix M_tt was not "
+            f"strictly positive definite and needed regularization "
+            f"({_solver_info}). The usual cause is a redundant degree of "
+            f"freedom, for example two beads at the same coordinate. Beads "
+            f"that are merely CLOSE do not trigger this: a pair 1e-11 A apart "
+            f"gives lambda_min = +1.1e-14 and factorizes with plain Cholesky, "
+            f"and heavy sphere overlap is handled exactly by the Zuk partial "
+            f"overlap branch. Checking bead distances against bead radii will "
+            f"not find the cause.",
             RuntimeWarning,
             stacklevel=2,
         )
@@ -703,8 +788,10 @@ def chain_diffusion_tensors(positions, radii, kT=1.0, viscosity=None):
     radii     : (N,)   bead hydrodynamic radii.
     kT        : thermal energy. The PySTARC convention is kT = 1.
     viscosity : solvent viscosity. If None, the package default
-                WATER_VISCOSITY = 0.243 kBT·ps/Å³ from motion/do_bd_step
-                is used.
+                WATER_VISCOSITY from motion/do_bd_step is used. That value
+                derives from ETA_WATER at T_DEFAULT and is 0.2162 kBT·ps/Å³.
+                The literal 0.243 that used to be quoted here is water at
+                20 °C, which does not match the declared temperature.
 
     Notes
     -----

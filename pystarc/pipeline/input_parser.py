@@ -11,6 +11,14 @@ from dataclasses import dataclass, field
 import xml.etree.ElementTree as ET
 from typing import List, Optional
 from pathlib import Path
+from pystarc.global_defs.defaults import (
+    DESOLVATION_ALPHA,
+    DT,
+    HYDRODYNAMIC_INTERACTIONS,
+    INPUT_DEFAULTS,
+    SOLVENT_PROBE_RADIUS,
+    TEMPERATURE,
+)
 
 
 @dataclass
@@ -182,7 +190,10 @@ class PySTARCConfig:
         ""  # Pre-computed ligand PQR. Supplying it skips AmberTools and tleap.
     )
     desolvation_alpha: float = (
-        0.07957747  # Born desolvation parameter, equal to 1/(4π) ≈ 0.0796.
+        # Multiplier on the Born cavity self energy. The *_born.dx grids
+        # carry the rigorous Kirkwood normalisation, so a charge sees
+        # dG = alpha q^2 a^3 / r^4 and the correct base is unity.
+        DESOLVATION_ALPHA
     )
     max_steps: int = 1000000  # Maximum number of BD steps per trajectory.
     debye_length: float = (
@@ -211,12 +222,12 @@ class PySTARCConfig:
     )
     pdie: float = 4.0  # Solute dielectric constant (standard protein interior).
     sdie: float = 78.0  # Solvent dielectric constant (water at 298 K).
-    srad: float = 1.5  # Solvent probe radius in angstrom (standard water probe).
-    temperature: float = 298.15  # Temperature in kelvin.
-    dt: float = 0.2  # Maximum time step in picoseconds (reference minimum_core_dt).
-    hydrodynamic_interactions: bool = (
-        False  # Flag that enables hydrodynamic interactions.
-    )
+    srad: float = SOLVENT_PROBE_RADIUS  # Solvent probe radius in angstrom.
+    temperature: float = TEMPERATURE  # Temperature in kelvin.
+    dt: float = DT  # Maximum time step in picoseconds.
+    # Whether the Rotne-Prager-Yamakawa correction is applied. See the
+    # registry for why this defaults on and what it does in each region.
+    hydrodynamic_interactions: bool = HYDRODYNAMIC_INTERACTIONS
     r_hydro_rec: float = (
         0.0  # Receptor hydrodynamic radius. A value of 0 computes it from the PQR.
     )
@@ -369,6 +380,10 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
     root = tree.getroot()
 
     def get(tag, default=None, cast=str):
+        # The registry is authoritative for any tag it names, so this
+        # reader and prepare_bd_surface resolve an omitted tag alike.
+        if tag in INPUT_DEFAULTS:
+            default = INPUT_DEFAULTS[tag]
         el = root.find(tag)
         if el is None or el.text is None:
             return default
@@ -379,8 +394,8 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
 
     cfg = PySTARCConfig(
         pdb=get("pdb", cast=str),
-        desolvation_alpha=get("desolvation_alpha", cast=float, default=0.07957747),
-        debye_length=get("debye_length", cast=float, default=7.858),
+        desolvation_alpha=get("desolvation_alpha", cast=float),
+        debye_length=get("debye_length", cast=float),
         max_steps=get("max_steps", cast=int, default=1000000),
         ligand_resname=get("ligand_resname", cast=str),
         ligand_charge=get("ligand_charge", default=0, cast=int),
@@ -394,7 +409,7 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
         gpu=get("gpu", default=True, cast=bool),
         seed=get("seed", default=1523, cast=int),
         confidence_interval=get("confidence_interval", default=0.95, cast=float),
-        bd_milestone_radius=get("bd_milestone_radius", default=30.0, cast=float),
+        bd_milestone_radius=get("bd_milestone_radius", cast=float),
         bd_milestone_radius_inner=get(
             "bd_milestone_radius_inner", default=0.0, cast=float
         ),
@@ -415,17 +430,17 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
         apbs_coarse_dime=get("apbs_coarse_dime", default=0, cast=int),
         apbs_fine_dime=get("apbs_fine_dime", default=0, cast=int),
         gpu_force_batch=get("gpu_force_batch", default=0, cast=int),
-        pdie=get("pdie", default=4.0, cast=float),
-        sdie=get("sdie", default=78.0, cast=float),
-        srad=get("srad", default=1.5, cast=float),
-        temperature=get("temperature", default=298.15, cast=float),
-        dt=get("dt", default=0.2, cast=float),
+        pdie=get("pdie", cast=float),
+        sdie=get("sdie", cast=float),
+        srad=get("srad", cast=float),
+        temperature=get("temperature", cast=float),
+        dt=get("dt", cast=float),
         hydrodynamic_interactions=get(
             "hydrodynamic_interactions", default=False, cast=bool
         ),
         r_hydro_rec=get("r_hydro_rec", default=0.0, cast=float),
         r_hydro_lig=get("r_hydro_lig", default=0.0, cast=float),
-        minimum_core_dt=get("minimum_core_dt", default=0.0, cast=float),
+        minimum_core_dt=get("minimum_core_dt", cast=float),
         minimum_core_reaction_dt=get(
             "minimum_core_reaction_dt", default=0.0, cast=float
         ),

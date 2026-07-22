@@ -48,6 +48,14 @@ import subprocess as _sp
 from pathlib import Path
 import shutil
 import time
+from pystarc.global_defs.defaults import (
+    DEBYE_LENGTH,
+    DESOLVATION_ALPHA,
+    DT_RXN,
+    HYDRODYNAMIC_INTERACTIONS,
+    SOLVENT_DIELECTRIC,
+    TEMPERATURE,
+)
 
 try:
     import cupy as cp
@@ -226,11 +234,14 @@ def run(cfg: PySTARCConfig):
     if not cfg.gpu and engine.backend == "cupy":
         engine.backend = "numba"
         print("  GPU disabled by config - using Numba")
-    # Build the mobility tensor with full Rotne-Prager-Yamakawa coupling.
+    # Build the mobility tensor. The Rotne-Prager-Yamakawa coupling slows the
+    # relative approach as solvent is squeezed from between the two surfaces,
+    # so it must follow the configured flag rather than being applied always.
+    _hi_flag = getattr(cfg, "hydrodynamic_interactions", HYDRODYNAMIC_INTERACTIONS)
     mob = MobilityTensor.from_radii(
         geom.receptor.hydrodynamic_r,
         geom.ligand.hydrodynamic_r,
-        use_rpy=True,
+        use_rpy=_hi_flag,
         T=cfg.temperature,
     )
     D_rel = mob.relative_translational_diffusion()
@@ -314,13 +325,17 @@ def run(cfg: PySTARCConfig):
     params = NAMParameters(
         n_trajectories=cfg.n_trajectories,
         dt=getattr(cfg, "dt", 0.2),
-        dt_rxn=getattr(cfg, "minimum_core_reaction_dt", 0.05),
+        # The step size used inside the reaction shell. This is NOT the same
+        # quantity as minimum_core_reaction_dt, which is a floor whose zero
+        # means no floor is imposed. Feeding the floor in here set the step
+        # itself to zero and let it collapse without bound.
+        dt_rxn=(getattr(cfg, "minimum_core_reaction_dt", 0.0) or DT_RXN),
         max_steps=cfg.max_steps,
         r_start=geom.r_start,
         r_escape=geom.r_escape,
         seed=cfg.seed,
         n_threads=cfg.n_threads,
-        hydrodynamic_interactions=getattr(cfg, "hydrodynamic_interactions", False),
+        hydrodynamic_interactions=_hi_flag,
         use_hard_sphere=True,
         verbose=True,
         minimum_core_dt=getattr(cfg, "minimum_core_dt", 0.0),
@@ -328,9 +343,9 @@ def run(cfg: PySTARCConfig):
         # Forward the user's screening, temperature, and dielectric so the
         # serial OuterPropagator computes k_db for the configured conditions
         # rather than the NAMParameters defaults. kB = 0.0019872041 kcal/mol/K.
-        debye_length=getattr(cfg, "debye_length", 8.0),
-        temperature_kT=0.0019872041 * getattr(cfg, "temperature", 298.15),
-        dielectric=getattr(cfg, "sdie", 78.54),
+        debye_length=getattr(cfg, "debye_length", DEBYE_LENGTH),
+        temperature_kT=0.0019872041 * getattr(cfg, "temperature", TEMPERATURE),
+        dielectric=getattr(cfg, "sdie", SOLVENT_DIELECTRIC),
     )
     sim = NAMSimulator(mol_rec, mol_lig, mob, pathway_set, params, engine)
     # Initialize gpu_sim before the GPU branch so that later code which reads it
@@ -435,10 +450,10 @@ def run(cfg: PySTARCConfig):
         print(f"  CPU threads  : {cfg.n_threads}")
     print("=" * 64)
     # Print a checklist of the active physics settings to the log.
-    _hi = getattr(cfg, "hydrodynamic_interactions", False)
+    _hi = getattr(cfg, "hydrodynamic_interactions", HYDRODYNAMIC_INTERACTIONS)
     _rh_r = getattr(cfg, "r_hydro_rec", 0.0)
     _rh_l = getattr(cfg, "r_hydro_lig", 0.0)
-    _desolv = getattr(cfg, "desolvation_alpha", 0.0)
+    _desolv = getattr(cfg, "desolvation_alpha", DESOLVATION_ALPHA)
     _mcd = getattr(cfg, "minimum_core_dt", 0.0)
     print()
     print("Checklist")

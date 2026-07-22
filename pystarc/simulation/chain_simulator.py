@@ -45,6 +45,13 @@ import multiprocessing as mp
 import numpy as np
 import math
 import warnings
+from pystarc.global_defs.constants import KBT_KCAL
+from pystarc.global_defs.defaults import (
+    DESOLVATION_ALPHA,
+    HYDRODYNAMIC_INTERACTIONS,
+    SOLVENT_DIELECTRIC,
+    VISCOSITY,
+)
 
 
 def chain_target_steric_forces(
@@ -249,6 +256,13 @@ class ChainBDParameters:
     # LMZ outer propagator uses this parameter. The chain-internal GB and COFFDROP
     # forces do not see it.
     debye_length: float = 7.858
+    # Thermal energy, solvent permittivity and hydrodynamics for the LMZ outer
+    # propagator. These were hardcoded, so <temperature>, <sdie> and
+    # <hydrodynamic_interactions> reached the forces but not the rate
+    # normalisation, exactly as debye_length did before it was threaded.
+    temperature_kT: float = KBT_KCAL
+    dielectric: float = SOLVENT_DIELECTRIC
+    hydrodynamic_interactions: bool = HYDRODYNAMIC_INTERACTIONS
     # When use_lmz is True (the default and correct setting), the LMZ outer
     # propagator handles the b-to-q diffusion zone analytically and returns
     # trajectories to the b-sphere with probability b/q. When False, the code
@@ -632,7 +646,7 @@ def evaluate_target_grid_force_on_chain(
     return forces, energy
 
 
-DEFAULT_DESOLVATION_ALPHA = 0.07957747
+DEFAULT_DESOLVATION_ALPHA = DESOLVATION_ALPHA
 
 
 def evaluate_born_force_on_chain(
@@ -653,8 +667,9 @@ def evaluate_born_force_on_chain(
 
     where q_i is the partial charge of atom i and r_i is its position. This
     matches the convention used in the rigid-body engine (engine.py). The
-    prefactor α defaults to 1/(4π) ≈ 0.07957747, and the grid is expected to be
-    in raw APBS units of kBT/e² (per unit charge squared) scaled by 1/α. Both the
+    prefactor α defaults to unity, because the grid holds the Kirkwood n = 1
+    cavity self energy with the rigorous normalisation already folded in, so a
+    charge sees dG = α q² a³ / r⁴ directly. Both the
     force and the energy are computed by trilinear interpolation on the grid.
 
     For chain atoms whose positions fall outside the grid box, the grid routines
@@ -1040,8 +1055,8 @@ class ChainBDSimulator:
     separate Born potential grid through born_grid. The Born force on bead i is
     F_i = -α q_i^2 grad(g)(r_i), where q_i is the bead charge and r_i is its
     position, and it is summed into the per-atom external force alongside the
-    electrostatic contribution. The desolvation prefactor α defaults to
-    1/(4π) ≈ 0.07957747.
+    electrostatic contribution. The desolvation prefactor α defaults to unity,
+    the physically correct base for the present cavity self energy grids.
     """
 
     def __init__(
@@ -1258,9 +1273,9 @@ class ChainBDSimulator:
             )
             # Physical constants, the same as in NAM and in PySTARC units of Å,
             # ps, and kBT.
-            kT = 0.5961
-            viscosity = 1.002e-3 * 1e-4 / 1e-12
-            dielectric = 78.54
+            kT = float(params.temperature_kT)
+            viscosity = VISCOSITY
+            dielectric = float(params.dielectric)
             vacuum_perm = 1.0 / (4 * math.pi * 332.0636)
             # Debye screening length. Use the user's input.xml value, threaded
             # through params.debye_length. This was previously hardcoded to 8.0,
@@ -1271,7 +1286,7 @@ class ChainBDSimulator:
             self._outer_prop = OuterPropagator(
                 b_radius=params.r_start,
                 max_radius=max_mol_r,
-                has_hi=True,
+                has_hi=bool(params.hydrodynamic_interactions),
                 kT=kT,
                 viscosity=viscosity,
                 dielectric=dielectric,

@@ -36,6 +36,12 @@ import math
 import warnings
 import copy
 import time
+from pystarc.global_defs.constants import KBT_KCAL
+from pystarc.global_defs.defaults import (
+    HYDRODYNAMIC_INTERACTIONS,
+    SOLVENT_DIELECTRIC,
+    VISCOSITY,
+)
 
 try:
     import cupy as cp
@@ -232,7 +238,9 @@ class GPUBatchSimulator:
         self._k_b = 0.0  # Set in run(): the Romberg k_b, the encounter rate from the Romberg integral.
         self._qb_factor = 1.1  # Trigger at 1.1 × b_sphere (the standard qb_factor).
         self._bradius_cover = 0.0  # Set in run(): the cover-zone boundary.
-        self._use_hi = getattr(params, "hydrodynamic_interactions", False)
+        self._use_hi = getattr(
+            params, "hydrodynamic_interactions", HYDRODYNAMIC_INTERACTIONS
+        )
         # Ghost atom indices used by the reaction check.
         self._rec_gho_indices = []
         self._lig_gho_indices = []
@@ -401,9 +409,13 @@ class GPUBatchSimulator:
 
             P_return(r to b) = h(trigger_r) / h(b)
 
-        where h(r) is the integral from r to q_outer of exp(U(s)) / s² ds. Here
-        r is a separation and U is the orientation-averaged potential of mean
-        force in units of kBT. This method also computes and stores self._k_b
+        where h(r) is evaluated by the substitution s = 1/r, so the integral
+        runs from s = 0, meaning r = infinity, down to s = 1/b, and its
+        integrand carries 1/D(r) rather than 1/s². Both matter: truncating it
+        at r_escape instead of infinity would destroy the invariance of the
+        rate to the placement of the b surface, and dropping D would decouple
+        the normalisation from the hydrodynamics. Here r is a separation and U
+        is the orientation-averaged potential of mean force in units of kBT. This method also computes and stores self._k_b
         from the Romberg integral
 
             k_b = 4π / integral from 0 to 1/b of exp(U(1/s)) / D ds.
@@ -421,7 +433,10 @@ class GPUBatchSimulator:
         debye = getattr(self.engine, "_debye", 7.858)
         # Vacuum permittivity in kBT units. See constants.py.
         eps0 = VACUUM_PERMITTIVITY_KBT
-        sdie = 78.0
+        # The configured solvent permittivity, not a literal. The forces already
+        # use it through the APBS grids, so normalising k_b at a fixed 78 made
+        # the reported rate inconsistent with the potential that produced it.
+        sdie = float(getattr(self.params, "dielectric", SOLVENT_DIELECTRIC))
         eps = sdie * eps0
         fpe = 4.0 * math.pi * eps
         D_t = float(self.mob.relative_translational_diffusion())
@@ -460,11 +475,17 @@ class GPUBatchSimulator:
         self._kb_multipole_active = bool(_has_multipole_force)
         self._kb_mp_p_sq = _p_sq
         self._kb_mp_Tr_Q_sq = _Tr_Q_sq
-        if abs(q_rec * q_lig) < 1e-9 and not _has_multipole_force:
-            # Pure diffusion fallback, used when there is no monopole and no
-            # multipole steering.
-            self._k_b = 4.0 * math.pi * D_t * b
-            return b / q_out  # P_return = k_b(b)/k_b(q) for free diffusion.
+        # A neutral ligand feels no steering, so U(r) vanishes, but solvent is
+        # still squeezed out from between the two surfaces as they approach.
+        # Assuming free diffusion here dropped that, so a neutral ligand was
+        # normalised with k_b = 4 pi D b while a charged one used the
+        # hydrodynamic integral, a difference of about 16 percent decided by
+        # whether the PQR charges happened to round to exactly zero. The
+        # ordinary path below reduces to 4 pi D b of its own accord when
+        # hydrodynamics is off, so no special case is needed.
+        self._kb_pure_diffusion = bool(
+            abs(q_rec * q_lig) < 1e-9 and not _has_multipole_force
+        )
 
         def U(r):
             # Monopole-monopole Yukawa term, always present though possibly
@@ -876,9 +897,12 @@ class GPUBatchSimulator:
         # Pre-compute the adaptive timestep constants to avoid Python overhead
         # per step.
         _adt_debye = float(getattr(self.engine, "_debye", 7.828))
-        # Here 78.0 is the water dielectric constant (sdie) and the named
-        # VACUUM_PERMITTIVITY_KBT is ε_0 in kBT units.
-        _adt_eps = 78.0 * VACUUM_PERMITTIVITY_KBT
+        # The configured solvent permittivity times ε_0 in kBT units, so the
+        # adaptive timestep sees the same solvent as the forces.
+        _adt_eps = (
+            float(getattr(self.params, "dielectric", SOLVENT_DIELECTRIC))
+            * VACUUM_PERMITTIVITY_KBT
+        )
         _adt_V0 = (
             float(self.mol1.total_charge())
             * float(self.mol2.total_charge())
@@ -1002,16 +1026,35 @@ class GPUBatchSimulator:
         # Pre-compute the hydrodynamic-interaction constants to avoid Python
         # overhead per step.
         if self._use_hi:
-            _hi_mu = 0.243
+            # Solvent viscosity in kBT.ps/A^3 at T_DEFAULT. The literal 0.243
+            # that stood here is water at 20 C in a 298.15 K unit system.
+            _hi_mu = VISCOSITY / KBT_KCAL
             _hi_Df = 1.0 / _hi_mu
             _hi_pi6 = 6.0 * math.pi
-            _hi_pi8 = 8.0 * math.pi
             _hi_a0 = float(getattr(self.mob, "radius1", 0.0))
             _hi_a1 = float(getattr(self.mob, "radius2", 0.0))
+            # Checked before _hi_ainv, which divides by both radii.
+            if not (_hi_a0 > 0.0 and _hi_a1 > 0.0):
+                raise ValueError(
+                    "hydrodynamic interactions need two strictly positive "
+                    f"radii, got a0={_hi_a0} A, a1={_hi_a1} A"
+                )
             _hi_a2 = 0.5 * (_hi_a0**2 + _hi_a1**2)
             _hi_ainv = (
                 _hi_Df / (_hi_pi6 * _hi_a0) + _hi_Df / (_hi_pi6 * _hi_a1)
             ) / _hi_Df
+            # Zuk et al. split the pair mobility at contact, r = a0 + a1, and
+            # again where the smaller sphere is swallowed by the larger,
+            # r = |a0 - a1|. Inside that second boundary the relative mobility
+            # is the difference of the two self mobilities and does not depend
+            # on r at all. Precomputed so the step loop stays elementwise.
+            _hi_dpre = _hi_Df / _hi_pi6
+            _hi_S = _hi_a0 + _hi_a1
+            _hi_Ad = abs(_hi_a0 - _hi_a1)
+            _hi_am2 = _hi_Ad * _hi_Ad
+            _hi_p = _hi_a0 * _hi_a1
+            _hi_D0 = _hi_Df * _hi_ainv
+            _hi_Deng = _hi_D0 - 2.0 * _hi_dpre / max(_hi_a0, _hi_a1)
         # Set up the convergence milestones and the checkpointing.
         _conv_interval = getattr(self.params, "convergence_interval", 10)
         if _conv_interval > 0:
@@ -1412,20 +1455,66 @@ class GPUBatchSimulator:
             if self._use_hi:
                 _r_sr = r_mag[sr_mask]
                 _rm1 = 1.0 / cp.maximum(_r_sr, cp.full_like(_r_sr, 0.01))
-                _rm3 = _rm1**3
-                _Di = (
-                    -2.0 * _hi_Df * (2.0 * _rm1 - (4.0 / 3.0) * _hi_a2 * _rm3) / _hi_pi8
+                _rm2 = _rm1 * _rm1
+                _rm3 = _rm2 * _rm1
+                # Far field, r > a0 + a1. Algebraically identical to what this
+                # line computed before, and to the :535 Romberg integrand.
+                _D_far = _hi_D0 - _hi_dpre * (3.0 * _rm1 - 2.0 * _hi_a2 * _rm3)
+                # Partial overlap, |a0 - a1| < r <= a0 + a1. Written so only
+                # _rm1 and _rm3 appear, which keeps this arm finite as r goes
+                # to zero. cp.where evaluates BOTH arms, so each must be safe
+                # on the other arm's inputs.
+                _D_ov = _hi_D0 - (_hi_dpre / (8.0 * _hi_p)) * (
+                    8.0 * _hi_S
+                    - 6.0 * _hi_am2 * _rm1
+                    - 3.0 * _r_sr
+                    + _hi_am2 * _hi_am2 * _rm3
                 )
-                D_par_arr = _hi_Df * _hi_ainv + _Di
+                # Engulfed, r <= |a0 - a1|. Constant in r: the smaller sphere is
+                # inside the larger and the relative mobility saturates. The
+                # far-field form used here previously EXCEEDS the free value D0
+                # below about 13 A for a 22.5/5 pair, which is unphysical, since
+                # displacing solvent can only ever slow the relative approach.
+                D_par_arr = cp.where(
+                    _r_sr > _hi_S,
+                    _D_far,
+                    cp.where(_r_sr > _hi_Ad, _D_ov, _hi_Deng),
+                )
                 D_par_arr = cp.maximum(D_par_arr, cp.full_like(D_par_arr, 1e-6))
+                # div(D I) = dD/dr r_hat. The derivative is branched WITH D, or
+                # the Ito term stops being the exact divergence of the D in use
+                # and the scheme samples neither exp(-U) nor exp(-U)/D. In the
+                # overlap regime the derivative is a perfect square and so never
+                # negative; in the engulfed regime it is identically zero.
+                _dD_far = _hi_dpre * (3.0 * _rm2 - 6.0 * _hi_a2 * _rm1 * _rm3)
+                _dD_ov = (3.0 * _hi_dpre / (8.0 * _hi_p)) * (
+                    1.0 - _hi_am2 * _rm2
+                ) ** 2
+                _dD_dr = cp.where(
+                    _r_sr > _hi_S,
+                    _dD_far,
+                    cp.where(_r_sr > _hi_Ad, _dD_ov, 0.0),
+                )
+                # dD/dr diverges like -1/r^4 below r = sqrt(a0^2 + a1^2), which
+                # lies inside contact. Bound the displacement at a tenth of the
+                # random step, which at contact is 1.2e-2 A against a true
+                # 6.7e-5 A and so never binds on a physical configuration.
+                _div_disp = _dD_dr * dt_arr
+                _cap = 0.1 * cp.sqrt(2.0 * D_par_arr * dt_arr)
+                _div_disp = cp.clip(_div_disp, -_cap, _cap)
+                _div_drift = _div_disp[:, None] * (pos[sr_idx] * _rm1[:, None])
             else:
                 D_par_arr = cp.full(int(sr_mask.sum()), D_t, dtype=cp.float64)
+                # A constant D has vanishing divergence.
+                _div_drift = None
             # Translational update following the Ermak-McCammon scheme.
             noise_t = cp.asarray(
                 rng.standard_normal((int(sr_mask.sum()), 3)), dtype=cp.float64
             )
             sigma_t = cp.sqrt(2.0 * D_par_arr * dt_arr)[:, None]
             drift = D_par_arr[:, None] * dt_arr[:, None] * forces_gpu
+            if _div_drift is not None:
+                drift = drift + _div_drift
             # Save the old positions in case the overlap check rejects the move.
             _old_pos_sr = pos[sr_idx].copy() if _use_overlap else None
             _old_q_sr = q[sr_idx].copy() if _use_overlap else None

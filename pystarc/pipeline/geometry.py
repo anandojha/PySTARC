@@ -42,6 +42,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import warnings
 import numpy as np
+from pystarc.global_defs.defaults import (BD_MILESTONE_RADIUS, BD_MILESTONE_RADIUS_INNER)
 
 
 @dataclass
@@ -288,8 +289,8 @@ class SystemGeometry:
 def compute_geometry(
     receptor_pqr: Path,
     ligand_pqr: Path,
-    bd_milestone_radius: float = 13.0,
-    bd_milestone_radius_inner: float = 12.0,
+    bd_milestone_radius: float = BD_MILESTONE_RADIUS,
+    bd_milestone_radius_inner: float = BD_MILESTONE_RADIUS_INNER,
     srad: float = 0.0,
     r_hydro_rec: float = 0.0,
     r_hydro_lig: float = 0.0,
@@ -476,8 +477,8 @@ def auto_detect_reactions(
     geom: "SystemGeometry",
     ghost_atoms: str = "auto",
     rxns_xml: str = "",
-    bd_milestone_radius: float = 13.0,
-    bd_milestone_radius_inner: float = 12.0,
+    bd_milestone_radius: float = BD_MILESTONE_RADIUS,
+    bd_milestone_radius_inner: float = BD_MILESTONE_RADIUS_INNER,
 ) -> "List[List[ReactionPair]]":
     """
     Build the reaction criteria from GHO ghost atoms.
