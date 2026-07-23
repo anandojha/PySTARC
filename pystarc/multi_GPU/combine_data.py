@@ -128,7 +128,11 @@ def main():
         P_hi = min(1, centre + spread)
     k_lo = CONV * k_b * P_lo
     k_hi = CONV * k_b * P_hi
-    wall_time = sum(r.get("wall_time_sec", 0) for r in runs)
+    # Shards run concurrently, so the wall clock is the slowest shard, not the sum.
+    shard_walls = [r.get("wall_time_sec", 0) for r in runs]
+    wall_time = max(shard_walls) if shard_walls else 0
+    aggregate_gpu_sec = sum(shard_walls)  # total GPU seconds across shards
+    # Aggregate throughput is all shard steps over the shared wall clock.
     total_steps = sum(
         r.get("steps_per_sec", 0) * r.get("wall_time_sec", 0) for r in runs
     )
@@ -166,6 +170,8 @@ def main():
             status = "completed" if N >= n else "need more simulations"
             print(f"    For ±{t} RSE: {n:,} ({status})")
     print(f"  {'Converged' if RSE < 0.05 else 'Not converged'} (RSE {RSE*100:.2f}%)")
+    print(f"  Wall clock       = {wall_time:.1f} s  (slowest of {len(runs)} shard(s))")
+    print(f"  Aggregate GPU-s  = {aggregate_gpu_sec:.1f} s  (sum over shards)")
     # Assemble the combined results dictionary that will be written to disk.
     results = {
         "k_on": k_on,
@@ -186,6 +192,7 @@ def main():
         "r_start": r_start,
         "r_escape": r_escape,
         "wall_time_sec": wall_time,
+        "aggregate_gpu_sec": aggregate_gpu_sec,
         "steps_per_sec": steps_sec,
         "confidence_level": 0.95,
         "log10_k_on": math.log10(k_on) if k_on > 0 else 0,
