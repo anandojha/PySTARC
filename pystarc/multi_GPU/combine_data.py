@@ -516,9 +516,7 @@ def _sum_csv(
                     vol = 0.0
                 cnt = float(row[sum_col])
                 dens = (
-                    cnt / (total_count * vol)
-                    if (total_count > 0 and vol > 0)
-                    else 0.0
+                    cnt / (total_count * vol) if (total_count > 0 and vol > 0) else 0.0
                 )
                 row[recompute_col] = f"{dens:.8e}"
                 row[sum_col] = int(cnt)
