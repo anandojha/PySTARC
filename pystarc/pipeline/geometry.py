@@ -42,7 +42,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import warnings
 import numpy as np
-from pystarc.global_defs.defaults import (BD_MILESTONE_RADIUS, BD_MILESTONE_RADIUS_INNER)
+from pystarc.global_defs.defaults import BD_MILESTONE_RADIUS, BD_MILESTONE_RADIUS_INNER
 
 
 @dataclass

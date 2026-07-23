@@ -311,7 +311,14 @@ def _write_apbs_input(
 
 
 def _write_desolvation_grids(
-    pqr_path, mol_name, work_dir, coarse, fine, dielectric_in, dielectric_out, temp,
+    pqr_path,
+    mol_name,
+    work_dir,
+    coarse,
+    fine,
+    dielectric_in,
+    dielectric_out,
+    temp,
     debye_length,
 ):
     """

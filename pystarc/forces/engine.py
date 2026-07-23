@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 import warnings
 import math
-from pystarc.global_defs.defaults import (DEBYE_LENGTH, DESOLVATION_ALPHA)
+from pystarc.global_defs.defaults import DEBYE_LENGTH, DESOLVATION_ALPHA
 
 try:
     from numba import njit as _njit

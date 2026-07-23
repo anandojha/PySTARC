@@ -643,9 +643,7 @@ class GPUBatchSimulator:
         # seed so that full runs remain reproducible. The flattened-pairs path
         # keeps using the main rng so its results match the established
         # reference.
-        _bb_seed = (
-            (int(self.params.seed) + 1) if self.params.seed is not None else None
-        )
+        _bb_seed = (int(self.params.seed) + 1) if self.params.seed is not None else None
         rng_bb = np.random.default_rng(_bb_seed)
         D_t = float(self.mob.relative_translational_diffusion())
         D_r = float(self.mob.relative_rotational_diffusion())
@@ -1480,9 +1478,7 @@ class GPUBatchSimulator:
                 # overlap regime the derivative is a perfect square and so never
                 # negative, and in the engulfed regime it is identically zero.
                 _dD_far = _hi_dpre * (3.0 * _rm2 - 6.0 * _hi_a2 * _rm1 * _rm3)
-                _dD_ov = (3.0 * _hi_dpre / (8.0 * _hi_p)) * (
-                    1.0 - _hi_am2 * _rm2
-                ) ** 2
+                _dD_ov = (3.0 * _hi_dpre / (8.0 * _hi_p)) * (1.0 - _hi_am2 * _rm2) ** 2
                 _dD_dr = cp.where(
                     _r_sr > _hi_S,
                     _dD_far,

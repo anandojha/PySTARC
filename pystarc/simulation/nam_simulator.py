@@ -46,7 +46,12 @@ import warnings
 import math
 import copy
 from pystarc.global_defs.constants import KBT_KCAL
-from pystarc.global_defs.defaults import (DEBYE_LENGTH, HYDRODYNAMIC_INTERACTIONS, SOLVENT_DIELECTRIC, VISCOSITY)
+from pystarc.global_defs.defaults import (
+    DEBYE_LENGTH,
+    HYDRODYNAMIC_INTERACTIONS,
+    SOLVENT_DIELECTRIC,
+    VISCOSITY,
+)
 
 
 def _check_hard_sphere_overlap(mol1: Molecule, mol2: Molecule) -> bool:

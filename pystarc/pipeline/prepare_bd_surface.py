@@ -36,7 +36,12 @@ import shutil
 import math
 import sys
 import os
-from pystarc.global_defs.defaults import (HYDRODYNAMIC_INTERACTIONS, INPUT_DEFAULTS, REFERENCE_DEFAULTS, REFERENCE_LOCAL_TAGS)
+from pystarc.global_defs.defaults import (
+    HYDRODYNAMIC_INTERACTIONS,
+    INPUT_DEFAULTS,
+    REFERENCE_DEFAULTS,
+    REFERENCE_LOCAL_TAGS,
+)
 
 # Residue names that count as solvent or ions and are stripped before the
 # calculation. The set is deliberately broad and covers the water and ion
@@ -141,9 +146,7 @@ class BDSurfaceConfig:
     gpu: bool = True
     hydrodynamic_interactions: bool = HYDRODYNAMIC_INTERACTIONS
     minimum_core_dt: float = REFERENCE_DEFAULTS["minimum_core_dt"]
-    minimum_core_reaction_dt: float = REFERENCE_DEFAULTS[
-        "minimum_core_reaction_dt"
-    ]
+    minimum_core_reaction_dt: float = REFERENCE_DEFAULTS["minimum_core_reaction_dt"]
     desolvation_parameter: float = 1.0
     relative_viscosity: float = 1.0
     confidence_interval: float = 0.95

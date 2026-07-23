@@ -25,8 +25,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import math
 from pystarc.global_defs.constants import KBT_KCAL
-from pystarc.global_defs.defaults import (CHAIN_DT, DESOLVATION_ALPHA, VISCOSITY)
-from pystarc.global_defs.defaults import (CHAIN_DT)
+from pystarc.global_defs.defaults import CHAIN_DT, DESOLVATION_ALPHA, VISCOSITY
+from pystarc.global_defs.defaults import CHAIN_DT
 
 # A bond, angle, or dihedral involves atoms that may live either on
 # the chain itself or on a rigid core (a structured protein domain).
@@ -1082,9 +1082,7 @@ class FlexibleChain:
 class ChainForceEvaluator:
     """Evaluates all bonded and non-bonded forces on a flexible chain."""
 
-    def compute_forces(
-        self, chain: FlexibleChain, kT: float = KBT_KCAL
-    ) -> np.ndarray:
+    def compute_forces(self, chain: FlexibleChain, kT: float = KBT_KCAL) -> np.ndarray:
         """Compute all forces on the chain beads.
 
         Returns an (n_beads, 3) force array in kBT/Å units.

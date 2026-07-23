@@ -37,14 +37,15 @@ kernel computes alpha*q^2*phi and -alpha*q^2*grad(phi).
 The stored field is in kBT per e^2, is positive everywhere, and decays as
 1/r^4, so the force is repulsive for every atom regardless of charge sign.
 """
+
 from __future__ import annotations
 import math
 import numpy as np
 
-COULOMB_KCAL = 332.0637          # e^2/(4 pi eps0), kcal/mol.Angstrom/e^2
-KB_KCAL = 0.0019872041           # kcal/mol/K
-DEN_FLOOR = 0.5                  # floor on (r^2 - a^2), Angstrom^2
-DEFAULT_DEBYE = 7.858            # Angstrom, 150 mM
+COULOMB_KCAL = 332.0637  # e^2/(4 pi eps0), kcal/mol.Angstrom/e^2
+KB_KCAL = 0.0019872041  # kcal/mol/K
+DEN_FLOOR = 0.5  # floor on (r^2 - a^2), Angstrom^2
+DEFAULT_DEBYE = 7.858  # Angstrom, 150 mM
 
 
 def dielectric_factor(eps_p: float = 4.0, eps_s: float = 78.0) -> float:
@@ -60,6 +61,7 @@ def _xp():
     """CuPy if usable, else NumPy."""
     try:
         import cupy as cp
+
         cp.zeros(1)
         return cp, True
     except Exception:
@@ -67,11 +69,17 @@ def _xp():
 
 
 def desolvation_field_on_grid(
-    origin, spacing, dime,
-    atom_xyz: np.ndarray, atom_rad: np.ndarray,
-    eps_p: float = 4.0, eps_s: float = 78.0, temp: float = 298.15,
+    origin,
+    spacing,
+    dime,
+    atom_xyz: np.ndarray,
+    atom_rad: np.ndarray,
+    eps_p: float = 4.0,
+    eps_s: float = 78.0,
+    temp: float = 298.15,
     debye_length: float = DEFAULT_DEBYE,
-    cutoff: float = 15.0, chunk: int = 4_000_000,
+    cutoff: float = 15.0,
+    chunk: int = 4_000_000,
 ) -> np.ndarray:
     """
     Desolvation field on a regular grid, in kBT per e^2, shape (nx,ny,nz).
@@ -93,7 +101,11 @@ def desolvation_field_on_grid(
     kap = 0.0 if not debye_length else 1.0 / float(debye_length)
 
     lo = np.array(origin, dtype=np.float64) - cutoff
-    hi = lo + np.array(spacing, dtype=np.float64) * (np.array([nx, ny, nz]) - 1) + 2 * cutoff
+    hi = (
+        lo
+        + np.array(spacing, dtype=np.float64) * (np.array([nx, ny, nz]) - 1)
+        + 2 * cutoff
+    )
     # Drop zero-radius atoms. PySTARC injects ghost atoms at molecule centroids
     # with radius 0. They contribute a^3 = 0, but leaving them in makes the
     # r^-4 kernel evaluate 0/0 at their own grid point and NaN-poison the field.
@@ -116,7 +128,9 @@ def desolvation_field_on_grid(
     for s in range(0, npts, chunk):
         e = min(s + chunk, npts)
         idx = xp.arange(s, e)
-        gx = x[idx // nyz]; gy = y[(idx % nyz) // nz]; gz = z[idx % nz]
+        gx = x[idx // nyz]
+        gy = y[(idx % nyz) // nz]
+        gz = z[idx % nz]
         acc = xp.zeros(e - s, dtype=xp.float64)
         for j in range(int(ax.shape[0])):
             d2 = (gx - ax[j, 0]) ** 2 + (gy - ax[j, 1]) ** 2 + (gz - ax[j, 2]) ** 2
@@ -149,16 +163,26 @@ def read_pqr_geometry(pqr_path):
         p = line.split()
         try:
             float(p[-1])
-            off = 0          # no element column; radius is the last field
+            off = 0  # no element column; radius is the last field
         except ValueError:
-            off = 1          # trailing element symbol
+            off = 1  # trailing element symbol
         rad.append(float(p[-1 - off]))
         xyz.append([float(p[-5 - off]), float(p[-4 - off]), float(p[-3 - off])])
     return np.asarray(xyz, dtype=np.float64), np.asarray(rad, dtype=np.float64)
 
 
-def probe_contact_value(field, origin, spacing, dime, atom_xyz, atom_rad, eps_p=4.0,
-                        eps_s=78.0, temp=298.15, debye_length=DEFAULT_DEBYE):
+def probe_contact_value(
+    field,
+    origin,
+    spacing,
+    dime,
+    atom_xyz,
+    atom_rad,
+    eps_p=4.0,
+    eps_s=78.0,
+    temp=298.15,
+    debye_length=DEFAULT_DEBYE,
+):
     """
     A physically meaningful diagnostic: the field one vdW radius outside the
     outermost atom along +x. field.max() is always the DEN_FLOOR-clamped
@@ -167,8 +191,17 @@ def probe_contact_value(field, origin, spacing, dime, atom_xyz, atom_rad, eps_p=
     j = int(np.argmax(atom_xyz[:, 0]))
     r = float(atom_rad[j]) * 2.0
     pt = atom_xyz[j] + np.array([r, 0.0, 0.0])
-    v = desolvation_field_on_grid(pt - 1e-3, [2e-3] * 3, [2, 2, 2], atom_xyz, atom_rad,
-                                  eps_p, eps_s, temp, debye_length)
+    v = desolvation_field_on_grid(
+        pt - 1e-3,
+        [2e-3] * 3,
+        [2, 2, 2],
+        atom_xyz,
+        atom_rad,
+        eps_p,
+        eps_s,
+        temp,
+        debye_length,
+    )
     return float(v[0, 0, 0]), r
 
 
@@ -178,16 +211,20 @@ def write_dx(path, field: np.ndarray, origin, spacing, dime):
     v = np.asarray(field, dtype=np.float64).reshape(-1)
     with open(path, "w") as f:
         f.write("# Image (Born) desolvation field, kBT per e^2\n")
-        f.write("# Cavity self energy from partner radii; independent of partner charges\n")
+        f.write(
+            "# Cavity self energy from partner radii; independent of partner charges\n"
+        )
         f.write(f"object 1 class gridpositions counts {nx} {ny} {nz}\n")
         f.write("origin %.6e %.6e %.6e\n" % tuple(float(o) for o in origin))
         f.write("delta %.6e 0.000000e+00 0.000000e+00\n" % float(spacing[0]))
         f.write("delta 0.000000e+00 %.6e 0.000000e+00\n" % float(spacing[1]))
         f.write("delta 0.000000e+00 0.000000e+00 %.6e\n" % float(spacing[2]))
         f.write(f"object 2 class gridconnections counts {nx} {ny} {nz}\n")
-        f.write(f"object 3 class array type double rank 0 items {nx*ny*nz} data follows\n")
+        f.write(
+            f"object 3 class array type double rank 0 items {nx*ny*nz} data follows\n"
+        )
         for i in range(0, v.size, 3):
-            f.write(" ".join("%.6e" % t for t in v[i:i + 3]) + "\n")
+            f.write(" ".join("%.6e" % t for t in v[i : i + 3]) + "\n")
         f.write('attribute "dep" string "positions"\n')
         f.write('object "regular positions regular connections" class field\n')
         f.write('component "positions" value 1\n')
