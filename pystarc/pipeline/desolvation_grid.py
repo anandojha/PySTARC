@@ -10,7 +10,7 @@ partner's fixed charges: APBS returns the potential of those charges, which
 decays as a multipole series and changes sign across the surface, whereas the
 desolvation field is strictly positive and decays as 1/r^4.
 
-Form implemented (SDA 7, Martinez et al. J Comput Chem 2015, Eqs. A3/A4):
+Form implemented:
 
     dG_i = alpha * C * D * q_i^2 *
            SUM_j  a_j^3 (1 + k r_ij)^2 exp(-2 k r_ij) / ( r_ij^2 - a_j^2 )^2
@@ -18,22 +18,22 @@ Form implemented (SDA 7, Martinez et al. J Comput Chem 2015, Eqs. A3/A4):
     D = (eps_s - eps_p) / [ eps_s * (2*eps_s + eps_p) ]   Kirkwood n=1 image factor
     C = e^2/(4 pi eps_0) divided by kT, i.e. kBT.Angstrom/e^2 (560.46 at 298.15 K)
     k = 1/debye_length, the ionic screening of the induced reaction field
-    alpha = SDA edfct: 1.67 for salt-dependent grids (this one), 0.36 for zero salt
+    alpha = empirical prefactor on the self energy, default 1.0
 
-The kernel is a^3/r^4, the n=1 Kirkwood term, which is what SDA Eq. A4 and
-BrownDye Eq. 6 both use. Note the a^3/(r^2 - a^2)^-2 form used by SDA is NOT an
-exact resummation of the Kirkwood series: no closed form exists for general
-eps, and in the conductor limit the closed form is a^3/[r^2 (r^2 - a^2)]. The
-n=1 term understates the true series near contact (0.60x at r = 3 A for
-a = 1.7) while the SDA kernel overstates it (1.31x at the same point).
+The kernel is the n=1 Kirkwood image term, a^3/r^4 in the far field. The
+a^3/(r^2 - a^2)^-2 form is not an exact resummation of the Kirkwood series: no
+closed form exists for general eps, and in the conductor limit the closed form
+is a^3/[r^2 (r^2 - a^2)]. The n=1 term understates the true series near contact
+(0.60x at r = 3 A for a = 1.7) and the (r^2 - a^2)^-2 form overstates it (1.31x
+at the same point).
 
-This is NOT a quadrature of the BrownDye Eq. 6 volume integral. That integral
-over a sphere is 4 pi [ a/(2(R^2-a^2)) - ln((R+a)/(R-a))/(4R) ], a different
-model (per-atom Kirkwood image response, no mutual polarisation between atom
-spheres). The two agree only in their far-field a^3/r^4 asymptote.
+This is a per-atom Kirkwood image response with no mutual polarisation between
+atom spheres, not a volume integral over the cavity. The per-sphere volume
+integral 4 pi [ a/(2(R^2-a^2)) - ln((R+a)/(R-a))/(4R) ] is a different model,
+agreeing only in the far-field a^3/r^4 asymptote.
 
 Everything except alpha and q_i^2 is folded into the stored grid, so the force
-kernel, which computes alpha*q^2*phi and -alpha*q^2*grad(phi), is unchanged.
+kernel computes alpha*q^2*phi and -alpha*q^2*grad(phi).
 The stored field is in kBT per e^2, is positive everywhere, and decays as
 1/r^4, so the force is repulsive for every atom regardless of charge sign.
 """
@@ -82,22 +82,11 @@ def desolvation_field_on_grid(
     """
     xp, on_gpu = _xp()
     nx, ny, nz = (int(d) for d in dime)
-    # Prefactor. This is the RIGOROUS Kirkwood n=1 image self energy,
-    #     dG = (1/2) * C * D * q^2 * a^3 / r^4 ,  coefficient 1.6616 kBT.A^4/e^2,
-    # verified three independent ways: induced-dipole linear response, a
-    # from-scratch Kirkwood boundary-condition derivation, and the exact
-    # conductor-limit image solution (agreement to 1e-10 for r/a = 1.5 .. 100).
+    # Prefactor for the Kirkwood n=1 image self energy,
+    #     dG = (1/2) * C * D * q^2 * a^3 / r^4 ,  coefficient 1.6616 kBT.A^4/e^2.
     #
-    # The two reference codes both sit above this and neither is adopted here:
-    #   SDA      :      C*D  = 2x rigorous, the 1/2 folded into edfct (1.67)
-    #   BrownDye : 8*pi*C*D  = 25.1x rigorous. That 8*pi is 4*pi from the Coulomb
-    #              constant being consumed by the (4*pi/3) atom monopole
-    #              (born_integral.cc:846 against :1065) plus a missing linear
-    #              response 1/2. It is NOT compensated downstream: desolve_fudge
-    #              defaults to 1.0 and is the only multiplier on the grid.
-    #
-    # alpha therefore starts from a physically correct base of 1.0 and carries
-    # only the model's own approximations: the sphere sum overcounts the true
+    # alpha has a base of 1.0 and carries the model's approximations: the
+    # sphere sum overcounts the true
     # solvent-excluded volume by 1.44x, and keeping only the diagonal of the
     # squared molecular field overcounts by a further ~1.37x for a +1 ligand.
     scale = 0.5 * coulomb_kbt(temp) * dielectric_factor(eps_p, eps_s)
@@ -106,7 +95,7 @@ def desolvation_field_on_grid(
     lo = np.array(origin, dtype=np.float64) - cutoff
     hi = lo + np.array(spacing, dtype=np.float64) * (np.array([nx, ny, nz]) - 1) + 2 * cutoff
     # Drop zero-radius atoms. PySTARC injects ghost atoms at molecule centroids
-    # with radius 0; they contribute a^3 = 0, but leaving them in makes the
+    # with radius 0. They contribute a^3 = 0, but leaving them in makes the
     # r^-4 kernel evaluate 0/0 at their own grid point and NaN-poison the field.
     keep = np.all((atom_xyz >= lo) & (atom_xyz <= hi), axis=1) & (atom_rad > 0.0)
     ax = xp.asarray(atom_xyz[keep], dtype=xp.float64)
@@ -132,8 +121,8 @@ def desolvation_field_on_grid(
         for j in range(int(ax.shape[0])):
             d2 = (gx - ax[j, 0]) ** 2 + (gy - ax[j, 1]) ** 2 + (gz - ax[j, 2]) ** 2
             d = xp.sqrt(d2)
-            # BrownDye kernel: a^3 (1 + r/L)^2 exp(-2 r/L) / r^4. Floor r at the atom
-            # radius so the interior saturates instead of diverging; that region is
+            # Screened image kernel: a^3 (1 + r/L)^2 exp(-2 r/L) / r^4. Floor r at the atom
+            # radius so the interior saturates instead of diverging. That region is
             # inside the excluded volume and is never sampled by a physical trajectory.
             r2 = xp.maximum(d2, xp.maximum(a2[j], DEN_FLOOR))
             screen = (1.0 + kap * d) ** 2 * xp.exp(-2.0 * kap * d)
@@ -151,7 +140,7 @@ def read_pqr_geometry(pqr_path):
     PQR has no fixed standard for a trailing element column: some writers emit
     "... x y z q r" and others "... x y z q r element". Detect which by testing
     whether the final field parses as a number, otherwise the radius is read one
-    field off and silently becomes the charge.
+    field off and becomes the charge.
     """
     xyz, rad = [], []
     for line in open(pqr_path):
@@ -184,7 +173,7 @@ def probe_contact_value(field, origin, spacing, dime, atom_xyz, atom_rad, eps_p=
 
 
 def write_dx(path, field: np.ndarray, origin, spacing, dime):
-    """OpenDX scalar field in the same layout APBS writes, so the loader is unchanged."""
+    """OpenDX scalar field in the same layout APBS writes."""
     nx, ny, nz = (int(d) for d in dime)
     v = np.asarray(field, dtype=np.float64).reshape(-1)
     with open(path, "w") as f:

@@ -411,10 +411,10 @@ class GPUBatchSimulator:
 
         where h(r) is evaluated by the substitution s = 1/r, so the integral
         runs from s = 0, meaning r = infinity, down to s = 1/b, and its
-        integrand carries 1/D(r) rather than 1/s². Both matter: truncating it
-        at r_escape instead of infinity would destroy the invariance of the
-        rate to the placement of the b surface, and dropping D would decouple
-        the normalisation from the hydrodynamics. Here r is a separation and U
+        integrand carries 1/D(r) rather than 1/s². Running to r = infinity
+        keeps the rate invariant to the b surface placement, and carrying
+        1/D(r) couples the normalisation to the hydrodynamics. Here r is a
+        separation and U
         is the orientation-averaged potential of mean force in units of kBT. This method also computes and stores self._k_b
         from the Romberg integral
 
@@ -433,9 +433,8 @@ class GPUBatchSimulator:
         debye = getattr(self.engine, "_debye", 7.858)
         # Vacuum permittivity in kBT units. See constants.py.
         eps0 = VACUUM_PERMITTIVITY_KBT
-        # The configured solvent permittivity, not a literal. The forces already
-        # use it through the APBS grids, so normalising k_b at a fixed 78 made
-        # the reported rate inconsistent with the potential that produced it.
+        # The configured solvent permittivity. The screened Coulomb forces use
+        # it through the APBS grids, so k_b is normalised with the same value.
         sdie = float(getattr(self.params, "dielectric", SOLVENT_DIELECTRIC))
         eps = sdie * eps0
         fpe = 4.0 * math.pi * eps
@@ -476,13 +475,9 @@ class GPUBatchSimulator:
         self._kb_mp_p_sq = _p_sq
         self._kb_mp_Tr_Q_sq = _Tr_Q_sq
         # A neutral ligand feels no steering, so U(r) vanishes, but solvent is
-        # still squeezed out from between the two surfaces as they approach.
-        # Assuming free diffusion here dropped that, so a neutral ligand was
-        # normalised with k_b = 4 pi D b while a charged one used the
-        # hydrodynamic integral, a difference of about 16 percent decided by
-        # whether the PQR charges happened to round to exactly zero. The
-        # ordinary path below reduces to 4 pi D b of its own accord when
-        # hydrodynamics is off, so no special case is needed.
+        # still squeezed from between the surfaces as they approach. The ordinary
+        # path below reduces to k_b = 4 pi D b when hydrodynamics is off, so it
+        # also covers the neutral case.
         self._kb_pure_diffusion = bool(
             abs(q_rec * q_lig) < 1e-9 and not _has_multipole_force
         )
@@ -1026,8 +1021,7 @@ class GPUBatchSimulator:
         # Pre-compute the hydrodynamic-interaction constants to avoid Python
         # overhead per step.
         if self._use_hi:
-            # Solvent viscosity in kBT.ps/A^3 at T_DEFAULT. The literal 0.243
-            # that stood here is water at 20 C in a 298.15 K unit system.
+            # Solvent viscosity in kBT.ps/A^3 at T_DEFAULT.
             _hi_mu = VISCOSITY / KBT_KCAL
             _hi_Df = 1.0 / _hi_mu
             _hi_pi6 = 6.0 * math.pi
@@ -1043,7 +1037,7 @@ class GPUBatchSimulator:
             _hi_ainv = (
                 _hi_Df / (_hi_pi6 * _hi_a0) + _hi_Df / (_hi_pi6 * _hi_a1)
             ) / _hi_Df
-            # Zuk et al. split the pair mobility at contact, r = a0 + a1, and
+            # The pair mobility is split at contact, r = a0 + a1, and
             # again where the smaller sphere is swallowed by the larger,
             # r = |a0 - a1|. Inside that second boundary the relative mobility
             # is the difference of the two self mobilities and does not depend
@@ -1457,8 +1451,8 @@ class GPUBatchSimulator:
                 _rm1 = 1.0 / cp.maximum(_r_sr, cp.full_like(_r_sr, 0.01))
                 _rm2 = _rm1 * _rm1
                 _rm3 = _rm2 * _rm1
-                # Far field, r > a0 + a1. Algebraically identical to what this
-                # line computed before, and to the :535 Romberg integrand.
+                # Far field, r > a0 + a1. Same expression as the Romberg
+                # integrand that normalises k_b.
                 _D_far = _hi_D0 - _hi_dpre * (3.0 * _rm1 - 2.0 * _hi_a2 * _rm3)
                 # Partial overlap, |a0 - a1| < r <= a0 + a1. Written so only
                 # _rm1 and _rm3 appear, which keeps this arm finite as r goes
@@ -1470,11 +1464,10 @@ class GPUBatchSimulator:
                     - 3.0 * _r_sr
                     + _hi_am2 * _hi_am2 * _rm3
                 )
-                # Engulfed, r <= |a0 - a1|. Constant in r: the smaller sphere is
-                # inside the larger and the relative mobility saturates. The
-                # far-field form used here previously EXCEEDS the free value D0
-                # below about 13 A for a 22.5/5 pair, which is unphysical, since
-                # displacing solvent can only ever slow the relative approach.
+                # Engulfed, r <= |a0 - a1|. The smaller sphere is inside the
+                # larger and the relative mobility saturates, constant in r.
+                # Displacing solvent can only slow the relative approach, so the
+                # mobility never exceeds the free value D0.
                 D_par_arr = cp.where(
                     _r_sr > _hi_S,
                     _D_far,
@@ -1485,7 +1478,7 @@ class GPUBatchSimulator:
                 # the Ito term stops being the exact divergence of the D in use
                 # and the scheme samples neither exp(-U) nor exp(-U)/D. In the
                 # overlap regime the derivative is a perfect square and so never
-                # negative; in the engulfed regime it is identically zero.
+                # negative, and in the engulfed regime it is identically zero.
                 _dD_far = _hi_dpre * (3.0 * _rm2 - 6.0 * _hi_a2 * _rm1 * _rm3)
                 _dD_ov = (3.0 * _hi_dpre / (8.0 * _hi_p)) * (
                     1.0 - _hi_am2 * _rm2

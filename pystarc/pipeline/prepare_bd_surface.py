@@ -179,11 +179,10 @@ def parse_config(xml_path: Path) -> BDSurfaceConfig:
     root = tree.getroot()
 
     def get(tag, default=None, cast=str):
-        # This deck configures the reference binary, not PySTARC. Tags it
-        # treats differently are resolved from REFERENCE_DEFAULTS, and
-        # notably debye_length is a sentinel here whose zero means derive
-        # the screening length from the ion concentration. Everything else
-        # shares the registry so the two readers cannot drift apart.
+        # Tags treated differently are resolved from REFERENCE_DEFAULTS. Here
+        # debye_length is a sentinel whose zero means derive the screening
+        # length from the ion concentration. Every other tag comes from the
+        # shared registry.
         if tag in REFERENCE_LOCAL_TAGS:
             default = REFERENCE_DEFAULTS[tag]
         elif tag in INPUT_DEFAULTS:

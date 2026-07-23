@@ -65,11 +65,9 @@ DEFAULT_IONIC_STRENGTH: float = 0.15  # mol/L
 DEFAULT_DEBYE_LENGTH: float = 7.9  # Å at 150 mM NaCl, 298 K
 # Reference viscosity for diffusion coefficients. The diffusion coefficient
 # D = kBT / (6 π η r) is computed at runtime, and this is the viscosity η of water.
-# Solvent viscosity at T_DEFAULT. Water is 1.002e-3 Pa·s at 20°C and
-# 8.90e-4 Pa·s at 25°C. The 20°C value was previously paired with a
-# T_DEFAULT of 298.15 K, so the Stokes-Einstein diffusion coefficient
-# D_t = kBT/(6πηr) mixed the thermal energy of one temperature with the
-# viscosity of another and came out 12.6 percent low.
+# Solvent viscosity at T_DEFAULT, water at 25°C. It is taken at the same
+# temperature as kBT, since the Stokes-Einstein coefficient D_t = kBT/(6πηr)
+# pairs the two.
 ETA_WATER: float = 8.90e-4  # Pa·s, water at 25°C = T_DEFAULT
 # Pi
 PI: float = math.pi

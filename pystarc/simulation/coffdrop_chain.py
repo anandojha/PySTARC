@@ -1406,10 +1406,8 @@ class ChainBDPropagator:
 
     def __init__(self, kT: float = KBT_KCAL, viscosity: float = VISCOSITY):
         self.kT = kT
-        # Solvent viscosity in kcal/mol.ps/A^3, NOT in Pa.s. The literal
-        # 8.904e-4 that stood here was raw Pa.s despite the comment claiming a
-        # conversion, which left D_trans = kT/(6 pi eta a) a factor of 143.9
-        # too large and the diffusive noise about 12 times too large.
+        # Solvent viscosity in kcal/mol.ps/A^3, not Pa.s. D_trans = kT/(6 pi eta a)
+        # and the diffusive noise sqrt(2 D dt) both depend on it directly.
         self.eta = viscosity
         self._evaluator = ChainForceEvaluator()
 

@@ -213,10 +213,9 @@ class MobilityTensor:
         The radial projection r̂·D_rel·r̂ is returned, the same scalar the k_b
         encounter integral uses. It is the component that controls the
         splitting probability between the reaction and escape surfaces. The
-        isotropic average, one third of the trace, was used here previously,
-        which left the CPU inner step disagreeing with both the k_b integrand
-        and the GPU inner step by about 8 percent at contact. The two
-        reductions do not coincide at the b-surface: their ratio is still 0.95
+        isotropic average, one third of the trace, differs from it by about 8
+        percent at contact. The two reductions do not coincide even at the
+        b-surface: their ratio is still 0.95
         to 0.97 at ten contact radii.
         """
         D0 = self.D_trans1 + self.D_trans2
@@ -366,17 +365,10 @@ def rpy_pair_blocks(ai, aj, r_ij):
         # self mobility of the LARGER of them, not zero. Both limits of
         # rpy_full_components agree on this: tt_I tends to 1/(6 pi a_max) and
         # rr_I to 1/(8 pi a_max^3), with tt_uu, rr_uu and the cross terms
-        # tending to zero. The reference implementation carries no coincidence
-        # guard at all (BROWNDYE2 rotne_prager.hh:203-211).
-        #
-        # Returning zeros asserted instead that the two beads drag solvent
-        # independently, charging the duplicated site twice for friction. On
-        # three beads at [0,0,0], [0,0,0], [0,0,7.6] with a = 3 A that gives
-        # A_xx = 121.725 against the correct 85.240, a 42.8 percent error in
-        # translational resistance and about 30 percent in D_trans, always in
-        # the direction of too little diffusion. It never tripped the
-        # regularisation warning below, because a zeroed block stays positive
-        # definite.
+        # tending to zero. Returning zeros would instead charge the duplicated
+        # site twice for friction, overstating the resistance and understating
+        # D_trans, while leaving the assembled matrix positive definite so no
+        # warning fires.
         a_max = max(ai, aj)
         I3 = np.eye(3)
         Z3 = np.zeros((3, 3))
@@ -473,9 +465,8 @@ def rpy_full_mobility_matrix(positions, radii):
             f"got radii.shape={radii.shape}, positions.shape={positions.shape}"
         )
 
-    # A non-positive or non-finite radius produces an indefinite mobility that
-    # then looks like a numerical problem far downstream. Reject it here, where
-    # the value can still be named.
+    # Positive finite radii are required for a positive definite RPY mobility
+    # matrix.
     if not np.all(np.isfinite(radii)):
         bad = np.flatnonzero(~np.isfinite(radii))
         raise ValueError(
@@ -643,13 +634,7 @@ def _build_robust_solver(M):
     #
     # The RPY kernel is positive definite for every configuration with positive
     # finite radii, so an indefinite M is a data or assembly defect rather than
-    # a numerical one. Clipping a negative eigenvalue to +floor and inverting it
-    # injected +1/floor = 1e10 into M^-1 where the correct entry is of order 1e2
-    # with the opposite sign. That is a positive semi-definite addition to
-    # A = E^T M^-1 E, so it can only shrink D_trans and D_rot, in every
-    # direction, silently. Measured on a 230-bead chain with one duplicated
-    # bead, D_trans came back 4509 times too small with nothing downstream able
-    # to tell.
+    # a numerical one.
     raise np.linalg.LinAlgError(
         "RPY mobility matrix is indefinite and cannot be factorized: "
         + _indefiniteness_report(M, trace_avg)
@@ -788,10 +773,8 @@ def chain_diffusion_tensors(positions, radii, kT=1.0, viscosity=None):
     radii     : (N,)   bead hydrodynamic radii.
     kT        : thermal energy. The PySTARC convention is kT = 1.
     viscosity : solvent viscosity. If None, the package default
-                WATER_VISCOSITY from motion/do_bd_step is used. That value
+                WATER_VISCOSITY from motion/do_bd_step is used, which
                 derives from ETA_WATER at T_DEFAULT and is 0.2162 kBT·ps/Å³.
-                The literal 0.243 that used to be quoted here is water at
-                20 °C, which does not match the declared temperature.
 
     Notes
     -----

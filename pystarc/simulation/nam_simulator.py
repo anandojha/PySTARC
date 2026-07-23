@@ -141,9 +141,7 @@ class NAMParameters:
     # screening and diffusion, in PySTARC units of Å, ps, and kBT. The defaults
     # are water at about 300 K and physiological ionic strength; set them
     # explicitly for a different temperature, solvent, or salt concentration.
-    # Thermal energy kBT in kcal/mol at T_DEFAULT. The literal 0.5961 that
-    # stood here is kBT at 299.97 K, so the simulator was running 1.8 K
-    # warmer than every other constant in the code.
+    # Thermal energy kBT in kcal/mol at T_DEFAULT.
     temperature_kT: float = KBT_KCAL
     viscosity: float = VISCOSITY  # Water viscosity in kcal/mol·ps/Å³.
     dielectric: float = SOLVENT_DIELECTRIC  # Relative solvent permittivity.

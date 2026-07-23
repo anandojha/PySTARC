@@ -41,8 +41,7 @@ from pystarc.global_defs.defaults import VISCOSITY
 
 FORCE_CHANGE_ALPHA = 0.02
 # The same solvent viscosity as global_defs, expressed in kBT.ps/A^3 rather
-# than kcal/mol.ps/A^3. Derived rather than written out so the two cannot
-# drift apart.
+# than kcal/mol.ps/A^3.
 WATER_VISCOSITY = VISCOSITY / KBT_KCAL  # kBT.ps/A^3
 
 
@@ -71,8 +70,7 @@ def ermak_mccammon_translation(
     # scalar. For an isotropic D(r) the divergence of D(r) times the identity
     # is dD/dr r_hat, supplied by the caller. Omitting it relaxes the scheme to
     # p ~ exp(-U)/D(r) rather than to the Boltzmann density. The full RPY pair
-    # tensor is divergence free and owes nothing, which is why the reference
-    # propagator carries no such term.
+    # tensor is divergence free and owes nothing.
     if grad_D is not None:
         drift = drift + np.asarray(grad_D, dtype=float) * dt
     return position + drift + noise

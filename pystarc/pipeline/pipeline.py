@@ -235,8 +235,7 @@ def run(cfg: PySTARCConfig):
         engine.backend = "numba"
         print("  GPU disabled by config - using Numba")
     # Build the mobility tensor. The Rotne-Prager-Yamakawa coupling slows the
-    # relative approach as solvent is squeezed from between the two surfaces,
-    # so it must follow the configured flag rather than being applied always.
+    # relative approach as solvent is squeezed from between the two surfaces.
     _hi_flag = getattr(cfg, "hydrodynamic_interactions", HYDRODYNAMIC_INTERACTIONS)
     mob = MobilityTensor.from_radii(
         geom.receptor.hydrodynamic_r,
@@ -325,10 +324,9 @@ def run(cfg: PySTARCConfig):
     params = NAMParameters(
         n_trajectories=cfg.n_trajectories,
         dt=getattr(cfg, "dt", 0.2),
-        # The step size used inside the reaction shell. This is NOT the same
-        # quantity as minimum_core_reaction_dt, which is a floor whose zero
-        # means no floor is imposed. Feeding the floor in here set the step
-        # itself to zero and let it collapse without bound.
+        # The step size used inside the reaction shell. Distinct from
+        # minimum_core_reaction_dt, which is a floor whose zero means no floor
+        # is imposed.
         dt_rxn=(getattr(cfg, "minimum_core_reaction_dt", 0.0) or DT_RXN),
         max_steps=cfg.max_steps,
         r_start=geom.r_start,

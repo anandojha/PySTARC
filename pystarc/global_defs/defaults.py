@@ -1,10 +1,7 @@
 """
 Default values for every configurable quantity that affects a computed rate.
 
-A default that is written down in more than one place eventually disagrees with
-itself. When that happens the association rate depends on which entry point the
-user happened to call rather than on the physics, and nothing in the output says
-so. This module is the single place a physics default may be defined. Every
+This module is the single place a physics default may be defined. Every
 parser, dataclass and force engine takes its value from here.
 
 INPUT_DEFAULTS is keyed by the literal tag name in pystarc_input.xml, so the two
@@ -60,10 +57,7 @@ VISCOSITY: float = ETA_WATER * PA_S_TO_INTERNAL
 # Multiplier on the Born cavity self energy read from the *_born.dx grids.
 # Those grids hold the Kirkwood n = 1 image energy with the rigorous
 # normalisation (1/2) C D already folded in, so a charge sees exactly
-# dG = alpha q^2 a^3 / r^4 and the physically correct base is 1.0. The value
-# 1/(4 pi) = 0.07957747 belongs to the retired convention in which the grid held
-# an APBS potential rather than a cavity self energy, and is 12.566x too weak
-# against the present grids.
+# dG = alpha q^2 a^3 / r^4, so the physically correct base is 1.0.
 DESOLVATION_ALPHA: float = 1.0
 
 # ---------------------------------------------------------------------------
@@ -85,8 +79,7 @@ BD_MILESTONE_RADIUS_INNER: float = 0.0  # Å, sentinel
 R_ESCAPE_FACTOR: float = 2.0
 
 # The outer propagator takes over at this multiple of the b surface radius. This
-# is the LMZ handover, a different quantity from the escape sphere above, and
-# the two were previously conflated onto one field.
+# is the LMZ handover, a distinct quantity from the escape sphere above.
 QB_FACTOR: float = 1.1
 
 # ---------------------------------------------------------------------------
@@ -113,20 +106,11 @@ MINIMUM_CORE_REACTION_DT: float = 0.0  # ps, sentinel
 # ---------------------------------------------------------------------------
 
 # Whether the Rotne-Prager-Yamakawa correction is applied to the relative
-# mobility in the outer propagator. Squeezing solvent out from between two
-# approaching surfaces slows the approach, so enabling it can only lower k_on,
-# by roughly 10 to 35 percent for a protein and a small ligand.
-#
-# Default on. Displacing solvent from between two approaching surfaces is a real
-# effect, so switching it off is an approximation rather than a neutral choice.
-# Note the size of the effect differs by region. In the outer propagator it is a
-# quadrature and lowers k_on by roughly 10 to 35 percent. In the inner region it
-# acts only through the divergence drift: without that term the same scalar
-# multiplies drift and noise, D(r) factors out of the generator, and the
-# splitting probability is unchanged by hydrodynamics altogether
-# and should not be what an unspecified run silently receives. The reference
-# implementation documents the same default (browndye2.tex:481). No existing
-# result changes, because every shipped input deck sets the flag explicitly.
+# mobility. Displacing solvent from between two approaching surfaces slows the
+# approach. In the outer propagator it lowers k_on by roughly 10 to 35 percent.
+# In the inner region it acts only through the divergence drift: without that
+# term the same scalar multiplies drift and noise, D(r) factors out of the
+# generator, and the splitting probability is unchanged by hydrodynamics.
 HYDRODYNAMIC_INTERACTIONS: bool = True
 
 # ---------------------------------------------------------------------------
@@ -149,13 +133,12 @@ INPUT_DEFAULTS: Dict[str, Any] = {
 }
 
 # ---------------------------------------------------------------------------
-# Conventions of the external reference binary
+# Conventions of the external simulation engine
 # ---------------------------------------------------------------------------
 #
 # prepare_bd_surface does not configure PySTARC. It writes the input deck for
-# the reference nam_simulation binary, whose conventions differ from ours in
-# four places. Those differences are deliberate and are recorded here so that
-# they read as choices rather than as drift.
+# the external simulation engine, whose conventions differ from PySTARC in
+# four places.
 #
 # The screening length is a sentinel there: zero means derive it from the ion
 # concentration rather than take it as given, which is why it must not inherit
@@ -171,14 +154,13 @@ REFERENCE_DEFAULTS: Dict[str, Any] = {
 
 # Tags prepare_bd_surface resolves from its own conventions above. Every other
 # tag it reads comes from INPUT_DEFAULTS, so the two readers agree except where
-# the reference binary genuinely differs.
+# the external engine genuinely differs.
 REFERENCE_LOCAL_TAGS = frozenset(REFERENCE_DEFAULTS)
 
 # Names that must carry the same default wherever they appear, including in
 # dataclass fields, function signatures and getattr fallbacks. The regression
 # test in tests/test_config_defaults.py enforces this by walking the syntax tree
-# of the whole package, so a future divergence fails the suite rather than
-# quietly changing a rate.
+# of the whole package.
 PHYSICS_DEFAULT_NAMES = frozenset(INPUT_DEFAULTS) | {
     "temperature_kT",
     "dielectric",

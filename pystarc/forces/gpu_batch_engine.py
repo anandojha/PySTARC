@@ -222,12 +222,9 @@ class GPUBatchForceEngine:
                 f"(fine ±{_fine_ext:.0f}Å -> coarse ±{_coarse_ext:.0f}Å)"
                 + ("  + Yukawa far-field" if self._has_yukawa else "")
             )
-        # Earlier versions discarded every Born grid but the finest. That was a
-        # workaround for the retired APBS-derived Born grid, which held the
-        # partner's own electrostatic potential and so decayed as 1/r instead of
-        # 1/r^4, giving a spuriously large far-field force. The desolvation grid
-        # is now a cavity self energy with genuine 1/r^4 decay, so the coarse
-        # grid is physical and must be kept: the fine Born box is only about
+        # The desolvation grid is a cavity self energy that decays as 1/r^4, so
+        # the coarse grid carries a physical far-field force. The fine Born box
+        # is about
         # 28 A half-width while the field has support to about 43 A, and
         # clipping it leaves a force discontinuity of tens of kBT/A at the face.
         if len(self._born_grids_gpu) > 1:

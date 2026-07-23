@@ -257,9 +257,8 @@ class ChainBDParameters:
     # forces do not see it.
     debye_length: float = 7.858
     # Thermal energy, solvent permittivity and hydrodynamics for the LMZ outer
-    # propagator. These were hardcoded, so <temperature>, <sdie> and
-    # <hydrodynamic_interactions> reached the forces but not the rate
-    # normalisation, exactly as debye_length did before it was threaded.
+    # propagator, which normalises the encounter rate for the configured solvent
+    # conditions.
     temperature_kT: float = KBT_KCAL
     dielectric: float = SOLVENT_DIELECTRIC
     hydrodynamic_interactions: bool = HYDRODYNAMIC_INTERACTIONS

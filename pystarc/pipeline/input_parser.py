@@ -225,8 +225,7 @@ class PySTARCConfig:
     srad: float = SOLVENT_PROBE_RADIUS  # Solvent probe radius in angstrom.
     temperature: float = TEMPERATURE  # Temperature in kelvin.
     dt: float = DT  # Maximum time step in picoseconds.
-    # Whether the Rotne-Prager-Yamakawa correction is applied. See the
-    # registry for why this defaults on and what it does in each region.
+    # Whether the Rotne-Prager-Yamakawa correction to the relative mobility is applied.
     hydrodynamic_interactions: bool = HYDRODYNAMIC_INTERACTIONS
     r_hydro_rec: float = (
         0.0  # Receptor hydrodynamic radius. A value of 0 computes it from the PQR.
