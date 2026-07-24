@@ -58,7 +58,7 @@ eval "$(conda shell.bash hook)"
 conda activate "$ENV_NAME"
 # Pin to the env's interpreter by absolute path so PATH/activation quirks
 # (Flatiron module Python sitting ahead on PATH) can't redirect us.
-ENV_PY="$HOME/.conda/envs/$ENV_NAME/bin/python"
+ENV_PY="$CONDA_PREFIX/bin/python"
 echo "Created and activated: $("$ENV_PY" --version)"
 echo "Using interpreter: $ENV_PY"
 "$ENV_PY" -m pip --version
