@@ -44,7 +44,7 @@ sys.stdout = _Tee(_orig_stdout, _log_f)
 # Exact analytical
 eps_s = 78.0 * 0.000142
 debye = 7.828
-D = 0.43371
+D = 0.48830
 b = 10.0
 a = 2.5
 q_esc = 20.0

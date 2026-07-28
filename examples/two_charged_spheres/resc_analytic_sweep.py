@@ -14,7 +14,7 @@ import math
 q_rec, q_lig = 1.0, -1.0
 sdie, eps0 = 78.0, 0.000142
 debye = 7.828          # Debye length in A
-mu = 0.243             # solvent viscosity in the code's internal units
+mu = 0.216208
 b = 10.0               # b-sphere start radius (fixed, = bd_milestone_radius)
 a = 2.5                # reaction contact radius
 kT = 1.0

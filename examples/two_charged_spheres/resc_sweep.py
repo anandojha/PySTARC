@@ -4,7 +4,7 @@
 Runs the PySTARC Brownian-dynamics simulation at several escape radii with the
 b-sphere start radius held fixed at bd_milestone_radius = 10 A, and compares the
 resulting k_on. The recollision-corrected rate is predicted to be independent of
-the escape radius (analytic k_on = 1.5598e10 M^-1 s^-1, computed in
+the escape radius (analytic k_on = 1.7531e10 M^-1 s^-1, computed in
 resc_analytic_sweep.py). A k_on that is flat across escape radii, within the
 statistical error bars, confirms that the simulation reproduces this
 independence and validates the r_esc = 2b convention used in the manuscript. A
@@ -29,7 +29,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 RUNNER = HERE.parent.parent / "run_pystarc.py"
-ANALYTIC_KON = 1.5598e10
+ANALYTIC_KON = 1.7531e10
 
 
 def make_input(r_esc):

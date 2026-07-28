@@ -17,7 +17,7 @@ This system has an exact analytical solution (Smoluchowski first-passage with re
 <tr><td>Overlap check</td><td>disabled</td></tr>
 <tr><td>Trajectories</td><td>100,000 (quick demo, the published run used 1,000,000)</td></tr>
 <tr><td>Exact P<sub>rxn</sub></td><td>0.4501</td></tr>
-<tr><td>Exact k<sub>on</sub></td><td>1.56 × 10<sup>10</sup> M<sup>-1</sup>s<sup>-1</sup></td></tr>
+<tr><td>Exact k<sub>on</sub></td><td>1.75 × 10<sup>10</sup> M<sup>-1</sup>s<sup>-1</sup></td></tr>
 </tbody>
 </table>
 

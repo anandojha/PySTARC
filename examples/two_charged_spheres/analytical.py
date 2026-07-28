@@ -17,7 +17,7 @@ q_lig = -1.0
 sdie = 78.0
 eps0 = 0.000142
 debye = 7.828
-mu = 0.243
+mu = 0.216208
 b = 10.0
 a = 2.5
 q_esc = 20.0
@@ -169,12 +169,12 @@ def cmp(label, exact, sim, ref_str):
     print(f"  {label:<28s}  {exact:14.6f}  {sv:>14s}  {ref_str:>14s}")
 
 
-cmp("k_b (ų/ps)", k_b, sim_kb, "57.25")
+cmp("k_b (ų/ps)", k_b, sim_kb, "64.45")
 cmp("return_prob", rp, sim_rp, "-")
 cmp("P_rxn", Prxn, sim_prxn, "0.49")
 
 if sim_prxn is not None and sim_kon is not None:
-    print(f"  {'k_on (M⁻¹s⁻¹)':<28s}  {kon:14.4e}  {sim_kon:14.4e}  {'1.69e+10':>14s}")
+    print(f"  {'k_on (M⁻¹s⁻¹)':<28s}  {kon:14.4e}  {sim_kon:14.4e}  {'1.90e+10':>14s}")
     err = abs(sim_prxn - Prxn) / Prxn * 100
     print(f"\n  Simulation vs exact analytical: P_rxn error = {err:.1f}%")
     if err < 5:
