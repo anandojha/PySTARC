@@ -124,6 +124,10 @@ class OuterPropagator:
         rate_b = self._relative_rate(b_radius)
         rate_q = self._relative_rate(self.qradius)
         self.return_prob = rate_b / rate_q if rate_q > 0 else 0.0
+        # The encounter rate at the b-surface is the k_b of k_on = N_A k_b P_rxn.
+        # It is computed here anyway, so keep it rather than discard it.
+        self.k_b = rate_b
+        self.b_radius = b_radius
         # These covers are the radii at which we switch over to the
         # step_near_absorbing_surface propagator near each boundary.
         self.bradius_cover = self._cover(is_inner=True)

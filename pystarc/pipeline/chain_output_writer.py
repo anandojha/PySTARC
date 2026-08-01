@@ -38,6 +38,7 @@ chain BD data, so we keep the two writers separate.
 """
 
 from __future__ import annotations
+import math
 from pystarc.molsystem.system_state import Fate, TrajectoryResult
 from typing import Any, Dict, List, Optional, Tuple
 from collections import Counter
@@ -196,6 +197,68 @@ def _max_steps_of(results: List[TrajectoryResult]) -> int:
     return max(r.steps for r in results)
 
 
+def _rate_block(sim, results) -> dict:
+    """k_on = N_A k_b P_rxn, or a reason why it cannot be reported.
+
+    P_rxn is reacted over reacted plus escaped. Trajectories that ran out of
+    steps committed to neither outcome and are excluded from the denominator
+    rather than counted as escapes. k_b is the encounter rate at the b-surface,
+    computed by the outer propagator. Without that propagator there is no k_b
+    and so no rate.
+    """
+    prop = getattr(sim, "_outer_prop", None)
+    k_b = getattr(prop, "k_b", None) if prop is not None else None
+    n_r = sum(1 for r in results if r.fate == Fate.REACTED)
+    n_e = sum(1 for r in results if r.fate == Fate.ESCAPED)
+    n_c = sum(1 for r in results if r.fate == Fate.MAX_STEPS)
+    out = {
+        "n_reacted": n_r,
+        "n_escaped": n_e,
+        "n_censored": n_c,
+        "censored_fraction": (n_c / (n_r + n_e + n_c)) if (n_r + n_e + n_c) else 0.0,
+        "use_lmz": bool(getattr(sim.params, "use_lmz", False)),
+        "outer_propagator": prop is not None,
+    }
+    if k_b is None:
+        out["k_on"] = None
+        out["reason"] = "no outer propagator, so k_b is undefined"
+        return out
+    n = n_r + n_e
+    if n == 0:
+        out["k_on"] = None
+        out["reason"] = "no trajectory committed to a reaction or an escape"
+        return out
+    p = n_r / n
+    lo, hi = _wilson(n_r, n)
+    conv = 6.02214076e23 * 1e-27 * 1e12          # A^3/ps to M^-1 s^-1
+    out.update({
+        "k_b": float(k_b),
+        "k_b_units": "A^3/ps",
+        "b_radius": float(getattr(prop, "b_radius", 0.0)),
+        "q_radius": float(getattr(prop, "qradius", 0.0)),
+        "return_prob": float(getattr(prop, "return_prob", 0.0)),
+        "P_rxn": float(p),
+        "P_rxn_low": float(lo),
+        "P_rxn_high": float(hi),
+        "k_on": float(conv * k_b * p),
+        "k_on_low": float(conv * k_b * lo),
+        "k_on_high": float(conv * k_b * hi),
+        "k_on_units": "M-1 s-1",
+    })
+    return out
+
+
+def _wilson(reacted: int, n: int, z: float = 1.96):
+    """Wilson score interval on the reaction probability."""
+    if n == 0:
+        return 0.0, 0.0
+    p = reacted / n
+    d = 1.0 + z * z / n
+    c = (p + z * z / (2 * n)) / d
+    h = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
+    return max(0.0, c - h), min(1.0, c + h)
+
+
 def write_results_json(
     work_dir: Path,
     sim,
@@ -215,6 +278,7 @@ def write_results_json(
         summary["steps_per_sec"] = float(total_steps / wall_time_sec)
     data = {
         "summary": summary,
+        "rate": _rate_block(sim, results),
         "diffusion": _diffusion_block(sim),
         "chain": _chain_block(sim),
         "params": _params_block(sim),

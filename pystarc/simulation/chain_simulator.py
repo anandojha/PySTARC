@@ -1201,6 +1201,7 @@ class ChainBDSimulator:
         self.results: List[TrajectoryResult] = []
         self.n_reacted = 0
         self.n_escaped = 0
+        self.n_max_steps = 0
         # Build the LMZ outer propagator for the analytical b-to-q diffusion zone.
         # Without it, trajectories that drift past 1.1 b are simply terminated as
         # ESCAPED, which biases the reaction probability roughly ten times too low
@@ -1827,8 +1828,10 @@ class ChainBDSimulator:
         if pos_at_min is not None:
             _diag["near_miss_pos"] = pos_at_min
             _diag["near_miss_dist"] = min_sep
+        # Running out of steps is neither a reaction nor an escape. Calling it an
+        # escape puts it in the P_rxn denominator and biases the rate downward.
         return TrajectoryResult(
-            Fate.ESCAPED,
+            Fate.MAX_STEPS,
             params.max_steps,
             t_elapsed,
             float(np.linalg.norm(pos)),
@@ -1862,6 +1865,8 @@ class ChainBDSimulator:
             self.n_reacted += 1
         elif result.fate == Fate.ESCAPED:
             self.n_escaped += 1
+        elif result.fate == Fate.MAX_STEPS:
+            self.n_max_steps += 1
 
     def _run_serial(self, n: int) -> None:
         """Run n trajectories sequentially, sharing self.rng."""
