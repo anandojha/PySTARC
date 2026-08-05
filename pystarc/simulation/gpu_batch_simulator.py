@@ -1172,26 +1172,30 @@ class GPUBatchSimulator:
                     )
                     # Build a small pos_lig holding only the GHO atoms for the
                     # reaction check.
-                    reacted = self._check_reactions_gpu_gho(
+                    reacted, _n_sat = self._check_reactions_gpu_gho(
                         _gho_pos
-                    )  # (N_run,) boolean.
+                    )  # (N_run,) boolean and (N_run,) pair count.
                     del _gho_pos
                 else:
                     reacted = cp.zeros(len(run_idx), dtype=cp.bool_)
+                    _n_sat = cp.zeros(len(run_idx), dtype=cp.int64)
                 # Mark the newly reacted trajectories, considering only those
                 # still running.
                 still_running_mask = status[run_idx] == 0
-                newly_reacted = run_idx[reacted & still_running_mask]
+                _newly_mask = reacted & still_running_mask
+                newly_reacted = run_idx[_newly_mask]
                 if len(newly_reacted) > 0:
                     status[newly_reacted] = 1
                     n_reacted += int(len(newly_reacted))
-                # Record the encounter snapshots.
+                # Record the encounter snapshots. The pair count is masked with
+                # the same selection as the positions, because _n_sat is indexed
+                # by position within run_idx rather than by trajectory id.
                 _nr_np = cp.asnumpy(newly_reacted)
                 _enc_traj.extend(_nr_np.tolist())
                 _enc_step.extend([step] * len(_nr_np))
                 _enc_pos.append(cp.asnumpy(pos[newly_reacted]))
                 _enc_q.append(cp.asnumpy(q[newly_reacted]))
-                _enc_npairs.extend([self._rxn_n_needed] * len(_nr_np))
+                _enc_npairs.extend(cp.asnumpy(_n_sat[_newly_mask]).tolist())
             r_mag = cp.linalg.norm(pos_run, axis=1)  # (N_run,)
             # Global indices of trajectories snapped back to the b-surface this
             # step. Their radius jumps discontinuously from the outer region to
@@ -1699,7 +1703,9 @@ class GPUBatchSimulator:
                         _bb_reacted = _total_fired >= self._rxn_n_needed
                         if cp.any(_bb_reacted):
                             _bb_global = sr_idx[_bb_reacted]
-                            _bb_new = _bb_global[status[_bb_global] == 0]
+                            _bb_fired = _total_fired[_bb_reacted]
+                            _bb_keep = status[_bb_global] == 0
+                            _bb_new = _bb_global[_bb_keep]
                             if len(_bb_new) > 0:
                                 status[_bb_new] = 1
                                 n_reacted += int(len(_bb_new))
@@ -1709,7 +1715,9 @@ class GPUBatchSimulator:
                                 _enc_step.extend([step] * len(_bb_np))
                                 _enc_pos.append(cp.asnumpy(pos[_bb_new]))
                                 _enc_q.append(cp.asnumpy(q[_bb_new]))
-                                _enc_npairs.extend([self._rxn_n_needed] * len(_bb_np))
+                                _enc_npairs.extend(
+                                    cp.asnumpy(_bb_fired[_bb_keep]).tolist()
+                                )
             n_steps[sr_idx] += 1
             total_steps += int(sr_mask.sum())
             # Per-step data collection.
@@ -2259,19 +2267,31 @@ class GPUBatchSimulator:
         fired_rxn_idx = cp.where(any_fire, fired_rxn_idx, -1)
         return fired_rxn_idx
 
-    def _check_reactions_gpu_gho(self, gho_pos: "cp.ndarray") -> "cp.ndarray":
+    def _check_reactions_gpu_gho(
+        self, gho_pos: "cp.ndarray"
+    ) -> Tuple["cp.ndarray", "cp.ndarray"]:
         """
         Check the reaction criteria using pre-computed GHO positions. The
         argument gho_pos has shape (N_run, n_pairs, 3) and holds GHO atoms that
         are already rotated and translated. The method returns a (N_run,)
-        boolean array that is True where a trajectory reacted.
+        boolean array that is True where a trajectory reacted, together with the
+        (N_run,) count of pairs inside their cutoff.
+
+        The count is returned rather than discarded because encounters.csv
+        reports it per encounter. A trajectory reacts once at least n_needed
+        pairs are satisfied, so the measured count is at least n_needed and can
+        exceed it, and reporting the threshold instead would write the same
+        number on every row.
         """
         N_run = gho_pos.shape[0]
         n_pairs = len(self._rec_gho_indices)
         if n_pairs == 0:
-            return cp.zeros(N_run, dtype=cp.bool_)
+            return (
+                cp.zeros(N_run, dtype=cp.bool_),
+                cp.zeros(N_run, dtype=cp.int64),
+            )
         rec_gho = self._rec_gho_pos[None, :, :]
         dists = cp.linalg.norm(gho_pos - rec_gho, axis=2)
         satisfied = dists < self._rxn_cutoffs_gpu[None, :]
         n_satisfied = satisfied.sum(axis=1)
-        return n_satisfied >= self._rxn_n_needed
+        return n_satisfied >= self._rxn_n_needed, n_satisfied

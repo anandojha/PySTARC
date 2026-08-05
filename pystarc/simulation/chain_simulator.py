@@ -1568,6 +1568,27 @@ class ChainBDSimulator:
                 )
                 _diag["encounter_pos"] = pos.copy()
                 _diag["encounter_q"] = np.array([ori.w, ori.x, ori.y, ori.z])
+                # Interaction energy at the encounter, sampled here rather than
+                # taken from energy_buf, because that buffer is filled only every
+                # save_interval steps and a reaction rarely lands on one of them.
+                # The steric term is omitted for the same reason as in the buffer,
+                # namely that chain_target_steric_forces returns only the force.
+                _w_rxn = place_chain(state.positions, pos, ori)
+                _e_rxn = 0.0
+                if self.target_grid is not None:
+                    _f, _e = evaluate_target_grid_force_on_chain(
+                        _w_rxn, self._chain_charges, self.target_grid
+                    )
+                    _e_rxn += _e
+                if self.born_grid is not None:
+                    _f, _e = evaluate_born_force_on_chain(
+                        _w_rxn,
+                        self._chain_charges,
+                        self.born_grid,
+                        alpha=self.desolvation_alpha,
+                    )
+                    _e_rxn += _e
+                _diag["energy_at_reaction"] = _e_rxn
                 return TrajectoryResult(
                     Fate.REACTED,
                     step,
