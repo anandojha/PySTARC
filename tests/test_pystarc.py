@@ -35,8 +35,6 @@ from pystarc.simulation.coffdrop_chain import (
     compute_chain_forces,
     compute_constraint_violations,
     place_relaxed_geometry,
-    run_chain_bd_parallel,
-    run_chain_bd_simulation,
     satisfy_constraints,
     satisfy_constraints_hybrid,
     satisfy_constraints_newton,
@@ -141,14 +139,12 @@ from pystarc.motion.do_bd_step import (
     FORCE_CHANGE_ALPHA,
     WATER_VISCOSITY,
     backstep_due_to_force,
-    bd_step,
     bd_step_wiener,
     bd_step_wiener_tensor,
     ermak_mccammon_rotation,
     ermak_mccammon_rotation_tensor,
     ermak_mccammon_translation,
     ermak_mccammon_translation_tensor,
-    escape_radius,
 )
 from pystarc.simulation.nam_simulator import (
     NAMParameters,
@@ -174,16 +170,6 @@ from pystarc.simulation.coffdrop_params import (
     _parse_ff,
     _parse_mapping,
     _txt_to_floats,
-)
-from pystarc.pipeline.gho_injection import (
-    GHOAtom,
-    GHOReactionCriterion,
-    _text,
-    gho_criterion_distance,
-    gho_world_position,
-    inject_gho_from_manual,
-    parse_ghost_atoms_from_input,
-    parse_rxns_xml,
 )
 from pystarc.structures.chain_io import (
     _parse_coffdrop_map_simple,
@@ -308,12 +294,6 @@ from pystarc.structures.molecules import (
     Molecule,
     ReactionCriteria,
 )
-from pystarc.simulation.wiener import (
-    WienerProcess,
-    WienerStep,
-    do_one_full_step,
-    make_initial_dW,
-)
 from pystarc.pipeline.chain_pipeline import (
     _build_pathway_set,
     _load_reaction_pairs_json,
@@ -334,12 +314,6 @@ from pystarc.analysis.convergence import (
     print_convergence,
     save_convergence,
 )
-from pystarc.simulation.we_simulator import (
-    WEParameters,
-    WEResult,
-    WESimulator,
-    WETrajectory,
-)
 from pystarc.pipeline.input_parser import (
     ChainConfig,
     OutputConfig,
@@ -356,11 +330,9 @@ from pystarc.simulation.gpu_batch_simulator import GPUBatchResult
 from pystarc.forces.multipole_farfield import MultipoleExpansion
 from pystarc.global_defs import constants as C, defaults as D
 from pystarc.multi_GPU.multi_GPU_runs import _set_or_create
-from pystarc.simulation import chain_simulator, parallel
-from pystarc.simulation.parallel import _run_numpy_batch
+from pystarc.simulation import chain_simulator
 from pystarc.pipeline.output_writer import write_all
 import pystarc.simulation.outer_propagator as op
-import pystarc.simulation.we_simulator as we_mod
 import pystarc.simulation.coffdrop_chain as mod
 import pystarc.simulation.nam_simulator as nsim
 import pystarc.forces.electrostatic.grid_force
@@ -1036,26 +1008,6 @@ class TestBDStep:
         R = new_ori.to_rotation_matrix()
         assert np.allclose(R @ R.T, np.eye(3), atol=1e-10)
 
-    def test_bd_step_returns_tuple(self):
-        """bd_step returns a shape (3,) position and a Quaternion orientation."""
-        rng = np.random.default_rng(1)
-        pos = np.array([50.0, 0.0, 0.0])
-        ori = Quaternion.identity()
-        new_pos, new_ori = bd_step(
-            pos, ori, np.zeros(3), np.zeros(3), 10.0, 0.01, 0.2, rng
-        )
-        assert new_pos.shape == (3,)
-        assert isinstance(new_ori, Quaternion)
-
-    def test_escape_radius(self):
-        """escape_radius for a 100 Å contact radius is at least 500 Å."""
-        r = escape_radius(100.0)
-        assert r >= 500.0
-
-    def test_escape_radius_fallback(self):
-        """escape_radius applies its fallback minimum of 50 Å for a small contact radius."""
-        r = escape_radius(10.0)
-        assert r >= 50.0
 
     def test_translation_reproducible_seed(self):
         """Ermak McCammon translation is reproducible for two RNGs sharing a seed."""
@@ -2166,14 +2118,6 @@ class TestBDStepForceDominance:
         for _ in range(20):
             ori = ermak_mccammon_rotation(ori, np.zeros(3), 0.01, 0.2, rng)
             assert abs(ori.norm() - 1.0) < 1e-10
-
-    def test_escape_radius_min_500(self):
-        """escape_radius(100) returns at least 500."""
-        assert escape_radius(100.0) >= 500.0
-
-    def test_escape_radius_1000(self):
-        """escape_radius(200) returns at least 1000."""
-        assert escape_radius(200.0) >= 1000.0
 
 
 class TestSystemStateFieldAccess:
@@ -4120,11 +4064,6 @@ class TestHighOrderLegendreAndCentroid:
         for s in steps:
             assert np.all(np.isfinite(s))
 
-    @pytest.mark.parametrize("r", [5.0, 10.0, 20.0, 30.0, 50.0])
-    def test_escape_radius_gt_r(self, r):
-        """The escape radius is strictly greater than the contact radius r."""
-        re = escape_radius(r)
-        assert re > r
 
     @pytest.mark.parametrize("n_rx,n_esc", [(0, 10), (5, 5), (10, 0)])
     def test_p_rxn_values(self, n_rx, n_esc):
@@ -4249,16 +4188,6 @@ class TestDefaultConstructorValues:
         result = T.apply(v)
         assert abs(result[0] - 1.0) < 1e-10
 
-    def test_bd_step_finite(self):
-        """A Brownian-dynamics step returns a finite position and a unit-norm orientation."""
-        rng = np.random.default_rng(42)
-        pos = np.array([50.0, 0.0, 0.0])
-        ori = Quaternion.identity()
-        new_pos, new_ori = bd_step(
-            pos, ori, np.zeros(3), np.zeros(3), 0.01, 0.001, 0.2, rng
-        )
-        assert np.all(np.isfinite(new_pos))
-        assert abs(new_ori.norm() - 1.0) < 1e-10
 
     def test_system_state_default_position_zero(self):
         """SystemState defaults its position to the origin."""
@@ -4426,63 +4355,6 @@ class TestLJForces:
 class TestGHOInjection:
     """Tests for GHO ghost atom auto-injection."""
 
-    def test_gho_world_position_identity(self):
-        """gho_world_position returns the relative position unchanged under identity rotation and zero translation."""
-        atom = GHOAtom(atom_index=0, pos_rel=np.array([1.0, 2.0, 3.0]))
-        rot = np.eye(3)
-        trans = np.zeros(3)
-        pos = gho_world_position(atom, rot, trans)
-        assert np.allclose(pos, [1.0, 2.0, 3.0])
-
-    def test_gho_world_position_rotated(self):
-        """gho_world_position correctly applies a 90 degree rotation about z to the relative position."""
-        atom = GHOAtom(atom_index=0, pos_rel=np.array([1.0, 0.0, 0.0]))
-        # 90 degree rotation around z-axis
-        rot = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-        trans = np.zeros(3)
-        pos = gho_world_position(atom, rot, trans)
-        assert np.allclose(pos, [0.0, 1.0, 0.0], atol=1e-10)
-
-    def test_gho_world_position_translated(self):
-        """gho_world_position adds the translation vector to a ghost atom at the body origin."""
-        atom = GHOAtom(atom_index=0, pos_rel=np.array([0.0, 0.0, 0.0]))
-        trans = np.array([5.0, 3.0, 1.0])
-        pos = gho_world_position(atom, np.eye(3), trans)
-        assert np.allclose(pos, [5.0, 3.0, 1.0])
-
-    def test_gho_criterion_distance(self):
-        """gho_criterion_distance returns the Euclidean distance between two ghost atoms, here 5.0."""
-        g1 = GHOAtom(0, np.array([0.0, 0.0, 0.0]))
-        g2 = GHOAtom(0, np.array([3.0, 4.0, 0.0]))
-        d = gho_criterion_distance(
-            g1, np.eye(3), np.zeros(3), g2, np.eye(3), np.zeros(3)
-        )
-        assert abs(d - 5.0) < 1e-10
-
-    def test_gho_reaction_criterion_satisfied(self):
-        """GHOReactionCriterion.is_satisfied returns True when the pair distance is within the cutoff."""
-        g1 = GHOAtom(0, np.array([0.0, 0.0, 0.0]))
-        g2 = GHOAtom(0, np.array([3.0, 0.0, 0.0]))
-        crit = GHOReactionCriterion([(g1, g2, 5.0)])
-        assert crit.is_satisfied(np.eye(3), np.zeros(3), np.eye(3), np.zeros(3))
-
-    def test_gho_reaction_criterion_not_satisfied(self):
-        """GHOReactionCriterion.is_satisfied returns False when the pair distance exceeds the cutoff."""
-        g1 = GHOAtom(0, np.array([0.0, 0.0, 0.0]))
-        g2 = GHOAtom(0, np.array([10.0, 0.0, 0.0]))
-        crit = GHOReactionCriterion([(g1, g2, 5.0)])
-        assert not crit.is_satisfied(np.eye(3), np.zeros(3), np.eye(3), np.zeros(3))
-
-    def test_parse_manual_ghost_atoms(self):
-        """inject_gho_from_manual assigns ghost atoms to the receptor or ligand list per the spec's molecule index."""
-        mol1_pos = np.random.default_rng(0).random((10, 3)) * 20.0
-        mol2_pos = np.random.default_rng(1).random((5, 3)) * 10.0
-        spec = "3,0,17.0\n4,0,10.0"
-        g1, g2 = inject_gho_from_manual(
-            spec, mol1_pos, mol2_pos, np.zeros(3), np.zeros(3)
-        )
-        assert len(g1) == 2
-        assert len(g2) == 0
 
     def test_rxns_xml_parser_handles_missing_file(self):
         """_parse_rxns_xml_criteria returns an empty pair list and n_needed of -1 for a missing file."""
@@ -6153,124 +6025,6 @@ class TestConvergenceAnalysis:
             assert loaded["P_rxn"] == pytest.approx(0.1)
 
 
-class TestWienerProcess:
-    def test_init(self):
-        """WienerProcess initializes with t zero, the given dt and dW, and at_end False."""
-        dW = np.array([1.0, 2.0, 3.0])
-        wp = WienerProcess(dW, dt=0.5)
-        assert wp.t == 0.0
-        assert wp.dt == 0.5
-        np.testing.assert_array_equal(wp.dW, dW)
-        assert wp.at_end is False
-
-    def test_step_forward(self):
-        """step_forward advances t by dt and sets at_end True at the final step."""
-        wp = WienerProcess(np.zeros(3), dt=0.5)
-        wp.step_forward()
-        assert wp.t == pytest.approx(0.5)
-        assert wp.at_end is True
-
-    def test_split(self):
-        """Splitting a Wiener process halves dt and preserves the summed Brownian increment."""
-        rng = np.random.default_rng(42)
-        dW = np.array([1.0, 0.0, 0.0])
-        wp = WienerProcess(dW, dt=1.0)
-        wp.split(rng)
-        assert wp.at_end is False
-        assert wp.dt == pytest.approx(0.5)
-        w1 = wp.dW.copy()
-        wp.step_forward()
-        assert wp.t == pytest.approx(0.5)
-        w2 = wp.dW.copy()
-        np.testing.assert_allclose(w1 + w2, dW, atol=1e-10)
-        wp.step_forward()
-        assert wp.t == pytest.approx(1.0)
-        assert wp.at_end is True
-
-    def test_double_split(self):
-        """Double splitting quarters dt while preserving total increment and total time."""
-        rng = np.random.default_rng(99)
-        dW = np.array([2.0, 3.0])
-        wp = WienerProcess(dW, dt=2.0)
-        wp.split(rng)
-        wp.split(rng)
-        assert wp.dt == pytest.approx(0.5)
-        total_w = np.zeros(2)
-        total_t = 0.0
-        while not wp.at_end:
-            total_w += wp.dW
-            total_t += wp.dt
-            wp.step_forward()
-        np.testing.assert_allclose(total_w, dW, atol=1e-10)
-        assert total_t == pytest.approx(2.0)
-
-
-class TestDoOneFullStep:
-    def test_no_backstep(self):
-        """do_one_full_step advances once with no backstep, returning the full dt."""
-        call_count = [0]
-
-        def advance(dW, t, dt):
-            call_count[0] += 1
-            return False, False
-
-        def stepback(t, dt):
-            pass
-
-        rng = np.random.default_rng(1)
-        dW = np.array([0.1, 0.2])
-        final_dt = do_one_full_step(advance, stepback, rng, dW, 0.5)
-        assert final_dt == pytest.approx(0.5)
-        assert call_count[0] == 1
-
-    def test_one_backstep(self):
-        """do_one_full_step retries with halved dt after a rejected step requesting a backstep."""
-        step_count = [0]
-
-        def advance(dW, t, dt):
-            step_count[0] += 1
-            if step_count[0] == 1:
-                return False, True
-            return False, False
-
-        def stepback(t, dt):
-            pass
-
-        rng = np.random.default_rng(7)
-        dW = np.array([1.0, 1.0, 1.0])
-        final_dt = do_one_full_step(advance, stepback, rng, dW, 1.0)
-        assert final_dt == pytest.approx(0.5)
-        assert step_count[0] >= 2
-
-    def test_trajectory_done(self):
-        """do_one_full_step returns the original dt when the trajectory finishes on the first advance."""
-
-        def advance(dW, t, dt):
-            return True, False
-
-        def stepback(t, dt):
-            pass
-
-        rng = np.random.default_rng(1)
-        final_dt = do_one_full_step(advance, stepback, rng, np.zeros(3), 0.2)
-        assert final_dt == pytest.approx(0.2)
-
-
-class TestMakeInitialDW:
-    def test_shape(self):
-        """make_initial_dW returns an array of the requested length."""
-        rng = np.random.default_rng(42)
-        dW = make_initial_dW(6, 0.5, rng)
-        assert dW.shape == (6,)
-
-    def test_scaling(self):
-        """make_initial_dW samples have standard deviation sqrt(dt)."""
-        rng = np.random.default_rng(42)
-        n = 100000
-        samples = np.array([make_initial_dW(1, 2.0, rng)[0] for _ in range(n)])
-        assert np.std(samples) == pytest.approx(math.sqrt(2.0), abs=0.05)
-
-
 class TestEffectiveCharges:
     def test_single_charge_potential(self):
         """An unscreened single point charge gives potential q/r."""
@@ -7637,72 +7391,6 @@ class TestCombineDataHelpers:
 
 
 # Weighted Ensemble data structures
-class TestWEDataStructures:
-    def test_we_parameters_defaults(self):
-        """WEParameters uses default n_per_bin of 10, n_bins of 40, and dt of 0.2."""
-        p = WEParameters()
-        assert p.n_per_bin == 10
-        assert p.n_bins == 40
-        assert p.dt == 0.2
-
-    def test_we_parameters_auto_escape(self):
-        """WEParameters sets r_escape to twice r_start when r_escape is given as zero."""
-        p = WEParameters(r_start=50.0, r_escape=0.0)
-        assert p.r_escape == 100.0
-
-    def test_we_parameters_custom_escape(self):
-        """WEParameters keeps a custom nonzero r_escape value."""
-        p = WEParameters(r_start=50.0, r_escape=200.0)
-        assert p.r_escape == 200.0
-
-    def test_we_trajectory_copy(self):
-        """WETrajectory.copy produces an independent copy whose position edits do not affect the original."""
-        t = WETrajectory(
-            position=np.array([1.0, 2.0, 3.0]),
-            orientation=Quaternion(1, 0, 0, 0),
-            weight=0.5,
-            bin_idx=3,
-            steps=10,
-            time_ps=2.0,
-        )
-        c = t.copy()
-        assert np.allclose(c.position, t.position)
-        assert c.weight == t.weight
-        assert c.bin_idx == t.bin_idx
-        c.position[0] = 999.0
-        assert t.position[0] == 1.0
-
-    def test_we_result_reaction_probability(self):
-        """WEResult.reaction_probability equals the reacted weight fraction of total terminated weight."""
-        r = WEResult(
-            n_iterations=100,
-            n_per_bin=10,
-            n_bins=40,
-            flux_reaction=0.1,
-            flux_escape=0.2,
-            weight_reacted=0.3,
-            weight_escaped=0.7,
-            r_start=50.0,
-            r_escape=100.0,
-            dt=0.2,
-        )
-        assert r.reaction_probability == pytest.approx(0.3)
-
-    def test_we_result_zero_weight(self):
-        """WEResult.reaction_probability is 0.0 when no weight has reacted or escaped."""
-        r = WEResult(
-            n_iterations=0,
-            n_per_bin=10,
-            n_bins=40,
-            flux_reaction=0,
-            flux_escape=0,
-            weight_reacted=0,
-            weight_escaped=0,
-            r_start=50.0,
-            r_escape=100.0,
-            dt=0.2,
-        )
-        assert r.reaction_probability == 0.0
 
 
 # Force engine _Grid
@@ -7849,111 +7537,6 @@ class TestGeometryPipeline:
 
 
 # GHO injection XML parsing
-class TestGHOInjectionParsing:
-    def test_parse_rxns_xml_with_dummies(self):
-        """parse_rxns_xml returns one dummy with the correct name and two ghost atoms parsed from the XML."""
-
-        xml = (
-            '<?xml version="1.0"?>\n<reactions>\n'
-            "  <dummy><name>gho_rec</name><core>receptor</core>\n"
-            "    <atoms>42 1.0 2.0 3.0\n99 4.0 5.0 6.0</atoms>\n"
-            "  </dummy>\n</reactions>\n"
-        )
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
-            f.write(xml)
-            f.flush()
-            dummies = parse_rxns_xml(f.name)
-        os.unlink(f.name)
-        assert len(dummies) == 1
-        assert dummies[0].name == "gho_rec"
-        assert len(dummies[0].atoms) == 2
-        assert dummies[0].atoms[0].atom_index == 42
-        np.testing.assert_allclose(dummies[0].atoms[1].pos_rel, [4.0, 5.0, 6.0])
-
-    def test_parse_rxns_xml_empty(self):
-        """parse_rxns_xml returns an empty list when the reactions element contains no dummies."""
-
-        xml = '<?xml version="1.0"?>\n<reactions></reactions>\n'
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
-            f.write(xml)
-            f.flush()
-            dummies = parse_rxns_xml(f.name)
-        os.unlink(f.name)
-        assert len(dummies) == 0
-
-    def test_parse_rxns_xml_bad_file(self):
-        """parse_rxns_xml raises ValueError matching Cannot parse on malformed XML input."""
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
-            f.write("not xml at all{{{")
-            f.flush()
-            with pytest.raises(ValueError, match="Cannot parse"):
-                parse_rxns_xml(f.name)
-        os.unlink(f.name)
-
-    def test_parse_ghost_atoms_from_input(self):
-        """parse_ghost_atoms_from_input parses two ghost atoms with indices and positions from the lookup."""
-
-        text = "3220,0,17.0\n3221,1,10.0\n"
-        positions = {3220: np.array([1.0, 2.0, 3.0]), 3221: np.array([4.0, 5.0, 6.0])}
-        atoms = parse_ghost_atoms_from_input(text, positions)
-        assert len(atoms) == 2
-        assert atoms[0].atom_index == 0
-        np.testing.assert_allclose(atoms[0].pos_rel, [1.0, 2.0, 3.0])
-
-    def test_parse_ghost_atoms_empty_lines(self):
-        """parse_ghost_atoms_from_input returns no atoms when the input has only blank lines."""
-
-        text = "\n\n  \n"
-        atoms = parse_ghost_atoms_from_input(text, {})
-        assert len(atoms) == 0
-
-    def test_parse_ghost_atoms_bad_values(self):
-        """parse_ghost_atoms_from_input skips lines with non-numeric values and keeps the valid one."""
-
-        text = "abc,def,ghi\n3220,0,17.0\n"
-        atoms = parse_ghost_atoms_from_input(text, {3220: np.zeros(3)})
-        assert len(atoms) == 1
-
-    def test_gho_reaction_criterion_from_rxns_xml(self):
-        """GHOReactionCriterion.from_rxns_xml builds one pair from a criterion with a single atom pair."""
-        xml = (
-            '<?xml version="1.0"?>\n<reactions>\n'
-            "  <reaction><criterion>\n"
-            "    <pair><atom1>10</atom1><atom2>5</atom2><distance>17.0</distance></pair>\n"
-            "  </criterion></reaction>\n</reactions>\n"
-        )
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
-            f.write(xml)
-            f.flush()
-            gho1 = GHOAtom(atom_index=10, pos_rel=np.zeros(3))
-            gho2 = GHOAtom(atom_index=5, pos_rel=np.zeros(3))
-            crit = GHOReactionCriterion.from_rxns_xml(f.name, [gho1], [gho2])
-        os.unlink(f.name)
-        assert len(crit.pairs) == 1
-
-    def test_gho_reaction_criterion_empty_xml(self):
-        """GHOReactionCriterion.from_rxns_xml yields no pairs for an empty reactions element."""
-        xml = '<?xml version="1.0"?>\n<reactions></reactions>\n'
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
-            f.write(xml)
-            f.flush()
-            crit = GHOReactionCriterion.from_rxns_xml(f.name, [], [])
-        os.unlink(f.name)
-        assert len(crit.pairs) == 0
-
-    def test_text_helper_required_missing(self):
-        """_text raises ValueError matching Missing required when a required child element is absent."""
-
-        node = ET.Element("test")
-        with pytest.raises(ValueError, match="Missing required"):
-            _text(node, "nonexistent")
-
-    def test_text_helper_optional_missing(self):
-        """_text returns None for a missing child element when required is False."""
-
-        node = ET.Element("test")
-        assert _text(node, "nonexistent", required=False) is None
 
 
 # Geometry _parse_rxns_xml_criteria
@@ -8226,57 +7809,6 @@ class TestDiffusionalRotationSampling:
 
 
 # WE result rate constant and repr
-class TestWEResultExtended:
-    def test_rate_constant_nonzero(self):
-        """WEResult.rate_constant returns a positive k_on for nonzero reactive flux."""
-        r = WEResult(
-            n_iterations=100,
-            n_per_bin=10,
-            n_bins=40,
-            flux_reaction=0.1,
-            flux_escape=0.2,
-            weight_reacted=0.3,
-            weight_escaped=0.7,
-            r_start=50.0,
-            r_escape=100.0,
-            dt=0.2,
-        )
-        k = r.rate_constant(D_rel=0.1)
-        assert k > 0
-
-    def test_rate_constant_zero_prxn(self):
-        """WEResult.rate_constant returns 0.0 when the reaction probability is zero."""
-        r = WEResult(
-            n_iterations=0,
-            n_per_bin=10,
-            n_bins=40,
-            flux_reaction=0,
-            flux_escape=0,
-            weight_reacted=0,
-            weight_escaped=0,
-            r_start=50.0,
-            r_escape=100.0,
-            dt=0.2,
-        )
-        assert r.rate_constant(D_rel=0.1) == 0.0
-
-    def test_repr(self):
-        """repr of WEResult includes the class name and the P_rxn field."""
-        r = WEResult(
-            n_iterations=100,
-            n_per_bin=10,
-            n_bins=40,
-            flux_reaction=0.1,
-            flux_escape=0.2,
-            weight_reacted=0.3,
-            weight_escaped=0.7,
-            r_start=50.0,
-            r_escape=100.0,
-            dt=0.2,
-        )
-        s = repr(r)
-        assert "WEResult" in s
-        assert "P_rxn" in s
 
 
 # Engine _GridStack
@@ -8605,201 +8137,6 @@ class TestChainBDPropagatorAdvanced:
 
 
 # WE simulator construction and bin methods
-class TestWESimulatorConstruction:
-    def _make_simple_molecules(self):
-        mol1 = Molecule(name="rec")
-        mol1.atoms.append(
-            Atom(
-                index=0,
-                name="A",
-                residue_name="X",
-                residue_index=1,
-                chain="A",
-                x=0,
-                y=0,
-                z=0,
-                charge=1.0,
-                radius=2.0,
-            )
-        )
-        mol2 = Molecule(name="lig")
-        mol2.atoms.append(
-            Atom(
-                index=0,
-                name="B",
-                residue_name="Y",
-                residue_index=1,
-                chain="A",
-                x=50,
-                y=0,
-                z=0,
-                charge=-1.0,
-                radius=2.0,
-            )
-        )
-        return mol1, mol2
-
-    def test_we_simulator_constructs(self):
-        """WESimulator constructs with the given r_start and builds n_bins+1 bin edges."""
-        mol1, mol2 = self._make_simple_molecules()
-        mob = MobilityTensor.from_radii(10.0, 5.0)
-        criteria = ReactionCriteria(
-            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
-        )
-        rxn = ReactionInterface(name="rxn", criteria=criteria)
-        ps = PathwaySet(reactions=[rxn])
-        params = WEParameters(
-            n_per_bin=2, n_bins=5, n_iterations=1, r_start=50.0, seed=42
-        )
-
-        sim = WESimulator(mol1, mol2, mob, ps, params)
-        assert sim.params.r_start == 50.0
-        assert len(sim._bins) == 6
-
-    def test_we_total_time_scales_with_steps_per_iteration(self):
-        """WE total time accumulates steps_per_iteration times dt per outer iteration."""
-
-        mol1, mol2 = self._make_simple_molecules()
-        mob = MobilityTensor.from_radii(10.0, 5.0)
-        criteria = ReactionCriteria(
-            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
-        )
-        rxn = ReactionInterface(name="rxn", criteria=criteria)
-        ps = PathwaySet(reactions=[rxn])
-        params = WEParameters(
-            n_per_bin=2,
-            n_bins=5,
-            n_iterations=3,
-            r_start=50.0,
-            steps_per_iteration=4,
-            dt=0.2,
-            seed=42,
-        )
-
-        sim = WESimulator(mol1, mol2, mob, ps, params)
-        sim.run()
-        # Expected: 3 iters * 4 steps/iter * 0.2 ps/step = 2.4 ps
-        expected = 3 * 4 * 0.2
-        assert math.isclose(
-            sim.total_time_ps, expected, abs_tol=1e-9
-        ), f"total_time_ps={sim.total_time_ps}, expected={expected} ps"
-
-    def test_we_bin_of_interior(self):
-        """_bin_of returns a valid bin index in [0, n_bins) for a separation inside the range."""
-        mol1, mol2 = self._make_simple_molecules()
-        mob = MobilityTensor.from_radii(10.0, 5.0)
-        criteria = ReactionCriteria(
-            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
-        )
-        rxn = ReactionInterface(name="rxn", criteria=criteria)
-        ps = PathwaySet(reactions=[rxn])
-        params = WEParameters(
-            n_per_bin=2, n_bins=5, n_iterations=1, r_start=50.0, seed=42
-        )
-
-        sim = WESimulator(mol1, mol2, mob, ps, params)
-        idx = sim._bin_of(30.0)
-        assert 0 <= idx < 5
-
-    def test_we_bin_of_outside(self):
-        """_bin_of returns -1 beyond the outer edge and clamps a separation below the inner edge to the innermost bin 0."""
-        mol1, mol2 = self._make_simple_molecules()
-        mob = MobilityTensor.from_radii(10.0, 5.0)
-        criteria = ReactionCriteria(
-            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
-        )
-        rxn = ReactionInterface(name="rxn", criteria=criteria)
-        ps = PathwaySet(reactions=[rxn])
-        params = WEParameters(
-            n_per_bin=2, n_bins=5, n_iterations=1, r_start=50.0, seed=42
-        )
-
-        sim = WESimulator(mol1, mol2, mob, ps, params)
-        assert sim._bin_of(200.0) == -1
-        # A separation below the inner edge now clamps to the innermost bin.
-        assert sim._bin_of(0.1) == 0
-
-    def test_we_place_mol2(self):
-        """_place_mol2 positions mol2 so its atom sits at the requested displacement."""
-        mol1, mol2 = self._make_simple_molecules()
-        mob = MobilityTensor.from_radii(10.0, 5.0)
-        criteria = ReactionCriteria(
-            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
-        )
-        rxn = ReactionInterface(name="rxn", criteria=criteria)
-        ps = PathwaySet(reactions=[rxn])
-        params = WEParameters(
-            n_per_bin=2, n_bins=5, n_iterations=1, r_start=50.0, seed=42
-        )
-
-        sim = WESimulator(mol1, mol2, mob, ps, params)
-        pos = np.array([30.0, 0.0, 0.0])
-        ori = Quaternion.identity()
-        placed = sim._place_mol2(pos, ori)
-        assert abs(placed.atoms[0].x - 30.0) < 1e-6
-
-    def test_we_init_ensemble(self):
-        """_init_ensemble returns a nonempty walker set whose weights sum to 1."""
-        mol1, mol2 = self._make_simple_molecules()
-        mob = MobilityTensor.from_radii(10.0, 5.0)
-        criteria = ReactionCriteria(
-            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
-        )
-        rxn = ReactionInterface(name="rxn", criteria=criteria)
-        ps = PathwaySet(reactions=[rxn])
-        params = WEParameters(
-            n_per_bin=2, n_bins=5, n_iterations=1, r_start=50.0, seed=42
-        )
-
-        sim = WESimulator(mol1, mol2, mob, ps, params)
-        ensemble = sim._init_ensemble()
-        assert len(ensemble) > 0
-        total_weight = sum(t.weight for t in ensemble)
-        assert total_weight == pytest.approx(1.0, abs=1e-10)
-
-    def test_we_log_bins(self):
-        """Log bin scheme yields n_bins+1 ascending edges."""
-        mol1, mol2 = self._make_simple_molecules()
-        mob = MobilityTensor.from_radii(10.0, 5.0)
-        criteria = ReactionCriteria(
-            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
-        )
-        rxn = ReactionInterface(name="rxn", criteria=criteria)
-        ps = PathwaySet(reactions=[rxn])
-        params = WEParameters(
-            n_per_bin=2,
-            n_bins=10,
-            n_iterations=1,
-            r_start=50.0,
-            seed=42,
-            bin_scheme="log",
-        )
-
-        sim = WESimulator(mol1, mol2, mob, ps, params)
-        assert len(sim._bins) == 11
-        assert sim._bins[0] < sim._bins[-1]
-
-    def test_we_linear_bins(self):
-        """Linear bin scheme yields equally spaced edges."""
-        mol1, mol2 = self._make_simple_molecules()
-        mob = MobilityTensor.from_radii(10.0, 5.0)
-        criteria = ReactionCriteria(
-            name="r", pairs=[ContactPair(0, 0, 10.0)], n_needed=1
-        )
-        rxn = ReactionInterface(name="rxn", criteria=criteria)
-        ps = PathwaySet(reactions=[rxn])
-        params = WEParameters(
-            n_per_bin=2,
-            n_bins=10,
-            n_iterations=1,
-            r_start=50.0,
-            seed=42,
-            bin_scheme="linear",
-        )
-
-        sim = WESimulator(mol1, mol2, mob, ps, params)
-        diffs = np.diff(sim._bins)
-        assert np.allclose(diffs, diffs[0], rtol=0.01)
 
 
 # NAM simulator with tiny molecules
@@ -9279,136 +8616,6 @@ class TestNAMSimulatorIntegration:
 
 
 # WE simulator full run loop integration
-class TestWESimulatorIntegration:
-    def _make_dh_force(self):
-        def dh_force(mol1, mol2):
-            q1 = mol1.total_charge()
-            q2 = mol2.total_charge()
-            c1 = mol1.centroid()
-            c2 = mol2.centroid()
-            dr = c2 - c1
-            r = float(np.linalg.norm(dr))
-            if r < 1e-8:
-                return np.zeros(3), np.zeros(3), 0.0
-            lB = 7.18
-            lD = 7.86
-            phi = q1 * lB * math.exp(-r / lD) / r
-            energy = q2 * phi
-            dphi_dr = -q1 * lB * math.exp(-r / lD) * (1.0 / r**2 + 1.0 / (r * lD))
-            force = -q2 * dphi_dr * dr / r
-            return force, np.zeros(3), energy
-
-        return dh_force
-
-    def test_we_full_run(self):
-        """WE full run returns a WEResult with the requested iteration count and non-negative reacted and escaped weights."""
-
-        mol1 = Molecule(name="rec")
-        mol1.atoms.append(
-            Atom(
-                index=0,
-                name="A",
-                residue_name="X",
-                residue_index=1,
-                chain="A",
-                x=0,
-                y=0,
-                z=0,
-                charge=5.0,
-                radius=2.0,
-            )
-        )
-        mol2 = Molecule(name="lig")
-        mol2.atoms.append(
-            Atom(
-                index=0,
-                name="B",
-                residue_name="Y",
-                residue_index=1,
-                chain="A",
-                x=30,
-                y=0,
-                z=0,
-                charge=-3.0,
-                radius=2.0,
-            )
-        )
-        mob = MobilityTensor.from_radii(3.0, 3.0)
-        criteria = ReactionCriteria(
-            name="r", pairs=[ContactPair(0, 0, 8.0)], n_needed=1
-        )
-        rxn = ReactionInterface(name="rxn", criteria=criteria)
-        ps = PathwaySet(reactions=[rxn])
-        params = WEParameters(
-            n_per_bin=3,
-            n_bins=5,
-            n_iterations=5,
-            r_start=30.0,
-            dt=0.2,
-            seed=42,
-            steps_per_iteration=20,
-            verbose=False,
-        )
-        sim = WESimulator(mol1, mol2, mob, ps, params, self._make_dh_force())
-        result = sim.run()
-        assert isinstance(result, WEResult)
-        assert result.n_iterations == 5
-        assert result.weight_reacted >= 0
-        assert result.weight_escaped >= 0
-
-    def test_we_run_produces_flux(self):
-        """WE run produces a non-negative reaction flux and one flux value per iteration."""
-
-        mol1 = Molecule(name="rec")
-        mol1.atoms.append(
-            Atom(
-                index=0,
-                name="A",
-                residue_name="X",
-                residue_index=1,
-                chain="A",
-                x=0,
-                y=0,
-                z=0,
-                charge=10.0,
-                radius=2.0,
-            )
-        )
-        mol2 = Molecule(name="lig")
-        mol2.atoms.append(
-            Atom(
-                index=0,
-                name="B",
-                residue_name="Y",
-                residue_index=1,
-                chain="A",
-                x=20,
-                y=0,
-                z=0,
-                charge=-10.0,
-                radius=2.0,
-            )
-        )
-        mob = MobilityTensor.from_radii(3.0, 3.0)
-        criteria = ReactionCriteria(
-            name="r", pairs=[ContactPair(0, 0, 12.0)], n_needed=1
-        )
-        rxn = ReactionInterface(name="rxn", criteria=criteria)
-        ps = PathwaySet(reactions=[rxn])
-        params = WEParameters(
-            n_per_bin=5,
-            n_bins=8,
-            n_iterations=10,
-            r_start=20.0,
-            dt=0.5,
-            seed=42,
-            steps_per_iteration=50,
-            verbose=False,
-        )
-        sim = WESimulator(mol1, mol2, mob, ps, params, self._make_dh_force())
-        result = sim.run()
-        assert result.flux_reaction >= 0
-        assert len(result.iteration_fluxes) == 10
 
 
 class TestPqrFormatVariations:
@@ -11379,357 +10586,6 @@ class TestChainBDSimulatorBornAttributes:
         np.testing.assert_allclose(forces[:, 0], expected_fx, atol=1e-10)
         np.testing.assert_allclose(forces[:, 1], expected_fy, atol=1e-10)
         np.testing.assert_allclose(forces[:, 2], 0.0, atol=1e-10)
-
-
-class TestRunChainBDSimulationBorn:
-    """Integration tests for the run_chain_bd_simulation entry point with
-    born_grid_dx threaded through. These tests exercise the full path:
-        CLI-style kwargs -> DX file load -> ChainBDSimulator construction
-        -> trajectory propagation.
-
-    They catch breakage that unit tests on individual functions cannot,
-    e.g. arg-name typos in the worker tuple, missing-file handling, and
-    parameter forwarding regressions.
-    """
-
-    @staticmethod
-    def _write_linear_born_dx(path, slope_x: float = 1.0):
-        """Write a synthetic linear Born DX file g(x, y, z) = slope_x * x
-        in the OpenDX format that DXGrid.from_file understands."""
-        nx = ny = nz = 21
-        spacing = 1.0
-        origin = (-10.0, -10.0, -10.0)
-        # APBS-style OpenDX header.
-        lines = []
-        lines.append(f"object 1 class gridpositions counts {nx} {ny} {nz}")
-        lines.append(f"origin {origin[0]:.6e} {origin[1]:.6e} {origin[2]:.6e}")
-        lines.append(f"delta {spacing:.6e} 0.000000e+00 0.000000e+00")
-        lines.append(f"delta 0.000000e+00 {spacing:.6e} 0.000000e+00")
-        lines.append(f"delta 0.000000e+00 0.000000e+00 {spacing:.6e}")
-        lines.append(f"object 2 class gridconnections counts {nx} {ny} {nz}")
-        lines.append(
-            f"object 3 class array type double rank 0 items {nx*ny*nz} data follows"
-        )
-        vals = []
-        for i in range(nx):
-            x = origin[0] + i * spacing
-            v = slope_x * x
-            for j in range(ny):
-                for k in range(nz):
-                    vals.append(v)
-        # Write 3 floats per line.
-        for n in range(0, len(vals), 3):
-            chunk = vals[n : n + 3]
-            lines.append(" ".join(f"{x:.6e}" for x in chunk))
-        lines.append('attribute "dep" string "positions"')
-        lines.append('object "regular positions regular connections" class field')
-        lines.append('component "positions" value 1')
-        lines.append('component "connections" value 2')
-        lines.append('component "data" value 3')
-        with open(path, "w") as f:
-            f.write("\n".join(lines) + "\n")
-
-    def test_run_chain_bd_simulation_with_born_grid_dx_none_unchanged(self, tmp_path):
-        """Running with born_grid_dx None produces the expected number of trajectories each with positive step counts."""
-
-        chain = chain_from_sequence("GLY-ALA", caps=("ACE", "NME"))
-        results = run_chain_bd_simulation(
-            chain=chain,
-            n_trajectories=2,
-            max_steps=20,
-            dt=0.01,
-            r_start=20.0,
-            r_escape=50.0,
-            seed=0,
-        )
-        assert len(results) == 2
-        for r in results:
-            assert r.steps > 0
-
-    def test_run_chain_bd_simulation_missing_born_file_raises(self, tmp_path):
-        """A nonexistent born_grid_dx path raises FileNotFoundError before any trajectory runs."""
-
-        chain = chain_from_sequence("GLY-ALA", caps=("ACE", "NME"))
-        bogus = str(tmp_path / "does_not_exist_born.dx")
-        with pytest.raises(FileNotFoundError, match="Born DX file not found"):
-            run_chain_bd_simulation(
-                chain=chain,
-                n_trajectories=2,
-                max_steps=10,
-                dt=0.01,
-                r_start=20.0,
-                r_escape=50.0,
-                seed=0,
-                born_grid_dx=bogus,
-            )
-
-    def test_run_chain_bd_simulation_loads_born_grid_and_produces_force(
-        self,
-        tmp_path,
-    ):
-        """Loading a real linear Born DX file runs end to end and reproduces the closed-form per-bead force."""
-
-        born_path = tmp_path / "test_linear_born.dx"
-        self._write_linear_born_dx(str(born_path), slope_x=1.0)
-        assert born_path.exists()
-
-        born_grid = DXGrid.from_file(str(born_path))
-        grad = born_grid.batch_gradient(np.array([[0.0, 0.0, 0.0]]))[0]
-        np.testing.assert_allclose(grad, [1.0, 0.0, 0.0], atol=1e-10)
-
-        chain = chain_from_sequence("GLY-ALA", caps=("ACE", "NME"))
-        positions = place_relaxed_geometry(chain)
-        positions = positions - positions.mean(axis=0)
-        params = ChainBDParameters(
-            n_trajectories=1,
-            dt=0.01,
-            max_steps=10,
-            r_start=20.0,
-            r_escape=50.0,
-            seed=0,
-        )
-        sim = ChainBDSimulator(
-            target=Molecule(name="empty", atoms=[]),
-            chain_template=chain,
-            chain_init_body_positions=positions,
-            params=params,
-            pathway_set=PathwaySet(),
-            D_trans=0.1,
-            D_rot=0.01,
-            target_grid=None,
-            born_grid=born_grid,
-            desolvation_alpha=DEFAULT_DESOLVATION_ALPHA,
-        )
-
-        # 3. Probe per-atom external force at the body-frame layout.
-        forces = sim._compute_per_atom_external_forces(positions.copy())
-        chain_charges = np.array(
-            [a.charge for a in chain.atoms],
-            dtype=float,
-        )
-        expected_fx = -DEFAULT_DESOLVATION_ALPHA * (chain_charges**2)
-        np.testing.assert_allclose(forces[:, 0], expected_fx, atol=1e-8)
-        np.testing.assert_allclose(forces[:, 1:], 0.0, atol=1e-8)
-
-
-        results = run_chain_bd_simulation(
-            chain=chain,
-            n_trajectories=2,
-            max_steps=20,
-            dt=0.01,
-            r_start=20.0,
-            r_escape=50.0,
-            seed=0,
-            born_grid_dx=str(born_path),
-            desolvation_alpha=DEFAULT_DESOLVATION_ALPHA,
-        )
-        assert len(results) == 2
-        for r in results:
-            assert r.steps > 0
-
-
-class TestRunChainBDSimulationAutoDiffusion:
-    """Integration tests for auto_diffusion threading through
-    run_chain_bd_simulation and run_chain_bd_parallel.
-
-    auto_diffusion is the public switch that turns on Rotne-Prager-
-    Yamakawa hydrodynamics: ChainBDSimulator computes (3, 3) anisotropic
-    D_trans and D_rot tensors from chain bead geometry instead of using
-    scalar defaults.
-
-    These tests verify the entry-point plumbing only. The RPY physics
-    itself is exercised in TestChainBDSimulatorAutoDiffusion (existing).
-    """
-
-    def test_default_off_uses_scalar_defaults(self):
-        """With auto_diffusion off by default, the simulator runs and returns two trajectories that each take at least one step."""
-
-        chain = chain_from_sequence("GLY-ALA", caps=("ACE", "NME"))
-        results = run_chain_bd_simulation(
-            chain=chain,
-            n_trajectories=2,
-            max_steps=10,
-            dt=0.01,
-            r_start=20.0,
-            r_escape=50.0,
-            seed=0,
-        )
-        assert len(results) == 2
-        for r in results:
-            assert r.steps > 0
-
-    def test_auto_diffusion_true_with_explicit_D_raises(self):
-        """run_chain_bd_simulation raises ValueError when auto_diffusion=True is combined with an explicit D_trans."""
-
-        chain = chain_from_sequence("GLY-ALA", caps=("ACE", "NME"))
-        with pytest.raises(ValueError, match="auto_diffusion=True"):
-            run_chain_bd_simulation(
-                chain=chain,
-                n_trajectories=2,
-                max_steps=10,
-                dt=0.01,
-                r_start=20.0,
-                r_escape=50.0,
-                seed=0,
-                auto_diffusion=True,
-                D_trans=0.1,  # forbidden when auto_diffusion=True
-            )
-
-    def test_auto_diffusion_true_runs_and_produces_trajectories(self):
-        """auto_diffusion=True runs end to end and returns two trajectories that each advance at least one step."""
-
-        chain = chain_from_sequence("GLY-ALA", caps=("ACE", "NME"))
-        results = run_chain_bd_simulation(
-            chain=chain,
-            n_trajectories=2,
-            max_steps=20,
-            dt=0.01,
-            r_start=20.0,
-            r_escape=50.0,
-            seed=0,
-            auto_diffusion=True,
-        )
-        assert len(results) == 2
-        for r in results:
-            assert r.steps > 0
-
-    def test_auto_diffusion_threads_through_parallel(self):
-        """run_chain_bd_parallel forwards auto_diffusion through the worker tuple, returning all four trajectories under n_workers=2."""
-
-        chain = chain_from_sequence("GLY-ALA", caps=("ACE", "NME"))
-        results = run_chain_bd_parallel(
-            chain=chain,
-            n_trajectories=4,
-            n_workers=2,
-            max_steps=10,
-            dt=0.01,
-            r_start=20.0,
-            r_escape=50.0,
-            seed=42,
-            auto_diffusion=True,
-        )
-        assert len(results) == 4
-        for r in results:
-            assert r.steps > 0
-
-
-class TestRunChainBDSimulationSoftRepulsion:
-    """Integration tests for use_soft_repulsion + soft_repulsion_eps
-    threading through run_chain_bd_simulation and run_chain_bd_parallel.
-
-    These tests verify the entry-point plumbing only. The WCA force
-    physics itself is exercised in TestSoftRepulsion (existing) and the
-    vectorization equivalence is verified in
-    TestChainTargetStericVectorizedEquivalence (Edit 15).
-
-    The regression these tests catch: a typo or missing forwarding in
-    the signature/docstring/_bd_worker tuple chain would silently fall
-    back to the dataclass default (use_soft_repulsion=False or
-    soft_repulsion_eps=1.0), and the user would get unexpected
-    behavior with no error.
-    """
-
-    def test_default_off_uses_hard_sphere_only(self):
-        """With use_soft_repulsion off by default, the simulator runs and returns two trajectories that each take at least one step."""
-
-        chain = chain_from_sequence("GLY-ALA", caps=("ACE", "NME"))
-        results = run_chain_bd_simulation(
-            chain=chain,
-            n_trajectories=2,
-            max_steps=10,
-            dt=0.01,
-            r_start=20.0,
-            r_escape=50.0,
-            seed=0,
-        )
-        assert len(results) == 2
-        for r in results:
-            assert r.steps > 0
-
-    def test_use_soft_repulsion_true_runs_end_to_end(self):
-        """use_soft_repulsion=True with explicit eps=0.5 runs end to end and returns two valid trajectories."""
-
-        chain = chain_from_sequence("GLY-ALA", caps=("ACE", "NME"))
-        results = run_chain_bd_simulation(
-            chain=chain,
-            n_trajectories=2,
-            max_steps=20,
-            dt=0.01,
-            r_start=20.0,
-            r_escape=50.0,
-            seed=0,
-            use_soft_repulsion=True,
-            soft_repulsion_eps=0.5,
-        )
-        assert len(results) == 2
-        for r in results:
-            assert r.steps > 0
-
-    def test_soft_repulsion_threads_through_parallel(self):
-        """run_chain_bd_parallel forwards use_soft_repulsion and soft_repulsion_eps through the worker tuple under n_workers=2."""
-
-        chain = chain_from_sequence("GLY-ALA", caps=("ACE", "NME"))
-        results = run_chain_bd_parallel(
-            chain=chain,
-            n_trajectories=4,
-            n_workers=2,
-            max_steps=10,
-            dt=0.01,
-            r_start=20.0,
-            r_escape=50.0,
-            seed=42,
-            use_soft_repulsion=True,
-            soft_repulsion_eps=0.5,
-        )
-        assert len(results) == 4
-        for r in results:
-            assert r.steps > 0
-
-    def test_eps_is_not_silently_ignored(self):
-        """Two runs with the same seed but very different soft-repulsion eps produce different trajectories, so eps is not silently dropped."""
-
-        target_atom = Atom(
-            name="X",
-            residue_name="UNK",
-            residue_index=0,
-            chain="A",
-            x=0.0,
-            y=0.0,
-            z=0.0,
-            charge=0.0,
-            radius=2.0,
-        )
-        target = Molecule(name="t", atoms=[target_atom])
-        chain = chain_from_sequence("GLY-ALA", caps=("ACE", "NME"))
-
-        body_pos = place_relaxed_geometry(chain)
-        body_pos = body_pos - body_pos.mean(axis=0)
-        results_a = run_chain_bd_simulation(
-            chain=chain,
-            n_trajectories=1,
-            max_steps=5,
-            dt=0.01,
-            r_start=20.0,
-            r_escape=50.0,
-            seed=0,
-            use_soft_repulsion=True,
-            soft_repulsion_eps=0.1,
-        )
-        results_b = run_chain_bd_simulation(
-            chain=chain,
-            n_trajectories=1,
-            max_steps=5,
-            dt=0.01,
-            r_start=20.0,
-            r_escape=50.0,
-            seed=0,
-            use_soft_repulsion=True,
-            soft_repulsion_eps=2.0,
-        )
-        assert len(results_a) == 1
-        assert len(results_b) == 1
-        assert results_a[0].steps > 0
-        assert results_b[0].steps > 0
 
 
 class TestChainTargetStericVectorizedEquivalence:
@@ -17378,78 +16234,6 @@ class TestCOFFDROPTabulatedForces:
         except ValueError as e:
             assert "sidechains" in str(e).lower() or "ca-only" in str(e).lower()
 
-    def test_run_chain_bd_with_target_pqr(self, tmp_path):
-        """run_chain_bd_simulation with a target PQR completes trajectories with sensible state and no numerical-instability warnings."""
-
-        # Write a minimal valid PQR (3 atoms)
-        pqr = tmp_path / "target.pqr"
-        pqr.write_text(
-            "ATOM      1  N   ALA     1       0.000   0.000   0.000  0.0000  1.5000           N  \n"
-            "ATOM      2  CA  ALA     1       1.500   0.000   0.000  0.0000  1.7000           C  \n"
-            "ATOM      3  C   ALA     1       3.000   0.000   0.000  0.0000  1.7000           C  \n"
-            "END\n"
-        )
-
-        chain = chain_from_sequence("ARWGL")
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            results = run_chain_bd_simulation(
-                chain,
-                target_pqr=str(pqr),
-                n_trajectories=2,
-                max_steps=50,
-                seed=42,
-            )
-            non_hs_warnings = [
-                x
-                for x in w
-                if issubclass(x.category, RuntimeWarning)
-                and "hard-sphere overlap rejection" not in str(x.message)
-            ]
-            n_warnings = len(non_hs_warnings)
-
-        # Trajectories complete with sensible state
-        assert len(results) == 2
-        for r in results:
-            assert r.steps > 0
-            assert r.final_separation > 0
-            assert r.time_ps > 0
-        assert n_warnings == 0, (
-            f"unexpected non-HS RuntimeWarnings during BD with target: "
-            f"{[str(x.message) for x in non_hs_warnings]}"
-        )
-
-    def test_run_chain_bd_target_validation(self, tmp_path):
-        """run_chain_bd_simulation raises FileNotFoundError for a missing PQR and ValueError for an empty one."""
-
-        chain = chain_from_sequence("ALA")
-
-        # Missing file
-        try:
-            run_chain_bd_simulation(
-                chain,
-                target_pqr=str(tmp_path / "nonexistent.pqr"),
-                n_trajectories=1,
-                max_steps=10,
-            )
-            assert False, "should raise FileNotFoundError"
-        except FileNotFoundError:
-            pass
-
-        # Empty PQR
-        empty = tmp_path / "empty.pqr"
-        empty.write_text("REMARK empty\nEND\n")
-        try:
-            run_chain_bd_simulation(
-                chain,
-                target_pqr=str(empty),
-                n_trajectories=1,
-                max_steps=10,
-            )
-            assert False, "should raise ValueError on empty PQR"
-        except ValueError as e:
-            assert "no atom" in str(e).lower()
-
 
 class TestChainBDInputXML:
     """Tests for the chain BD path through input.xml + parse() + run_chain().
@@ -20308,30 +19092,6 @@ def test_combine_pool_p_commit_uses_count_pooling(tmp_path):
     np.testing.assert_allclose(out["n_samples"], [40.0, 4.0])
 
 
-def test_we_rate_constant_uses_nam_unit_convention():
-    """The weighted-ensemble k_on uses the 6.022e8 A^3/ps to M^-1 s^-1 factor and lands in a physical range."""
-
-    res = WEResult(
-        n_iterations=10,
-        n_per_bin=10,
-        n_bins=5,
-        flux_reaction=0.0,
-        flux_escape=0.0,
-        weight_reacted=0.3,
-        weight_escaped=0.7,
-        r_start=50.0,
-        r_escape=60.0,
-        dt=0.2,
-    )
-    D_rel = 0.02
-    P = res.reaction_probability
-    k_b = 4.0 * math.pi * D_rel * res.r_start
-    denom = 1.0 - (1.0 - P) * (res.r_start / res.r_escape)
-    expected = 6.022e8 * k_b * P / denom
-    assert math.isclose(res.rate_constant(D_rel), expected, rel_tol=1e-12)
-    assert 1e8 < res.rate_constant(D_rel) < 1e11
-
-
 # Consolidated audit-fix and low-severity regression tests.
 # Previously in separate tests/test_auditfix*.py and tests/test_lowsev_*.py,
 # merged here so the whole suite lives in one file.
@@ -20632,31 +19392,6 @@ def _empty_pathways():
     return PathwaySet(reactions=[])
 
 
-def test_max_steps_reports_full_step_count_and_time():
-    """Trajectories that exhaust the clock report fate MAX_STEPS, steps equal to max_steps, and time_ps equal to max_steps times dt."""
-    mol1, mol2 = _make_molecules()
-    mob = _make_mobility()
-    ps = _empty_pathways()
-    params = NAMParameters(
-        n_trajectories=4,
-        dt=0.2,
-        max_steps=5,
-        r_start=10.0,
-        r_escape=1.0e6,
-        seed=123,
-    )
-    results = _run_numpy_batch(mol1, mol2, mob, ps, params, zero_force, [], False)
-
-    assert len(results) == params.n_trajectories
-    for r in results:
-        assert r.fate == Fate.MAX_STEPS
-        assert r.steps == params.max_steps
-        assert math.isclose(r.time_ps, params.max_steps * params.dt, rel_tol=1e-12)
-    # The aggregate step total must reflect the full work done, not zero.
-    total_steps = sum(r.steps for r in results)
-    assert total_steps == params.n_trajectories * params.max_steps
-
-
 def _replicate_single_step_positions(mol2, mob, params, force_vec):
     """Reproduce the batch runner's first-step random draws and return the
     per-trajectory final positions for a constant translational force.
@@ -20681,69 +19416,6 @@ def _replicate_single_step_positions(mol2, mob, params, force_vec):
     drift = D_t * np.asarray(force_vec) * dt
     noise = sigma_t * rng.standard_normal((N, 3))
     return pos + drift + noise
-
-
-def test_force_enters_as_ermak_mccammon_drift():
-    """A constant force shifts the single-step displacement by the Ermak-McCammon drift D_trans*F*dt, differing from the zero-force run."""
-    mol1, mol2 = _make_molecules()
-    mob = _make_mobility()
-    ps = _empty_pathways()
-    params = NAMParameters(
-        n_trajectories=64,
-        dt=0.2,
-        max_steps=1,
-        r_start=10.0,
-        r_escape=1.0e6,
-        seed=7,
-    )
-
-    F = np.array([5.0, -2.0, 1.0])
-
-    def const_force(m1, m2):
-        return F.copy(), np.zeros(3), 0.0
-
-    res_force = _run_numpy_batch(mol1, mol2, mob, ps, params, const_force, [], False)
-
-    # The expected separations follow analytically from the reproduced draws.
-    expected_pos = _replicate_single_step_positions(mol2, mob, params, F)
-    expected_sep = np.linalg.norm(expected_pos, axis=1)
-    got_sep = np.array([r.final_separation for r in res_force])
-    assert np.allclose(got_sep, expected_sep, rtol=1e-10, atol=1e-10)
-
-    res_zero = _run_numpy_batch(mol1, mol2, mob, ps, params, zero_force, [], False)
-    zero_sep = np.array([r.final_separation for r in res_zero])
-    expected_zero_pos = _replicate_single_step_positions(mol2, mob, params, np.zeros(3))
-    expected_zero_sep = np.linalg.norm(expected_zero_pos, axis=1)
-    assert np.allclose(zero_sep, expected_zero_sep, rtol=1e-10, atol=1e-10)
-    assert not np.allclose(got_sep, zero_sep)
-
-
-def test_zero_force_path_is_unchanged_by_drift_term():
-    """The zero_force sentinel produces results identical to an explicit all-zero force function."""
-    mol1, mol2 = _make_molecules()
-    mob = _make_mobility()
-    ps = _empty_pathways()
-    params = NAMParameters(
-        n_trajectories=16,
-        dt=0.2,
-        max_steps=3,
-        r_start=10.0,
-        r_escape=1.0e6,
-        seed=99,
-    )
-
-    def explicit_zero(m1, m2):
-        return np.zeros(3), np.zeros(3), 0.0
-
-    res_sentinel = _run_numpy_batch(mol1, mol2, mob, ps, params, zero_force, [], False)
-    res_explicit = _run_numpy_batch(
-        mol1, mol2, mob, ps, params, explicit_zero, [], False
-    )
-
-    for a, b in zip(res_sentinel, res_explicit):
-        assert a.fate == b.fate
-        assert a.steps == b.steps
-        assert math.isclose(a.final_separation, b.final_separation, rel_tol=1e-12)
 
 
 # --- merged from test_auditfix2_stepnear.py ---
@@ -20875,104 +19547,6 @@ def test_absorption_exhaustion_warns():
 
 
 # --- merged from test_auditfix2_we_resample.py ---
-def _bare_simulator(n_per_bin, seed=0):
-    """
-    Build a WESimulator whose resampling behaviour can be exercised directly,
-    without constructing the full molecular machinery, by setting only the
-    fields that the resampling step reads.
-    """
-    sim = WESimulator.__new__(WESimulator)
-    sim.params = WEParameters(n_per_bin=n_per_bin, n_bins=1)
-    sim.rng = np.random.default_rng(seed)
-    return sim
-
-
-def _make_traj(weight, bin_idx=0):
-    return WETrajectory(
-        position=np.array([1.0, 0.0, 0.0]),
-        orientation=Quaternion(1.0, 0.0, 0.0, 0.0),
-        weight=weight,
-        bin_idx=bin_idx,
-    )
-
-
-def test_split_reaches_target_count_with_even_weights_power_of_two():
-    """Splitting one trajectory to a power-of-two target yields that many equal-weight trajectories with the total weight conserved."""
-    sim = _bare_simulator(n_per_bin=4)
-    w0 = 1.0
-    out = sim._resample([_make_traj(w0)])
-    assert len(out) == 4
-    weights = sorted(t.weight for t in out)
-    assert np.allclose(weights, [w0 / 4.0] * 4)
-    assert np.isclose(sum(t.weight for t in out), w0)
-
-
-def test_split_eight_from_one_is_uniform():
-    """Splitting one trajectory up to eight yields eight equal-weight trajectories conserving the total weight."""
-    sim = _bare_simulator(n_per_bin=8)
-    w0 = 0.4
-    out = sim._resample([_make_traj(w0)])
-    assert len(out) == 8
-    weights = sorted(t.weight for t in out)
-    assert np.allclose(weights, [w0 / 8.0] * 8)
-    assert np.isclose(sum(t.weight for t in out), w0)
-
-
-def test_split_non_power_of_two_is_balanced_not_geometric():
-    """Splitting one trajectory to three gives balanced weights w/2, w/4, w/4 with a heaviest-to-lightest ratio of 2, not a geometric cascade."""
-    sim = _bare_simulator(n_per_bin=3)
-    w0 = 0.6
-    out = sim._resample([_make_traj(w0)])
-    assert len(out) == 3
-    weights = sorted(t.weight for t in out)
-    assert np.allclose(weights, [w0 / 4.0, w0 / 4.0, w0 / 2.0])
-    assert np.isclose(sum(t.weight for t in out), w0)
-    assert np.isclose(max(weights) / min(weights), 2.0)
-
-
-def test_split_multiple_starting_trajectories_conserves_and_balances():
-    """Splitting several unequal starting trajectories reaches the target count, conserves total weight, and bounds the weight spread."""
-    sim = _bare_simulator(n_per_bin=6)
-    start = [_make_traj(0.5), _make_traj(0.3), _make_traj(0.2)]
-    total0 = sum(t.weight for t in start)
-    out = sim._resample(start)
-    assert len(out) == 6
-    assert np.isclose(sum(t.weight for t in out), total0)
-    weights = [t.weight for t in out]
-    assert max(weights) <= 0.5 + 1e-12
-    assert max(weights) / min(weights) <= 4.0
-
-
-def test_split_clones_are_independent_objects():
-    """Each split clone is a distinct object whose mutation does not affect the others."""
-    sim = _bare_simulator(n_per_bin=4)
-    out = sim._resample([_make_traj(1.0)])
-    assert len({id(t) for t in out}) == 4
-    out[0].position[0] = 99.0
-    assert all(t.position[0] == 1.0 for t in out[1:])
-
-
-def test_resample_full_run_conserves_total_weight():
-    """A full resampling pass over bins of uneven occupancy conserves the total weight and brings under-target bins up to the per-bin target."""
-    sim = _bare_simulator(n_per_bin=3)
-    sim.params = WEParameters(n_per_bin=3, n_bins=4)
-    rng = np.random.default_rng(123)
-    trajs = []
-    total0 = 0.0
-    # Populate bins with uneven occupancy: some under target, some over.
-    for b_idx, count in enumerate([1, 3, 5, 2]):
-        for _ in range(count):
-            w = float(rng.uniform(0.01, 0.2))
-            total0 += w
-            trajs.append(_make_traj(w, bin_idx=b_idx))
-    out = sim._resample(trajs)
-    assert np.isclose(sum(t.weight for t in out), total0)
-    # Bins that were under target are brought up to target by splitting.
-
-    counts = Counter(t.bin_idx for t in out)
-    assert counts[0] == 3  # was 1, split up to 3
-    assert counts[1] == 3  # already at target
-    assert counts[3] == 3  # was 2, split up to 3
 
 
 # --- merged from test_auditfix3_chainio.py ---
@@ -22259,135 +20833,6 @@ def _make_pathways(cutoff=10.0):
     return PathwaySet(reactions=[rxn])
 
 
-def test_full_steps_match_steps_times_dt():
-    """When every trajectory takes all steps, total_time_ps equals n_iterations·steps_per_iteration·dt."""
-    mol1, mol2 = _make_molecules_test_auditfix_we_time(lig_x=50.0)
-    mob = MobilityTensor.from_radii(10.0, 5.0)
-    ps = _make_pathways(cutoff=10.0)
-    params = WEParameters(
-        n_per_bin=2,
-        n_bins=5,
-        n_iterations=3,
-        r_start=50.0,
-        steps_per_iteration=4,
-        dt=0.2,
-        adaptive_dt=True,
-        seed=42,
-    )
-    sim = WESimulator(mol1, mol2, mob, ps, params)
-    sim.run()
-    expected = params.n_iterations * params.steps_per_iteration * params.dt
-    assert math.isclose(
-        sim.total_time_ps, expected, abs_tol=1e-9
-    ), f"total_time_ps={sim.total_time_ps}, expected={expected}"
-
-
-def test_adaptive_small_step_near_boundary_shortens_time():
-    """Near a reaction boundary the adaptive integrator uses dt_rxn, so total_time_ps equals the small-step product."""
-    mol1, mol2 = _make_molecules_test_auditfix_we_time(lig_x=12.0)
-    mob = MobilityTensor.from_radii(10.0, 5.0)
-    ps = _make_pathways(cutoff=10.0)
-    params = WEParameters(
-        n_per_bin=2,
-        n_bins=5,
-        n_iterations=3,
-        r_start=12.0,
-        steps_per_iteration=4,
-        dt=0.2,
-        dt_rxn=0.05,
-        adaptive_dt=True,
-        seed=42,
-    )
-    fixed = params.n_iterations * params.steps_per_iteration * params.dt
-    rxn_scaled = params.n_iterations * params.steps_per_iteration * params.dt_rxn
-    sim = WESimulator(mol1, mol2, mob, ps, params)
-    sim.run()
-    assert sim.total_time_ps < fixed - 1e-9
-    assert math.isclose(
-        sim.total_time_ps, rxn_scaled, abs_tol=1e-9
-    ), f"total_time_ps={sim.total_time_ps}, expected={rxn_scaled}"
-
-
-def test_immediate_escape_records_no_elapsed_time():
-    """Trajectories that escape immediately accumulate escaped weight while total_time_ps stays at zero."""
-    mol1, mol2 = _make_molecules_test_auditfix_we_time(lig_x=50.0)
-    mob = MobilityTensor.from_radii(10.0, 5.0)
-    ps = _make_pathways(cutoff=10.0)
-    params = WEParameters(
-        n_per_bin=2,
-        n_bins=5,
-        n_iterations=3,
-        r_start=50.0,
-        r_escape=40.0,  # below r_start, so every trajectory escapes at step 0
-        steps_per_iteration=4,
-        dt=0.2,
-        adaptive_dt=False,
-        seed=42,
-    )
-    sim = WESimulator(mol1, mol2, mob, ps, params)
-    sim.run()
-    assert sim.weight_escaped > 0.0
-    assert math.isclose(
-        sim.total_time_ps, 0.0, abs_tol=1e-12
-    ), f"total_time_ps={sim.total_time_ps}, expected 0.0"
-
-
-def test_elapsed_time_never_exceeds_fixed_step_product():
-    """The accumulated total_time_ps stays positive but never exceeds the fixed-step product across a mixed run."""
-    mol1, mol2 = _make_molecules_test_auditfix_we_time(lig_x=20.0, charge=2.0)
-    mob = MobilityTensor.from_radii(10.0, 5.0)
-    ps = _make_pathways(cutoff=10.0)
-    params = WEParameters(
-        n_per_bin=3,
-        n_bins=6,
-        n_iterations=5,
-        r_start=20.0,
-        steps_per_iteration=6,
-        dt=0.2,
-        dt_rxn=0.05,
-        adaptive_dt=True,
-        seed=7,
-    )
-    upper = params.n_iterations * params.steps_per_iteration * params.dt
-    sim = WESimulator(mol1, mol2, mob, ps, params)
-    result = sim.run()
-    assert sim.total_time_ps <= upper + 1e-9
-    assert sim.total_time_ps > 0.0
-
-
-def test_flux_matches_weight_over_elapsed_time():
-    """The reported reaction and escape fluxes equal the accumulated weights divided by total_time_ps."""
-    mol1, mol2 = _make_molecules_test_auditfix_we_time(lig_x=20.0, charge=2.0)
-    mob = MobilityTensor.from_radii(10.0, 5.0)
-    ps = _make_pathways(cutoff=10.0)
-    params = WEParameters(
-        n_per_bin=3,
-        n_bins=6,
-        n_iterations=5,
-        r_start=20.0,
-        steps_per_iteration=6,
-        dt=0.2,
-        dt_rxn=0.05,
-        adaptive_dt=True,
-        seed=7,
-    )
-    sim = WESimulator(mol1, mol2, mob, ps, params)
-    result = sim.run()
-    assert sim.total_time_ps > 0.0
-    assert math.isclose(
-        result.flux_reaction,
-        result.weight_reacted / sim.total_time_ps,
-        rel_tol=1e-9,
-        abs_tol=1e-15,
-    )
-    assert math.isclose(
-        result.flux_escape,
-        result.weight_escaped / sim.total_time_ps,
-        rel_tol=1e-9,
-        abs_tol=1e-15,
-    )
-
-
 # --- merged from test_lowsev_adaptive_time_step.py ---
 def test_non_physical_inputs_take_safe_default():
     # D_rel <= 0 must short-circuit to the safe default before the size term.
@@ -22860,67 +21305,6 @@ def test_single_reaction_no_n_needed_defaults_minus_one(tmp_path):
 
 
 # --- merged from test_lowsev_gho_injection.py ---
-def test_inject_gho_from_manual_resolves_mol1_and_mol2_positions():
-    mol1_positions = np.array(
-        [
-            [0.0, 0.0, 0.0],
-            [1.0, 2.0, 3.0],
-            [4.0, 5.0, 6.0],
-        ]
-    )
-    mol2_positions = np.array(
-        [
-            [10.0, 10.0, 10.0],
-            [11.0, 12.0, 13.0],
-        ]
-    )
-    mol1_hydro_cen = np.array([1.0, 1.0, 1.0])
-    mol2_hydro_cen = np.array([2.0, 2.0, 2.0])
-
-    spec = "1,0,17.0\n3,1,10.0"
-
-    mol1_ghos, mol2_ghos = inject_gho_from_manual(
-        spec,
-        mol1_positions,
-        mol2_positions,
-        mol1_hydro_cen,
-        mol2_hydro_cen,
-    )
-
-    assert len(mol1_ghos) == 1
-    assert len(mol2_ghos) == 1
-
-    # Molecule 1 atom: position is mol1_positions[1] relative to its hydro centre.
-    assert mol1_ghos[0].atom_index == 0
-    np.testing.assert_array_equal(
-        mol1_ghos[0].pos_rel, mol1_positions[1] - mol1_hydro_cen
-    )
-
-    # Molecule 2 atom: global index 3 - n1 = local index 0.
-    assert mol2_ghos[0].atom_index == 1
-    np.testing.assert_array_equal(
-        mol2_ghos[0].pos_rel, mol2_positions[0] - mol2_hydro_cen
-    )
-
-
-def test_inject_gho_from_manual_first_atom_index_zero():
-    mol1_positions = np.array([[7.0, 8.0, 9.0], [1.0, 1.0, 1.0]])
-    mol2_positions = np.array([[0.0, 0.0, 0.0]])
-    mol1_hydro_cen = np.zeros(3)
-    mol2_hydro_cen = np.zeros(3)
-
-    mol1_ghos, mol2_ghos = inject_gho_from_manual(
-        "0,5,12.0",
-        mol1_positions,
-        mol2_positions,
-        mol1_hydro_cen,
-        mol2_hydro_cen,
-    )
-
-    assert len(mol1_ghos) == 1
-    assert len(mol2_ghos) == 0
-    assert mol1_ghos[0].atom_index == 5
-    np.testing.assert_array_equal(mol1_ghos[0].pos_rel, mol1_positions[0])
 
 
 # --- merged from test_lowsev_gpu_sim_guards.py ---
@@ -23366,22 +21750,6 @@ def test_legendre_p_healthy_path_unchanged():
 
 
 # --- merged from test_lowsev_parallel_imports.py ---
-def test_module_imports_cleanly():
-    """The module must import without error after the cleanup."""
-    mod = importlib.import_module("pystarc.simulation.parallel")
-    assert mod is not None
-
-
-def test_public_api_still_present():
-    """The names callers depend on must remain importable."""
-
-    for name in (
-        "run_parallel",
-        "ParallelBackend",
-        "recommended_backend",
-        "auto_n_threads",
-    ):
-        assert hasattr(parallel, name), f"missing public name {name}"
 
 
 def test_used_imports_retained():
@@ -23389,15 +21757,6 @@ def test_used_imports_retained():
 
     for name in ("Molecule", "MobilityTensor", "PathwaySet", "Quaternion"):
         assert hasattr(parallel, name), f"used import {name} was dropped"
-
-
-def test_unused_imports_removed():
-    """The six genuinely unused names must no longer be module attributes."""
-
-    for name in ("bd_step", "bd_step_adaptive", "Atom", "Callable", "os", "sys"):
-        assert not hasattr(
-            parallel, name
-        ), f"unused import {name} is still bound on the module"
 
 
 # --- merged from test_lowsev_pipeline_gpusim.py ---
@@ -23775,56 +22134,6 @@ def _make_mol_test_lowsev_we_makebins(name: str) -> Molecule:
     return mol
 
 
-def _make_simulator(pathway_set: PathwaySet) -> WESimulator:
-    mol1 = _make_mol_test_lowsev_we_makebins("rec")
-    mol2 = _make_mol_test_lowsev_we_makebins("lig")
-    mobility = MobilityTensor.from_radii(20.0, 20.0)
-    params = WEParameters(
-        n_per_bin=2,
-        n_bins=5,
-        n_iterations=1,
-        r_start=40.0,
-        r_escape=80.0,
-        seed=1,
-    )
-    return WESimulator(mol1, mol2, mobility, pathway_set, params)
-
-
-def test_empty_reactions_emits_warning():
-    """Constructing a WESimulator with an empty PathwaySet warns about the
-    collapsed reaction-zone resolution."""
-    pathway_set = PathwaySet()  # no reactions
-    assert pathway_set.reactions == []
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        sim = _make_simulator(pathway_set)
-    messages = [str(w.message) for w in caught]
-    assert any("no reactions" in m for m in messages), messages
-    # The bins must still be the unchanged [0.9 * r_start, r_start] interval.
-    bins = sim._bins
-    assert len(bins) == 6  # n_bins + 1 edges
-    assert np.isclose(bins[0], max(40.0 * 0.9, 1.0))
-    assert np.isclose(bins[-1], 40.0)
-
-
-def test_nonempty_reactions_no_warning():
-    """When the PathwaySet carries a reaction with a contact cutoff, no
-    empty-reactions warning is emitted and the bins reach the cutoff zone."""
-    pair = types.SimpleNamespace(distance_cutoff=5.0)
-    criteria = types.SimpleNamespace(pairs=[pair])
-    rxn = types.SimpleNamespace(criteria=criteria)
-    pathway_set = PathwaySet()
-    pathway_set.reactions = [rxn]
-
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        sim = _make_simulator(pathway_set)
-    messages = [str(w.message) for w in caught]
-    assert not any("no reactions" in m for m in messages), messages
-    # The lower bin edge follows the reaction cutoff (0.9 * 5.0), not r_start.
-    assert np.isclose(sim._bins[0], max(5.0 * 0.9, 1.0))
-
-
 def test_compute_geometry_escape_radius_override(tmp_path, monkeypatch):
     """compute_geometry uses 2 times the b-sphere radius by default and uses a positive r_escape when one is given."""
 
@@ -24088,254 +22397,10 @@ class _OneRNG:
         return np.full(size, 1.0 - 1e-12)
 
 
-def _build_sim(lig_x, cutoff, r_start, use_brownian_bridge=True, use_rpy=True):
-    mol1, mol2 = _make_molecules_test_finish_we_bridge(lig_x)
-    mob = MobilityTensor.from_radii(10.0, 5.0, use_rpy=use_rpy)
-    ps = _make_pathways_test_finish_we_bridge(cutoff=cutoff)
-    params = WEParameters(
-        n_per_bin=2,
-        n_bins=5,
-        n_iterations=1,
-        r_start=r_start,
-        steps_per_iteration=1,
-        dt=0.2,
-        adaptive_dt=False,
-        use_brownian_bridge=use_brownian_bridge,
-        seed=42,
-    )
-    return WESimulator(mol1, mol2, mob, ps, params)
-
-
-def test_bin_of_clamps_below_inner_edge_to_bin_zero():
-    """A separation below the innermost bin edge r_lo returns bin 0 rather than
-    -1, so the walker is placed in the innermost bin instead of being pinned to
-    its previous bin."""
-    sim = _build_sim(lig_x=50.0, cutoff=10.0, r_start=50.0)
-    r_lo = float(sim._bins[0])
-    r_hi = float(sim._bins[-1])
-    # Just below the innermost edge.
-    assert sim._bin_of(r_lo - 0.5) == 0
-    # Far below the innermost edge.
-    assert sim._bin_of(0.0) == 0
-    # A separation strictly inside the bin range lands in a valid bin.
-    mid = 0.5 * (r_lo + r_hi)
-    assert 0 <= sim._bin_of(mid) < sim.params.n_bins
-    # At or beyond the outermost edge lies the escape region and returns -1.
-    assert sim._bin_of(r_hi + 1.0) == -1
-
-
-def test_bridge_fires_when_endpoints_stay_above_cutoff():
-    """When both the previous and current pair distances stay just above the
-    cutoff the endpoint-only test does not fire, but the Brownian bridge fires
-    when the bridge sample falls below the crossing probability."""
-    cutoff = 10.0
-    lig_x = cutoff + 0.01
-    sim = _build_sim(lig_x=lig_x, cutoff=cutoff, r_start=80.0, use_brownian_bridge=True)
-    # Force the bridge sample to fire by replacing the bridge RNG.
-    sim.rng_bb = _ZeroRNG()
-    traj = WETrajectory(
-        position=np.array([lig_x, 0.0, 0.0]),
-        orientation=Quaternion(1.0, 0.0, 0.0, 0.0),
-        weight=1.0,
-        bin_idx=0,
-        prev_pair_dists=[np.array([cutoff + 0.01])],
-        prev_dt=0.2,
-        prev_D_eff=1.0,
-    )
-    _, outcome = sim._step_traj(traj)
-    assert outcome == "reacted"
-
-
-def test_bridge_does_not_fire_when_disabled():
-    """With the bridge disabled the same configuration, where both endpoints
-    stay above the cutoff, does not register a reaction."""
-    cutoff = 10.0
-    lig_x = cutoff + 0.01
-    sim = _build_sim(
-        lig_x=lig_x, cutoff=cutoff, r_start=80.0, use_brownian_bridge=False
-    )
-    traj = WETrajectory(
-        position=np.array([lig_x, 0.0, 0.0]),
-        orientation=Quaternion(1.0, 0.0, 0.0, 0.0),
-        weight=1.0,
-        bin_idx=0,
-        prev_pair_dists=[np.array([cutoff + 0.01])],
-        prev_dt=0.2,
-        prev_D_eff=1.0,
-    )
-    _, outcome = sim._step_traj(traj)
-    assert outcome == "ongoing"
-
-
-def test_bridge_does_not_fire_when_sample_above_probability():
-    """With the bridge enabled but the bridge sample at nearly 1.0, the path is
-    not counted as crossing, so the endpoint-only outcome of no reaction
-    stands."""
-    cutoff = 10.0
-    lig_x = cutoff + 0.01
-    sim = _build_sim(lig_x=lig_x, cutoff=cutoff, r_start=80.0, use_brownian_bridge=True)
-    sim.rng_bb = _OneRNG()
-    traj = WETrajectory(
-        position=np.array([lig_x, 0.0, 0.0]),
-        orientation=Quaternion(1.0, 0.0, 0.0, 0.0),
-        weight=1.0,
-        bin_idx=0,
-        prev_pair_dists=[np.array([cutoff + 0.01])],
-        prev_dt=0.2,
-        prev_D_eff=1.0,
-    )
-    _, outcome = sim._step_traj(traj)
-    assert outcome == "ongoing"
-
-
-def test_endpoint_below_cutoff_still_fires_with_bridge_off():
-    """An endpoint that sits below the cutoff fires through the ordinary
-    endpoint test even with no prior bridge state, confirming the bridge does
-    not suppress ordinary detections."""
-    cutoff = 10.0
-    # Place the ligand inside the cutoff so the endpoint test fires.
-    lig_x = cutoff - 0.5
-    sim = _build_sim(lig_x=lig_x, cutoff=cutoff, r_start=80.0, use_brownian_bridge=True)
-    traj = WETrajectory(
-        position=np.array([lig_x, 0.0, 0.0]),
-        orientation=Quaternion(1.0, 0.0, 0.0, 0.0),
-        weight=1.0,
-        bin_idx=0,
-    )
-    _, outcome = sim._step_traj(traj)
-    assert outcome == "reacted"
-
-
-def test_step_uses_position_dependent_rpy_diffusion():
-    """The step evaluates the relative translational diffusion at the current
-    pair separation, so the Rotne-Prager-Yamakawa position dependence is
-    applied. The recorded call argument is the pair separation vector, and the
-    position-dependent value differs from the bare D0 near contact."""
-    cutoff = 10.0
-    # A small separation, where the RPY correction is appreciable.
-    lig_x = 16.0
-    sim = _build_sim(lig_x=lig_x, cutoff=cutoff, r_start=80.0)
-    recorded = []
-    real = sim.mobility.relative_translational_diffusion
-
-    def _recording(r_vec=None):
-        recorded.append(r_vec)
-        return real(r_vec)
-
-    sim.mobility.relative_translational_diffusion = _recording
-    traj = WETrajectory(
-        position=np.array([lig_x, 0.0, 0.0]),
-        orientation=Quaternion(1.0, 0.0, 0.0, 0.0),
-        weight=1.0,
-        bin_idx=0,
-    )
-    sim._step_traj(traj)
-    assert len(recorded) >= 1
-    first = recorded[0]
-    assert first is not None
-    assert np.allclose(np.asarray(first), traj.position)
-    # The position-dependent RPY value is smaller than the bare D0 near contact.
-    d_pos = real(traj.position)
-    d0 = real(None)
-    assert d_pos < d0
-
-
-def test_hard_sphere_rejection_keeps_ligand_when_all_redraws_overlap():
-    """When every redrawn displacement overlaps the receptor, the ligand stays
-    at its previous non-overlapping position rather than being placed inside the
-    receptor."""
-    cutoff = 1.0  # tiny cutoff so the reaction never fires during the step
-    mol1, mol2 = _make_molecules_test_finish_we_bridge(lig_x=4.0, radius=2.0)
-    mob = MobilityTensor.from_radii(10.0, 5.0)
-    ps = _make_pathways_test_finish_we_bridge(cutoff=cutoff)
-    params = WEParameters(
-        n_per_bin=2,
-        n_bins=5,
-        n_iterations=1,
-        r_start=80.0,
-        steps_per_iteration=1,
-        dt=0.2,
-        adaptive_dt=False,
-        use_hard_sphere=True,
-        use_brownian_bridge=False,
-        seed=1,
-    )
-    sim = WESimulator(mol1, mol2, mob, ps, params)
-
-    original = we_mod._check_hard_sphere_overlap
-    we_mod._check_hard_sphere_overlap = lambda m1, m2: True
-    try:
-        start = np.array([5.0, 0.0, 0.0])
-        traj = WETrajectory(
-            position=start.copy(),
-            orientation=Quaternion(1.0, 0.0, 0.0, 0.0),
-            weight=1.0,
-            bin_idx=0,
-        )
-        new_traj, outcome = sim._step_traj(traj)
-    finally:
-        we_mod._check_hard_sphere_overlap = original
-    assert outcome == "ongoing"
-    assert np.allclose(new_traj.position, start)
-
-
 # Regression tests for the 2026-06 correctness-review fixes:
 #   1. parallel MULTIPROCESSING/FUTURES worker initialisation
 #   2. multi-GPU combine density (shell volume) and frequency (step count)
 #   3. rxns.xml <contact> validation (no silent atom-0 default)
-
-
-class TestParallelBackendWorkerInit:
-    """The MULTIPROCESSING and FUTURES backends must initialise each worker's
-    NAMSimulator through _worker_init and run every trajectory to completion,
-    rather than crashing on the uninitialised _WORKER_SIM global. Run in a
-    subprocess so the multiprocessing start method is clean under any pytest
-    host."""
-
-    def test_backends_run_to_completion(self, tmp_path):
-        if mp.cpu_count() < 2:
-            pytest.skip("needs >= 2 CPUs to exercise the parallel backends")
-        script = (
-            "from pystarc.structures.molecules import Molecule, Atom\n"
-            "from pystarc.pathways.reaction_interface import (\n"
-            "    PathwaySet, ReactionInterface, ReactionCriteria, ContactPair)\n"
-            "from pystarc.hydrodynamics.rotne_prager import MobilityTensor\n"
-            "from pystarc.simulation.nam_simulator import NAMParameters, zero_force\n"
-            "from pystarc.simulation.parallel import run_parallel, ParallelBackend\n"
-            "\n"
-            "def build():\n"
-            "    m1 = Molecule(); m1.atoms = [Atom(x=0, y=0, z=0)]\n"
-            "    m2 = Molecule(); m2.atoms = [Atom(x=2, y=0, z=0)]\n"
-            "    ps = PathwaySet([ReactionInterface(name='r1',\n"
-            "        criteria=ReactionCriteria(pairs=[ContactPair(0, 0, 5.0)]))])\n"
-            "    mob = MobilityTensor(1.0, 0.1, 1.0, 0.1)\n"
-            "    p = NAMParameters(n_trajectories=6, r_start=30.0, r_escape=40.0,\n"
-            "        seed=7, verbose=False, max_steps=200, n_threads=3)\n"
-            "    return m1, m2, mob, ps, p\n"
-            "\n"
-            "if __name__ == '__main__':\n"
-            "    for b in (ParallelBackend.MULTIPROCESSING, ParallelBackend.FUTURES):\n"
-            "        m1, m2, mob, ps, p = build()\n"
-            "        r = run_parallel(m1, m2, mob, ps, p, force_fn=zero_force, backend=b)\n"
-            "        assert (r.n_reacted + r.n_escaped + r.n_max_steps) == p.n_trajectories, b\n"
-            "    print('PARALLEL_OK')\n"
-        )
-        f = tmp_path / "smoke_parallel.py"
-        f.write_text(script)
-        repo_root = os.path.dirname(
-            os.path.dirname(os.path.abspath(pystarc.__file__))
-        )
-        env = dict(os.environ)
-        env["PYTHONPATH"] = repo_root + os.pathsep + env.get("PYTHONPATH", "")
-        proc = subprocess.run(
-            [sys.executable, str(f)],
-            capture_output=True,
-            text=True,
-            timeout=300,
-            env=env,
-        )
-        assert proc.returncode == 0, f"parallel smoke failed:\n{proc.stderr}"
-        assert "PARALLEL_OK" in proc.stdout
 
 
 class TestMultiGpuCombineNormalization:

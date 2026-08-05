@@ -139,25 +139,6 @@ def backstep_due_to_force(
     return dt > FORCE_CHANGE_ALPHA * det
 
 
-def bd_step(
-    position: np.ndarray,
-    orientation: Quaternion,
-    force: np.ndarray,
-    torque: np.ndarray,
-    D_trans: float,
-    D_rot: float,
-    dt: float,
-    rng: np.random.Generator,
-    grad_D: Optional[np.ndarray] = None,
-) -> Tuple[np.ndarray, Quaternion]:
-    """Take one combined translational and rotational step, drawing fresh Wiener increments."""
-    dW_t = math.sqrt(dt) * rng.standard_normal(3)
-    dW_r = math.sqrt(dt) * rng.standard_normal(3)
-    new_pos = ermak_mccammon_translation(position, force, D_trans, dt, dW_t, grad_D)
-    new_ori = ermak_mccammon_rotation(orientation, torque, D_rot, dt, dW_r)
-    return new_pos, new_ori
-
-
 def bd_step_wiener(
     position: np.ndarray,
     orientation: Quaternion,
@@ -178,42 +159,6 @@ def bd_step_wiener(
     new_pos = ermak_mccammon_translation(position, force, D_trans, dt, dW_t, grad_D)
     new_ori = ermak_mccammon_rotation(orientation, torque, D_rot, dt, dW_r)
     return new_pos, new_ori
-
-
-def bd_step_adaptive(
-    position: np.ndarray,
-    orientation: Quaternion,
-    force: np.ndarray,
-    torque: np.ndarray,
-    D_trans: float,
-    D_rot: float,
-    rng: np.random.Generator,
-    reaction_distances: list,
-    dt_min: float = 0.2,
-    dt_min_rxn: float = 0.05,
-) -> Tuple[np.ndarray, Quaternion, float]:
-    """Take one combined step with an adaptive time step.
-
-    The step uses the smaller dt_min_rxn when the ligand is close to a reaction
-    boundary and the larger dt_min otherwise. It returns the new position, the
-    new orientation, and the time step that was actually used.
-    """
-    r = float(np.linalg.norm(position))
-    rxn_min = min(reaction_distances) if reaction_distances else 5.0
-    dt = dt_min_rxn if r < 1.5 * rxn_min else dt_min
-    new_pos, new_ori = bd_step(
-        position, orientation, force, torque, D_trans, D_rot, dt, rng
-    )
-    return new_pos, new_ori, dt
-
-
-def escape_radius(r_start: float) -> float:
-    """Return the default escape radius (the q-sphere).
-
-    The default is 5 × the b-sphere radius, which ensures the escape sphere is
-    always well beyond the b-sphere.
-    """
-    return 5.0 * r_start
 
 
 # Tensor-aware sibling functions for the BD step.
