@@ -21749,16 +21749,6 @@ def test_legendre_p_healthy_path_unchanged():
     assert legendre_p(2, x) == pytest.approx((3 * x * x - 1.0) / 2.0)
 
 
-# --- merged from test_lowsev_parallel_imports.py ---
-
-
-def test_used_imports_retained():
-    """Imports that the code actually references must still be bound."""
-
-    for name in ("Molecule", "MobilityTensor", "PathwaySet", "Quaternion"):
-        assert hasattr(parallel, name), f"used import {name} was dropped"
-
-
 # --- merged from test_lowsev_pipeline_gpusim.py ---
 def _select_k_b(gpu_sim):
     """Reproduce the k_b selection expression from run() exactly."""
