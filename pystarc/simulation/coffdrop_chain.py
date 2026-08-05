@@ -849,43 +849,59 @@ def chain_intra_nonbonded_forces(
     """
     n = common.n_atoms
     F = np.zeros((n, 3))
-    bonded_pairs = set()
-    for bond in common.bonds:
-        i, j = bond.a.atom_idx, bond.b.atom_idx
-        bonded_pairs.add((i, j))
-        bonded_pairs.add((j, i))
+    if n < 3:
+        return F
 
     radii = np.array([a.radius for a in common.atoms], dtype=float)
-    pos = state.positions
+    pos = np.asarray(state.positions, dtype=float)
 
     # WCA cutoff at r_min = 2^(1/6) * sigma (the LJ minimum)
     WCA_CUTOFF_FACTOR = 2.0 ** (1.0 / 6.0)
 
-    for i in range(n):
-        if radii[i] < 1e-10:
-            continue
-        for j in range(i + 2, n):  # legacy convention: skip i, i+1
-            if radii[j] < 1e-10:
-                continue
-            if (i, j) in bonded_pairs:
-                continue
-            dr = pos[i] - pos[j]  # vector FROM j TO i
-            r = float(np.linalg.norm(dr))
-            sig = radii[i] + radii[j]
-            sig_cutoff = WCA_CUTOFF_FACTOR * sig
-            if r < 1e-10 or r >= sig_cutoff:
-                continue
-            sr = sig / r
-            sr6 = sr**6
-            sr12 = sr6 * sr6
-            # |dV/dr| = 4 eps [12 sig^12/r^13 - 6 sig^6/r^7]
-            #        = (4 eps / r) * [12 sr12 - 6 sr6]
-            # Force on i = -(dV/dr) * r_hat_ij where r_hat_ij = dr / r
-            #            = (4 eps / r^2) * [12 sr12 - 6 sr6] * dr
-            f_mag_over_r = 4.0 * eps * (12.0 * sr12 - 6.0 * sr6) / (r * r)
-            fvec = f_mag_over_r * dr
-            F[i] += fvec
-            F[j] -= fvec
+    # The upper triangle offset by two is exactly the range of the legacy
+    # nested loops, so it drops the i, i+1 and 1-3 pairs in one stroke.
+    iu, ju = np.triu_indices(n, k=2)
+
+    # Explicit bonds that survive the offset, for example a ring closure.
+    if common.bonds:
+        bonded = np.zeros((n, n), dtype=bool)
+        for bond in common.bonds:
+            a, b = bond.a.atom_idx, bond.b.atom_idx
+            bonded[a, b] = True
+            bonded[b, a] = True
+        m = ~bonded[iu, ju]
+        iu, ju = iu[m], ju[m]
+
+    live = radii >= 1e-10  # ghost beads carry no excluded volume
+    m = live[iu] & live[ju]
+    iu, ju = iu[m], ju[m]
+    if iu.size == 0:
+        return F
+
+    dr = pos[iu] - pos[ju]  # vector FROM j TO i
+    r = np.sqrt(np.einsum("ij,ij->i", dr, dr))
+    sig = radii[iu] + radii[ju]
+    m = (r >= 1e-10) & (r < WCA_CUTOFF_FACTOR * sig)
+    if not np.any(m):
+        return F
+    iu, ju, dr, r, sig = iu[m], ju[m], dr[m], r[m], sig[m]
+
+    sr = sig / r
+    sr6 = sr**6
+    sr12 = sr6 * sr6
+    # |dV/dr| = 4 eps [12 sig^12/r^13 - 6 sig^6/r^7]
+    #        = (4 eps / r) * [12 sr12 - 6 sr6]
+    # Force on i = -(dV/dr) * r_hat_ij where r_hat_ij = dr / r
+    #            = (4 eps / r^2) * [12 sr12 - 6 sr6] * dr
+    fvec = (4.0 * eps * (12.0 * sr12 - 6.0 * sr6) / (r * r))[:, None] * dr
+
+    # Scatter both halves of Newton's third law. bincount is used rather than
+    # np.add.at because the latter falls back to an unbuffered element loop and
+    # would give back most of what the vectorisation just bought.
+    for c in range(3):
+        F[:, c] = np.bincount(
+            iu, weights=fvec[:, c], minlength=n
+        ) - np.bincount(ju, weights=fvec[:, c], minlength=n)
 
     return F
 
