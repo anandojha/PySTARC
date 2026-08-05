@@ -1385,7 +1385,10 @@ class ChainBDSimulator:
 
         The function returns a TrajectoryResult with Fate.REACTED or
         Fate.ESCAPED. If the loop reaches max_steps without a reaction or escape,
-        it returns ESCAPED with the current radius. If an rng is provided, that
+        it returns MAX_STEPS with the current radius, because a step-limited
+        trajectory committed to neither outcome and counting it as an escape
+        would put it in the P_rxn denominator and bias the rate low. If an rng
+        is provided, that
         generator is used for this trajectory only, and otherwise self.rng is
         used. The optional argument exists so that parallel workers can supply
         their own seeded generators.

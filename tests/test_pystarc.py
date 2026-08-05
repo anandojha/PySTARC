@@ -11319,7 +11319,7 @@ class TestChainBDSimulatorRunOne:
         sim = self._make_sim(n_atoms=2)
         result = sim.run_one()
         assert isinstance(result, TrajectoryResult)
-        assert result.fate in (Fate.ESCAPED, Fate.REACTED)
+        assert result.fate in (Fate.ESCAPED, Fate.REACTED, Fate.MAX_STEPS)
         assert result.steps >= 0
         assert result.time_ps >= 0.0
         assert result.final_separation >= 0.0
@@ -11343,8 +11343,8 @@ class TestChainBDSimulatorRunOne:
         assert abs(r1.time_ps - r2.time_ps) < 1e-12
         assert abs(r1.final_separation - r2.final_separation) < 1e-12
 
-    def test_run_one_with_bonded_chain_completes(self):
-        """A 3-atom bonded chain runs end to end through run_one and ends with a valid fate."""
+    def test_run_one_with_bonded_chain_returns_valid_fate(self):
+        """A 3-atom bonded chain runs through run_one and ends with a valid fate, which at max_steps=200 is usually the step limit rather than an escape."""
 
         sim = self._make_sim(
             n_atoms=3,
@@ -11355,7 +11355,7 @@ class TestChainBDSimulatorRunOne:
             max_steps=200,
         )
         result = sim.run_one()
-        assert result.fate in (Fate.ESCAPED, Fate.REACTED)
+        assert result.fate in (Fate.ESCAPED, Fate.REACTED, Fate.MAX_STEPS)
 
 
 class TestChainBDSimulatorRun:
@@ -11877,19 +11877,19 @@ class TestChainBDParallelMode:
         assert len(restored.chain_template.atoms) == len(sim.chain_template.atoms)
 
     def test_worker_function_runs_one_trajectory(self):
-        """The top-level worker function returns a valid TrajectoryResult with a reacted or escaped fate."""
+        """The top-level worker function returns a valid TrajectoryResult with a reacted, escaped, or step-limited fate."""
 
         sim = self._make_sim(n_trajectories=1, n_threads=1)
         result = _run_chain_trajectory_worker((sim, 0))
         assert isinstance(result, TrajectoryResult)
-        assert result.fate in (Fate.ESCAPED, Fate.REACTED)
+        assert result.fate in (Fate.ESCAPED, Fate.REACTED, Fate.MAX_STEPS)
 
     def test_parallel_run_produces_correct_trajectory_count(self):
-        """A parallel run with n_threads=2 still produces n trajectories with reacted plus escaped summing to n."""
+        """A parallel run with n_threads=2 still produces n trajectories with reacted plus escaped plus step-limited summing to n."""
         sim = self._make_sim(n_trajectories=4, n_threads=2)
         results = sim.run()
         assert len(results) == 4
-        assert sim.n_reacted + sim.n_escaped == 4
+        assert sim.n_reacted + sim.n_escaped + sim.n_max_steps == 4
 
     def test_parallel_run_is_deterministic(self):
         """Two parallel runs with the same seed produce identical fate, steps, and final separation across all trajectories."""
@@ -11912,7 +11912,7 @@ class TestChainBDParallelMode:
         r_parallel = sim_parallel.run()
         assert len(r_serial) == len(r_parallel) == 3
         for r in r_serial + r_parallel:
-            assert r.fate in (Fate.ESCAPED, Fate.REACTED)
+            assert r.fate in (Fate.ESCAPED, Fate.REACTED, Fate.MAX_STEPS)
             assert r.steps >= 0
             assert r.final_separation >= 0.0
 
