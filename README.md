@@ -121,16 +121,15 @@ See [`examples/`](examples/) for all example systems, each with its own README.
 
 ```
 examples/
-├── two_charged_spheres/              Analytical validation (exact Smoluchowski solution)
-├── trypsin_benzamidine/              Protein-ligand (charged ligand, surface pocket)
-├── beta_cyclodextrin_guests/         Host-guest (7 neutral guests, same receptor)
-├── thrombin_thrombomodulin/          Protein-protein (electrostatically steered)
-├── p38_mapk_sb203580/                Protein-ligand (neutral kinase inhibitor)
-├── carbonic_anhydrase_inhibitors/    Protein-ligand (7 sulfonamides, 3 CA isozymes)
-├── hsp90_inhibitors/                 Protein-ligand (6 HSP90 inhibitors)
-├── ttk_inhibitors/                   Protein-ligand (8 TTK/MPS1 kinase inhibitors)
-├── trypsin_benzamidine_multi_GPUs/   Cluster SLURM demo (single-GPU and multi-GPU)
-└── barnase_barstar_chainbd/          Flexible chain BD (protein-protein, under active validation)
+├── two_charged_spheres/              Analytical validation for the exact Smoluchowski solution
+├── trypsin_benzamidine/              Protein-ligand complex
+├── beta_cyclodextrin_guests/         Host-guest complex
+├── thrombin_thrombomodulin/          Protein-protein complex
+├── p38_mapk_sb203580/                Protein-ligand complex
+├── carbonic_anhydrase_inhibitors/    Protein-ligand complexes
+├── hsp90_inhibitors/                 Protein-ligand complexes
+├── ttk_inhibitors/                   Protein-ligand complexes
+└── barnase_barstar/                  Protein-protein complex
 ```
 
 ## Requirements
