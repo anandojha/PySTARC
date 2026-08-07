@@ -14867,10 +14867,27 @@ class TestBrownianBridge:
             D_trans=0.5,
             D_rot=0.05,
         )
-        on_results = sim_on.run()
-        off_results = sim_off.run()
-        n_react_on = sum(1 for r in on_results if r.fate == Fate.REACTED)
-        n_react_off = sum(1 for r in off_results if r.fate == Fate.REACTED)
+        # Compare the bridge on and off over identical trajectories. Each
+        # trajectory is driven with the same main rng for both runs, so the two
+        # follow the same path and the bridge, which draws from an independent
+        # rng_bb, can only add reactions. This makes bridge on a strict superset
+        # of bridge off. The serial run() shares one continuous rng across all
+        # trajectories, so an early bridge reaction shifts the stream for later
+        # trajectories and the two runs diverge, which is a false comparison.
+        base_seed = params_on.seed
+        n_react_on = 0
+        n_react_off = 0
+        for i in range(params_on.n_trajectories):
+            r_on = sim_on.run_one(
+                rng=np.random.default_rng(base_seed + i),
+                rng_bb=np.random.default_rng(base_seed + i + 0xBB),
+            )
+            r_off = sim_off.run_one(
+                rng=np.random.default_rng(base_seed + i),
+                rng_bb=np.random.default_rng(base_seed + i + 0xBB),
+            )
+            n_react_on += r_on.fate == Fate.REACTED
+            n_react_off += r_off.fate == Fate.REACTED
         assert n_react_on >= n_react_off, (
             f"bridge fewer reactions than no-bridge: "
             f"on={n_react_on}, off={n_react_off}"
