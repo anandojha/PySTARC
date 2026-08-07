@@ -13,8 +13,7 @@ Validation systems of increasing complexity. Each computes a bimolecular associa
 <tr><td><code>carbonic_anhydrase_inhibitors/</code></td><td>7 sulfonamide inhibitors across 3 isozymes</td><td>Protein and ligand</td></tr>
 <tr><td><code>hsp90_inhibitors/</code></td><td>6 HSP90 inhibitors</td><td>Protein and ligand</td></tr>
 <tr><td><code>ttk_inhibitors/</code></td><td>8 TTK (MPS1) kinase inhibitors</td><td>Protein and ligand</td></tr>
-<tr><td><code>trypsin_benzamidine_multi_GPUs/</code></td><td>Trypsin and benzamidine on 1 and 4 GPUs</td><td>Cluster demonstration</td></tr>
-<tr><td><code>barnase_barstar_chainbd/</code></td><td>Barnase and barstar with a flexible chain</td><td>Chain BD</td></tr>
+<tr><td><code>barnase_barstar/</code></td><td>Barnase and barstar with a flexible chain</td><td>Chain BD</td></tr>
 </tbody>
 </table>
 
