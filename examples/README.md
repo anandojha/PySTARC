@@ -1,151 +1,96 @@
 # PySTARC examples
 
-Ten validation examples of increasing complexity:
+Validation systems of increasing complexity. Each computes a bimolecular association rate constant k<sub>on</sub> by rigid body Brownian dynamics and, where an experimental or analytical value exists, compares against it.
 
 <table width="100%">
 <thead><tr><th align="left">Example</th><th align="left">System</th><th align="left">Type</th></tr></thead>
 <tbody>
 <tr><td><code>two_charged_spheres/</code></td><td>Two oppositely charged spheres</td><td>Analytical validation</td></tr>
-<tr><td><code>trypsin_benzamidine/</code></td><td>Trypsin-benzamidine</td><td>Protein-ligand</td></tr>
-<tr><td><code>beta_cyclodextrin_guests/</code></td><td>7 BCD host-guest complexes</td><td>Host-guest</td></tr>
-<tr><td><code>thrombin_thrombomodulin/</code></td><td>Thrombin-thrombomodulin</td><td>Protein-protein</td></tr>
-<tr><td><code>p38_mapk_sb203580/</code></td><td>p38 MAPK / SB203580</td><td>Protein-ligand</td></tr>
-<tr><td><code>carbonic_anhydrase_inhibitors/</code></td><td>7 CA sulfonamide inhibitors (3 isozymes)</td><td>Protein-ligand</td></tr>
-<tr><td><code>hsp90_inhibitors/</code></td><td>6 HSP90 inhibitors</td><td>Protein-ligand</td></tr>
-<tr><td><code>ttk_inhibitors/</code></td><td>8 TTK (MPS1) kinase inhibitors</td><td>Protein-ligand</td></tr>
-<tr><td><code>trypsin_benzamidine_multi_GPUs/</code></td><td>Trypsin-benzamidine (SLURM, 1 and 4 GPUs)</td><td>Cluster / multi-GPU demonstration</td></tr>
-<tr><td><code>barnase_barstar_chainbd/</code></td><td>Barnase-barstar (flexible chain)</td><td>Chain BD / protein-protein</td></tr>
+<tr><td><code>trypsin_benzamidine/</code></td><td>Trypsin and benzamidine</td><td>Protein and ligand</td></tr>
+<tr><td><code>beta_cyclodextrin_guests/</code></td><td>7 beta cyclodextrin host guest complexes</td><td>Host and guest</td></tr>
+<tr><td><code>thrombin_thrombomodulin/</code></td><td>Thrombin and thrombomodulin</td><td>Protein and protein</td></tr>
+<tr><td><code>p38_mapk_sb203580/</code></td><td>p38 MAPK with SB203580</td><td>Protein and ligand</td></tr>
+<tr><td><code>carbonic_anhydrase_inhibitors/</code></td><td>7 sulfonamide inhibitors across 3 isozymes</td><td>Protein and ligand</td></tr>
+<tr><td><code>hsp90_inhibitors/</code></td><td>6 HSP90 inhibitors</td><td>Protein and ligand</td></tr>
+<tr><td><code>ttk_inhibitors/</code></td><td>8 TTK (MPS1) kinase inhibitors</td><td>Protein and ligand</td></tr>
+<tr><td><code>trypsin_benzamidine_multi_GPUs/</code></td><td>Trypsin and benzamidine on 1 and 4 GPUs</td><td>Cluster demonstration</td></tr>
+<tr><td><code>barnase_barstar_chainbd/</code></td><td>Barnase and barstar with a flexible chain</td><td>Chain BD</td></tr>
 </tbody>
 </table>
 
-Each example directory contains its own `README.md` with system parameters, input files, run instructions, and output file descriptions. See [`PARAMETERS.md`](PARAMETERS.md) for a detailed parameter selection guide covering all benchmark complexes.
+Every parameter for a system lives in its own `config.xml` (or, for the static systems below, its `input.xml` and `rxns.xml`). Read those files for the exact reaction criterion, ionic strength, b surface, trajectory count, and everything else.
 
-## Directory structure
+## What each directory holds
+
+A directory carries only the files that cannot be regenerated. Everything else is built on demand, either by `setup.py` before the run or by the run itself. There are three kinds of system.
+
+**Systems built from an RCSB entry** (`carbonic_anhydrase_inhibitors`, `p38_mapk_sb203580`, `ttk_inhibitors`). `setup.py` downloads the structure from the `pdb_id` in the config and, for the sulfonamides, builds the ligand from its SMILES.
 
 ```
-examples/
-├── README.md                           This file
-├── PARAMETERS.md                       Parameter selection guide for all benchmarks
-│
-├── two_charged_spheres/                Analytical validation (exact Smoluchowski solution)
-│   ├── README.md
-│   ├── receptor.pqr                    Single-atom receptor (+1e)
-│   ├── ligand.pqr                      Single-atom ligand (−1e)
-│   ├── rxns.xml                        Reaction criterion (contact at 2.0 Å)
-│   ├── input.xml                       Simulation parameters
-│   ├── analytical.py                   Exact solution comparison script
-│   ├── convergence.py                  Multi-seed convergence test
-│   └── run.sh                          Run simulation + verification
-│
-├── trypsin_benzamidine/                Protein-ligand (charged ligand, surface pocket)
-│   ├── README.md
-│   ├── complex.pdb                     Bound-state PDB
-│   ├── complex.prmtop                  AMBER topology
-│   ├── receptor.pqr                    Pre-generated trypsin PQR
-│   ├── ligand.pqr                      Pre-generated benzamidine PQR
-│   ├── rxns.xml                        Reaction criterion
-│   ├── input.xml                       Simulation parameters
-│   ├── setup.py                        Generates PQR, rxns.xml, input.xml
-│   └── run.sh                          Run setup + simulation
-│
-├── beta_cyclodextrin_guests/           Host-guest (7 neutral guests, same receptor)
-│   ├── README.md
-│   ├── run.sh                          Run all 7 complexes sequentially
-│   ├── compare_rates.py                Collect and compare rates across all guests
-│   ├── BCD_1-propanol/
-│   │   ├── complex.pdb
-│   │   ├── complex.parm7
-│   │   ├── receptor.pqr
-│   │   ├── ligand.pqr
-│   │   ├── rxns.xml
-│   │   ├── input.xml
-│   │   └── setup.py
-│   ├── BCD_1-butanol/
-│   ├── BCD_tertbutanol/
-│   ├── BCD_methyl_butyrate/
-│   ├── BCD_aspirin/
-│   ├── BCD_1-naphthylethanol/
-│   └── BCD_2-naphthylethanol/
-│
-├── thrombin_thrombomodulin/            Protein-protein (electrostatically steered)
-│   ├── README.md
-│   ├── receptor.pqr                    Thrombin PQR (pre-computed)
-│   ├── ligand.pqr                      Thrombomodulin PQR (pre-computed)
-│   ├── rxns.xml                        Reaction criterion (21 pairs)
-│   ├── input.xml                       Simulation parameters
-│   ├── bb_effect.py                    Brownian bridge diagnostic script
-│   └── run.sh                          Run simulation + BB diagnostic
-│
-├── p38_mapk_sb203580/                  Protein-ligand (neutral kinase inhibitor)
-│   ├── README.md
-│   ├── 1A9U.pdb                        Crystal structure
-│   ├── receptor.pdb, receptor.pqr      Clean receptor + PQR
-│   ├── ligand.pdb, ligand.pqr          Clean ligand + PQR
-│   ├── protein.prmtop, protein.rst7    Receptor AMBER topology + coordinates
-│   ├── ligand.prmtop, ligand.rst7      Ligand AMBER topology + coordinates
-│   ├── rxns.xml                        Reaction criterion
-│   ├── input.xml                       Simulation parameters
-│   ├── setup.py                        Regenerates all files from the PDB
-│   └── run.sh                          Run setup + simulation
-│
-├── carbonic_anhydrase_inhibitors/      Protein-ligand (7 sulfonamides, 3 CA isozymes)
-│   ├── README.md
-│   ├── ca13_azm/                       CA XIII + acetazolamide (PDB 3CZV)
-│   │   ├── 3CZV.pdb
-│   │   ├── setup.py
-│   │   ├── run.sh
-│   │   └── *.pdb, *.pqr, *.prmtop, *.rst7, rxns.xml, input.xml
-│   ├── ca13_vd1125/                    CA XIII + VD11-25 (PDB 3CZV)
-│   ├── ca13_vd1126/                    CA XIII + VD11-26 (PDB 3CZV)
-│   ├── ca13_vd1209/                    CA XIII + VD12-09 (PDB 3CZV)
-│   ├── ca13_vd1269/                    CA XIII + VD12-69-1 (PDB 3CZV)
-│   ├── ca1_vd1269/                     CA I + VD12-69-1 (PDB 2NMX)
-│   └── ca2_vd1142/                     CA II + VD11-4-2 (PDB 3HS4)
-│
-├── hsp90_inhibitors/                   Protein-ligand (6 neutral HSP90 inhibitors)
-│   ├── README.md
-│   ├── run.sh                          Run all 6 complexes + compare to experiment
-│   ├── 31/                             HSP90 + inhibitor 31
-│   │   ├── complex.pdb                 Source structure (the single input)
-│   │   └── setup.py                    Regenerates all files from the PDB
-│   ├── 37/
-│   ├── 43/
-│   ├── 62/
-│   ├── 65/
-│   └── 70/
-│
-├── ttk_inhibitors/                     Protein-ligand (8 TTK/MPS1 kinase inhibitors)
-│   ├── README.md
-│   ├── run.sh                          Run all 8 complexes + compare to experiment
-│   ├── 2X9E/                           TTK + NMS-P715
-│   │   ├── 2X9E.pdb                    Source structure (named by PDB accession)
-│   │   └── setup.py                    Regenerates all files from the PDB
-│   ├── 3GFW/                           TTK + Mps1-IN-1
-│   ├── 3H9F/                           TTK + Mps1-IN-2
-│   ├── 5LJJ/                           TTK + Reversine
-│   ├── 5N7V/                           TTK + MPI-0479605
-│   ├── 5N84/                           TTK + Mps-BAY2b
-│   ├── 5N93/                           TTK + TC-Mps1-12
-│   └── 5NAD/                           TTK + BAY-1217389
-│
-├── trypsin_benzamidine_multi_GPUs/     Cluster SLURM demonstration (single-GPU and multi-GPU)
-│   ├── README.md
-│   ├── complex.pdb                     Bound-state PDB
-│   ├── complex.prmtop                  AMBER topology
-│   ├── setup.py                        Generates PQR, rxns.xml, input.xml
-│   ├── receptor.pqr                    Pre-generated trypsin PQR
-│   ├── ligand.pqr                      Pre-generated benzamidine PQR
-│   ├── rxns.xml                        Reaction criterion
-│   ├── input.xml                       Simulation parameters
-│   ├── submit_SLURM_single_GPU.sh      SLURM: 1 GPU × 10M trajectories
-│   └── submit_SLURM_multi_GPUs.sh      SLURM: 4 GPUs × 2.5M trajectories, auto-combine
-│
-└── barnase_barstar_chainbd/            Flexible chain BD (protein-protein, under active validation)
+config.xml                 all parameters, including pdb_id and the reaction criterion
+setup.py                   downloads the entry and builds every input
+submit_SLURM_*.sh          cluster launch scripts
+<PDBID>.pdb                the downloaded structure, kept so the example runs offline
 ```
+
+**Systems built from a local complex** (`hsp90_inhibitors`, `beta_cyclodextrin_guests`, `trypsin_benzamidine`). `setup.py` reads a bound state structure that must ship with the example.
+
+```
+config.xml                 all parameters
+setup.py                   builds every input from the local complex
+submit_SLURM_*.sh          cluster launch scripts
+complex.pdb                the bound state (required)
+complex.parm7 / complex.prmtop   the topology, for the prmtop source only
+```
+
+**Static systems** (`two_charged_spheres`, `thrombin_thrombomodulin`). No `setup.py`. The run inputs are the source and ship as is.
+
+```
+input.xml                  simulation parameters
+rxns.xml                   reaction criterion
+receptor.pqr, ligand.pqr   charges and radii
+submit_SLURM_*.sh          cluster launch scripts
+analytical.py, convergence.py   two_charged_spheres verification
+bb_effect.py               thrombin Brownian bridge diagnostic
+```
+
+## What a run generates
+
+Nothing below is committed. `setup.py` writes the run inputs, then the run fills `bd_sims/`.
+
+Written by `setup.py` (for the systems that have one):
+
+```
+input.xml, rxns.xml              simulation parameters and reaction criterion
+receptor.pqr, ligand.pqr         charges and radii
+receptor.pdb, ligand.pdb         cleaned structures
+protein.prmtop, protein.rst7     receptor topology and coordinates
+ligand.prmtop, ligand.rst7       ligand topology and coordinates
+```
+
+Written by the run into `bd_sims/`:
+
+```
+receptor0.dx, receptor1.dx       APBS electrostatic grids, coarse and fine
+receptor0_born.dx, receptor1_born.dx   Born desolvation grids
+ligand0.dx, ligand1.dx, ligand0_born.dx, ligand1_born.dx   the same for the ligand
+*.r_hydro_*.cache                hydrodynamic radius cache
+pystarc_<timestamp>.log          the run log
+
+results.json                     k_on, P_rxn, confidence intervals, run statistics
+convergence.json                 running estimate versus trajectory count
+trajectories.csv                 per trajectory fate and step count
+encounters.csv, near_misses.csv  close approach records
+contact_frequency.csv, pose_clusters.csv   which contacts and poses fired
+milestone_flux.csv, radial_density.csv, fpt_distribution.csv   flux and distributions
+angular_map.npz, energetics.npz, paths.npz, p_commit.npz, transition_matrix.npz   analysis arrays
+```
+
+A multiple GPU run instead creates `bd_sims/bd_1/` through `bd_sims/bd_4/`, one shard per GPU, and the combiner pools them. The pooled `results.json` is the number to read.
 
 ## Quick start
 
-All examples follow the same pattern for interactive runs:
+Every system ships a `run.sh` for a local single GPU run. It builds the inputs, runs the Brownian dynamics on one GPU, and runs any verification the system provides.
 
 ```bash
 conda activate PySTARC
@@ -154,11 +99,11 @@ cd examples/<example_name>
 bash run.sh
 ```
 
-For the SLURM cluster example:
+The SLURM scripts are for a cluster with a `gpu` partition and are not needed for a local run:
 
 ```bash
-cd examples/trypsin_benzamidine_multi_GPUs
-sbatch submit_SLURM_single_GPU.sh       # or submit_SLURM_multi_GPUs.sh
+sbatch submit_SLURM_single_GPU.sh      # one GPU
+sbatch submit_SLURM_multi_GPUs.sh      # four GPUs, pooled at the end
 ```
 
-Results are written to `bd_sims/` within each example directory. The primary output is `bd_sims/results.json` containing k<sub>on</sub>, P<sub>rxn</sub>, confidence intervals, and run statistics. Multi-GPU runs additionally produce `bd_sims/combined_results.json` pooling results across all GPUs.
+The primary result is `bd_sims/results.json`, holding k<sub>on</sub>, P<sub>rxn</sub>, its confidence interval, and the run statistics.

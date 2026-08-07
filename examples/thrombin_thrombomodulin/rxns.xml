@@ -10,7 +10,7 @@
           <molecule0>THR THR</molecule0>
           <molecule1>TMD TMD</molecule1>
         </molecules>
-        <n_needed>4</n_needed>
+        <n_needed>5</n_needed>
         <pair>
           <atoms>1764 1197</atoms>
           <distance>5.0</distance>

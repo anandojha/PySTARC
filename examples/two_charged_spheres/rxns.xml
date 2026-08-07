@@ -1,9 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Reaction criterion for two charged spheres.
-  Contact when the two sphere centers are within 2.5 A.
-  Atom 1 of each molecule (the real atom, 1-based indexing).
--->
 <top>
   <first_state> b_surface </first_state>
   <reactions>

@@ -1,17 +1,11 @@
 #!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PYSTARC_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-RUNNER="$PYSTARC_ROOT/run_pystarc.py"
-
-cd "$SCRIPT_DIR"
-
-# Clean previous outputs
+set -e
+cd "$(dirname "$0")"
+ROOT="$(pwd)"
+while [ ! -f "$ROOT/run_pystarc.py" ] && [ "$ROOT" != "/" ]; do ROOT="$(dirname "$ROOT")"; done
 rm -rf bd_sims
-rm -f input.xml rxns.xml receptor.pqr ligand.pqr receptor.pdb ligand.pdb
-rm -f protein.prmtop protein.rst7 ligand.prmtop ligand.rst7 *.cache *.out
-
-# Step 1: Generate input files
-python setup.py || { echo "setup.py failed"; exit 1; }
-
-# Step 2: Run BD
-python "$RUNNER" input.xml || { echo "BD failed"; exit 1; }
+if [ -f setup.py ]; then python setup.py; fi
+python "$ROOT/run_pystarc.py" input.xml
+if [ -f analytical.py ]; then python analytical.py; fi
+if [ -f convergence.py ]; then python convergence.py; fi
+if [ -f bb_effect.py ]; then python bb_effect.py; fi

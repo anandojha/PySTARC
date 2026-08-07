@@ -1,0 +1,59 @@
+<?xml version="1.0" ?>
+<config>
+  <structure>
+    <ligand_source>prmtop</ligand_source>                                                  <!-- Source of the receptor and ligand structures. Options: prmtop, complex_pdb, rcsb, and rcsb_smiles. -->
+    <prmtop>complex.parm7</prmtop>                                                         <!-- Existing AMBER topology. -->
+    <complex_pdb>complex.pdb</complex_pdb>                                                 <!-- Single PDB containing receptor and ligand. -->
+  </structure>
+  <names>
+    <ligand_formula>C5 H10 O2</ligand_formula>                                             <!-- Ligand composition. The build aborts on a mismatch. -->
+    <receptor_resname>MGO</receptor_resname>                                               <!-- Receptor label written to input.xml. -->
+    <ligand_resname>APN</ligand_resname>                                                   <!-- Ligand label written to input.xml. -->
+  </names>
+  <criterion>
+    <mode>auto</mode>                                                                      <!-- Reaction criterion. Options: auto and explicit. -->
+    <search_cutoff>5.0</search_cutoff>                                                     <!-- Search radius for contacts (in angstroms). -->
+    <n_pairs>6</n_pairs>                                                                   <!-- Number of contacts retained. -->
+    <atom_filter>all</atom_filter>                                                         <!-- Element pairings permitted. Options: all, polar, nonpolar, any_polar, and receptor_polar. -->
+    <buffer>2.0</buffer>                                                                   <!-- Each cutoff is the measured contact distance and the buffer (in angstroms). -->
+    <n_needed>3</n_needed>                                                                 <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. -->
+  </criterion>
+  <run>
+    <bd_milestone_radius>30.0000</bd_milestone_radius>                                     <!-- Radius of the starting sphere (in angstroms). -->
+    <n_trajectories>1000000</n_trajectories>                                               <!-- Number of Brownian dynamics trajectories. -->
+    <apbs_fglen>96</apbs_fglen>                                                            <!-- Fine electrostatic grid length (in angstroms). 0 derives it. -->
+    <apbs_dime>257</apbs_dime>                                                             <!-- Grid points per axis of the electrostatic grid. -->
+    <apbs_cglen>0</apbs_cglen>                                                             <!-- Coarse electrostatic grid length (in angstroms). 0 derives it. -->
+    <apbs_coarse_dime>0</apbs_coarse_dime>                                                 <!-- Grid points per axis of the coarse grid. 0 uses apbs_dime. -->
+    <apbs_fine_dime>0</apbs_fine_dime>                                                     <!-- Grid points per axis of the fine grid. 0 uses apbs_dime. -->
+    <debye_length>7.85751</debye_length>                                                   <!-- Electrostatic screening length of the salt (in angstroms). -->
+    <ion_concentration>0.15</ion_concentration>                                            <!-- Salt concentration (in molar). -->
+    <ion_radius_pos>0.95</ion_radius_pos>                                                  <!-- Radius of the positive ion (in angstroms). -->
+    <ion_radius_neg>1.81</ion_radius_neg>                                                  <!-- Radius of the negative ion (in angstroms). -->
+    <pdie>4.0</pdie>                                                                       <!-- Dielectric constant of the protein. -->
+    <sdie>78.0</sdie>                                                                      <!-- Dielectric constant of the solvent. -->
+    <srad>1.4</srad>                                                                       <!-- Solvent probe radius (in angstroms). -->
+    <desolvation_alpha>1.0</desolvation_alpha>                                             <!-- Scaling applied to the desolvation penalty. -->
+    <enable_born2_torque>true</enable_born2_torque>                                        <!-- Include the reciprocal desolvation torque on the receptor. Options: true and false. -->
+    <hydrodynamic_interactions>true</hydrodynamic_interactions>                            <!-- Include hydrodynamic coupling between the two molecules. Options: true and false. -->
+    <multipole_fallback>true</multipole_fallback>                                          <!-- Extend the electrostatics beyond the grid by multipole expansion. Options: true and false. -->
+    <lj_forces>false</lj_forces>                                                           <!-- Implement repulsive forces at close contact. Options: true and false. -->
+    <overlap_check>true</overlap_check>                                                    <!-- Stop the ligand from entering the receptor volume. Options: true and false. -->
+    <gpu_force_batch>0</gpu_force_batch>                                                   <!-- Trajectories per GPU force evaluation. 0 selects automatically. -->
+    <max_steps>1000000</max_steps>                                                         <!-- Step limit per trajectory. -->
+    <dt>0.2</dt>                                                                           <!-- Largest permitted time step (in picoseconds). -->
+    <minimum_core_dt>0.2</minimum_core_dt>                                                 <!-- Smallest permitted time step. 0 imposes no floor. -->
+    <max_dt>0</max_dt>                                                                     <!-- Ceiling on the time step. 0 imposes no ceiling. -->
+    <r_hydro_rec>0.0000</r_hydro_rec>                                                      <!-- Receptor hydrodynamic radius. 0 derives it from the PQR. -->
+    <r_hydro_lig>0.0000</r_hydro_lig>                                                      <!-- Ligand hydrodynamic radius. 0 derives it from the PQR file. -->
+    <temperature>298.15</temperature>                                                      <!-- Temperature (in kelvin). -->
+    <seed>1</seed>                                                                         <!-- Random number seed. -->
+    <gpu>true</gpu>                                                                        <!-- Evaluate forces on the GPU. Options: true and false. -->
+    <n_threads>32</n_threads>                                                              <!-- Number of CPU threads. -->
+    <convergence_check>true</convergence_check>                                            <!-- Run convergence analysis after the simulation. Options: true and false. -->
+    <convergence_interval>10</convergence_interval>                                        <!-- Reporting interval for the running rate. -->
+    <convergence_tol>0.05</convergence_tol>                                                <!-- Relative error defining convergence. -->
+    <checkpoint_interval>0</checkpoint_interval>                                           <!-- Trajectories between checkpoints. 0 disables checkpointing. -->
+    <save_interval>10</save_interval>                                                      <!-- Steps between saved positions. 0 saves endpoints only. -->
+  </run>
+</config>

@@ -31,7 +31,7 @@
   <multipole_fallback>true</multipole_fallback>
   <lj_forces>false</lj_forces>
   <!-- BD simulation -->
-  <n_trajectories>100000</n_trajectories>
+  <n_trajectories>1000000</n_trajectories>
   <max_steps>1000000</max_steps>
   <dt>0.2</dt>
   <minimum_core_dt>0.0</minimum_core_dt>   

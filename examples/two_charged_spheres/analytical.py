@@ -3,7 +3,6 @@
 """
 Analytical verification for charged_spheres
 Exact Smoluchowski solution vs PySTARC simulation vs analytical reference.
-Run after PySTARC simulation to auto-compare.
 """
 
 from scipy.integrate import quad
