@@ -117,7 +117,7 @@ bash run.sh
 
 ## Examples
 
-See [`examples/`](examples/) and [`examples/PARAMETERS.md`](examples/PARAMETERS.md) for the parameter guide.
+See [`examples/`](examples/) for all example systems, each with its own README.
 
 ```
 examples/
@@ -135,19 +135,21 @@ examples/
 
 ## Requirements
 
-- Python 3.11+
-- AmberTools
-- APBS
-- OpenBabel
-- RDKit
-- OpenEye Toolkits
-- NumPy
-- SciPy
-- Click
-- Numba
-- Matplotlib
-- pdb2pqr
-- CuPy
+```
+Python 3.11+
+AmberTools
+APBS
+OpenBabel
+RDKit
+OpenEye Toolkits
+NumPy
+SciPy
+Click
+Numba
+Matplotlib
+pdb2pqr
+CuPy
+```
 
 ## License
 
