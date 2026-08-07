@@ -27,36 +27,38 @@ A directory carries only the files that cannot be regenerated. Everything else i
 
 ```
 <system>/
-├── config.xml            all parameters, including pdb_id and the reaction criterion
-├── setup.py              downloads the entry and builds every input
-├── submit_SLURM_*.sh     cluster launch scripts
-├── run.sh                local single GPU run
-└── <PDBID>.pdb           the downloaded structure, kept so the example runs offline
+├── config.xml                all parameters, including pdb_id and the reaction criterion
+├── setup.py                  downloads the entry and builds every input
+├── submit_SLURM_*.sh         cluster launch scripts
+├── run.sh                    local single GPU run
+└── <PDBID>.pdb               the downloaded structure, kept so the example runs offline
 ```
 
 **Systems built from a local complex** (`hsp90_inhibitors`, `beta_cyclodextrin_guests`, `trypsin_benzamidine`). `setup.py` reads a bound state structure that must ship with the example.
 
 ```
 <system>/
-├── config.xml            all parameters
-├── setup.py              builds every input from the local complex
-├── submit_SLURM_*.sh     cluster launch scripts
-├── run.sh                local single GPU run
-├── complex.pdb           the bound state (required)
-└── complex.parm7 / complex.prmtop   the topology, for the prmtop source only
+├── config.xml                all parameters
+├── setup.py                  builds every input from the local complex
+├── submit_SLURM_*.sh         cluster launch scripts
+├── run.sh                    local single GPU run
+├── complex.pdb               the bound state, required
+└── complex.parm7             AMBER topology, prmtop source only (or complex.prmtop)
 ```
 
 **Static systems** (`two_charged_spheres`, `thrombin_thrombomodulin`). No `setup.py`. The run inputs are the source and ship as is.
 
 ```
 <system>/
-├── input.xml             simulation parameters
-├── rxns.xml              reaction criterion
-├── receptor.pqr, ligand.pqr   charges and radii
-├── submit_SLURM_*.sh     cluster launch scripts
-├── run.sh                local single GPU run
-├── analytical.py, convergence.py   two_charged_spheres verification
-└── bb_effect.py          thrombin Brownian bridge diagnostic
+├── input.xml                 simulation parameters
+├── rxns.xml                  reaction criterion
+├── receptor.pqr              receptor charges and radii
+├── ligand.pqr                ligand charges and radii
+├── submit_SLURM_*.sh         cluster launch scripts
+├── run.sh                    local single GPU run
+├── analytical.py             two_charged_spheres check versus the exact solution
+├── convergence.py            two_charged_spheres multi seed convergence
+└── bb_effect.py              thrombin Brownian bridge diagnostic
 ```
 
 ## What a run generates
@@ -67,37 +69,55 @@ Written by `setup.py` (for the systems that have one):
 
 ```
 <system>/
-├── input.xml, rxns.xml          simulation parameters and reaction criterion
-├── receptor.pqr, ligand.pqr     charges and radii
-├── receptor.pdb, ligand.pdb     cleaned structures
-├── protein.prmtop, protein.rst7   receptor topology and coordinates
-└── ligand.prmtop, ligand.rst7   ligand topology and coordinates
+├── input.xml                 simulation parameters
+├── rxns.xml                  reaction criterion
+├── receptor.pqr              receptor charges and radii
+├── ligand.pqr                ligand charges and radii
+├── receptor.pdb              cleaned receptor structure
+├── ligand.pdb                cleaned ligand structure
+├── protein.prmtop            receptor topology
+├── protein.rst7              receptor coordinates
+├── ligand.prmtop             ligand topology
+└── ligand.rst7               ligand coordinates
 ```
 
 Written by the run into `bd_sims/`:
 
 ```
 bd_sims/
-├── receptor0.dx, receptor1.dx   APBS electrostatic grids, coarse and fine
-├── receptor0_born.dx, receptor1_born.dx   Born desolvation grids
-├── ligand0.dx, ligand1.dx, ligand0_born.dx, ligand1_born.dx   the same for the ligand
-├── *.r_hydro_*.cache            hydrodynamic radius cache
-├── pystarc_<timestamp>.log      the run log
-├── results.json                 k_on, P_rxn, confidence intervals, run statistics
-├── convergence.json             running estimate versus trajectory count
-├── trajectories.csv             per trajectory fate and step count
-├── encounters.csv, near_misses.csv   close approach records
-├── contact_frequency.csv, pose_clusters.csv   which contacts and poses fired
-├── milestone_flux.csv, radial_density.csv, fpt_distribution.csv   flux and distributions
-└── angular_map.npz, energetics.npz, paths.npz, p_commit.npz, transition_matrix.npz   analysis arrays
+├── receptor0.dx              APBS electrostatic grid, coarse
+├── receptor1.dx              APBS electrostatic grid, fine
+├── receptor0_born.dx         Born desolvation grid, coarse
+├── receptor1_born.dx         Born desolvation grid, fine
+├── ligand0.dx                ligand electrostatic grid, coarse
+├── ligand1.dx                ligand electrostatic grid, fine
+├── ligand0_born.dx           ligand Born grid, coarse
+├── ligand1_born.dx           ligand Born grid, fine
+├── *.r_hydro_*.cache         hydrodynamic radius cache
+├── pystarc_<timestamp>.log   the run log
+├── results.json              k_on, P_rxn, confidence intervals, run statistics
+├── convergence.json          running estimate versus trajectory count
+├── trajectories.csv          per trajectory fate and step count
+├── encounters.csv            encounter records
+├── near_misses.csv           close approach records
+├── contact_frequency.csv     which contacts fired
+├── pose_clusters.csv         bound pose clusters
+├── milestone_flux.csv        milestone flux
+├── radial_density.csv        radial density profile
+├── fpt_distribution.csv      first passage time distribution
+├── angular_map.npz           angular encounter map
+├── energetics.npz            interaction energetics
+├── paths.npz                 reactive path samples
+├── p_commit.npz              committor probabilities
+└── transition_matrix.npz     milestone transition matrix
 ```
 
 A multiple GPU run instead creates one shard per GPU, and the combiner pools them into the top level `results.json`, which is the number to read.
 
 ```
 bd_sims/
-├── bd_1/  bd_2/  bd_3/  bd_4/    one shard per GPU, each with its own grids and log
-└── results.json                 pooled result across all shards
+├── bd_1/ ... bd_4/           one shard per GPU, each with its own grids and log
+└── results.json              pooled result across all shards
 ```
 
 ## Quick start
