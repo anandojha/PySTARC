@@ -63,14 +63,14 @@ bd_sims/
 ├── near_misses.csv               Records of the close approaches
 ├── contact_frequency.csv         Frequency of each native contact
 ├── pose_clusters.csv             Clusters of the bound poses
-├── milestone_flux.csv            Flux across each milestone
+├── milestone_flux.csv            Outward and inward crossings through the concentric shells
 ├── radial_density.csv            Radial density profile of the ligand
 ├── fpt_distribution.csv          Distribution of the first passage times
 ├── angular_map.npz               Angular map of the encounters
 ├── energetics.npz                Interaction energetics along the trajectories
 ├── paths.npz                     Samples of the reactive paths
 ├── p_commit.npz                  Committor probabilities
-└── transition_matrix.npz         Milestone transition matrix
+└── transition_matrix.npz         Markov transition matrix between the concentric shells
 ```
 
 ## Once simulation finishes, the following files will be generated with multiple GPUs
@@ -80,7 +80,7 @@ rxns.xml                              Reaction criterion file
 receptor.pqr                          PQR file for receptor charges and radii
 ligand.pqr                            PQR file for ligand charges and radii
 bd_sims/
-├── bd_1/                             One directory per GPU, each an independent slice
+├── bd_1/                             One directory per GPU, each running a share of the trajectories
 │   ├── input.xml                     PySTARC input file for this slice
 │   ├── receptor.pqr                  PQR file for receptor charges and radii
 │   ├── ligand.pqr                    PQR file for ligand charges and radii
@@ -102,16 +102,16 @@ bd_sims/
 │   ├── near_misses.csv               Records of the close approaches
 │   ├── contact_frequency.csv         Frequency of each native contact
 │   ├── pose_clusters.csv             Clusters of the bound poses
-│   ├── milestone_flux.csv            Flux across each milestone
+│   ├── milestone_flux.csv            Outward and inward crossings through the concentric shells
 │   ├── radial_density.csv            Radial density profile of the ligand
 │   ├── fpt_distribution.csv          Distribution of the first passage times
 │   ├── angular_map.npz               Angular map of the encounters
 │   ├── energetics.npz                Interaction energetics along the trajectories
 │   ├── paths.npz                     Samples of the reactive paths
 │   ├── p_commit.npz                  Committor probabilities
-│   └── transition_matrix.npz         Milestone transition matrix
+│   └── transition_matrix.npz         Markov transition matrix between the concentric shells
 ├── ...
-├── bd_N/                             Slice from the last GPU
+├── bd_N/                             Directory from the Nth GPU
 ├── results.json                      Association rate pooled across all GPUs, read this file
 ├── convergence.json                  Running rate estimate versus the number of trajectories
 ├── receptor0.dx                      Coarse APBS electrostatic grid of the receptor
@@ -130,12 +130,12 @@ bd_sims/
 ├── near_misses.csv                   Records of the close approaches
 ├── contact_frequency.csv             Frequency of each native contact
 ├── pose_clusters.csv                 Clusters of the bound poses
-├── milestone_flux.csv                Flux across each milestone
+├── milestone_flux.csv                Outward and inward crossings through the concentric shells
 ├── radial_density.csv                Radial density profile of the ligand
 ├── fpt_distribution.csv              Distribution of the first passage times
 ├── angular_map.npz                   Angular map of the encounters
 ├── energetics.npz                    Interaction energetics along the trajectories
 ├── paths.npz                         Samples of the reactive paths
 ├── p_commit.npz                      Committor probabilities
-└── transition_matrix.npz             Milestone transition matrix
+└── transition_matrix.npz             Markov transition matrix between the concentric shells
 ```
