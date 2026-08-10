@@ -45,26 +45,64 @@ bd_sims/
 ├── bd_1/
 ├── results.json
 ├── convergence.json
-├── receptor*.dx  ligand*.dx
-├── *.cache
-├── encounters.csv  trajectories.csv  fpt_distribution.csv
-├── radial_density.csv  contact_frequency.csv  near_misses.csv
-├── pose_clusters.csv  milestone_flux.csv
-└── angular_map.npz  energetics.npz  paths.npz  p_commit.npz  transition_matrix.npz
+├── receptor0.dx
+├── receptor1.dx
+├── receptor0_born.dx
+├── receptor1_born.dx
+├── ligand0.dx
+├── ligand1.dx
+├── ligand0_born.dx
+├── ligand1_born.dx
+├── receptor.pqr.r_hydro_*.cache
+├── ligand.pqr.r_hydro_*.cache
+├── pystarc_<timestamp>.log
+├── trajectories.csv
+├── encounters.csv
+├── near_misses.csv
+├── contact_frequency.csv
+├── pose_clusters.csv
+├── milestone_flux.csv
+├── radial_density.csv
+├── fpt_distribution.csv
+├── angular_map.npz
+├── energetics.npz
+├── paths.npz
+├── p_commit.npz
+└── transition_matrix.npz
 convergence_seed_*/   (convergence.py)
 ```
 
 ## Once simulation finishes, the following files will be generated with multiple GPUs
 ```
 bd_sims/
-├── bd_1/ ... bd_N/   one per GPU, each a full slice with its own results.json
+├── bd_1/
+├── ...
+├── bd_N/
 ├── results.json      pooled across GPUs, read this
 ├── convergence.json
-├── receptor*.dx  ligand*.dx
-├── *.cache
-├── encounters.csv  trajectories.csv  fpt_distribution.csv
-├── radial_density.csv  contact_frequency.csv  near_misses.csv
-├── pose_clusters.csv  milestone_flux.csv
-└── angular_map.npz  energetics.npz  paths.npz  p_commit.npz  transition_matrix.npz
+├── receptor0.dx
+├── receptor1.dx
+├── receptor0_born.dx
+├── receptor1_born.dx
+├── ligand0.dx
+├── ligand1.dx
+├── ligand0_born.dx
+├── ligand1_born.dx
+├── receptor.pqr.r_hydro_*.cache
+├── ligand.pqr.r_hydro_*.cache
+├── pystarc_<timestamp>.log
+├── trajectories.csv
+├── encounters.csv
+├── near_misses.csv
+├── contact_frequency.csv
+├── pose_clusters.csv
+├── milestone_flux.csv
+├── radial_density.csv
+├── fpt_distribution.csv
+├── angular_map.npz
+├── energetics.npz
+├── paths.npz
+├── p_commit.npz
+└── transition_matrix.npz
 convergence_seed_*/   (convergence.py)
 ```
