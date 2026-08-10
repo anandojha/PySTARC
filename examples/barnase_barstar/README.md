@@ -60,3 +60,44 @@ python combine_shards.py
 | `make_grids.py` | builds the APBS grids |
 | `submit_shards.sh` | stages and submits the shards |
 | `combine_shards.py` | pools the shards |
+
+## setup.py and make_grids.py write
+
+    chain.json            barstar bead chain definition
+    reaction_pairs.json   interface contact pairs
+    input.xml             PySTARC input
+    apbs_output/          barnase0.dx, barnase1.dx and the Born grids
+
+## The run writes
+
+    shards/
+    ├── shard_01/
+    │   ├── input.xml            this shard, its own seed
+    │   ├── chain.json           link to the shared file
+    │   ├── reaction_pairs.json  link to the shared file
+    │   ├── barnase.pqr          link to the shared file
+    │   ├── apbs_output          link to the shared grids
+    │   └── bd_sims/
+    │       ├── results.json         this shard k_on and counts
+    │       ├── encounters.csv       encounter records
+    │       ├── trajectories.csv     saved positions
+    │       ├── fpt_distribution.csv first passage times
+    │       ├── radial_density.csv   radial density
+    │       ├── contact_frequency.csv contact frequency
+    │       ├── near_misses.csv      near misses
+    │       ├── milestone_flux.csv   milestone flux
+    │       ├── angular_map.npz      angular occupancy
+    │       ├── energetics.npz       energy terms
+    │       ├── paths.npz            reactive paths
+    │       └── transition_matrix.npz transition matrix
+    ├── shard_02/  ...  through shard_25/
+    └── ...
+    logs/                         one out and err per shard
+
+## Single or many shards
+
+Same idea as the GPU examples, but on CPU nodes. The total trajectory count is `n_trajectories` times `n_shards` in `config.xml`, here 200 times 25 equals 5000. Each shard is one independent node with its own seed and its own `bd_sims/results.json`. `combine_shards.py` pools all shards into one P_rxn and k_on with a Wilson 95 percent interval. Read the pooled value it prints, not the per shard files.
+
+## Expect
+
+Pooled k_on and P_rxn printed by `combine_shards.py`. The validated run gives k_on near 8e8 M-1 s-1.
