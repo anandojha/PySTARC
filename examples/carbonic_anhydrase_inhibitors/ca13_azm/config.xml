@@ -31,16 +31,16 @@
       <atom name="N3"/>
     </ligand>
     <cutoffs>                                                                              <!-- Distance defining each pair (in angstroms) in the same order as receptor. -->
-      <item>2.5</item>
-      <item>2.5</item>
-      <item>2.5</item>
-      <item>2.5</item>
+      <item>2.0</item>
+      <item>2.0</item>
+      <item>2.0</item>
+      <item>2.0</item>
     </cutoffs>
     <n_needed>2</n_needed>                                                                 <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. -->
   </criterion>
   <run>
     <bd_milestone_radius>60.0</bd_milestone_radius>                                        <!-- Radius of the starting sphere (in angstroms). -->
-    <n_trajectories>5000000</n_trajectories>                                               <!-- Number of Brownian dynamics trajectories. -->
+    <n_trajectories>20000000</n_trajectories>                                              <!-- Number of Brownian dynamics trajectories. -->
     <apbs_fglen>128</apbs_fglen>                                                           <!-- Fine electrostatic grid length (in angstroms). 0 derives it. -->
     <apbs_dime>257</apbs_dime>                                                             <!-- Grid points per axis of the electrostatic grid. -->
     <apbs_cglen>0</apbs_cglen>                                                             <!-- Coarse electrostatic grid length (in angstroms). 0 derives it. -->

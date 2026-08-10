@@ -23,13 +23,13 @@
     </receptor>
     <ligand>auto</ligand>                                                                  <!-- Ligand side of each pair. Use auto to choose the nearest atom that atom_filter permits. -->
     <atom_filter>polar</atom_filter>                                                       <!-- Element pairings permitted. Options: all, polar, nonpolar, any_polar, and receptor_polar. -->
-    <buffer>1.5</buffer>                                                                   <!-- Each cutoff is the measured contact distance and the buffer (in angstroms). -->
+    <buffer>1.0</buffer>                                                                   <!-- Each cutoff is the measured contact distance and the buffer (in angstroms). -->
     <rounding>up</rounding>                                                                <!-- Rule reducing the buffered distance to a half angstrom. Options: nearest and up. -->
     <n_needed>3</n_needed>                                                                 <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. -->
   </criterion>
   <run>
     <bd_milestone_radius>60.0</bd_milestone_radius>                                        <!-- Radius of the starting sphere (in angstroms). -->
-    <n_trajectories>10000000</n_trajectories>                                              <!-- Number of Brownian dynamics trajectories. -->
+    <n_trajectories>20000000</n_trajectories>                                              <!-- Number of Brownian dynamics trajectories. -->
     <apbs_fglen>144</apbs_fglen>                                                           <!-- Fine electrostatic grid length (in angstroms). 0 derives it. -->
     <apbs_dime>257</apbs_dime>                                                             <!-- Grid points per axis of the electrostatic grid. -->
     <apbs_cglen>0</apbs_cglen>                                                             <!-- Coarse electrostatic grid length (in angstroms). 0 derives it. -->

@@ -14,7 +14,7 @@
     <search_cutoff>5.0</search_cutoff>                                                     <!-- Search radius for contacts (in angstroms). -->
     <n_pairs>8</n_pairs>                                                                   <!-- Number of contacts retained. -->
     <atom_filter>all</atom_filter>                                                         <!-- Element pairings permitted. Options: all, polar, nonpolar, any_polar, and receptor_polar. -->
-    <pair_cutoff>5.0</pair_cutoff>                                                         <!-- One distance defining every pair (in angstroms). -->
+    <pair_cutoff>4.5</pair_cutoff>                                                         <!-- One distance defining every pair (in angstroms). -->
     <n_needed>6</n_needed>                                                                 <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. -->
   </criterion>
   <run>
