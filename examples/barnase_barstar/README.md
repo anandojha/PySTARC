@@ -4,13 +4,13 @@ Barnase and barstar with a flexible chain. Chain BD.
 
 ## Files
 ```
-1BRS.pdb           structure
-barnase.pqr        receptor charges, radii
-config.xml         parameters
-setup.py           builds chain.json, reaction_pairs.json, input.xml
-make_grids.py      builds apbs_output grids
-submit_shards.sh   stage + submit 25 shards
-combine_shards.py  pool shards
+1BRS.pdb           PDB structure of the complex
+barnase.pqr        PQR file for receptor charges and radii
+config.xml         Parameter file
+setup.py           Reads config.xml to build chain.json, reaction_pairs.json, and input.xml
+make_grids.py      Builds the APBS electrostatic and Born grids
+submit_shards.sh   Stages and submits the 25 shards on the cluster
+combine_shards.py  Pools the shards into one rate
 ```
 
 ## To run Brownian dynamics simulations

@@ -4,13 +4,13 @@ Thrombin and thrombomodulin. Protein and protein.
 
 ## Files
 ```
-input.xml                   PySTARC input
-rxns.xml                    reaction criterion
-receptor.pqr                receptor charges, radii
-ligand.pqr                  ligand charges, radii
-run.sh                      local run
-submit_SLURM_single_GPU.sh  1 GPU
-submit_SLURM_multi_GPUs.sh  many GPUs
+input.xml                   PySTARC input file
+rxns.xml                    Reaction criterion file
+receptor.pqr                PQR file for receptor charges and radii
+ligand.pqr                  PQR file for ligand charges and radii
+run.sh                      Script to run PySTARC simulations on the workstation
+submit_SLURM_single_GPU.sh  Script to run PySTARC simulations on the cluster with 1 GPU
+submit_SLURM_multi_GPUs.sh  Script to run PySTARC simulations on the cluster with multiple GPUs
 ```
 
 ## To run Brownian dynamics simulations on the workstation

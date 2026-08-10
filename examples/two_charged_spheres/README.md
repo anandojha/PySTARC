@@ -4,15 +4,15 @@ Two oppositely charged spheres. Analytical validation.
 
 ## Files
 ```
-input.xml                   PySTARC input
-rxns.xml                    reaction criterion
-receptor.pqr                fixed sphere
-ligand.pqr                  mobile sphere
-analytical.py               exact Smoluchowski rate
-convergence.py              rate vs trajectory count
-run.sh                      local run
-submit_SLURM_single_GPU.sh  1 GPU
-submit_SLURM_multi_GPUs.sh  many GPUs
+input.xml                   PySTARC input file
+rxns.xml                    Reaction criterion file
+receptor.pqr                PQR file for receptor charges and radii
+ligand.pqr                  PQR file for ligand charges and radii
+analytical.py               Compares the rate against the exact Smoluchowski solution
+convergence.py              Reports the rate against trajectory count
+run.sh                      Script to run PySTARC simulations on the workstation
+submit_SLURM_single_GPU.sh  Script to run PySTARC simulations on the cluster with 1 GPU
+submit_SLURM_multi_GPUs.sh  Script to run PySTARC simulations on the cluster with multiple GPUs
 ```
 
 ## To run Brownian dynamics simulations on the workstation

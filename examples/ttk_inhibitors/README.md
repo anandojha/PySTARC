@@ -19,12 +19,12 @@ ttk_inhibitors/
 
 ## Files within each complex
 ```
-<PDB>.pdb                   structure
-config.xml                  parameters
-setup.py                    builds inputs
-run.sh                      local run
-submit_SLURM_single_GPU.sh  1 GPU
-submit_SLURM_multi_GPUs.sh  many GPUs
+<PDB>.pdb                   PDB structure of the complex
+config.xml                  Parameter file
+setup.py                    Reads the config.xml file to set up the input.xml file
+run.sh                      Script to run PySTARC simulations on the workstation
+submit_SLURM_single_GPU.sh  Script to run PySTARC simulations on the cluster with 1 GPU
+submit_SLURM_multi_GPUs.sh  Script to run PySTARC simulations on the cluster with multiple GPUs
 ```
 
 ## To run Brownian dynamics simulations on the workstation
@@ -54,10 +54,10 @@ cd 2X9E && sbatch submit_SLURM_multi_GPUs.sh
 
 ## Once simulation finishes, the following files will be generated with 1 GPU, per complex
 ```
-input.xml                         PySTARC input
-rxns.xml                          reaction criterion
-receptor.pqr                      receptor charges and radii
-ligand.pqr                        ligand charges and radii
+input.xml                         PySTARC input file
+rxns.xml                          Reaction criterion file
+receptor.pqr                      PQR file for receptor charges and radii
+ligand.pqr                        PQR file for ligand charges and radii
 bd_sims/
 ├── bd_1/                         the run
 ├── results.json                  k_on, P_rxn, intervals
@@ -90,10 +90,10 @@ bd_sims/
 
 ## Once simulation finishes, the following files will be generated with multiple GPUs, per complex
 ```
-input.xml                             PySTARC input
-rxns.xml                              reaction criterion
-receptor.pqr                          receptor charges and radii
-ligand.pqr                            ligand charges and radii
+input.xml                             PySTARC input file
+rxns.xml                              Reaction criterion file
+receptor.pqr                          PQR file for receptor charges and radii
+ligand.pqr                            PQR file for ligand charges and radii
 bd_sims/
 ├── bd_1/                             one per GPU, each a full slice
 │   ├── input.xml                     this shard input

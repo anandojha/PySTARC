@@ -87,10 +87,10 @@ bd_sims/
 
 ## Once simulation finishes, the following files will be generated with multiple GPUs, per complex
 ```
-input.xml                             PySTARC input
-rxns.xml                              reaction criterion
-receptor.pqr                          receptor charges and radii
-ligand.pqr                            ligand charges and radii
+input.xml                             PySTARC input file
+rxns.xml                              Reaction criterion file
+receptor.pqr                          PQR file for receptor charges and radii
+ligand.pqr                            PQR file for ligand charges and radii
 bd_sims/
 ├── bd_1/                             one per GPU, each a full slice
 │   ├── input.xml                     this shard input
