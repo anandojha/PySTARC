@@ -3,9 +3,9 @@
 ## Complexes
 ```
 carbonic_anhydrase_inhibitors/
-├── ca13_azm/     Carbonic anhydrase XIII with acetazolamide 
-├── ca13_vd1125/  Carbonic anhydrase XIII with compound VD1125 
-├── ca13_vd1126/  Carbonic anhydrase XIII with compound VD1126 
+├── ca13_azm/     Carbonic anhydrase XIII with acetazolamide
+├── ca13_vd1125/  Carbonic anhydrase XIII with compound VD1125
+├── ca13_vd1126/  Carbonic anhydrase XIII with compound VD1126
 ├── ca13_vd1209/  Carbonic anhydrase XIII with compound VD1209
 ├── ca13_vd1269/  Carbonic anhydrase XIII with compound VD1269
 ├── ca1_vd1269/   Carbonic anhydrase I with compound VD1269
@@ -24,10 +24,10 @@ submit_SLURM_multi_GPUs.sh  Script to run PySTARC simulations on the cluster wit
 
 ## To run Brownian dynamics simulations on the workstation
 ```
-cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors   # Navigate to the example directory within PySTARC
-conda activate PySTARC                                # Activate the PySTARC environment
-module load cuda                                      # Load CUDA
-bash ca13_azm/run.sh                                  # Run one complex
+cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors  # Navigate to the example directory within PySTARC
+conda activate PySTARC                               # Activate the PySTARC environment
+module load cuda                                     # Load CUDA
+bash ca13_azm/run.sh                                 # Run one complex
 ```
 
 ## To run Brownian dynamics simulations on the cluster with 1 GPU

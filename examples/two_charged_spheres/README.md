@@ -15,7 +15,7 @@ submit_SLURM_multi_GPUs.sh  Script to run PySTARC simulations on the cluster wit
 
 ## To run Brownian dynamics simulations on the workstation
 ```
-cd ~/PySTARC/examples/two_charged_spheres  # Go to the example directory
+cd ~/PySTARC/examples/two_charged_spheres  # Navigate to the example directory within PySTARC
 conda activate PySTARC                     # Activate the PySTARC environment
 module load cuda                           # Load CUDA
 bash run.sh                                # Run the simulation
@@ -23,7 +23,7 @@ bash run.sh                                # Run the simulation
 
 ## To run Brownian dynamics simulations on the cluster with 1 GPU
 ```
-cd ~/PySTARC/examples/two_charged_spheres  # Go to the example directory
+cd ~/PySTARC/examples/two_charged_spheres  # Navigate to the example directory within PySTARC
 conda activate PySTARC                     # Activate the PySTARC environment
 module load cuda                           # Load CUDA
 sbatch submit_SLURM_single_GPU.sh          # Submit on 1 GPU
@@ -31,7 +31,7 @@ sbatch submit_SLURM_single_GPU.sh          # Submit on 1 GPU
 
 ## To run Brownian dynamics simulations on the cluster with multiple GPUs
 ```
-cd ~/PySTARC/examples/two_charged_spheres  # Go to the example directory
+cd ~/PySTARC/examples/two_charged_spheres  # Navigate to the example directory within PySTARC
 conda activate PySTARC                     # Activate the PySTARC environment
 module load cuda                           # Load CUDA
 sbatch submit_SLURM_multi_GPUs.sh          # Submit on multiple GPUs

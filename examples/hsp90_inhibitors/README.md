@@ -6,17 +6,17 @@ needs OpenEye Toolkits for setup
 ```
 hsp90_inhibitors/
 ├── HSP90-aminopyridine/     HSP90 with an aminopyridine inhibitor
-├── HSP90-indazole_5LNZ/     HSP90 with an indazole inhibitor, PDB 5LNZ
-├── HSP90-indazole_5OCI/     HSP90 with an indazole inhibitor, PDB 5OCI
+├── HSP90-indazole_5LNZ/     HSP90 with an indazole inhibitor
+├── HSP90-indazole_5OCI/     HSP90 with an indazole inhibitor
 ├── HSP90-quinazoline/       HSP90 with a quinazoline inhibitor
-├── HSP90-quinazoline_6EI5/  HSP90 with a quinazoline inhibitor, PDB 6EI5
+├── HSP90-quinazoline_6EI5/  HSP90 with a quinazoline inhibitor
 └── HSP90-resorcinol/        HSP90 with a resorcinol inhibitor
 ```
 
 ## Files within each complex
 ```
 complex.pdb                 PDB structure of the complex
-config.xml                  Parameter file
+config.xml                  PySTARC configuration file
 setup.py                    Reads the config.xml file to set up the input.xml file
 run.sh                      Script to run PySTARC simulations on the workstation
 submit_SLURM_single_GPU.sh  Script to run PySTARC simulations on the cluster with 1 GPU
@@ -25,16 +25,15 @@ submit_SLURM_multi_GPUs.sh  Script to run PySTARC simulations on the cluster wit
 
 ## To run Brownian dynamics simulations on the workstation
 ```
-cd ~/PySTARC/examples/hsp90_inhibitors  # Go to the example directory
+cd ~/PySTARC/examples/hsp90_inhibitors  # Navigate to the example directory within PySTARC
 conda activate PySTARC                  # Activate the PySTARC environment
 module load cuda                        # Load CUDA
 bash HSP90-aminopyridine/run.sh         # Run one complex
-for d in */; do bash "$d/run.sh"; done  # Or run every complex
 ```
 
 ## To run Brownian dynamics simulations on the cluster with 1 GPU
 ```
-cd ~/PySTARC/examples/hsp90_inhibitors                       # Go to the example directory
+cd ~/PySTARC/examples/hsp90_inhibitors                       # Navigate to the example directory within PySTARC
 conda activate PySTARC                                       # Activate the PySTARC environment
 module load cuda                                             # Load CUDA
 cd HSP90-aminopyridine && sbatch submit_SLURM_single_GPU.sh  # Submit one complex on 1 GPU
@@ -42,7 +41,7 @@ cd HSP90-aminopyridine && sbatch submit_SLURM_single_GPU.sh  # Submit one comple
 
 ## To run Brownian dynamics simulations on the cluster with multiple GPUs
 ```
-cd ~/PySTARC/examples/hsp90_inhibitors                       # Go to the example directory
+cd ~/PySTARC/examples/hsp90_inhibitors                       # Navigate to the example directory within PySTARC
 conda activate PySTARC                                       # Activate the PySTARC environment
 module load cuda                                             # Load CUDA
 cd HSP90-aminopyridine && sbatch submit_SLURM_multi_GPUs.sh  # Submit one complex on multiple GPUs
