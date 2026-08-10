@@ -42,6 +42,7 @@ sbatch submit_SLURM_multi_GPUs.sh
 ## Once simulation finishes, the following files will be generated with 1 GPU
 ```
 bd_sims/
+├── bd_1/
 ├── results.json
 ├── convergence.json
 ├── receptor*.dx  ligand*.dx
@@ -57,5 +58,13 @@ convergence_seed_*/   (convergence.py)
 ```
 bd_sims/
 ├── bd_1/ ... bd_N/   one per GPU, each a full slice with its own results.json
-└── results.json      pooled across GPUs, read this
+├── results.json      pooled across GPUs, read this
+├── convergence.json
+├── receptor*.dx  ligand*.dx
+├── *.cache
+├── encounters.csv  trajectories.csv  fpt_distribution.csv
+├── radial_density.csv  contact_frequency.csv  near_misses.csv
+├── pose_clusters.csv  milestone_flux.csv
+└── angular_map.npz  energetics.npz  paths.npz  p_commit.npz  transition_matrix.npz
+convergence_seed_*/   (convergence.py)
 ```
