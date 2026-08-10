@@ -34,10 +34,10 @@ all: for d in */; do bash "$d/run.sh"; done
 cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors
 conda activate PySTARC
 module load cuda                     
-cd ca13_azm && sbatch submit_SLURM_single_GPU.sh  1 GPU
+cd ca13_azm && sbatch submit_SLURM_single_GPU.sh 
 ```
 
-## To run Brownian dynamics simulations on the cluster with multiple GPU
+## To run Brownian dynamics simulations on the cluster with multiple GPUs
 ```
 cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors
 conda activate PySTARC
