@@ -25,9 +25,10 @@ submit_SLURM_multi_GPUs.sh  many GPUs
 
 ## run
 ```
-bash HSP90-aminopyridine/run.sh                        local, slow, needs module load cuda
-cd HSP90-aminopyridine && sbatch submit_SLURM_single_GPU.sh   1 GPU
-cd HSP90-aminopyridine && sbatch submit_SLURM_multi_GPUs.sh   many GPUs
+cd ~/PySTARC/examples/hsp90_inhibitors
+bash HSP90-aminopyridine/run.sh                              local, slow, needs module load cuda
+cd HSP90-aminopyridine && sbatch submit_SLURM_single_GPU.sh  1 GPU
+cd HSP90-aminopyridine && sbatch submit_SLURM_multi_GPUs.sh  many GPUs
 all: for d in */; do bash "$d/run.sh"; done
 ```
 
@@ -48,8 +49,8 @@ bd_sims/
 
 ## gpus
 ```
-n_trajectories (config.xml) split across GPUs
-1 GPU  -> bd_1
-N GPUs -> bd_1 ... bd_N   each 1/N
-pooled -> bd_sims/results.json
+n_trajectories (config.xml)  split across GPUs
+1 GPU                        bd_1
+N GPUs                       bd_1 ... bd_N, each 1/N
+pooled                       bd_sims/results.json
 ```

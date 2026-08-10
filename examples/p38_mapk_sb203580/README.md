@@ -12,6 +12,7 @@ submit_SLURM_multi_GPUs.sh  many GPUs
 
 ## run
 ```
+cd ~/PySTARC/examples/p38_mapk_sb203580
 bash run.sh                        local, slow, needs module load cuda
 sbatch submit_SLURM_single_GPU.sh  1 GPU
 sbatch submit_SLURM_multi_GPUs.sh  many GPUs
@@ -34,8 +35,8 @@ bd_sims/
 
 ## gpus
 ```
-n_trajectories (config.xml) split across GPUs
-1 GPU  -> bd_1
-N GPUs -> bd_1 ... bd_N   each 1/N
-pooled -> bd_sims/results.json
+n_trajectories (config.xml)  split across GPUs
+1 GPU                        bd_1
+N GPUs                       bd_1 ... bd_N, each 1/N
+pooled                       bd_sims/results.json
 ```
