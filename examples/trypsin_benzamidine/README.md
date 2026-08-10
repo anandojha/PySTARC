@@ -1,5 +1,7 @@
 # trypsin_benzamidine
 
+Trypsin and benzamidine. Protein and ligand.
+
 ## files
 ```
 complex.pdb                 structure

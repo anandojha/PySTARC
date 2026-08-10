@@ -1,5 +1,7 @@
 # carbonic_anhydrase_inhibitors
 
+7 sulfonamide inhibitors across 3 isozymes. Protein and ligand.
+
 ## complexes
 ```
 carbonic_anhydrase_inhibitors/

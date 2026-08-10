@@ -1,5 +1,7 @@
 # barnase_barstar
 
+Barnase and barstar with a flexible chain. Chain BD.
+
 ## files
 ```
 1BRS.pdb           structure

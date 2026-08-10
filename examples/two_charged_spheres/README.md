@@ -1,5 +1,7 @@
 # two_charged_spheres
 
+Two oppositely charged spheres. Analytical validation.
+
 ## files
 ```
 input.xml                   PySTARC input

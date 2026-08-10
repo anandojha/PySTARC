@@ -1,5 +1,7 @@
 # hsp90_inhibitors
 
+6 HSP90 inhibitors. Protein and ligand.
+
 needs OpenEye Toolkits for setup
 
 ## complexes

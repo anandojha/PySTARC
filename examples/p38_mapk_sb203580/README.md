@@ -1,5 +1,7 @@
 # p38_mapk_sb203580
 
+p38 MAPK with SB203580. Protein and ligand.
+
 ## files
 ```
 1A9U.pdb                    structure

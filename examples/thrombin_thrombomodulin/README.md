@@ -1,5 +1,7 @@
 # thrombin_thrombomodulin
 
+Thrombin and thrombomodulin. Protein and protein.
+
 ## files
 ```
 input.xml                   PySTARC input

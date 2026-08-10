@@ -1,5 +1,7 @@
 # ttk_inhibitors
 
+8 TTK (MPS1) kinase inhibitors. Protein and ligand.
+
 needs OpenEye Toolkits for setup
 
 ## complexes
