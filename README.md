@@ -43,37 +43,6 @@ GPU-accelerated rigid body and flexible chain Brownian dynamics for bimolecular 
 
 PySTARC computes the bimolecular association rate constants (k<sub>on</sub>) by implementing rigid body Brownian dynamics within the Northrup-Allison-McCammon formalism. k<sub>on</sub> is the diffusion limited rate of reaching an outer surface, multiplied by the probability of subsequently reaching reactive contact before escaping. Trajectories run in parallel on the GPU with a NumPy CPU fallback. Applications include protein-ligand and protein-protein association, as well as other diffusion controlled encounters.
 
-## Method
-
-Forces combine Adaptive Poisson-Boltzmann Solver (APBS) electrostatic grids near the receptor, a screened Coulomb (Yukawa) multipole far field outside the grid, Rotne-Prager-Yamakawa hydrodynamics, and Born desolvation. Reactions are captured by the closed form Brownian bridge crossing probability, such that a crossing between two recorded positions is detected without shrinking the timestep. Diffusion constants come from a Monte Carlo hydrodynamic radius. 
-
-## Features
-
-### Performance
-
-- **Batch propagation.** All trajectories advance as GPU arrays.
-- **Multi-GPU.** Trajectories are divided across the available GPUs, while every GPU uses the same APBS grids.
-- **Blocked Born desolvation.** The reverse-direction desolvation is evaluated in blocks so it fits in GPU memory.
-
-### Physical model
-
-- **Brownian bridge reactions.** The crossing probability between two recorded positions is P = exp(-x₀·x₁ / (D_eff·Δt)), exact at a constant cost per step.
-- **Yukawa multipole far field.** Outside the APBS grid the screened (Yukawa) potential is expanded as a multipole series through the monopole, dipole, and quadrupole terms.
-- **Rotne-Prager-Yamakawa hydrodynamics.** The mobility tensor stays valid through the sphere overlap regime.
-- **Monte Carlo hydrodynamic radius.** The radius comes from the solvent-excluded surface using a Kirkwood double sum, within ~1% of the analytical value.
-- **Bidirectional Born desolvation.** Both the receptor in the ligand field and the ligand in the receptor field are evaluated, coupled by Newton's third law.
-- **Wilson score interval.** The confidence interval holds for any P<sub>rxn</sub> and any N ≥ 1.
-- **Adaptive timestep.** A user configurable `max_dt` ceiling prevents b-surface overshoot.
-- **Quaternion rotation.** Orientations compose directly, with no interpolation error.
-
-### Automation
-
-- **Scripted setup.** `setup.py` builds PQR files, APBS grids, reaction criteria, and `input.xml` from PDB and topology files.
-- **Convergence diagnostics.** Convergence is tracked by the relative standard error, the Wilson interval, a convergence curve, and a split-half test.
-- **Structured output.** Each run produces trajectories, encounters, first passage times, radial densities, occupancy maps, pose clusters, fluxes, transition matrices, commitment probabilities, and energetics.
-- **Live progress.** k<sub>on</sub> and P<sub>rxn</sub> are reported at a configurable interval.
-- **Checkpointing.** Long runs can be saved and resumed.
-
 ## Installation
 
 **GPU (Linux / HPC):**
@@ -83,8 +52,6 @@ git clone https://github.com/anandojha/PySTARC.git
 cd PySTARC
 bash install_PySTARC.sh
 ```
-
-The `hsp90_inhibitors/` and `ttk_inhibitors/` examples require the OpenEye Toolkits (academic license available, https://www.eyesopen.com).
 
 **Mac / CPU:**
 
