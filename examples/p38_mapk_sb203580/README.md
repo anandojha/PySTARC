@@ -2,7 +2,7 @@
 
 p38 MAPK with SB203580. Protein and ligand.
 
-## files
+## Files
 ```
 1A9U.pdb                    structure
 config.xml                  parameters
@@ -12,30 +12,46 @@ submit_SLURM_single_GPU.sh  1 GPU
 submit_SLURM_multi_GPUs.sh  many GPUs
 ```
 
-## run
+## To run Brownian dynamics simulations on the workstation
 ```
 cd ~/PySTARC/examples/p38_mapk_sb203580
-bash run.sh                        local, slow, needs module load cuda
-sbatch submit_SLURM_single_GPU.sh  1 GPU
-sbatch submit_SLURM_multi_GPUs.sh  many GPUs
+conda activate PySTARC
+module load cuda
+bash run.sh
 ```
 
-## produces
+## To run Brownian dynamics simulations on the cluster with 1 GPU
+```
+cd ~/PySTARC/examples/p38_mapk_sb203580
+conda activate PySTARC
+module load cuda
+sbatch submit_SLURM_single_GPU.sh
+```
+
+## To run Brownian dynamics simulations on the cluster with multiple GPUs
+```
+cd ~/PySTARC/examples/p38_mapk_sb203580
+conda activate PySTARC
+module load cuda
+sbatch submit_SLURM_multi_GPUs.sh
+```
+
+## Once simulation finishes, the following files will be generated
 ```
 input.xml  rxns.xml  receptor.pqr  ligand.pqr      (setup.py)
 bd_sims/
-├── results.json              k_on, P_rxn
-├── convergence.json          running rate
-├── bd_1 ... bd_N             one per GPU, each a full slice with its own results.json
-├── receptor*.dx  ligand*.dx  APBS and Born grids
-├── *.cache                   hydrodynamic radius
+├── results.json
+├── convergence.json
+├── bd_1 ... bd_N
+├── receptor*.dx  ligand*.dx
+├── *.cache
 ├── encounters.csv  trajectories.csv  fpt_distribution.csv
 ├── radial_density.csv  contact_frequency.csv  near_misses.csv
 ├── pose_clusters.csv  milestone_flux.csv
 └── angular_map.npz  energetics.npz  paths.npz  p_commit.npz  transition_matrix.npz
 ```
 
-## gpus
+## GPUs
 ```
 n_trajectories (config.xml)  split across GPUs
 1 GPU                        bd_1

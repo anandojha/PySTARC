@@ -1,3 +1,7 @@
+# carbonic_anhydrase_inhibitors
+
+7 sulfonamide inhibitors across 3 isozymes. Protein and ligand.
+
 ## Complexes
 ```
 carbonic_anhydrase_inhibitors/
@@ -25,7 +29,7 @@ submit_SLURM_multi_GPUs.sh  many GPUs
 cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors
 conda activate PySTARC
 module load cuda
-bash ca13_azm/run.sh                           
+bash ca13_azm/run.sh
 all: for d in */; do bash "$d/run.sh"; done
 ```
 
@@ -33,26 +37,27 @@ all: for d in */; do bash "$d/run.sh"; done
 ```
 cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors
 conda activate PySTARC
-module load cuda                     
-cd ca13_azm && sbatch submit_SLURM_single_GPU.sh 
+module load cuda
+cd ca13_azm && sbatch submit_SLURM_single_GPU.sh
 ```
 
 ## To run Brownian dynamics simulations on the cluster with multiple GPUs
 ```
 cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors
 conda activate PySTARC
-module load cuda                     
-cd ca13_azm && sbatch submit_SLURM_multi_GPUs.sh  many GPUs
+module load cuda
+cd ca13_azm && sbatch submit_SLURM_multi_GPUs.sh
 ```
+
 ## Once simulation finishes, the following files will be generated per complex
 ```
 input.xml  rxns.xml  receptor.pqr  ligand.pqr      (setup.py)
 bd_sims/
-├── results.json              
-├── convergence.json         
-├── bd_1 ... bd_N             
-├── receptor*.dx  ligand*.dx  
-├── *.cache                                                                   
+├── results.json
+├── convergence.json
+├── bd_1 ... bd_N
+├── receptor*.dx  ligand*.dx
+├── *.cache
 ├── encounters.csv  trajectories.csv  fpt_distribution.csv
 ├── radial_density.csv  contact_frequency.csv  near_misses.csv
 ├── pose_clusters.csv  milestone_flux.csv

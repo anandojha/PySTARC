@@ -2,7 +2,7 @@
 
 Two oppositely charged spheres. Analytical validation.
 
-## files
+## Files
 ```
 input.xml                   PySTARC input
 rxns.xml                    reaction criterion
@@ -15,22 +15,38 @@ submit_SLURM_single_GPU.sh  1 GPU
 submit_SLURM_multi_GPUs.sh  many GPUs
 ```
 
-## run
+## To run Brownian dynamics simulations on the workstation
 ```
 cd ~/PySTARC/examples/two_charged_spheres
-bash run.sh                        local, slow, needs module load cuda
-sbatch submit_SLURM_single_GPU.sh  1 GPU
-sbatch submit_SLURM_multi_GPUs.sh  many GPUs
+conda activate PySTARC
+module load cuda
+bash run.sh
 ```
 
-## produces
+## To run Brownian dynamics simulations on the cluster with 1 GPU
+```
+cd ~/PySTARC/examples/two_charged_spheres
+conda activate PySTARC
+module load cuda
+sbatch submit_SLURM_single_GPU.sh
+```
+
+## To run Brownian dynamics simulations on the cluster with multiple GPUs
+```
+cd ~/PySTARC/examples/two_charged_spheres
+conda activate PySTARC
+module load cuda
+sbatch submit_SLURM_multi_GPUs.sh
+```
+
+## Once simulation finishes, the following files will be generated
 ```
 bd_sims/
-├── results.json              k_on, P_rxn
-├── convergence.json          running rate
-├── bd_1 ... bd_N             one per GPU, each a full slice with its own results.json
-├── receptor*.dx  ligand*.dx  APBS and Born grids
-├── *.cache                   hydrodynamic radius
+├── results.json
+├── convergence.json
+├── bd_1 ... bd_N
+├── receptor*.dx  ligand*.dx
+├── *.cache
 ├── encounters.csv  trajectories.csv  fpt_distribution.csv
 ├── radial_density.csv  contact_frequency.csv  near_misses.csv
 ├── pose_clusters.csv  milestone_flux.csv
@@ -38,7 +54,7 @@ bd_sims/
 convergence_seed_*/   (convergence.py)
 ```
 
-## gpus
+## GPUs
 ```
 n_trajectories (config.xml)  split across GPUs
 1 GPU                        bd_1
