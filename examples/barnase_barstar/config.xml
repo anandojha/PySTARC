@@ -1,0 +1,51 @@
+<?xml version="1.0" ?>
+<config>
+  <structure>
+    <source_pdb>1BRS.pdb</source_pdb>                                                      <!-- PDB ID for the complex. -->
+    <receptor_chain_id>A</receptor_chain_id>                                               <!-- Chain ID of the receptor. -->
+    <ligand_chain_id>D</ligand_chain_id>                                                   <!-- Chain ID of the ligand. -->
+    <receptor_pqr>barnase.pqr</receptor_pqr>                                               <!-- Receptor PQR file. -->
+    <target_grid_dx>apbs_output/barnase1.dx</target_grid_dx>                               <!-- APBS electrostatic grid of the receptor. Fine level spans the b sphere. -->
+    <born_grid_dx>apbs_output/barnase0_born.dx</born_grid_dx>                              <!-- Born desolvation grid of the receptor. Coarse level spans the interaction region. -->
+  </structure>
+  <names>
+    <chain_name>barstar</chain_name>                                                       <!-- Name of the chain. -->
+    <chain_json>chain.json</chain_json>                                                    <!-- Chain definition file. Written by setup. -->
+    <reaction_pairs_json>reaction_pairs.json</reaction_pairs_json>                         <!-- Contact pair file. Written by setup. -->
+    <input_xml>input.xml</input_xml>                                                       <!-- PySTARC input file. Written by setup. -->
+    <work_dir>bd_sims</work_dir>                                                           <!-- Output directory. -->
+  </names>
+  <criterion>
+    <interface_cutoff_a>6.0</interface_cutoff_a>                                           <!-- Heavy atom distance for the native interface (in angstroms). -->
+    <reaction_distance_a>8.0</reaction_distance_a>                                         <!-- Reaction pair cutoff (in angstroms). -->
+    <min_reaction_pairs>5</min_reaction_pairs>                                             <!-- Minimum pair count. The build fails below it. -->
+    <reaction_n_needed>3</reaction_n_needed>                                               <!-- Pairs within cutoff at once for a reaction. -->
+  </criterion>
+  <run>
+    <bd_milestone_radius>60.0</bd_milestone_radius>                                        <!-- Radius of the starting sphere (in angstroms). -->
+    <n_trajectories>200</n_trajectories>                                                   <!-- Number of Brownian dynamics trajectories. -->
+    <max_steps>500000</max_steps>                                                          <!-- Step limit per trajectory. -->
+    <dt>0.2</dt>                                                                           <!-- Largest permitted time step (in picoseconds). -->
+    <dt_chain>0.025</dt_chain>                                                             <!-- Chain time step (in picoseconds). -->
+    <chain_steps_per_outer>8</chain_steps_per_outer>                                       <!-- Chain steps per outer step. -->
+    <n_equilibration_steps>0</n_equilibration_steps>                                       <!-- Chain steps before each trajectory. 0 skips it. -->
+    <r_escape>160.0</r_escape>                                                             <!-- Escape radius when the outer propagator is off (in angstroms). -->
+    <temperature>298.15</temperature>                                                      <!-- Temperature (in kelvin). -->
+    <seed>1</seed>                                                                         <!-- Random number seed. -->
+    <gpu>false</gpu>                                                                       <!-- Evaluate forces on the GPU. Options: true and false. -->
+    <desolvation_alpha>1.0</desolvation_alpha>                                             <!-- Scaling applied to the desolvation penalty. -->
+    <save_interval>10</save_interval>                                                      <!-- Steps between saved positions. 0 saves endpoints only. -->
+    <convergence_check>false</convergence_check>                                           <!-- Run convergence analysis after the simulation. Options: true and false. -->
+    <convergence_interval>10</convergence_interval>                                        <!-- Reporting interval for the running rate. -->
+    <convergence_tol>0.05</convergence_tol>                                                <!-- Relative error defining convergence. -->
+    <auto_diffusion>true</auto_diffusion>                                                  <!-- Chain diffusion tensors from RPY. Options: true and false. -->
+    <d_trans>0.015</d_trans>                                                               <!-- Chain translational diffusion when auto_diffusion is false (in A^2/ps). -->
+    <d_rot>0.00005</d_rot>                                                                 <!-- Chain rotational diffusion when auto_diffusion is false (in rad^2/ps). -->
+    <use_soft_repulsion>true</use_soft_repulsion>                                          <!-- Soft repulsion between chain beads. Options: true and false. -->
+    <soft_repulsion_eps>1.0</soft_repulsion_eps>                                           <!-- Soft repulsion strength (in units of kT). -->
+    <n_workers>96</n_workers>                                                              <!-- CPU worker processes per shard. -->
+    <n_shards>25</n_shards>                                                                <!-- Independent single node runs. -->
+    <apbs_fglen>140.0</apbs_fglen>                                                         <!-- Fine electrostatic grid length (in angstroms). 0 derives it. -->
+    <apbs_dime>449</apbs_dime>                                                             <!-- Grid points per axis of the electrostatic grid. -->
+  </run>
+</config>

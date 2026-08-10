@@ -1,45 +1,64 @@
 #!/usr/bin/env python3
 
+import xml.etree.ElementTree as ET
 import numpy as np
 import json
-import os
 import sys
+import os
+import shutil
+import glob
+import re
 
-# User settings
-SOURCE_PDB                = "1BRS.pdb"
-RECEPTOR_CHAIN_ID         = "A"
-LIGAND_CHAIN_ID           = "D"
-RECEPTOR_PQR              = "barnase.pqr"
-TARGET_GRID_DX            = "apbs_output/barnase1.dx"
-BORN_GRID_DX              = "apbs_output/barnase1_born.dx"
-CHAIN_JSON                = "chain.json"
-REACTION_PAIRS_JSON       = "reaction_pairs.json"
-INPUT_XML                 = "input.xml"
-CHAIN_NAME                = "barstar"
-INTERFACE_CUTOFF_A        = 5.0
-REACTION_DISTANCE_A       = 7.0
-MIN_REACTION_PAIRS        = 5
-TEMPERATURE               = "298.15"
-SEED                      = "1"
-BD_MILESTONE_RADIUS       = "80.0"
-DT                        = "0.2"
-DT_CHAIN                  = "0.025"
-CHAIN_STEPS_PER_OUTER     = "8"
-N_EQUILIBRATION_STEPS     = "0"
-R_ESCAPE                  = "160.0"
-DESOLVATION_ALPHA         = "0.07957747"
-N_TRAJECTORIES            = "100"
-MAX_STEPS                 = "150000"
-REACTION_N_NEEDED         = "3"
-N_WORKERS                 = "96"
-WORK_DIR                  = "bd_sims"
+def read_config(path):
+    cfg = {}
+    for sec in ET.parse(path).getroot():
+        for el in sec:
+            cfg[el.tag] = (el.text or "").strip()
+    return cfg
+
 _here = os.path.dirname(os.path.abspath(__file__))
+_given = [a for a in sys.argv[1:] if not a.startswith("-")]
+CONFIG_PATH = os.path.abspath(_given[0] if _given else "config.xml")
+if not os.path.exists(CONFIG_PATH):
+    sys.exit(f"  ERROR: no {CONFIG_PATH}")
+C = read_config(CONFIG_PATH)
+_missing = [k for k in ['auto_diffusion', 'bd_milestone_radius', 'born_grid_dx', 'chain_json', 'chain_name', 'chain_steps_per_outer', 'convergence_check', 'convergence_interval', 'convergence_tol', 'd_rot', 'd_trans', 'desolvation_alpha', 'dt', 'dt_chain', 'gpu', 'input_xml', 'interface_cutoff_a', 'ligand_chain_id', 'max_steps', 'min_reaction_pairs', 'n_equilibration_steps', 'n_trajectories', 'n_workers', 'r_escape', 'reaction_distance_a', 'reaction_n_needed', 'reaction_pairs_json', 'receptor_chain_id', 'receptor_pqr', 'apbs_fglen', 'apbs_dime', 'save_interval', 'seed', 'soft_repulsion_eps', 'source_pdb', 'target_grid_dx', 'temperature', 'use_soft_repulsion', 'work_dir'] if k not in C]
+if _missing:
+    sys.exit(f"  ERROR: config.xml has no {', '.join(_missing)}")
+
+SOURCE_PDB                = C["source_pdb"]
+RECEPTOR_CHAIN_ID         = C["receptor_chain_id"]
+LIGAND_CHAIN_ID           = C["ligand_chain_id"]
+RECEPTOR_PQR              = C["receptor_pqr"]
+APBS_FGLEN                = C["apbs_fglen"]
+APBS_DIME                 = C["apbs_dime"]
+TARGET_GRID_DX            = C["target_grid_dx"]
+BORN_GRID_DX              = C["born_grid_dx"]
+CHAIN_JSON                = C["chain_json"]
+REACTION_PAIRS_JSON       = C["reaction_pairs_json"]
+INPUT_XML                 = C["input_xml"]
+CHAIN_NAME                = C["chain_name"]
+INTERFACE_CUTOFF_A        = float(C["interface_cutoff_a"])
+REACTION_DISTANCE_A       = float(C["reaction_distance_a"])
+MIN_REACTION_PAIRS        = int(C["min_reaction_pairs"])
+TEMPERATURE               = C["temperature"]
+SEED                      = C["seed"]
+BD_MILESTONE_RADIUS       = C["bd_milestone_radius"]
+DT                        = C["dt"]
+DT_CHAIN                  = C["dt_chain"]
+CHAIN_STEPS_PER_OUTER     = C["chain_steps_per_outer"]
+N_EQUILIBRATION_STEPS     = C["n_equilibration_steps"]
+R_ESCAPE                  = C["r_escape"]
+DESOLVATION_ALPHA         = C["desolvation_alpha"]
+N_TRAJECTORIES            = C["n_trajectories"]
+MAX_STEPS                 = C["max_steps"]
+REACTION_N_NEEDED         = C["reaction_n_needed"]
+N_WORKERS                 = C["n_workers"]
+WORK_DIR                  = C["work_dir"]
 _root = _here
 while _root != "/" and not os.path.isfile(os.path.join(_root, "run_pystarc.py")):
     _root = os.path.dirname(_root)
 PYSTARC_DIR               = _root                 # the PySTARC checkout, found by walking up
-
-# Helpers
 
 def parse_pdb_chain(pdb_path, chain_id, heavy_only=True):
     atoms = []
@@ -87,6 +106,27 @@ def parse_pqr(pqr_path):
             })
     return atoms
 
+def center_pqr(src):
+    lines = open(src).read().splitlines()
+    hits = [i for i, l in enumerate(lines)
+            if l[:6].strip() in ("ATOM", "HETATM") and len(l) >= 54]
+    if not hits:
+        sys.exit(f"  ERROR: no fixed column ATOM records in {src}")
+    try:
+        xyz = np.array([[float(lines[i][30:38]), float(lines[i][38:46]),
+                         float(lines[i][46:54])] for i in hits])
+    except ValueError:
+        sys.exit(f"  ERROR: {src} does not use the fixed PDB coordinate columns")
+    shift = xyz.mean(axis=0)
+    for k, i in enumerate(hits):
+        v = xyz[k] - shift
+        if np.any(np.abs(v) >= 10000.0):
+            sys.exit(f"  ERROR: coordinate overflows the 8 column field in {src}")
+        lines[i] = f"{lines[i][:30]}{v[0]:8.3f}{v[1]:8.3f}{v[2]:8.3f}{lines[i][54:]}"
+    with open(src, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    return shift, len(hits)
+
 def build_sequence_position_index(atoms):
     residues = []
     last_resid = None
@@ -103,6 +143,7 @@ def build_sequence_position_index(atoms):
             })
         residues[-1]["atoms"].append(a)
     return residues
+
 
 TLEAP_VARIANT_GROUPS = [
     {"HIS", "HIE", "HID", "HIP"},
@@ -127,7 +168,6 @@ def find_atom_in_residue(residue, atom_name):
             return a
     return None
 
-
 def parse_coffdrop_map(map_xml_path):
     """Parse COFFDROP map.xml: {resname: {bead_name: [atom_names]}}."""
     import xml.etree.ElementTree as ET
@@ -144,9 +184,7 @@ def parse_coffdrop_map(map_xml_path):
         mapping[resname] = beads
     return mapping
 
-
-# Step 1: parse sources, verify consistency
-
+# Step 1: Parse sources and verify consistency
 print("=" * 70)
 print("PySTARC chain BD setup: barnase-barstar (WT)")
 print("=" * 70)
@@ -170,6 +208,11 @@ print(f"  Barnase residues: {len(barnase_residues_1brs)} "
 print(f"  Barstar residues: {len(barstar_residues_1brs)} "
       f"(resid {barstar_residues_1brs[0]['resid_native']}-{barstar_residues_1brs[-1]['resid_native']})")
 
+_shift, _n = center_pqr(RECEPTOR_PQR)
+print(f"\nCentering {RECEPTOR_PQR}")
+print(f"  {_n} atoms translated by {-_shift[0]:.3f} {-_shift[1]:.3f} "
+      f"{-_shift[2]:.3f} A, centroid now at the origin")
+
 print("\nParsing barnase.pqr...")
 barnase_pqr = parse_pqr(RECEPTOR_PQR)
 barnase_residues_pqr = build_sequence_position_index(barnase_pqr)
@@ -190,8 +233,7 @@ if mismatches:
 offset = barnase_residues_1brs[0]['resid_native'] - barnase_residues_pqr[0]['resid_native']
 print(f"  OK  108 residues match. Numbering offset (1BRS - pqr) = {offset}")
 
-# Step 2: build chain from barstar
-
+# Step 2: Build chain from barstar
 print("\nBuilding COFFDROP chain from barstar (1BRS chain D)...")
 sys.path.insert(0, PYSTARC_DIR)
 try:
@@ -219,8 +261,7 @@ if len(unique_resids_in_chain) != len(barstar_residues_1brs):
     sys.exit(f"ERROR: chain residue count ({len(unique_resids_in_chain)}) != "
              f"barstar 1BRS residue count ({len(barstar_residues_1brs)})")
 
-# Step 3: derive body-frame positions from 1BRS chain D
-
+# Step 3: Derive body-frame positions from 1BRS chain D
 print("\nDeriving body-frame positions via COFFDROP centroid mapping...")
 coffdrop_map_xml = os.path.join(PYSTARC_DIR, "pystarc", "coffdrop_data", "map.xml")
 bead_mapping = parse_coffdrop_map(coffdrop_map_xml)
@@ -297,8 +338,7 @@ print(f"  Position range: "
 save_chain_to_json(chain, body_positions, CHAIN_JSON)
 print(f"  Wrote {CHAIN_JSON}")
 
-# Step 4: native interface contacts -> reaction_pairs.json
-
+# Step 4: Native interface contacts to reaction_pairs.json
 print(f"\nFinding native interface contacts (cutoff {INTERFACE_CUTOFF_A:.1f} A)...")
 chain_a_xyz = np.array([a["xyz"] for a in barnase_1brs])
 chain_d_xyz = np.array([a["xyz"] for a in barstar_1brs])
@@ -368,11 +408,17 @@ with open(REACTION_PAIRS_JSON, "w") as f:
     json.dump(reaction_pairs_list, f, indent=2)
 print(f"  Wrote {REACTION_PAIRS_JSON} ({len(pairs)} pairs, n_needed={REACTION_N_NEEDED})")
 
-# Step 5: write input.xml
+# Step 5: Write input.xml
+DIFFUSION = "" if C["auto_diffusion"].lower() == "true" else (
+    f"\n    <D_trans>{C['d_trans']}</D_trans>"
+    f"\n    <D_rot>{C['d_rot']}</D_rot>"
+)
 
 input_xml = f"""<?xml version="1.0"?>
 <pystarc>
   <receptor_pqr>{RECEPTOR_PQR}</receptor_pqr>
+  <apbs_fglen>{APBS_FGLEN}</apbs_fglen>
+  <apbs_dime>{APBS_DIME}</apbs_dime>
   <bd_milestone_radius>{BD_MILESTONE_RADIUS}</bd_milestone_radius>
   <n_trajectories>{N_TRAJECTORIES}</n_trajectories>
   <max_steps>{MAX_STEPS}</max_steps>
@@ -380,12 +426,12 @@ input_xml = f"""<?xml version="1.0"?>
   <temperature>{TEMPERATURE}</temperature>
   <seed>{SEED}</seed>
   <work_dir>{WORK_DIR}</work_dir>
-  <gpu>false</gpu>
+  <gpu>{C['gpu']}</gpu>
   <desolvation_alpha>{DESOLVATION_ALPHA}</desolvation_alpha>
-  <save_interval>10</save_interval>
-  <convergence_check>false</convergence_check>
-  <convergence_interval>10</convergence_interval>
-  <convergence_tol>0.05</convergence_tol>
+  <save_interval>{C['save_interval']}</save_interval>
+  <convergence_check>{C['convergence_check']}</convergence_check>
+  <convergence_interval>{C['convergence_interval']}</convergence_interval>
+  <convergence_tol>{C['convergence_tol']}</convergence_tol>
   <chain>
     <chain_json>{CHAIN_JSON}</chain_json>
     <reaction_pairs_json>{REACTION_PAIRS_JSON}</reaction_pairs_json>
@@ -393,11 +439,9 @@ input_xml = f"""<?xml version="1.0"?>
     <born_grid_dx>{BORN_GRID_DX}</born_grid_dx>
     <r_escape>{R_ESCAPE}</r_escape>
     <reaction_n_needed>{REACTION_N_NEEDED}</reaction_n_needed>
-    <auto_diffusion>false</auto_diffusion>
-    <D_trans>0.015</D_trans>
-    <D_rot>0.00005</D_rot>
-    <use_soft_repulsion>true</use_soft_repulsion>
-    <soft_repulsion_eps>1.0</soft_repulsion_eps>
+    <auto_diffusion>{C['auto_diffusion']}</auto_diffusion>{DIFFUSION}
+    <use_soft_repulsion>{C['use_soft_repulsion']}</use_soft_repulsion>
+    <soft_repulsion_eps>{C['soft_repulsion_eps']}</soft_repulsion_eps>
     <n_workers>{N_WORKERS}</n_workers>
     <dt_chain>{DT_CHAIN}</dt_chain>
     <chain_steps_per_outer>{CHAIN_STEPS_PER_OUTER}</chain_steps_per_outer>
@@ -408,6 +452,29 @@ input_xml = f"""<?xml version="1.0"?>
 
 with open(INPUT_XML, "w") as f:
     f.write(input_xml)
+
+def tidy():
+    stale = ["barnase_centered.pqr", "barnase_centred.pqr",
+             ".ipynb_checkpoints", "__pycache__"]
+    stale += glob.glob("apbs_output/*.pqr") + glob.glob("apbs_output/*.in")
+    stale += glob.glob("apbs_output/tmp") + glob.glob("apbs_output/io.mc")
+    gone = []
+    for p in stale:
+        if os.path.isdir(p):
+            shutil.rmtree(p, ignore_errors=True)
+            gone.append(p)
+        elif os.path.exists(p):
+            os.remove(p)
+            gone.append(p)
+    if os.path.isdir(WORK_DIR) and not os.listdir(WORK_DIR):
+        os.rmdir(WORK_DIR)
+        gone.append(WORK_DIR)
+    return gone
+
+
+_gone = tidy()
+if _gone:
+    print(f"\n  removed {len(_gone)} stale: {', '.join(sorted(_gone))}")
 
 print("\n" + "=" * 70)
 print("Setup complete.")
