@@ -1,8 +1,4 @@
-# carbonic_anhydrase_inhibitors
-
-7 sulfonamide inhibitors across 3 isozymes. Protein and ligand.
-
-## complexes
+## Complexes
 ```
 carbonic_anhydrase_inhibitors/
 ├── ca13_azm/
@@ -14,7 +10,7 @@ carbonic_anhydrase_inhibitors/
 └── ca2_vd1142/
 ```
 
-## each complex
+## Files within each complex
 ```
 <PDB>.pdb                   structure
 config.xml                  parameters
@@ -24,31 +20,46 @@ submit_SLURM_single_GPU.sh  1 GPU
 submit_SLURM_multi_GPUs.sh  many GPUs
 ```
 
-## run
+## To run Brownian dynamics simulations on the workstation
 ```
 cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors
-bash ca13_azm/run.sh                              local, slow, needs module load cuda
-cd ca13_azm && sbatch submit_SLURM_single_GPU.sh  1 GPU
-cd ca13_azm && sbatch submit_SLURM_multi_GPUs.sh  many GPUs
+conda activate PySTARC
+module load cuda
+bash ca13_azm/run.sh                           
 all: for d in */; do bash "$d/run.sh"; done
 ```
 
-## produces  (per complex)
+## To run Brownian dynamics simulations on the cluster with 1 GPU
+```
+cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors
+conda activate PySTARC
+module load cuda                     
+cd ca13_azm && sbatch submit_SLURM_single_GPU.sh  1 GPU
+```
+
+## To run Brownian dynamics simulations on the cluster with multiple GPU
+```
+cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors
+conda activate PySTARC
+module load cuda                     
+cd ca13_azm && sbatch submit_SLURM_multi_GPUs.sh  many GPUs
+```
+## Once simulation finishes, the following files will be generated per complex
 ```
 input.xml  rxns.xml  receptor.pqr  ligand.pqr      (setup.py)
 bd_sims/
-├── results.json              k_on, P_rxn
-├── convergence.json          running rate
-├── bd_1 ... bd_N             one per GPU, each a full slice with its own results.json
-├── receptor*.dx  ligand*.dx  APBS and Born grids
-├── *.cache                   hydrodynamic radius
+├── results.json              
+├── convergence.json         
+├── bd_1 ... bd_N             
+├── receptor*.dx  ligand*.dx  
+├── *.cache                                                                   
 ├── encounters.csv  trajectories.csv  fpt_distribution.csv
 ├── radial_density.csv  contact_frequency.csv  near_misses.csv
 ├── pose_clusters.csv  milestone_flux.csv
 └── angular_map.npz  energetics.npz  paths.npz  p_commit.npz  transition_matrix.npz
 ```
 
-## gpus
+## GPUs
 ```
 n_trajectories (config.xml)  split across GPUs
 1 GPU                        bd_1
