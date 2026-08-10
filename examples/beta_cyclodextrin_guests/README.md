@@ -3,13 +3,13 @@
 ## Complexes
 ```
 beta_cyclodextrin_guests/
-├── BCD_1-butanol/          Beta cyclodextrin with 1-butanol
-├── BCD_1-naphthylethanol/  Beta cyclodextrin with 1-naphthylethanol
-├── BCD_1-propanol/         Beta cyclodextrin with 1-propanol
-├── BCD_2-naphthylethanol/  Beta cyclodextrin with 2-naphthylethanol
-├── BCD_aspirin/            Beta cyclodextrin with aspirin
-├── BCD_methyl_butyrate/    Beta cyclodextrin with methyl butyrate
-└── BCD_tertbutanol/        Beta cyclodextrin with tert-butanol
+├── BCD_1-butanol/          β cyclodextrin with 1-butanol
+├── BCD_1-naphthylethanol/  β cyclodextrin with 1-naphthylethanol
+├── BCD_1-propanol/         β cyclodextrin with 1-propanol
+├── BCD_2-naphthylethanol/  β cyclodextrin with 2-naphthylethanol
+├── BCD_aspirin/            β cyclodextrin with aspirin
+├── BCD_methyl_butyrate/    β cyclodextrin with methyl butyrate
+└── BCD_tertbutanol/        β cyclodextrin with tert-butanol
 ```
 
 ## Files within each complex
