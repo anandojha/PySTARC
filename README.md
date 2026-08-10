@@ -11,7 +11,7 @@
 
 ### Python Simulation Toolkit for Association Rate Constants
 
-GPU-accelerated rigid body and flexible chain Brownian dynamics for bimolecular association rate constants (k<sub>on</sub>)
+GPU-accelerated rigid body and flexible chain Brownian dynamics simulations for bimolecular association rate constants
 
 <br>
 
