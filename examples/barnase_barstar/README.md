@@ -25,15 +25,21 @@ python combine_shards.py
 
 ## Once simulation finishes, the following files will be generated
 ```
-chain.json  reaction_pairs.json  input.xml           (setup.py)
-apbs_output/  barnase0.dx barnase1.dx *_born.dx      (make_grids.py)
-shards/shard_01 ... shard_25/  each bd_sims/results.json
-logs/
+chain.json                    Bead chain definition of the ligand
+reaction_pairs.json           Interface contact pairs
+input.xml                     PySTARC input file
+apbs_output/                  APBS electrostatic and Born grids of the receptor
+shards/
+├── shard_01/                 One independent shard with its own seed
+│   └── bd_sims/results.json  Association rate from this shard
+├── ...
+└── shard_25/                 Last shard
+logs/                         One log file per shard
 ```
 
 ## Shards
 ```
-n_trajectories x n_shards  200 x 25 = 5000
-each shard                 own bd_sims/results.json
-pooled                     combine_shards.py prints k_on ~8e8
+Total trajectories  n_trajectories times n_shards, here 200 times 25 equals 5000
+Each shard          Writes its own bd_sims/results.json
+Pooled rate         combine_shards.py prints k_on near 8e8
 ```
