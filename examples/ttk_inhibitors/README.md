@@ -1,20 +1,18 @@
 # ttk_inhibitors
 
-8 TTK (MPS1) kinase inhibitors. Protein and ligand.
-
 needs OpenEye Toolkits for setup
 
 ## Complexes
 ```
 ttk_inhibitors/
-├── 2X9E/
-├── 3GFW/
-├── 3H9F/
-├── 5LJJ/
-├── 5N7V/
-├── 5N84/
-├── 5N93/
-└── 5NAD/
+├── 2X9E/  TTK MPS1 kinase with ligand SVE, PDB 2X9E
+├── 3GFW/  TTK MPS1 kinase with ligand S22, PDB 3GFW
+├── 3H9F/  TTK MPS1 kinase with ligand 92M, PDB 3H9F
+├── 5LJJ/  TTK MPS1 kinase with ligand AD5, PDB 5LJJ
+├── 5N7V/  TTK MPS1 kinase with ligand 8PT, PDB 5N7V
+├── 5N84/  TTK MPS1 kinase with ligand 8Q5, PDB 5N84
+├── 5N93/  TTK MPS1 kinase with ligand 8QE, PDB 5N93
+└── 5NAD/  TTK MPS1 kinase with ligand 8RH, PDB 5NAD
 ```
 
 ## Files within each complex
@@ -29,27 +27,27 @@ submit_SLURM_multi_GPUs.sh  Script to run PySTARC simulations on the cluster wit
 
 ## To run Brownian dynamics simulations on the workstation
 ```
-cd ~/PySTARC/examples/ttk_inhibitors
-conda activate PySTARC
-module load cuda
-bash 2X9E/run.sh
-all: for d in */; do bash "$d/run.sh"; done
+cd ~/PySTARC/examples/ttk_inhibitors    # Go to the example directory
+conda activate PySTARC                  # Activate the PySTARC environment
+module load cuda                        # Load CUDA
+bash 2X9E/run.sh                        # Run one complex
+for d in */; do bash "$d/run.sh"; done  # Or run every complex
 ```
 
 ## To run Brownian dynamics simulations on the cluster with 1 GPU
 ```
-cd ~/PySTARC/examples/ttk_inhibitors
-conda activate PySTARC
-module load cuda
-cd 2X9E && sbatch submit_SLURM_single_GPU.sh
+cd ~/PySTARC/examples/ttk_inhibitors          # Go to the example directory
+conda activate PySTARC                        # Activate the PySTARC environment
+module load cuda                              # Load CUDA
+cd 2X9E && sbatch submit_SLURM_single_GPU.sh  # Submit one complex on 1 GPU
 ```
 
 ## To run Brownian dynamics simulations on the cluster with multiple GPUs
 ```
-cd ~/PySTARC/examples/ttk_inhibitors
-conda activate PySTARC
-module load cuda
-cd 2X9E && sbatch submit_SLURM_multi_GPUs.sh
+cd ~/PySTARC/examples/ttk_inhibitors          # Go to the example directory
+conda activate PySTARC                        # Activate the PySTARC environment
+module load cuda                              # Load CUDA
+cd 2X9E && sbatch submit_SLURM_multi_GPUs.sh  # Submit one complex on multiple GPUs
 ```
 
 ## Once simulation finishes, the following files will be generated with 1 GPU, per complex

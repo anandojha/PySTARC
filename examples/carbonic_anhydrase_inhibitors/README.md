@@ -1,17 +1,15 @@
 # carbonic_anhydrase_inhibitors
 
-7 sulfonamide inhibitors across 3 isozymes. Protein and ligand.
-
 ## Complexes
 ```
 carbonic_anhydrase_inhibitors/
-├── ca13_azm/
-├── ca13_vd1125/
-├── ca13_vd1126/
-├── ca13_vd1209/
-├── ca13_vd1269/
-├── ca1_vd1269/
-└── ca2_vd1142/
+├── ca13_azm/     Carbonic anhydrase XIII with acetazolamide, PDB 3CZV
+├── ca13_vd1125/  Carbonic anhydrase XIII with compound VD1125, PDB 3CZV
+├── ca13_vd1126/  Carbonic anhydrase XIII with compound VD1126, PDB 3CZV
+├── ca13_vd1209/  Carbonic anhydrase XIII with compound VD1209, PDB 3CZV
+├── ca13_vd1269/  Carbonic anhydrase XIII with compound VD1269, PDB 3CZV
+├── ca1_vd1269/   Carbonic anhydrase I with compound VD1269, PDB 2NMX
+└── ca2_vd1142/   Carbonic anhydrase II with compound VD1142, PDB 3HS4
 ```
 
 ## Files within each complex
@@ -26,27 +24,27 @@ submit_SLURM_multi_GPUs.sh  Script to run PySTARC simulations on the cluster wit
 
 ## To run Brownian dynamics simulations on the workstation
 ```
-cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors
-conda activate PySTARC
-module load cuda
-bash ca13_azm/run.sh
-all: for d in */; do bash "$d/run.sh"; done
+cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors  # Go to the example directory
+conda activate PySTARC                               # Activate the PySTARC environment
+module load cuda                                     # Load CUDA
+bash ca13_azm/run.sh                                 # Run one complex
+for d in */; do bash "$d/run.sh"; done               # Or run every complex
 ```
 
 ## To run Brownian dynamics simulations on the cluster with 1 GPU
 ```
-cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors
-conda activate PySTARC
-module load cuda
-cd ca13_azm && sbatch submit_SLURM_single_GPU.sh
+cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors  # Go to the example directory
+conda activate PySTARC                               # Activate the PySTARC environment
+module load cuda                                     # Load CUDA
+cd ca13_azm && sbatch submit_SLURM_single_GPU.sh     # Submit one complex on 1 GPU
 ```
 
 ## To run Brownian dynamics simulations on the cluster with multiple GPUs
 ```
-cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors
-conda activate PySTARC
-module load cuda
-cd ca13_azm && sbatch submit_SLURM_multi_GPUs.sh
+cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors  # Go to the example directory
+conda activate PySTARC                               # Activate the PySTARC environment
+module load cuda                                     # Load CUDA
+cd ca13_azm && sbatch submit_SLURM_multi_GPUs.sh     # Submit one complex on multiple GPUs
 ```
 
 ## Once simulation finishes, the following files will be generated with 1 GPU, per complex

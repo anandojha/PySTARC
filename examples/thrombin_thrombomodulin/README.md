@@ -1,7 +1,5 @@
 # thrombin_thrombomodulin
 
-Thrombin and thrombomodulin. Protein and protein.
-
 ## Files
 ```
 input.xml                   PySTARC input file
@@ -15,26 +13,26 @@ submit_SLURM_multi_GPUs.sh  Script to run PySTARC simulations on the cluster wit
 
 ## To run Brownian dynamics simulations on the workstation
 ```
-cd ~/PySTARC/examples/thrombin_thrombomodulin
-conda activate PySTARC
-module load cuda
-bash run.sh
+cd ~/PySTARC/examples/thrombin_thrombomodulin  # Go to the example directory
+conda activate PySTARC                         # Activate the PySTARC environment
+module load cuda                               # Load CUDA
+bash run.sh                                    # Run the simulation
 ```
 
 ## To run Brownian dynamics simulations on the cluster with 1 GPU
 ```
-cd ~/PySTARC/examples/thrombin_thrombomodulin
-conda activate PySTARC
-module load cuda
-sbatch submit_SLURM_single_GPU.sh
+cd ~/PySTARC/examples/thrombin_thrombomodulin  # Go to the example directory
+conda activate PySTARC                         # Activate the PySTARC environment
+module load cuda                               # Load CUDA
+sbatch submit_SLURM_single_GPU.sh              # Submit on 1 GPU
 ```
 
 ## To run Brownian dynamics simulations on the cluster with multiple GPUs
 ```
-cd ~/PySTARC/examples/thrombin_thrombomodulin
-conda activate PySTARC
-module load cuda
-sbatch submit_SLURM_multi_GPUs.sh
+cd ~/PySTARC/examples/thrombin_thrombomodulin  # Go to the example directory
+conda activate PySTARC                         # Activate the PySTARC environment
+module load cuda                               # Load CUDA
+sbatch submit_SLURM_multi_GPUs.sh              # Submit on multiple GPUs
 ```
 
 ## Once simulation finishes, the following files will be generated with 1 GPU
