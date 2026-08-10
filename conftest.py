@@ -1,6 +1,5 @@
 """Pytest configuration for PySTARC tests."""
 
-
 from pathlib import Path
 import shutil
 import sys
@@ -8,6 +7,7 @@ import os
 
 _PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(_PROJECT_ROOT))
+
 
 def pytest_sessionfinish(session, exitstatus):
     """Remove directories created by tests using package defaults.

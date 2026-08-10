@@ -60,7 +60,9 @@ ENCOUNTERS = "encounters.csv"
 LIGAND = "ligand.pqr"
 
 
-def read_encounters(path: str | Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def read_encounters(
+    path: str | Path,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Read encounters.csv and return trajectory ids, steps, centroids, quaternions.
 
     The quaternion columns are q0 through q3 in (w, x, y, z) order, matching
@@ -75,10 +77,15 @@ def read_encounters(path: str | Path) -> Tuple[np.ndarray, np.ndarray, np.ndarra
             traj.append(int(row["traj_id"]))
             step.append(int(row["step"]))
             cen.append([float(row["x"]), float(row["y"]), float(row["z"])])
-            quat.append([float(row["q0"]), float(row["q1"]),
-                         float(row["q2"]), float(row["q3"])])
-    return (np.array(traj, dtype=np.int64), np.array(step, dtype=np.int64),
-            np.array(cen, dtype=float), np.array(quat, dtype=float))
+            quat.append(
+                [float(row["q0"]), float(row["q1"]), float(row["q2"]), float(row["q3"])]
+            )
+    return (
+        np.array(traj, dtype=np.int64),
+        np.array(step, dtype=np.int64),
+        np.array(cen, dtype=float),
+        np.array(quat, dtype=float),
+    )
 
 
 def poses(ligand_pqr: str | Path, cen: np.ndarray, quat: np.ndarray) -> np.ndarray:
@@ -98,8 +105,12 @@ def poses(ligand_pqr: str | Path, cen: np.ndarray, quat: np.ndarray) -> np.ndarr
     return out
 
 
-def write_fhpd(bd_sims: str | Path, out_dir: str | Path | None = None,
-               pdb: bool = True, pqr: bool = True) -> int:
+def write_fhpd(
+    bd_sims: str | Path,
+    out_dir: str | Path | None = None,
+    pdb: bool = True,
+    pqr: bool = True,
+) -> int:
     """Export the first hitting point distribution for one finished system.
 
     Reads encounters.csv and ligand.pqr from bd_sims, writes one PQR per
@@ -110,7 +121,9 @@ def write_fhpd(bd_sims: str | Path, out_dir: str | Path | None = None,
     enc_path, lig_path = bd_sims / ENCOUNTERS, bd_sims / LIGAND
     for p in (enc_path, lig_path):
         if not p.is_file():
-            raise FileNotFoundError(f"{p} not found, so this system has no FHPD to export")
+            raise FileNotFoundError(
+                f"{p} not found, so this system has no FHPD to export"
+            )
 
     out_dir = Path(out_dir) if out_dir is not None else bd_sims / "fhpd"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -133,7 +146,9 @@ def write_fhpd(bd_sims: str | Path, out_dir: str | Path | None = None,
     if pdb:
         with open(out_dir / "fhpd.pdb", "w") as fh:
             fh.write("REMARK  PySTARC first hitting point distribution\n")
-            fh.write(f"REMARK  {len(traj)} poses, receptor frame, receptor at the origin\n")
+            fh.write(
+                f"REMARK  {len(traj)} poses, receptor frame, receptor at the origin\n"
+            )
             for i in range(len(traj)):
                 fh.write(f"MODEL     {i + 1:4d}\n")
                 fh.write(f"REMARK  traj_id {traj[i]}  step {step[i]}\n")
@@ -160,7 +175,9 @@ def write_fhpd(bd_sims: str | Path, out_dir: str | Path | None = None,
     print(f"    atoms per pose   {coords.shape[1]}")
     print(f"    centroid radius  {r.min():.2f} to {r.max():.2f} A, mean {r.mean():.2f}")
     print(f"    quaternion norm  {norms.min():.6f} to {norms.max():.6f}")
-    print(f"    step at contact  {step.min()} to {step.max()}, median {int(np.median(step))}")
+    print(
+        f"    step at contact  {step.min()} to {step.max()}, median {int(np.median(step))}"
+    )
     print(f"    written to       {out_dir}")
     return len(traj)
 
@@ -168,11 +185,18 @@ def write_fhpd(bd_sims: str | Path, out_dir: str | Path | None = None,
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="Export the first hitting point distribution from a finished "
-                    "rigid protein-ligand run.")
-    ap.add_argument("bd_sims", nargs="+",
-                    help="one or more bd_sims directories holding encounters.csv and ligand.pqr")
-    ap.add_argument("--out", default=None,
-                    help="output directory, default is fhpd/ inside each bd_sims")
+        "rigid protein-ligand run."
+    )
+    ap.add_argument(
+        "bd_sims",
+        nargs="+",
+        help="one or more bd_sims directories holding encounters.csv and ligand.pqr",
+    )
+    ap.add_argument(
+        "--out",
+        default=None,
+        help="output directory, default is fhpd/ inside each bd_sims",
+    )
     ap.add_argument("--no-pqr", action="store_true", help="skip the per pose PQR files")
     ap.add_argument("--no-pdb", action="store_true", help="skip the multi model PDB")
     args = ap.parse_args()

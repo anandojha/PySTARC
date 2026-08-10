@@ -899,9 +899,9 @@ def chain_intra_nonbonded_forces(
     # np.add.at because the latter falls back to an unbuffered element loop and
     # would give back most of what the vectorisation just bought.
     for c in range(3):
-        F[:, c] = np.bincount(
-            iu, weights=fvec[:, c], minlength=n
-        ) - np.bincount(ju, weights=fvec[:, c], minlength=n)
+        F[:, c] = np.bincount(iu, weights=fvec[:, c], minlength=n) - np.bincount(
+            ju, weights=fvec[:, c], minlength=n
+        )
 
     return F
 

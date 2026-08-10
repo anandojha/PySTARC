@@ -1008,7 +1008,6 @@ class TestBDStep:
         R = new_ori.to_rotation_matrix()
         assert np.allclose(R @ R.T, np.eye(3), atol=1e-10)
 
-
     def test_translation_reproducible_seed(self):
         """Ermak McCammon translation is reproducible for two RNGs sharing a seed."""
         pos = np.zeros(3)
@@ -4064,7 +4063,6 @@ class TestHighOrderLegendreAndCentroid:
         for s in steps:
             assert np.all(np.isfinite(s))
 
-
     @pytest.mark.parametrize("n_rx,n_esc", [(0, 10), (5, 5), (10, 0)])
     def test_p_rxn_values(self, n_rx, n_esc):
         """reaction_probability equals n_rx / (n_rx + n_esc)."""
@@ -4187,7 +4185,6 @@ class TestDefaultConstructorValues:
         v = np.array([0.0, 0.0, 0.0])
         result = T.apply(v)
         assert abs(result[0] - 1.0) < 1e-10
-
 
     def test_system_state_default_position_zero(self):
         """SystemState defaults its position to the origin."""
@@ -4354,7 +4351,6 @@ class TestLJForces:
 
 class TestGHOInjection:
     """Tests for GHO ghost atom auto-injection."""
-
 
     def test_rxns_xml_parser_handles_missing_file(self):
         """_parse_rxns_xml_criteria returns an empty pair list and n_needed of -1 for a missing file."""
@@ -5432,6 +5428,7 @@ class TestOutputXMLParsing:
 
 
 # Output writer tests
+
 
 def _fixture(name: str) -> str:
     """Absolute path to a committed test fixture.
@@ -9813,7 +9810,6 @@ def _load_coffdrop_params():
     if _COFFDROP_PARAMS_CACHE["value"] is not None:
         return _COFFDROP_PARAMS_CACHE["value"]
 
-
     pkg_dir = os.path.dirname(_pkg.__file__)
     data_dir = os.path.join(pkg_dir, "coffdrop_data")
     ff_xml = os.path.join(data_dir, "coffdrop.xml")
@@ -10547,7 +10543,6 @@ class TestChainBDSimulatorBornAttributes:
     def test_born_adds_to_electrostatic_not_replaces(self):
         """With both grids set, per-atom external forces equal the sum of electrostatic and Born contributions on orthogonal axes."""
         chain, positions, params, target, pathway_set = self._make_minimal_setup()
-
 
         nx = ny = nz = 21
         spacing = 1.0
@@ -13979,7 +13974,6 @@ class TestForceChangeBackstep:
             D_trans=0.001,
             D_rot=0.0001,
         )
-
 
         def synthetic(self, world_positions):
             f = np.zeros_like(world_positions)
@@ -17468,7 +17462,6 @@ class TestChainGBSelfBorn:
         intrinsic_radii = np.array([1.5, 1.7, 1.4, 1.6, 1.5])
         return positions, charges, intrinsic_radii
 
-
     def test_obc_R_eff_isolated_atom_returns_rho_tilde(self):
         """A single isolated atom has R_eff equal to intrinsic minus the OBC offset."""
 
@@ -17522,7 +17515,6 @@ class TestChainGBSelfBorn:
         charges_neutral_partner = np.array([1.0, 0.0])
         E = gb_offdiagonal_energy(positions, charges_neutral_partner, intrinsic)
         assert E == 0.0
-
 
     def test_chain_vacuum_coulomb_force_matches_finite_difference(self):
         """The analytic vacuum Coulomb force matches the finite-difference gradient of its energy."""
@@ -17591,7 +17583,6 @@ class TestChainGBSelfBorn:
         rel = np.max(np.abs(F_ana - F_fd)) / max(np.max(np.abs(F_ana)), 1e-12)
         assert rel < 1e-5
 
-
     def test_chain_full_gb_force_translation_invariance(self):
         """Full GB forces are translation invariant and sum to zero."""
 
@@ -17636,7 +17627,6 @@ class TestChainGBSelfBorn:
         )
         assert np.allclose(F_perm, F[perm], atol=1e-12)
 
-
     def test_path_b_dispatch_with_coffdrop_active_equals_diagonal_only(self):
         """With coffdrop_active=True the full GB force equals the diagonal self-Born only, with offdiag and Coulomb zero."""
 
@@ -17661,7 +17651,6 @@ class TestChainGBSelfBorn:
         assert E_full["offdiag"] == 0.0
         assert E_full["coulomb"] == 0.0
         assert E_full["total"] == E_diag
-
 
     def test_chain_config_and_chain_bd_parameters_gb_defaults_consistent(self):
         """ChainConfig and ChainBDParameters agree on all seven GB-related defaults."""
@@ -18737,9 +18726,7 @@ def test_build_robust_solver_accepts_positive_semidefinite():
 def test_chain_rigid_body_resistance_handles_barstar_230_bead():
     """chain_rigid_body_resistance completes on the 230-bead barstar chain with finite outputs and no LinAlgError."""
 
-    chain_json = (
-        _fixture("chain.json")
-    )
+    chain_json = _fixture("chain.json")
 
     with open(chain_json) as f:
         data = json.load(f)
@@ -18853,9 +18840,7 @@ def test_multipole_trace_term_matches_exact_screened_quadrupole():
         R = 15.0 * d / np.linalg.norm(d)
         r = float(np.linalg.norm(R))
         ex = exact(R)
-        trace_V = (
-            (mp.trace_moment / (6.0 * lam**2)) / (fpe * r) * np.exp(-r / lam)
-        )
+        trace_V = (mp.trace_moment / (6.0 * lam**2)) / (fpe * r) * np.exp(-r / lam)
         with_trace = mp.potential(R)
         without_trace = with_trace - trace_V
         worst_with = max(worst_with, abs(with_trace - ex) / abs(ex))
@@ -18863,9 +18848,9 @@ def test_multipole_trace_term_matches_exact_screened_quadrupole():
     # With the trace term, the expansion matches the exact screened potential.
     assert worst_with < 0.08, f"trace-inclusive expansion off by {worst_with}"
     # Dropping the trace term makes the agreement clearly worse (the original bug).
-    assert worst_without > 2.0 * worst_with, (
-        f"trace term is not doing anything: with={worst_with}, without={worst_without}"
-    )
+    assert (
+        worst_without > 2.0 * worst_with
+    ), f"trace term is not doing anything: with={worst_with}, without={worst_without}"
 
 
 def test_nam_parallel_worker_uses_run_one_with_recycling():
@@ -22614,7 +22599,11 @@ def _collect():
             # signature default:  def f(..., name=default)
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 a = node.args
-                pairs = list(zip(a.args[-len(a.defaults):], a.defaults)) if a.defaults else []
+                pairs = (
+                    list(zip(a.args[-len(a.defaults) :], a.defaults))
+                    if a.defaults
+                    else []
+                )
                 pairs += list(zip(a.kwonlyargs, a.kw_defaults))
                 for arg, dflt in pairs:
                     if dflt is None or arg.arg not in PHYSICS_DEFAULT_NAMES:
@@ -22626,11 +22615,17 @@ def _collect():
             # getattr(obj, "name", default)
             if isinstance(node, ast.Call):
                 fn = node.func
-                fname = fn.attr if isinstance(fn, ast.Attribute) else (
-                    fn.id if isinstance(fn, ast.Name) else None)
+                fname = (
+                    fn.attr
+                    if isinstance(fn, ast.Attribute)
+                    else (fn.id if isinstance(fn, ast.Name) else None)
+                )
                 if fname == "getattr" and len(node.args) == 3:
                     key = node.args[1]
-                    if isinstance(key, ast.Constant) and key.value in PHYSICS_DEFAULT_NAMES:
+                    if (
+                        isinstance(key, ast.Constant)
+                        and key.value in PHYSICS_DEFAULT_NAMES
+                    ):
                         v = _literal(node.args[2])
                         if v is not None:
                             found[key.value][v].append((rel, node.lineno))
@@ -22638,7 +22633,11 @@ def _collect():
 
 
 def _normalise(v):
-    return round(float(v), 9) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
+    return (
+        round(float(v), 9)
+        if isinstance(v, (int, float)) and not isinstance(v, bool)
+        else v
+    )
 
 
 @pytest.mark.parametrize("name", sorted(PHYSICS_DEFAULT_NAMES))
@@ -22690,10 +22689,9 @@ def test_born_prefactor_matches_the_grid_convention():
         for i, line in enumerate(path.read_text().split("\n"), 1):
             if "0.07957747" in line and not line.lstrip().startswith("#"):
                 stale.append("%s:%d" % (path.relative_to(PACKAGE), i))
-    assert not stale, (
-        "the retired 1/(4 pi) Born prefactor is still live at:\n  "
-        + "\n  ".join(stale)
-    )
+    assert (
+        not stale
+    ), "the retired 1/(4 pi) Born prefactor is still live at:\n  " + "\n  ".join(stale)
 
 
 def test_both_input_readers_agree_on_shared_tags():
@@ -22731,19 +22729,27 @@ def test_both_input_readers_agree_on_shared_tags():
 # Plain pytest, numpy only, no GPU needed: the module falls back to numpy.
 
 
-def ref_field(point, atom_xyz, atom_rad, eps_p=4.0, eps_s=78.0,
-              temp=298.15, debye_length=dg.DEFAULT_DEBYE, cutoff=15.0):
+def ref_field(
+    point,
+    atom_xyz,
+    atom_rad,
+    eps_p=4.0,
+    eps_s=78.0,
+    temp=298.15,
+    debye_length=dg.DEFAULT_DEBYE,
+    cutoff=15.0,
+):
     """Reference value of the stored field at one point, in kBT per e^2."""
     C = dg.COULOMB_KCAL / (dg.KB_KCAL * temp)
     D = (eps_s - eps_p) / (eps_s * (2.0 * eps_s + eps_p))
     k = 0.0 if not debye_length else 1.0 / float(debye_length)
     total = 0.0
-    for (c, a) in zip(np.asarray(atom_xyz, float), np.asarray(atom_rad, float)):
+    for c, a in zip(np.asarray(atom_xyz, float), np.asarray(atom_rad, float)):
         r = float(np.linalg.norm(np.asarray(point, float) - c))
         if r >= cutoff:
             continue
         r2 = max(r * r, max(a * a, dg.DEN_FLOOR))
-        total += a ** 3 * (1.0 + k * r) ** 2 * math.exp(-2.0 * k * r) / (r2 * r2)
+        total += a**3 * (1.0 + k * r) ** 2 * math.exp(-2.0 * k * r) / (r2 * r2)
     # rigorous Kirkwood carries the linear-response 1/2
     return 0.5 * C * D * total
 
@@ -22754,9 +22760,13 @@ def field_at(points, atom_xyz, atom_rad, **kw):
     out = np.empty(len(pts), dtype=np.float64)
     for i, p in enumerate(pts):
         g = dg.desolvation_field_on_grid(
-            p, [1.0, 1.0, 1.0], [1, 1, 1],
+            p,
+            [1.0, 1.0, 1.0],
+            [1, 1, 1],
             np.asarray(atom_xyz, dtype=np.float64),
-            np.asarray(atom_rad, dtype=np.float64), **kw)
+            np.asarray(atom_rad, dtype=np.float64),
+            **kw,
+        )
         assert g.shape == (1, 1, 1)
         out[i] = g[0, 0, 0]
     return out
@@ -22785,17 +22795,27 @@ def test_single_sphere_matches_analytic(r, debye):
     C = dg.coulomb_kbt(298.15)
     D = dg.dielectric_factor(4.0, 78.0)
     k = 0.0 if not debye else 1.0 / debye
-    want = 0.5 * C * D * a ** 3 * (1.0 + k * r) ** 2 * math.exp(-2.0 * k * r) / r ** 4
+    want = 0.5 * C * D * a**3 * (1.0 + k * r) ** 2 * math.exp(-2.0 * k * r) / r**4
     assert got == pytest.approx(want, rel=1e-12)
-    assert got == pytest.approx(ref_field([r, 0.0, 0.0], ONE_ATOM, ONE_RAD,
-                                          debye_length=debye), rel=1e-12)
+    assert got == pytest.approx(
+        ref_field([r, 0.0, 0.0], ONE_ATOM, ONE_RAD, debye_length=debye), rel=1e-12
+    )
 
 
 def test_single_sphere_isotropic():
     """The field of one sphere depends on |r| only, not on direction."""
     a, r = 1.7, 5.0
-    dirs = np.array([[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0],
-                     [1, 1, 1], [-2, 1, -3], [0.3, -0.4, 0.5]], dtype=float)
+    dirs = np.array(
+        [
+            [1.0, 0, 0],
+            [0, 1.0, 0],
+            [0, 0, 1.0],
+            [1, 1, 1],
+            [-2, 1, -3],
+            [0.3, -0.4, 0.5],
+        ],
+        dtype=float,
+    )
     dirs = dirs / np.linalg.norm(dirs, axis=1)[:, None]
     vals = field_at(dirs * r, ONE_ATOM, np.array([a]))
     assert np.allclose(vals, vals[0], rtol=1e-12)
@@ -22811,7 +22831,8 @@ def test_scaling_with_radius_and_dielectric():
     base = field_at([[r, 0, 0]], ONE_ATOM, ONE_RAD)[0]
     other = field_at([[r, 0, 0]], ONE_ATOM, ONE_RAD, eps_p=2.0)[0]
     assert other / base == pytest.approx(
-        dg.dielectric_factor(2.0, 78.0) / dg.dielectric_factor(4.0, 78.0), rel=1e-12)
+        dg.dielectric_factor(2.0, 78.0) / dg.dielectric_factor(4.0, 78.0), rel=1e-12
+    )
 
 
 def test_field_is_additive_over_atoms():
@@ -22820,7 +22841,7 @@ def test_field_is_additive_over_atoms():
     rad = np.array([1.7, 1.9, 1.5])
     p = np.array([[7.0, -1.0, 3.0]])
     total = field_at(p, xyz, rad)[0]
-    parts = sum(field_at(p, xyz[i:i + 1], rad[i:i + 1])[0] for i in range(3))
+    parts = sum(field_at(p, xyz[i : i + 1], rad[i : i + 1])[0] for i in range(3))
     assert total == pytest.approx(parts, rel=1e-12)
 
 
@@ -22831,8 +22852,9 @@ def test_field_strictly_positive_everywhere():
     """
     xyz = np.array([[0.0, 0.0, 0.0], [3.5, 0.0, 0.0], [0.0, 3.5, 1.0]])
     rad = np.array([1.7, 1.9, 1.5])
-    g = dg.desolvation_field_on_grid([-8.0, -8.0, -8.0], [0.5, 0.5, 0.5],
-                                     [40, 40, 40], xyz, rad, cutoff=100.0)
+    g = dg.desolvation_field_on_grid(
+        [-8.0, -8.0, -8.0], [0.5, 0.5, 0.5], [40, 40, 40], xyz, rad, cutoff=100.0
+    )
     assert np.all(np.isfinite(g))
     assert g.min() > 0.0
     assert np.count_nonzero(g) == g.size
@@ -22861,8 +22883,12 @@ def test_monotonic_decrease_gives_repulsive_force(debye):
     atom, whatever the sign of q, if and only if G decreases with distance.
     """
     r = np.arange(2.0, 14.5, 0.25)
-    v = field_at(np.stack([r, np.zeros_like(r), np.zeros_like(r)], axis=1),
-                 ONE_ATOM, ONE_RAD, debye_length=debye)
+    v = field_at(
+        np.stack([r, np.zeros_like(r), np.zeros_like(r)], axis=1),
+        ONE_ATOM,
+        ONE_RAD,
+        debye_length=debye,
+    )
     assert np.all(v > 0.0)
     assert np.all(np.diff(v) < 0.0)
     o, sp, n = [-10.0, -0.5, -0.5], [0.5, 0.5, 0.5], [41, 2, 2]
@@ -22870,13 +22896,12 @@ def test_monotonic_decrease_gives_repulsive_force(debye):
     line = g[:, 0, 0]
     i0 = len(line) // 2
     fx = -np.gradient(line, sp[0])
-    assert np.all(fx[:i0 - 2] < 0.0)     # left of the atom, pushed to -x
-    assert np.all(fx[i0 + 3:] > 0.0)     # right of the atom, pushed to +x
+    assert np.all(fx[: i0 - 2] < 0.0)  # left of the atom, pushed to -x
+    assert np.all(fx[i0 + 3 :] > 0.0)  # right of the atom, pushed to +x
 
 
 def test_multi_atom_field_decreases_away_from_cluster():
-    xyz = np.array([[0.0, 0.0, 0.0], [2.8, 0.0, 0.0], [1.4, 2.4, 0.0],
-                    [1.4, 0.8, 2.3]])
+    xyz = np.array([[0.0, 0.0, 0.0], [2.8, 0.0, 0.0], [1.4, 2.4, 0.0], [1.4, 0.8, 2.3]])
     rad = np.array([1.7, 1.8, 1.6, 1.9])
     centre = xyz.mean(axis=0)
     u = np.array([0.577, 0.577, 0.577])
@@ -22901,9 +22926,10 @@ def test_far_field_unscreened_slope_is_minus_four():
 
 def test_far_field_amplitude_reduces_to_a_cubed_over_r_fourth():
     a, r = 1.5, 60.0
-    got = field_at([[r, 0, 0]], ONE_ATOM, np.array([a]),
-                   debye_length=0.0, cutoff=200.0)[0]
-    want = 0.5 * dg.coulomb_kbt(298.15) * dg.dielectric_factor(4.0, 78.0) * a ** 3 / r ** 4
+    got = field_at(
+        [[r, 0, 0]], ONE_ATOM, np.array([a]), debye_length=0.0, cutoff=200.0
+    )[0]
+    want = 0.5 * dg.coulomb_kbt(298.15) * dg.dielectric_factor(4.0, 78.0) * a**3 / r**4
     assert got == pytest.approx(want, rel=2e-3)
 
 
@@ -22918,14 +22944,18 @@ def test_screened_slope_is_steeper_than_unscreened():
     k = 1.0 / dg.DEFAULT_DEBYE
     vs = field_at([[r, 0, 0]], ONE_ATOM, ONE_RAD, debye_length=dg.DEFAULT_DEBYE)[0]
     vu = field_at([[r, 0, 0]], ONE_ATOM, ONE_RAD, debye_length=0.0)[0]
-    assert vs / vu == pytest.approx((1.0 + k * r) ** 2 * math.exp(-2.0 * k * r), rel=1e-12)
+    assert vs / vu == pytest.approx(
+        (1.0 + k * r) ** 2 * math.exp(-2.0 * k * r), rel=1e-12
+    )
 
 
 def test_cutoff_drops_distant_atoms_and_default_cutoff_is_negligible():
     far = np.array([[40.0, 0.0, 0.0]])
     assert field_at([[0.0, 0.0, 0.0]], far, ONE_RAD, debye_length=0.0)[0] == 0.0
-    assert field_at([[0.0, 0.0, 0.0]], far, ONE_RAD,
-                    debye_length=0.0, cutoff=100.0)[0] > 0.0
+    assert (
+        field_at([[0.0, 0.0, 0.0]], far, ONE_RAD, debye_length=0.0, cutoff=100.0)[0]
+        > 0.0
+    )
     # what is thrown away at the 15 A default is four orders below contact
     edge = field_at([[14.99, 0, 0]], ONE_ATOM, ONE_RAD)[0]
     contact = field_at([[3.4, 0, 0]], ONE_ATOM, ONE_RAD)[0]
@@ -22952,16 +22982,23 @@ TER
 END
 """
 
-_EXPECT_XYZ = np.array([[-1.234, 2.345, -3.456],
-                        [0.100, -0.200, 0.300],
-                        [4.500, 1.500, -2.500],
-                        [7.000, -1.000, 1.000]])
+_EXPECT_XYZ = np.array(
+    [
+        [-1.234, 2.345, -3.456],
+        [0.100, -0.200, 0.300],
+        [4.500, 1.500, -2.500],
+        [7.000, -1.000, 1.000],
+    ]
+)
 _EXPECT_RAD = np.array([1.8240, 1.9080, 1.9080, 1.7210])
 _CHARGES = np.array([-0.4157, 0.0337, 0.5973, -0.8340])
 
 
-@pytest.mark.parametrize("text", [_PQR_NO_ELEMENT, _PQR_WITH_ELEMENT],
-                         ids=["no_element_column", "with_element_column"])
+@pytest.mark.parametrize(
+    "text",
+    [_PQR_NO_ELEMENT, _PQR_WITH_ELEMENT],
+    ids=["no_element_column", "with_element_column"],
+)
 def test_pqr_geometry_both_formats(tmp_path, text):
     p = tmp_path / "m.pqr"
     p.write_text(text)
@@ -22983,8 +23020,12 @@ def test_pqr_both_formats_give_identical_geometry_and_field(tmp_path):
     xa, ra = dg.read_pqr_geometry(str(a))
     xb, rb = dg.read_pqr_geometry(str(b))
     assert np.array_equal(xa, xb) and np.array_equal(ra, rb)
-    ga = dg.desolvation_field_on_grid([-6, -6, -6], [1.0, 1.0, 1.0], [13, 13, 13], xa, ra)
-    gb = dg.desolvation_field_on_grid([-6, -6, -6], [1.0, 1.0, 1.0], [13, 13, 13], xb, rb)
+    ga = dg.desolvation_field_on_grid(
+        [-6, -6, -6], [1.0, 1.0, 1.0], [13, 13, 13], xa, ra
+    )
+    gb = dg.desolvation_field_on_grid(
+        [-6, -6, -6], [1.0, 1.0, 1.0], [13, 13, 13], xb, rb
+    )
     assert np.array_equal(ga, gb)
     assert ga.min() > 0.0
     assert np.count_nonzero(ga) == ga.size
@@ -23037,14 +23078,14 @@ def test_zero_radius_atoms_contribute_nothing():
 
 def test_all_zero_radius_gives_identically_zero_field():
     xyz = np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
-    g = dg.desolvation_field_on_grid([-4, -4, -4], [1.0] * 3, [9] * 3,
-                                     xyz, np.zeros(2))
+    g = dg.desolvation_field_on_grid([-4, -4, -4], [1.0] * 3, [9] * 3, xyz, np.zeros(2))
     assert np.all(g == 0.0)
 
 
 def test_empty_atom_set_gives_zero_field_of_right_shape():
-    g = dg.desolvation_field_on_grid([0.0, 0.0, 0.0], [1.0] * 3, [4, 5, 6],
-                                     np.zeros((0, 3)), np.zeros(0))
+    g = dg.desolvation_field_on_grid(
+        [0.0, 0.0, 0.0], [1.0] * 3, [4, 5, 6], np.zeros((0, 3)), np.zeros(0)
+    )
     assert g.shape == (4, 5, 6)
     assert np.all(g == 0.0)
 
@@ -23060,7 +23101,7 @@ def test_zero_kappa_screening_is_unity(debye):
     got = field_at(pts, ONE_ATOM, ONE_RAD, debye_length=debye)
     C = 0.5 * dg.coulomb_kbt(298.15) * dg.dielectric_factor(4.0, 78.0)
     a = float(ONE_RAD[0])
-    want = C * a ** 3 / r ** 4
+    want = C * a**3 / r**4
     assert np.allclose(got, want, rtol=1e-12)
 
 
@@ -23116,7 +23157,7 @@ def test_dx_round_trip_preserves_values_and_axis_order(tmp_path):
     transpose or Fortran ordering shows up immediately. The force kernel reads
     the flat buffer as i*ny*nz + j*nz + k, which is exactly C order.
     """
-    nx, ny, nz = 5, 4, 2          # 40 items, deliberately not a multiple of 3
+    nx, ny, nz = 5, 4, 2  # 40 items, deliberately not a multiple of 3
     i, j, k = np.meshgrid(np.arange(nx), np.arange(ny), np.arange(nz), indexing="ij")
     field = (100.0 * i + 10.0 * j + 1.0 * k) + 0.5
     origin = [-3.25, 1.5, 0.75]
@@ -23161,18 +23202,21 @@ def test_grid_nodes_match_pointwise_reference():
     origin, spacing, dime = [-4.0, -3.0, -2.0], [0.9, 1.1, 1.3], [7, 6, 5]
     g = dg.desolvation_field_on_grid(origin, spacing, dime, xyz, rad)
     assert g.shape == tuple(dime)
-    for (i, j, k) in [(0, 0, 0), (6, 5, 4), (3, 2, 1), (1, 4, 2), (5, 0, 3)]:
-        pt = [origin[0] + spacing[0] * i,
-              origin[1] + spacing[1] * j,
-              origin[2] + spacing[2] * k]
+    for i, j, k in [(0, 0, 0), (6, 5, 4), (3, 2, 1), (1, 4, 2), (5, 0, 3)]:
+        pt = [
+            origin[0] + spacing[0] * i,
+            origin[1] + spacing[1] * j,
+            origin[2] + spacing[2] * k,
+        ]
         assert g[i, j, k] == pytest.approx(ref_field(pt, xyz, rad), rel=1e-12)
 
 
 def test_grid_axes_are_not_swapped():
     """One atom offset along y only: the peak must move in j, not i or k."""
     xyz = np.array([[0.0, 3.0, 0.0]])
-    g = dg.desolvation_field_on_grid([-4.0, -4.0, -4.0], [1.0] * 3, [9, 9, 9],
-                                     xyz, ONE_RAD)
+    g = dg.desolvation_field_on_grid(
+        [-4.0, -4.0, -4.0], [1.0] * 3, [9, 9, 9], xyz, ONE_RAD
+    )
     assert np.unravel_index(np.argmax(g), g.shape) == (4, 7, 4)
 
 
@@ -23202,10 +23246,12 @@ def test_bounding_box_prefilter_keeps_atoms_that_matter():
     cutoff shell of a grid corner must survive that filter.
     """
     origin, spacing, dime = [0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [3, 3, 3]
-    near = np.array([[-10.0, 1.0, 1.0]])         # 10 A outside, inside cutoff 15
+    near = np.array([[-10.0, 1.0, 1.0]])  # 10 A outside, inside cutoff 15
     g = dg.desolvation_field_on_grid(origin, spacing, dime, near, ONE_RAD)
     assert g[0, 1, 1] > 0.0
-    assert g[0, 1, 1] == pytest.approx(ref_field([0.0, 1.0, 1.0], near, ONE_RAD), rel=1e-12)
+    assert g[0, 1, 1] == pytest.approx(
+        ref_field([0.0, 1.0, 1.0], near, ONE_RAD), rel=1e-12
+    )
 
 
 def test_probe_contact_value_is_a_real_field_value():
@@ -23215,8 +23261,9 @@ def test_probe_contact_value_is_a_real_field_value():
     """
     xyz = np.array([[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]])
     rad = np.array([1.7, 2.0])
-    g = dg.desolvation_field_on_grid([-6.0, -6.0, -6.0], [0.5] * 3, [33, 25, 25],
-                                     xyz, rad)
+    g = dg.desolvation_field_on_grid(
+        [-6.0, -6.0, -6.0], [0.5] * 3, [33, 25, 25], xyz, rad
+    )
     v, r = dg.probe_contact_value(g, [-6.0] * 3, [0.5] * 3, [33, 25, 25], xyz, rad)
     assert r == pytest.approx(4.0)
     assert v == pytest.approx(ref_field([9.0, 0.0, 0.0], xyz, rad), rel=5e-3)
@@ -23229,8 +23276,8 @@ def test_energy_is_penalty_and_force_is_outward_for_either_sign(q):
     r = np.array([3.0, 3.5, 4.0, 6.0, 10.0])
     g = field_at(np.stack([r, np.zeros(5), np.zeros(5)], axis=1), ONE_ATOM, ONE_RAD)
     u = alpha * q * q * g
-    assert np.all(u > 0.0)                  # always a penalty, never a reward
-    assert np.all(np.diff(u) < 0.0)         # so -dU/dr > 0, pushed apart
+    assert np.all(u > 0.0)  # always a penalty, never a reward
+    assert np.all(np.diff(u) < 0.0)  # so -dU/dr > 0, pushed apart
     # and the magnitude scales as q^2, not q
     g2 = alpha * (2.0 * q) ** 2 * g
     assert np.allclose(g2, 4.0 * u, rtol=1e-12)

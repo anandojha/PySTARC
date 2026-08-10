@@ -230,21 +230,23 @@ def _rate_block(sim, results) -> dict:
         return out
     p = n_r / n
     lo, hi = _wilson(n_r, n)
-    conv = 6.02214076e23 * 1e-27 * 1e12          # A^3/ps to M^-1 s^-1
-    out.update({
-        "k_b": float(k_b),
-        "k_b_units": "A^3/ps",
-        "b_radius": float(getattr(prop, "b_radius", 0.0)),
-        "q_radius": float(getattr(prop, "qradius", 0.0)),
-        "return_prob": float(getattr(prop, "return_prob", 0.0)),
-        "P_rxn": float(p),
-        "P_rxn_low": float(lo),
-        "P_rxn_high": float(hi),
-        "k_on": float(conv * k_b * p),
-        "k_on_low": float(conv * k_b * lo),
-        "k_on_high": float(conv * k_b * hi),
-        "k_on_units": "M-1 s-1",
-    })
+    conv = 6.02214076e23 * 1e-27 * 1e12  # A^3/ps to M^-1 s^-1
+    out.update(
+        {
+            "k_b": float(k_b),
+            "k_b_units": "A^3/ps",
+            "b_radius": float(getattr(prop, "b_radius", 0.0)),
+            "q_radius": float(getattr(prop, "qradius", 0.0)),
+            "return_prob": float(getattr(prop, "return_prob", 0.0)),
+            "P_rxn": float(p),
+            "P_rxn_low": float(lo),
+            "P_rxn_high": float(hi),
+            "k_on": float(conv * k_b * p),
+            "k_on_low": float(conv * k_b * lo),
+            "k_on_high": float(conv * k_b * hi),
+            "k_on_units": "M-1 s-1",
+        }
+    )
     return out
 
 
