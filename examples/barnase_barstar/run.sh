@@ -8,4 +8,3 @@ if [ -f setup.py ]; then python setup.py; fi
 python "$ROOT/run_pystarc.py" input.xml
 if [ -f analytical.py ]; then python analytical.py; fi
 if [ -f convergence.py ]; then python convergence.py; fi
-if [ -f bb_effect.py ]; then python bb_effect.py; fi
