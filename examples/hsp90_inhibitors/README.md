@@ -1,79 +1,55 @@
-# HSP90 inhibitors
+# hsp90_inhibitors
 
-Protein ligand. Six HSP90 inhibitors.
+needs OpenEye Toolkits for setup
 
-One folder per compound. Each folder is an independent run.
+## folders
+```
+hsp90_inhibitors/
+├── HSP90-aminopyridine/
+├── HSP90-indazole_5LNZ/
+├── HSP90-indazole_5OCI/
+├── HSP90-quinazoline/
+├── HSP90-quinazoline_6EI5/
+└── HSP90-resorcinol/
+```
 
-Needs the OpenEye Toolkits for setup.
+## each folder
+```
+complex.pdb                 structure
+config.xml                  parameters
+setup.py                    builds inputs
+run.sh                      local run
+submit_SLURM_single_GPU.sh  1 GPU
+submit_SLURM_multi_GPUs.sh  many GPUs
+```
 
-## Shipped
+## run
+```
+bash HSP90-aminopyridine/run.sh                        local, slow, needs module load cuda
+cd HSP90-aminopyridine && sbatch submit_SLURM_single_GPU.sh   1 GPU
+cd HSP90-aminopyridine && sbatch submit_SLURM_multi_GPUs.sh   many GPUs
+all: for d in */; do bash "$d/run.sh"; done
+```
 
-    hsp90_inhibitors/
-    ├── HSP90-aminopyridine/
-    ├── HSP90-indazole_5LNZ/
-    ├── HSP90-indazole_5OCI/
-    ├── HSP90-quinazoline/
-    ├── HSP90-quinazoline_6EI5/
-    └── HSP90-resorcinol/
+## produces  (per folder)
+```
+input.xml  rxns.xml  receptor.pqr  ligand.pqr      (setup.py)
+bd_sims/
+├── results.json              k_on, P_rxn
+├── convergence.json          running rate
+├── bd_1 ... bd_N             one per GPU, each a full slice with its own results.json
+├── receptor*.dx  ligand*.dx  APBS and Born grids
+├── *.cache                   hydrodynamic radius
+├── encounters.csv  trajectories.csv  fpt_distribution.csv
+├── radial_density.csv  contact_frequency.csv  near_misses.csv
+├── pose_clusters.csv  milestone_flux.csv
+└── angular_map.npz  energetics.npz  paths.npz  p_commit.npz  transition_matrix.npz
+```
 
-Each compound folder.
-
-    <compound>/
-    ├── complex.pdb                 bound complex structure
-    ├── config.xml                  all parameters
-    ├── setup.py                    builds the inputs
-    ├── run.sh                      local run
-    ├── submit_SLURM_single_GPU.sh  one GPU
-    └── submit_SLURM_multi_GPUs.sh  many GPUs
-
-## Run
-
-One compound, local.
-
-    bash HSP90-aminopyridine/run.sh
-
-All compounds, local.
-
-    for d in */; do bash "$d/run.sh"; done
-
-One compound on the cluster.
-
-    cd HSP90-aminopyridine && sbatch submit_SLURM_single_GPU.sh
-
-## setup.py writes, inside each compound folder
-
-    input.xml       PySTARC input
-    rxns.xml        reaction criterion
-    receptor.pqr    receptor charges and radii
-    ligand.pqr      ligand charges and radii
-
-## The run writes bd_sims/, inside each compound folder
-
-    bd_sims/
-    ├── results.json           k_on and P_rxn. Read this first.
-    ├── convergence.json       running rate and error
-    ├── bd_1 ... bd_N          one per GPU. Each is a full slice with its own results.json
-    ├── receptor*.dx           receptor APBS and Born grids
-    ├── ligand*.dx             ligand APBS and Born grids
-    ├── *.cache                hydrodynamic radius
-    ├── encounters.csv         encounter records
-    ├── trajectories.csv       saved positions
-    ├── fpt_distribution.csv   first passage times
-    ├── radial_density.csv     radial density
-    ├── contact_frequency.csv  contact frequency
-    ├── near_misses.csv        near misses
-    ├── pose_clusters.csv      bound pose clusters
-    ├── milestone_flux.csv     milestone flux
-    ├── angular_map.npz        angular occupancy
-    ├── energetics.npz         energy terms
-    ├── paths.npz              reactive paths
-    ├── p_commit.npz           commitment probability
-    └── transition_matrix.npz  transition matrix
-
-## Single or many GPUs
-
-The total trajectory count is set in config.xml. It splits evenly across the GPUs. One GPU writes bd_1 only. N GPUs write bd_1 ... bd_N, each running one Nth of the trajectories. The top level bd_sims/results.json is the pooled rate over all GPUs either way. Read that, not the per GPU files.
-
-## Expect
-
-One k_on per compound, in <compound>/bd_sims/results.json.
+## gpus
+```
+n_trajectories (config.xml) split across GPUs
+1 GPU  -> bd_1
+N GPUs -> bd_1 ... bd_N   each 1/N
+pooled -> bd_sims/results.json
+```

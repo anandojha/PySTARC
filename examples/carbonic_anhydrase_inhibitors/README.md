@@ -1,78 +1,54 @@
-# Carbonic anhydrase inhibitors
+# carbonic_anhydrase_inhibitors
 
-Protein ligand. Seven sulfonamides across three CA isozymes.
+## folders
+```
+carbonic_anhydrase_inhibitors/
+├── ca13_azm/
+├── ca13_vd1125/
+├── ca13_vd1126/
+├── ca13_vd1209/
+├── ca13_vd1269/
+├── ca1_vd1269/
+└── ca2_vd1142/
+```
 
-One folder per complex. Each folder is an independent run.
+## each folder
+```
+<PDB>.pdb                   structure
+config.xml                  parameters
+setup.py                    builds inputs
+run.sh                      local run
+submit_SLURM_single_GPU.sh  1 GPU
+submit_SLURM_multi_GPUs.sh  many GPUs
+```
 
-## Shipped
+## run
+```
+bash ca13_azm/run.sh                        local, slow, needs module load cuda
+cd ca13_azm && sbatch submit_SLURM_single_GPU.sh   1 GPU
+cd ca13_azm && sbatch submit_SLURM_multi_GPUs.sh   many GPUs
+all: for d in */; do bash "$d/run.sh"; done
+```
 
-    carbonic_anhydrase_inhibitors/
-    ├── ca13_azm/
-    ├── ca13_vd1125/
-    ├── ca13_vd1126/
-    ├── ca13_vd1209/
-    ├── ca13_vd1269/
-    ├── ca1_vd1269/
-    └── ca2_vd1142/
+## produces  (per folder)
+```
+input.xml  rxns.xml  receptor.pqr  ligand.pqr      (setup.py)
+bd_sims/
+├── results.json              k_on, P_rxn
+├── convergence.json          running rate
+├── bd_1 ... bd_N             one per GPU, each a full slice with its own results.json
+├── receptor*.dx  ligand*.dx  APBS and Born grids
+├── *.cache                   hydrodynamic radius
+├── encounters.csv  trajectories.csv  fpt_distribution.csv
+├── radial_density.csv  contact_frequency.csv  near_misses.csv
+├── pose_clusters.csv  milestone_flux.csv
+└── angular_map.npz  energetics.npz  paths.npz  p_commit.npz  transition_matrix.npz
+```
 
-Each complex folder.
-
-    <complex>/
-    ├── <PDB>.pdb                   bound complex structure
-    ├── config.xml                  all parameters
-    ├── setup.py                    builds the inputs
-    ├── run.sh                      local run
-    ├── submit_SLURM_single_GPU.sh  one GPU
-    └── submit_SLURM_multi_GPUs.sh  many GPUs
-
-## Run
-
-One complex, local.
-
-    bash ca13_azm/run.sh
-
-All complexes, local.
-
-    for d in */; do bash "$d/run.sh"; done
-
-One complex on the cluster.
-
-    cd ca13_azm && sbatch submit_SLURM_single_GPU.sh
-
-## setup.py writes, inside each complex folder
-
-    input.xml       PySTARC input
-    rxns.xml        reaction criterion
-    receptor.pqr    receptor charges and radii
-    ligand.pqr      ligand charges and radii
-
-## The run writes bd_sims/, inside each complex folder
-
-    bd_sims/
-    ├── results.json           k_on and P_rxn. Read this first.
-    ├── convergence.json       running rate and error
-    ├── bd_1 ... bd_N          one per GPU. Each is a full slice with its own results.json
-    ├── receptor*.dx           receptor APBS and Born grids
-    ├── ligand*.dx             ligand APBS and Born grids
-    ├── *.cache                hydrodynamic radius
-    ├── encounters.csv         encounter records
-    ├── trajectories.csv       saved positions
-    ├── fpt_distribution.csv   first passage times
-    ├── radial_density.csv     radial density
-    ├── contact_frequency.csv  contact frequency
-    ├── near_misses.csv        near misses
-    ├── pose_clusters.csv      bound pose clusters
-    ├── milestone_flux.csv     milestone flux
-    ├── angular_map.npz        angular occupancy
-    ├── energetics.npz         energy terms
-    ├── paths.npz              reactive paths
-    ├── p_commit.npz           commitment probability
-    └── transition_matrix.npz  transition matrix
-
-## Single or many GPUs
-
-The total trajectory count is set in config.xml. It splits evenly across the GPUs. One GPU writes bd_1 only. N GPUs write bd_1 ... bd_N, each running one Nth of the trajectories. The top level bd_sims/results.json is the pooled rate over all GPUs either way. Read that, not the per GPU files.
-
-## Expect
-
-One k_on per complex, in <complex>/bd_sims/results.json.
+## gpus
+```
+n_trajectories (config.xml) split across GPUs
+1 GPU  -> bd_1
+N GPUs -> bd_1 ... bd_N   each 1/N
+pooled -> bd_sims/results.json
+```
