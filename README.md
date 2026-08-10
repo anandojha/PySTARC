@@ -41,7 +41,7 @@ GPU-accelerated rigid body and flexible chain Brownian dynamics simulations for 
 
 ## Overview
 
-PySTARC computes the bimolecular association rate constants (k<sub>on</sub>) by implementing rigid body Brownian dynamics within the Northrup-Allison-McCammon formalism. k<sub>on</sub> is the diffusion limited rate of reaching an outer surface, multiplied by the probability of subsequently reaching reactive contact before escaping. Trajectories run in parallel on the GPU with a NumPy CPU fallback. Applications include protein-ligand and protein-protein association, as well as other diffusion controlled encounters.
+PySTARC computes the bimolecular association rate constants by implementing rigid body Brownian dynamics within the Northrup-Allison-McCammon formalism. Trajectories run in parallel on the GPU with a NumPy CPU fallback. 
 
 ## Installation
 
