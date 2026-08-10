@@ -1,6 +1,6 @@
 # carbonic_anhydrase_inhibitors
 
-## folders
+## complexes
 ```
 carbonic_anhydrase_inhibitors/
 ├── ca13_azm/
@@ -12,7 +12,7 @@ carbonic_anhydrase_inhibitors/
 └── ca2_vd1142/
 ```
 
-## each folder
+## each complex
 ```
 <PDB>.pdb                   structure
 config.xml                  parameters
@@ -31,7 +31,7 @@ cd ca13_azm && sbatch submit_SLURM_multi_GPUs.sh  many GPUs
 all: for d in */; do bash "$d/run.sh"; done
 ```
 
-## produces  (per folder)
+## produces  (per complex)
 ```
 input.xml  rxns.xml  receptor.pqr  ligand.pqr      (setup.py)
 bd_sims/

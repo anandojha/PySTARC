@@ -2,7 +2,7 @@
 
 needs OpenEye Toolkits for setup
 
-## folders
+## complexes
 ```
 hsp90_inhibitors/
 ├── HSP90-aminopyridine/
@@ -13,7 +13,7 @@ hsp90_inhibitors/
 └── HSP90-resorcinol/
 ```
 
-## each folder
+## each complex
 ```
 complex.pdb                 structure
 config.xml                  parameters
@@ -32,7 +32,7 @@ cd HSP90-aminopyridine && sbatch submit_SLURM_multi_GPUs.sh  many GPUs
 all: for d in */; do bash "$d/run.sh"; done
 ```
 
-## produces  (per folder)
+## produces  (per complex)
 ```
 input.xml  rxns.xml  receptor.pqr  ligand.pqr      (setup.py)
 bd_sims/

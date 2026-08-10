@@ -1,6 +1,6 @@
 # beta_cyclodextrin_guests
 
-## folders
+## complexes
 ```
 beta_cyclodextrin_guests/
 ├── BCD_1-butanol/
@@ -12,7 +12,7 @@ beta_cyclodextrin_guests/
 └── BCD_tertbutanol/
 ```
 
-## each folder
+## each complex
 ```
 complex.pdb                 structure
 complex.parm7               topology
@@ -32,7 +32,7 @@ cd BCD_aspirin && sbatch submit_SLURM_multi_GPUs.sh  many GPUs
 all: for d in */; do bash "$d/run.sh"; done
 ```
 
-## produces  (per folder)
+## produces  (per complex)
 ```
 input.xml  rxns.xml  receptor.pqr  ligand.pqr      (setup.py)
 bd_sims/

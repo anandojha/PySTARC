@@ -2,7 +2,7 @@
 
 needs OpenEye Toolkits for setup
 
-## folders
+## complexes
 ```
 ttk_inhibitors/
 ├── 2X9E/
@@ -15,7 +15,7 @@ ttk_inhibitors/
 └── 5NAD/
 ```
 
-## each folder
+## each complex
 ```
 <PDB>.pdb                   structure
 config.xml                  parameters
@@ -34,7 +34,7 @@ cd 2X9E && sbatch submit_SLURM_multi_GPUs.sh  many GPUs
 all: for d in */; do bash "$d/run.sh"; done
 ```
 
-## produces  (per folder)
+## produces  (per complex)
 ```
 input.xml  rxns.xml  receptor.pqr  ligand.pqr      (setup.py)
 bd_sims/
