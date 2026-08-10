@@ -33,7 +33,11 @@ MAX_STEPS                 = "150000"
 REACTION_N_NEEDED         = "3"
 N_WORKERS                 = "96"
 WORK_DIR                  = "bd_sims"
-PYSTARC_DIR               = "/mnt/home/aojha/ceph/PySTARC"
+_here = os.path.dirname(os.path.abspath(__file__))
+_root = _here
+while _root != "/" and not os.path.isfile(os.path.join(_root, "run_pystarc.py")):
+    _root = os.path.dirname(_root)
+PYSTARC_DIR               = _root                 # the PySTARC checkout, found by walking up
 
 # Helpers
 

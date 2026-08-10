@@ -18,7 +18,12 @@ conda activate PySTARC
 # Strict mode for the actual run (no -u)
 set -eo pipefail
 
-cd /mnt/home/aojha/ceph/PySTARC_simulations/barnase_barstar_chainbd
+# Run in the directory this job was submitted from, and locate the PySTARC
+# checkout by walking up until run_pystarc.py is found. No hardcoded paths.
+BASE="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+cd "$BASE"
+ROOT="$BASE"
+while [ ! -f "$ROOT/run_pystarc.py" ] && [ "$ROOT" != "/" ]; do ROOT="$(dirname "$ROOT")"; done
 
 echo "Start: $(date)"
 echo "Host:  $(hostname)"
@@ -34,6 +39,6 @@ time python setup.py
 # Step 2: Run the chain BD simulation
 echo ""
 echo "=== Running chain BD ==="
-time python /mnt/home/aojha/ceph/PySTARC/run_pystarc.py input.xml
+time python "$ROOT/run_pystarc.py" input.xml
 
 echo "End: $(date)"
