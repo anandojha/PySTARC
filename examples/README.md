@@ -1,6 +1,4 @@
-# PySTARC examples
-
-Validation systems of increasing complexity. Each computes a bimolecular association rate constant k<sub>on</sub> by rigid body Brownian dynamics and, where an experimental or analytical value exists, compares against it.
+# Examples
 
 <table width="100%">
 <thead><tr><th align="left">Example</th><th align="left">System</th><th align="left">Type</th></tr></thead>
@@ -17,11 +15,7 @@ Validation systems of increasing complexity. Each computes a bimolecular associa
 </tbody>
 </table>
 
-Every parameter for a system lives in its own `config.xml` (or, for the static systems below, its `input.xml` and `rxns.xml`). Read those files for the exact reaction criterion, ionic strength, b surface, trajectory count, and everything else.
-
-## What each directory holds
-
-A directory carries only the files that cannot be regenerated. Everything else is built on demand, either by `setup.py` before the run or by the run itself. There are three kinds of system.
+A directory carries only the files that cannot be regenerated. 
 
 **Systems built from an RCSB entry** (`carbonic_anhydrase_inhibitors`, `p38_mapk_sb203580`, `ttk_inhibitors`). `setup.py` downloads the structure from the `pdb_id` in the config and, for the sulfonamides, builds the ligand from its SMILES.
 
