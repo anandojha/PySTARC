@@ -34,7 +34,7 @@ Many GPUs.
     bd_sims/
     ├── results.json           k_on and P_rxn. Read this first.
     ├── convergence.json       running rate and error
-    ├── bd_1 ... bd_N          one directory per GPU
+    ├── bd_1 ... bd_N          one per GPU. Each is a full slice with its own results.json
     ├── receptor*.dx           receptor APBS and Born grids
     ├── ligand*.dx             ligand APBS and Born grids
     ├── *.cache                hydrodynamic radius
@@ -51,6 +51,10 @@ Many GPUs.
     ├── paths.npz              reactive paths
     ├── p_commit.npz           commitment probability
     └── transition_matrix.npz  transition matrix
+
+## Single or many GPUs
+
+The total trajectory count is set in config.xml. It splits evenly across the GPUs. One GPU writes bd_1 only. N GPUs write bd_1 ... bd_N, each running one Nth of the trajectories. The top level bd_sims/results.json is the pooled rate over all GPUs either way. Read that, not the per GPU files.
 
 ## Expect
 
