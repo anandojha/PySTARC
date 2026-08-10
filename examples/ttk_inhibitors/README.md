@@ -1,7 +1,5 @@
 # ttk_inhibitors
 
-needs OpenEye Toolkits for setup
-
 ## Complexes
 ```
 ttk_inhibitors/

@@ -1,7 +1,5 @@
 # hsp90_inhibitors
 
-needs OpenEye Toolkits for setup
-
 ## Complexes
 ```
 hsp90_inhibitors/
