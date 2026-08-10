@@ -26,6 +26,9 @@ echo "b $BRAD A   $NTRAJ trajectories x $NSHARD shards = $((NTRAJ*NSHARD))"
 
 for i in $(seq 1 "$NSHARD"); do
     d="shards/shard_$(printf %02d "$i")"
+    if [ -f "$d/bd_sims/results.json" ] || squeue -u "$USER" -h -n "chain_$i" 2>/dev/null | grep -q .; then
+        echo "  skip $d (done or running)"; continue
+    fi
     mkdir -p "$d"
     for f in "${SHARE[@]}"; do
         [ -e "$d/$f" ] || ln -s "$BASE/$f" "$d/$f"
@@ -40,7 +43,7 @@ assert n == 1, f"seed not found in {src}"
 open(dst, "w").write(t)
 PY
     jid=$(sbatch --parsable \
-        -p ccb --constraint=genoa -N 1 --ntasks-per-node=1 \
+        -p ccb -N 1 --ntasks-per-node=1 \
         --cpus-per-task=$CORES --mem=600G -t 168:00:00 \
         --job-name="chain_$i" \
         --output="$BASE/logs/shard_${i}.out" \
