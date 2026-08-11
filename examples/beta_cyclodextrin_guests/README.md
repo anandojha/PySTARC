@@ -12,7 +12,7 @@ beta_cyclodextrin_guests/
 └── BCD_tertbutanol/        β-cyclodextrin with tert-butanol
 ```
 
-## Files within each complex
+## Input files for each complex
 ```
 complex.pdb                 PDB structure of the complex
 complex.parm7               AMBER topology file
