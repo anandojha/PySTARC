@@ -1,7 +1,7 @@
 # Examples
 
 <table width="100%">
-<thead><tr><th align="left">Complex</th><th align="left">Description</th><th align="left">Type</th></tr></thead>
+<thead><tr><th align="left">Complex</th><th align="left">Description</th><th align="left">Category</th></tr></thead>
 <tbody>
 <tr><td><code>two_charged_spheres/</code></td><td>Two oppositely charged spheres</td><td>Analytical validation</td></tr>
 <tr><td><code>trypsin_benzamidine/</code></td><td>Trypsin and benzamidine</td><td>Protein and ligand</td></tr>
