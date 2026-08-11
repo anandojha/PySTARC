@@ -12,7 +12,7 @@ carbonic_anhydrase_inhibitors/
 └── ca2_vd1142/   Carbonic anhydrase II with compound VD1142
 ```
 
-## Files within each complex
+## Input files for each complex
 ```
 <PDB>.pdb                   PDB structure of the complex
 config.xml                  PySTARC configuration file

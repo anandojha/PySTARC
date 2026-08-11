@@ -1,6 +1,6 @@
 # barnase_barstar
 
-## Files
+## Input files
 ```
 1BRS.pdb           PDB structure of the complex
 barnase.pqr        PQR file for receptor charges and radii

@@ -1,6 +1,6 @@
 # two_charged_spheres
 
-## Files
+## Input files
 ```
 input.xml                   PySTARC input file
 rxns.xml                    Reaction criterion file

@@ -1,6 +1,6 @@
 # trypsin_benzamidine
 
-## Files
+## Input files
 ```
 complex.pdb                 PDB structure of the complex
 complex.prmtop              AMBER topology file

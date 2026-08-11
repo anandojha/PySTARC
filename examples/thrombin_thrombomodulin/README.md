@@ -1,6 +1,6 @@
 # thrombin_thrombomodulin
 
-## Files
+## Input files
 ```
 input.xml                   PySTARC input file
 rxns.xml                    Reaction criterion file

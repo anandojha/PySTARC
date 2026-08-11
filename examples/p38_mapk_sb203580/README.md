@@ -1,6 +1,6 @@
 # p38_mapk_sb203580
 
-## Files
+## Input files
 ```
 1A9U.pdb                    PDB structure of the complex
 config.xml                  PySTARC configuration file

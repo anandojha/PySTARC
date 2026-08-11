@@ -11,7 +11,7 @@ hsp90_inhibitors/
 └── HSP90-resorcinol/        HSP90 with a resorcinol inhibitor
 ```
 
-## Files within each complex
+## Input files for each complex
 ```
 complex.pdb                 PDB structure of the complex
 config.xml                  PySTARC configuration file

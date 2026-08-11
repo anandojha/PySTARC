@@ -13,7 +13,7 @@ ttk_inhibitors/
 └── 5NAD/  TTK MPS1 kinase with ligand 8RH
 ```
 
-## Files within each complex
+## Input files for each complex
 ```
 <PDB>.pdb                   PDB structure of the complex
 config.xml                  PySTARC configuration file
