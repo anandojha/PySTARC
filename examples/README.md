@@ -49,8 +49,7 @@
 ├── submit_SLURM_*.sh         cluster launch scripts
 ├── run.sh                    local single GPU run
 ├── analytical.py             two_charged_spheres check versus the exact solution
-├── convergence.py            two_charged_spheres multi seed convergence
-└── bb_effect.py              thrombin Brownian bridge diagnostic
+└── convergence.py            two_charged_spheres multi seed convergence
 ```
 
 ## What a run generates
@@ -94,14 +93,14 @@ bd_sims/
 ├── near_misses.csv           close approach records
 ├── contact_frequency.csv     which contacts fired
 ├── pose_clusters.csv         bound pose clusters
-├── milestone_flux.csv        milestone flux
+├── milestone_flux.csv        outward and inward shell crossings
 ├── radial_density.csv        radial density profile
 ├── fpt_distribution.csv      first passage time distribution
 ├── angular_map.npz           angular encounter map
 ├── energetics.npz            interaction energetics
 ├── paths.npz                 reactive path samples
 ├── p_commit.npz              committor probabilities
-└── transition_matrix.npz     milestone transition matrix
+└── transition_matrix.npz     Markov transition matrix between shells
 ```
 
 A multiple GPU run instead creates one shard per GPU, and the combiner pools them into the top level `results.json`, which is the number to read.
