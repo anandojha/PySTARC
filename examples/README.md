@@ -1,7 +1,7 @@
 # Examples
 
 <table width="100%">
-<thead><tr><th align="left">Example</th><th align="left">System</th><th align="left">Type</th></tr></thead>
+<thead><tr><th align="left">Complex</th><th align="left">System</th><th align="left">Type</th></tr></thead>
 <tbody>
 <tr><td><code>two_charged_spheres/</code></td><td>Two oppositely charged spheres</td><td>Analytical validation</td></tr>
 <tr><td><code>trypsin_benzamidine/</code></td><td>Trypsin and benzamidine</td><td>Protein and ligand</td></tr>
@@ -14,8 +14,6 @@
 <tr><td><code>barnase_barstar/</code></td><td>Barnase and barstar with a flexible chain</td><td>Chain BD</td></tr>
 </tbody>
 </table>
-
-A directory carries only the files that cannot be regenerated. 
 
 **Systems built from an RCSB entry** (`carbonic_anhydrase_inhibitors`, `p38_mapk_sb203580`, `ttk_inhibitors`). `setup.py` downloads the structure from the `pdb_id` in the config and, for the sulfonamides, builds the ligand from its SMILES.
 
