@@ -5,7 +5,7 @@
 <tbody>
 <tr><td><code>two_charged_spheres/</code></td><td>Two oppositely charged spheres</td><td nowrap>Analytical validation</td></tr>
 <tr><td><code>trypsin_benzamidine/</code></td><td>Trypsin and benzamidine</td><td nowrap>Protein-ligand complex</td></tr>
-<tr><td><code>beta_cyclodextrin_guests/</code></td><td>7 beta cyclodextrin host guest complexes</td><td nowrap>Host-guest complex</td></tr>
+<tr><td><code>beta_cyclodextrin_guests/</code></td><td>7 beta cyclodextrin host guest complexes</td><td nowrap>Protein-ligand complex</td></tr>
 <tr><td><code>thrombin_thrombomodulin/</code></td><td>Thrombin and thrombomodulin</td><td nowrap>Protein-protein complex</td></tr>
 <tr><td><code>p38_mapk_sb203580/</code></td><td>p38 MAPK with SB203580</td><td nowrap>Protein-ligand complex</td></tr>
 <tr><td><code>carbonic_anhydrase_inhibitors/</code></td><td>7 sulfonamide inhibitors across 3 isozymes</td><td nowrap>Protein-ligand complex</td></tr>
