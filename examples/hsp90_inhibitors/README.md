@@ -45,7 +45,7 @@ module load cuda                                             # Load CUDA
 cd HSP90-aminopyridine && sbatch submit_SLURM_multi_GPUs.sh  # Submit one complex on multiple GPUs
 ```
 
-## Once simulation finishes, the following files will be generated with 1 GPU, per complex
+## Once the simulation finishes, the following files will be generated with 1 GPU
 ```
 input.xml                         PySTARC input file
 rxns.xml                          Reaction criterion file
@@ -81,7 +81,7 @@ bd_sims/
 └── transition_matrix.npz         Markov transition matrix between the concentric shells
 ```
 
-## Once simulation finishes, the following files will be generated with multiple GPUs, per complex
+## Once the simulation finishes, the following files will be generated with multiple GPUs
 ```
 input.xml                             PySTARC input file
 rxns.xml                              Reaction criterion file

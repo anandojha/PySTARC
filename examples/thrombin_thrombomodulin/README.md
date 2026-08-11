@@ -35,7 +35,7 @@ module load cuda                               # Load CUDA
 sbatch submit_SLURM_multi_GPUs.sh              # Submit on multiple GPUs
 ```
 
-## Once simulation finishes, the following files will be generated with 1 GPU
+## Once the simulation finishes, the following files will be generated with 1 GPU
 ```
 bd_sims/
 ├── bd_1/                         Directory of the single GPU run
@@ -67,7 +67,7 @@ bd_sims/
 └── transition_matrix.npz         Markov transition matrix between the concentric shells
 ```
 
-## Once simulation finishes, the following files will be generated with multiple GPUs
+## Once the simulation finishes, the following files will be generated with multiple GPUs
 ```
 bd_sims/
 ├── bd_1/                             One directory per GPU, each running a share of the trajectories

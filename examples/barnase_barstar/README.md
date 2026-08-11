@@ -21,7 +21,7 @@ sbatch -p ccb -N 1 --cpus-per-task=16 --mem=128G -t 6:00:00 --wrap "source ~/.ba
 python combine_shards.py                                                                                                             # Pool the shards into one rate
 ```
 
-## Once simulation finishes, the following files will be generated
+## Once the simulation finishes, the following files will be generated
 ```
 chain.json                    Bead chain definition of the ligand
 reaction_pairs.json           Interface contact pairs
