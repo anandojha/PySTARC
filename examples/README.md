@@ -15,4 +15,4 @@
 </tbody>
 </table>
 
-Each directory provides a dedicated README describing its input files, the execution procedure, and the generated output.
+Each directory provides a dedicated README file describing its input files, the execution procedure, and the generated output files for analysis.
