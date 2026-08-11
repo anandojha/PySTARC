@@ -13,12 +13,12 @@ combine_shards.py  Pools the shards into one rate
 
 ## To run Brownian dynamics simulations
 ```
-cd ~/PySTARC/examples/barnase_barstar                                                                                                # Go to the example directory
-source ~/.bashrc && conda activate PySTARC                                                                                           # Activate the PySTARC environment
-python setup.py                                                                                                                      # Build chain.json, reaction_pairs.json, and input.xml
+cd ~/PySTARC/examples/barnase_barstar  # Navigate to the example directory within PySTARC
+source ~/.bashrc && conda activate PySTARC  # Activate the PySTARC environment
+python setup.py  # Build chain.json, reaction_pairs.json, and input.xml
 sbatch -p ccb -N 1 --cpus-per-task=16 --mem=128G -t 6:00:00 --wrap "source ~/.bashrc; conda activate PySTARC; python make_grids.py"  # Build the APBS grids
-./submit_shards.sh                                                                                                                   # Stage and submit the 25 shards
-python combine_shards.py                                                                                                             # Pool the shards into one rate
+./submit_shards.sh  # Stage and submit the 25 shards
+python combine_shards.py  # Pool the shards into one rate
 ```
 
 ## Once the simulation finishes, the following files will be generated
