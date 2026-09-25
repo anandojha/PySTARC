@@ -63,7 +63,7 @@ conda activate PySTARC
 conda install -c conda-forge ambertools apbs rdkit openbabel -y
 conda install -c openeye openeye-toolkits -y
 pip install matplotlib pdb2pqr
-pip install dist/pystarc-1.1.0-py3-none-any.whl --force-reinstall
+pip install pystarc --force-reinstall
 ```
 
 ## Testing
@@ -82,21 +82,21 @@ cd examples/two_charged_spheres
 bash run.sh
 ```
 
-## Examples
+## Tutorials
 
-See [`examples/`](examples/) for all example systems, each with its own README.
+See [`examples/`](examples/) for step-by-step tutorials, one per complex, each with its own README listing the inputs, run commands, and outputs. Start with `two_charged_spheres` to validate the installation against the analytical rate; `barnase_barstar` demonstrates the flexible chain workflow.
 
 ```
 examples/
 ├── two_charged_spheres/              Analytical validation for the exact Smoluchowski solution
 ├── trypsin_benzamidine/              Protein-ligand complex
-├── beta_cyclodextrin_guests/         Host-guest complex
+├── beta_cyclodextrin_guests/         Host-guest complexes
 ├── thrombin_thrombomodulin/          Protein-protein complex
 ├── p38_mapk_sb203580/                Protein-ligand complex
 ├── carbonic_anhydrase_inhibitors/    Protein-ligand complexes
 ├── hsp90_inhibitors/                 Protein-ligand complexes
 ├── ttk_inhibitors/                   Protein-ligand complexes
-└── barnase_barstar/                  Protein-protein complex
+└── barnase_barstar/                  Protein-protein complex, flexible chain (CPU)
 ```
 
 ## Requirements
@@ -116,6 +116,8 @@ Matplotlib
 pdb2pqr
 CuPy
 ```
+
+OpenEye Toolkits require a license (OE_LICENSE); needed only by setup.py in the p38, HSP90, and TTK examples.
 
 ## License
 
