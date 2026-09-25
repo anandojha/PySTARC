@@ -84,7 +84,7 @@ bash run.sh
 
 ## Tutorials
 
-See [`examples/`](examples/) for step-by-step tutorials, one per complex, each with its own README listing the inputs, run commands, and outputs. Start with `two_charged_spheres` to validate the installation against the analytical rate; `barnase_barstar` demonstrates the flexible chain workflow.
+See [`examples/`](examples/) for the tutorials. Each complex has its own README listing the inputs, run commands, and outputs. Start with `two_charged_spheres` to validate the installation against the analytical rate. The `barnase_barstar` tutorial demonstrates the flexible chain workflow.
 
 ```
 examples/
@@ -96,7 +96,7 @@ examples/
 ├── carbonic_anhydrase_inhibitors/    Protein-ligand complexes
 ├── hsp90_inhibitors/                 Protein-ligand complexes
 ├── ttk_inhibitors/                   Protein-ligand complexes
-└── barnase_barstar/                  Protein-protein complex, flexible chain (CPU)
+└── barnase_barstar/                  Protein-protein complex with a flexible chain on CPUs
 ```
 
 ## Requirements
@@ -117,7 +117,7 @@ pdb2pqr
 CuPy
 ```
 
-OpenEye Toolkits require a license (OE_LICENSE); needed only by setup.py in the p38, HSP90, and TTK examples.
+OpenEye Toolkits require a license (OE_LICENSE). Only setup.py in the p38, HSP90, and TTK examples uses them.
 
 ## License
 
