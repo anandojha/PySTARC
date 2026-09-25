@@ -1,5 +1,7 @@
 # barnase_barstar
 
+Runs on CPUs and needs no GPU. The shard count and the CPUs and memory per shard are set in submit_shards.sh.
+
 ## Input files
 ```
 1BRS.pdb           PDB structure of the complex
@@ -39,5 +41,5 @@ logs/                         One log file per shard
 ```
 Total trajectories  n_trajectories times n_shards, here 200 times 25 equals 5000
 Each shard          Writes its own bd_sims/results.json
-Pooled rate         combine_shards.py prints k_on near 8e8
+Pooled rate         combine_shards.py prints k_on near 8e8 M⁻¹s⁻¹ against the experimental 6.0e8 M⁻¹s⁻¹
 ```

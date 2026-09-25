@@ -1,5 +1,7 @@
 # carbonic_anhydrase_inhibitors
 
+Requires a CUDA GPU.
+
 ## Complexes
 ```
 carbonic_anhydrase_inhibitors/
@@ -53,7 +55,6 @@ rxns.xml                          Reaction criterion file
 receptor.pqr                      PQR file for receptor charges and radii
 ligand.pqr                        PQR file for ligand charges and radii
 bd_sims/
-├── bd_1/                         Directory of the single GPU run
 ├── results.json                  Association rate constant, reaction probability, and confidence intervals
 ├── convergence.json              Running rate estimate versus the number of trajectories
 ├── receptor0.dx                  Coarse APBS electrostatic grid of the receptor
@@ -133,7 +134,6 @@ bd_sims/
 ├── ligand1_born.dx                   Fine Born desolvation grid of the ligand
 ├── receptor.pqr.r_hydro_*.cache      Cached hydrodynamic radius of the receptor
 ├── ligand.pqr.r_hydro_*.cache        Cached hydrodynamic radius of the ligand
-├── pystarc_<timestamp>.log           Run log file
 ├── trajectories.csv                  Fate and step count of each trajectory
 ├── encounters.csv                    Records of the encounter events
 ├── near_misses.csv                   Records of the close approaches
@@ -147,4 +147,18 @@ bd_sims/
 ├── paths.npz                         Samples of the reactive paths
 ├── p_commit.npz                      Committor probabilities
 └── transition_matrix.npz             Markov transition matrix between the concentric shells
+```
+
+## Expected results
+```
+Complex       Experimental k_on (M⁻¹s⁻¹)  PySTARC k_on (M⁻¹s⁻¹)
+ca13_azm      1.50e6                      (3.42 ± 0.12)e6
+ca13_vd1125   4.60e5                      (1.04 ± 0.06)e6
+ca13_vd1126   1.50e6                      (7.43 ± 0.52)e5
+ca13_vd1209   3.30e5                      (3.36 ± 0.11)e6
+ca13_vd1269   2.50e6                      (5.52 ± 0.14)e6
+ca1_vd1269    2.70e6                      (5.21 ± 0.14)e6
+ca2_vd1142    1.80e6                      (3.04 ± 0.10)e6
+
+k_on for each complex is printed in its run summary and written to its bd_sims/results.json
 ```

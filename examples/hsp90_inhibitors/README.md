@@ -1,5 +1,7 @@
 # hsp90_inhibitors
 
+Requires a CUDA GPU.
+
 ## Complexes
 ```
 hsp90_inhibitors/
@@ -52,7 +54,6 @@ rxns.xml                          Reaction criterion file
 receptor.pqr                      PQR file for receptor charges and radii
 ligand.pqr                        PQR file for ligand charges and radii
 bd_sims/
-├── bd_1/                         Directory of the single GPU run
 ├── results.json                  Association rate constant, reaction probability, and confidence intervals
 ├── convergence.json              Running rate estimate versus the number of trajectories
 ├── receptor0.dx                  Coarse APBS electrostatic grid of the receptor
@@ -132,7 +133,6 @@ bd_sims/
 ├── ligand1_born.dx                   Fine Born desolvation grid of the ligand
 ├── receptor.pqr.r_hydro_*.cache      Cached hydrodynamic radius of the receptor
 ├── ligand.pqr.r_hydro_*.cache        Cached hydrodynamic radius of the ligand
-├── pystarc_<timestamp>.log           Run log file
 ├── trajectories.csv                  Fate and step count of each trajectory
 ├── encounters.csv                    Records of the encounter events
 ├── near_misses.csv                   Records of the close approaches
@@ -146,4 +146,17 @@ bd_sims/
 ├── paths.npz                         Samples of the reactive paths
 ├── p_commit.npz                      Committor probabilities
 └── transition_matrix.npz             Markov transition matrix between the concentric shells
+```
+
+## Expected results
+```
+Complex                 Experimental k_on (M⁻¹s⁻¹)  PySTARC k_on (M⁻¹s⁻¹)
+HSP90-aminopyridine     1.04e4                      (5.36 ± 1.29)e4
+HSP90-indazole_5LNZ     3.43e5                      (3.21 ± 0.32)e5
+HSP90-indazole_5OCI     8.38e4                      (6.60 ± 0.45)e5
+HSP90-quinazoline       2.08e5                      (2.50 ± 0.28)e5
+HSP90-quinazoline_6EI5  1.21e5                      (1.57 ± 0.22)e5
+HSP90-resorcinol        1.00e6                      (9.65 ± 0.59)e5
+
+k_on for each complex is printed in its run summary and written to its bd_sims/results.json
 ```

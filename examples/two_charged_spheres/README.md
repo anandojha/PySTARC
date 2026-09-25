@@ -1,5 +1,7 @@
 # two_charged_spheres
 
+Requires a CUDA GPU.
+
 ## Input files
 ```
 input.xml                   PySTARC input file
@@ -40,7 +42,6 @@ sbatch submit_SLURM_multi_GPUs.sh          # Submit on multiple GPUs
 ## Once the simulation finishes, the following files will be generated with 1 GPU
 ```
 bd_sims/
-├── bd_1/                         Directory of the single GPU run
 ├── results.json                  Association rate constant, reaction probability, and confidence intervals
 ├── convergence.json              Running rate estimate versus the number of trajectories
 ├── receptor0.dx                  Coarse APBS electrostatic grid of the receptor
@@ -66,8 +67,8 @@ bd_sims/
 ├── energetics.npz                Interaction energetics along the trajectories
 ├── paths.npz                     Samples of the reactive paths
 ├── p_commit.npz                  Committor probabilities
-└── transition_matrix.npz         Markov transition matrix between the concentric shells
-convergence_seed_*/               convergence.py multi seed run
+├── transition_matrix.npz         Markov transition matrix between the concentric shells
+└── convergence_seed_*/           convergence.py multi seed run written by run.sh only
 ```
 
 ## Once the simulation finishes, the following files will be generated with multiple GPUs
@@ -117,7 +118,6 @@ bd_sims/
 ├── ligand1_born.dx                   Fine Born desolvation grid of the ligand
 ├── receptor.pqr.r_hydro_*.cache      Cached hydrodynamic radius of the receptor
 ├── ligand.pqr.r_hydro_*.cache        Cached hydrodynamic radius of the ligand
-├── pystarc_<timestamp>.log           Run log file
 ├── trajectories.csv                  Fate and step count of each trajectory
 ├── encounters.csv                    Records of the encounter events
 ├── near_misses.csv                   Records of the close approaches
@@ -131,5 +131,12 @@ bd_sims/
 ├── paths.npz                         Samples of the reactive paths
 ├── p_commit.npz                      Committor probabilities
 └── transition_matrix.npz             Markov transition matrix between the concentric shells
-convergence_seed_*/                   convergence.py multi seed run
+```
+
+## Expected results
+```
+k_b     64.45 Å³/ps
+P_rxn   0.49
+k_on    1.90e10 M⁻¹s⁻¹
+analytical.py compares the rate against the exact Smoluchowski solution and reports Pass within 5%
 ```

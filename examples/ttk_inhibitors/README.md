@@ -1,5 +1,7 @@
 # ttk_inhibitors
 
+Requires a CUDA GPU.
+
 ## Complexes
 ```
 ttk_inhibitors/
@@ -54,7 +56,6 @@ rxns.xml                          Reaction criterion file
 receptor.pqr                      PQR file for receptor charges and radii
 ligand.pqr                        PQR file for ligand charges and radii
 bd_sims/
-├── bd_1/                         Directory of the single GPU run
 ├── results.json                  Association rate constant, reaction probability, and confidence intervals
 ├── convergence.json              Running rate estimate versus the number of trajectories
 ├── receptor0.dx                  Coarse APBS electrostatic grid of the receptor
@@ -134,7 +135,6 @@ bd_sims/
 ├── ligand1_born.dx                   Fine Born desolvation grid of the ligand
 ├── receptor.pqr.r_hydro_*.cache      Cached hydrodynamic radius of the receptor
 ├── ligand.pqr.r_hydro_*.cache        Cached hydrodynamic radius of the ligand
-├── pystarc_<timestamp>.log           Run log file
 ├── trajectories.csv                  Fate and step count of each trajectory
 ├── encounters.csv                    Records of the encounter events
 ├── near_misses.csv                   Records of the close approaches
@@ -148,4 +148,19 @@ bd_sims/
 ├── paths.npz                         Samples of the reactive paths
 ├── p_commit.npz                      Committor probabilities
 └── transition_matrix.npz             Markov transition matrix between the concentric shells
+```
+
+## Expected results
+```
+Complex  Inhibitor    Experimental k_on (M⁻¹s⁻¹)  PySTARC k_on (M⁻¹s⁻¹)
+2X9E     NMS-P715     6.38e5                      (3.51 ± 0.10)e6
+3GFW     Mps1-IN-1    3.73e5                      (6.62 ± 0.46)e5
+3H9F     Mps1-IN-2    1.14e6                      (1.86 ± 0.08)e6
+5LJJ     Reversine    2.00e6                      (1.16 ± 0.06)e6
+5N7V     MPI-0479605  2.00e6                      (1.93 ± 0.08)e6
+5N84     Mps-BAY2b    2.55e6                      (5.01 ± 0.13)e6
+5N93     TC-Mps1-12   2.14e7                      (4.14 ± 0.12)e6
+5NAD     BAY-1217389  3.73e5                      (5.26 ± 0.13)e6
+
+k_on for each complex is printed in its run summary and written to its bd_sims/results.json
 ```

@@ -1,5 +1,7 @@
 # trypsin_benzamidine
 
+Requires a CUDA GPU.
+
 ## Input files
 ```
 complex.pdb                 PDB structure of the complex
@@ -42,7 +44,6 @@ rxns.xml                          Reaction criterion file
 receptor.pqr                      PQR file for receptor charges and radii
 ligand.pqr                        PQR file for ligand charges and radii
 bd_sims/
-├── bd_1/                         Directory of the single GPU run
 ├── results.json                  Association rate constant, reaction probability, and confidence intervals
 ├── convergence.json              Running rate estimate versus the number of trajectories
 ├── receptor0.dx                  Coarse APBS electrostatic grid of the receptor
@@ -122,7 +123,6 @@ bd_sims/
 ├── ligand1_born.dx                   Fine Born desolvation grid of the ligand
 ├── receptor.pqr.r_hydro_*.cache      Cached hydrodynamic radius of the receptor
 ├── ligand.pqr.r_hydro_*.cache        Cached hydrodynamic radius of the ligand
-├── pystarc_<timestamp>.log           Run log file
 ├── trajectories.csv                  Fate and step count of each trajectory
 ├── encounters.csv                    Records of the encounter events
 ├── near_misses.csv                   Records of the close approaches
@@ -136,4 +136,12 @@ bd_sims/
 ├── paths.npz                         Samples of the reactive paths
 ├── p_commit.npz                      Committor probabilities
 └── transition_matrix.npz             Markov transition matrix between the concentric shells
+```
+
+## Expected results
+```
+Experimental k_on  2.90e7 M⁻¹s⁻¹
+PySTARC k_on       (2.76 ± 0.06)e7 M⁻¹s⁻¹
+Runtime            8.98 h for 1e7 trajectories on one A100 GPU and 2.65 h on four
+k_on is printed in the run summary and written to bd_sims/results.json
 ```

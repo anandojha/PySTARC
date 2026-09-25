@@ -1,5 +1,7 @@
 # thrombin_thrombomodulin
 
+Requires a CUDA GPU.
+
 ## Input files
 ```
 input.xml                   PySTARC input file
@@ -38,7 +40,6 @@ sbatch submit_SLURM_multi_GPUs.sh              # Submit on multiple GPUs
 ## Once the simulation finishes, the following files will be generated with 1 GPU
 ```
 bd_sims/
-├── bd_1/                         Directory of the single GPU run
 ├── results.json                  Association rate constant, reaction probability, and confidence intervals
 ├── convergence.json              Running rate estimate versus the number of trajectories
 ├── receptor0.dx                  Coarse APBS electrostatic grid of the receptor
@@ -114,7 +115,6 @@ bd_sims/
 ├── ligand1_born.dx                   Fine Born desolvation grid of the ligand
 ├── receptor.pqr.r_hydro_*.cache      Cached hydrodynamic radius of the receptor
 ├── ligand.pqr.r_hydro_*.cache        Cached hydrodynamic radius of the ligand
-├── pystarc_<timestamp>.log           Run log file
 ├── trajectories.csv                  Fate and step count of each trajectory
 ├── encounters.csv                    Records of the encounter events
 ├── near_misses.csv                   Records of the close approaches
@@ -128,4 +128,11 @@ bd_sims/
 ├── paths.npz                         Samples of the reactive paths
 ├── p_commit.npz                      Committor probabilities
 └── transition_matrix.npz             Markov transition matrix between the concentric shells
+```
+
+## Expected results
+```
+Experimental k_on  6.70e6 M⁻¹s⁻¹
+PySTARC k_on       (4.14 ± 0.41)e6 M⁻¹s⁻¹
+k_on is printed in the run summary and written to bd_sims/results.json
 ```
