@@ -11,8 +11,8 @@ from pystarc.structures.chain_io import load_chain_from_json
 from pystarc.xml_io.simulation_io import parse_reaction_xml
 from pystarc.forces.electrostatic.grid_force import DXGrid
 from pystarc.simulation.nam_simulator import zero_force
+from pystarc.tools.aux_tools import bounding_box
 from pystarc.structures.pqr_io import parse_pqr
-from pystarc.aux.aux_tools import bounding_box
 import xml.etree.ElementTree as ET
 from pathlib import Path
 import numpy as np

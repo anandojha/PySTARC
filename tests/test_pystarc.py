@@ -188,7 +188,7 @@ from pystarc.simulation.diffusional_rotation import (
     quat_of_rotvec,
     random_unit_quat,
 )
-from pystarc.aux.aux_tools import (
+from pystarc.tools.aux_tools import (
     born_integral,
     bounding_box,
     contact_distances,
@@ -357,8 +357,8 @@ from pystarc.cli.main import cli
 import pystarc.motion.do_bd_step
 import pystarc.structures.pqr_io
 from dataclasses import fields
+import pystarc.tools.aux_tools
 import multiprocessing as mp
-import pystarc.aux.aux_tools
 import pystarc.lib.numerical
 from pathlib import Path
 import pystarc.cli.main
@@ -3517,7 +3517,7 @@ class TestPipelineReproducibility:
             "pystarc.forces.electrostatic.grid_force",
             "pystarc.simulation.nam_simulator",
             "pystarc.xml_io.simulation_io",
-            "pystarc.aux.aux_tools",
+            "pystarc.tools.aux_tools",
             "pystarc.lib.numerical",
             "pystarc.cli.main",
             "pystarc.global_defs.constants",
