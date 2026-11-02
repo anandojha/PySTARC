@@ -161,6 +161,108 @@ def bd_step_wiener(
     return new_pos, new_ori
 
 
+def receptor_rotation_vector(
+    position: np.ndarray,
+    force: np.ndarray,
+    torque: np.ndarray,
+    D_rot1: float,
+    dt: float,
+    dW_r1: np.ndarray,
+) -> np.ndarray:
+    """Return the receptor's lab-frame angular displacement ω₁ over one step.
+
+    The displacement combines the drift D_rot1 × Δt × τ₁ with the thermal noise
+    √(2 D_rot1) × dW_r1, exactly as the ligand's own rotational step does. The
+    torque τ₁ on the receptor about its centre (the frame origin) follows from
+    the torque τ₂ on the ligand about the ligand centre and the force F on the
+    ligand by Newton's third law, τ₁ = -(τ₂ + r × F), since the pair forces
+    exert no net torque about any common point. The lever arm r is the
+    position at which the force was evaluated. The increment dW_r1 is
+    √Δt-scaled, as in the other step functions.
+    """
+    torque1 = -(np.asarray(torque, dtype=float) + np.cross(position, force))
+    return D_rot1 * dt * torque1 + math.sqrt(2.0 * D_rot1) * dW_r1
+
+
+def apply_frame_rotation(
+    position: np.ndarray, orientation: Quaternion, omega1: np.ndarray
+) -> Tuple[np.ndarray, Quaternion]:
+    """Turn the relative configuration by -ω₁ about the frame origin.
+
+    The simulation frame is fixed to the receptor (molecule 1), whose centre
+    is the origin of the b-sphere, the escape sphere and the outer propagator.
+    A rotation of the receptor by ω₁ in the lab therefore appears in this frame
+    as a rigid rotation of everything else by -ω₁ about the origin: the
+    ligand's separation vector and its orientation turn together, by the same
+    quaternion. The separation |r| is unchanged.
+    """
+    angle_mag = float(np.linalg.norm(omega1))
+    if angle_mag < 1e-14:
+        return position, orientation
+    dq = Quaternion.from_axis_angle(-omega1 / angle_mag, angle_mag)
+    return dq.rotate_vector(position), (dq * orientation).normalized()
+
+
+def receptor_rotation_step(
+    position: np.ndarray,
+    orientation: Quaternion,
+    force: np.ndarray,
+    torque: np.ndarray,
+    D_rot1: float,
+    dt: float,
+    dW_r1: np.ndarray,
+) -> Tuple[np.ndarray, Quaternion]:
+    """Apply the receptor's rotational displacement to the relative configuration.
+
+    This is receptor_rotation_vector followed by apply_frame_rotation on the
+    same configuration. Rotating the separation vector gives the ligand the
+    tangential diffusion 4 D_rot1 |r|² per unit time that the receptor's
+    tumbling induces. The same increment on the orientation keeps the
+    relative-orientation variance at 2 (D_rot1 + D_rot2) Δt once the ligand's
+    own step with D_rot2 is added.
+    """
+    if D_rot1 <= 0.0:
+        return position, orientation
+    omega1 = receptor_rotation_vector(position, force, torque, D_rot1, dt, dW_r1)
+    return apply_frame_rotation(position, orientation, omega1)
+
+
+def bd_step_wiener_two_body(
+    position: np.ndarray,
+    orientation: Quaternion,
+    force: np.ndarray,
+    torque: np.ndarray,
+    D_trans: float,
+    D_rot1: float,
+    D_rot2: float,
+    dt: float,
+    dW_t: np.ndarray,
+    dW_r1: np.ndarray,
+    dW_r2: np.ndarray,
+    grad_D: Optional[np.ndarray] = None,
+) -> Tuple[np.ndarray, Quaternion]:
+    """Take one combined step in which both solutes rotate.
+
+    This is bd_step_wiener with the rotational diffusion split between the
+    two bodies: the ligand spins about its own centre with D_rot2 under the
+    torque on it, and the receptor's rotation with D_rot1 is applied as a
+    rigid rotation of the relative position and orientation about the frame
+    origin (see receptor_rotation_step). Passing D_rot1 = 0 and
+    D_rot2 = D_rot recovers bd_step_wiener exactly. The three Wiener
+    increments are independent and √Δt-scaled.
+    """
+    new_pos = ermak_mccammon_translation(position, force, D_trans, dt, dW_t, grad_D)
+    new_ori = ermak_mccammon_rotation(orientation, torque, D_rot2, dt, dW_r2)
+    if D_rot1 <= 0.0:
+        return new_pos, new_ori
+    # The receptor torque uses the pre-step lever arm, where the force was
+    # evaluated, and the rotation is applied to the post-translation
+    # configuration, the same order the GPU path uses. To first order in Δt
+    # the order of the two increments does not matter.
+    omega1 = receptor_rotation_vector(position, force, torque, D_rot1, dt, dW_r1)
+    return apply_frame_rotation(new_pos, new_ori, omega1)
+
+
 # Tensor-aware sibling functions for the BD step.
 #
 # These accept (3, 3) diffusion-coefficient tensors instead of scalars, which is

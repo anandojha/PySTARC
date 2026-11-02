@@ -21,7 +21,7 @@ the number of threads.
 
 from __future__ import annotations
 from pystarc.motion.do_bd_step import (
-    bd_step_wiener,
+    bd_step_wiener_two_body,
     backstep_due_to_force,
 )
 from pystarc.transforms.quaternion import Quaternion, random_quaternion
@@ -337,6 +337,12 @@ class NAMSimulator:
         pos = v * self.params.r_start
         ori = random_quaternion(self.rng)
         D_r = self.mobility.relative_rotational_diffusion()
+        # The relative rotational diffusion is split between the two bodies:
+        # the receptor's share turns the separation vector as well as the
+        # orientation, about the frame origin, the ligand's share turns only
+        # the orientation.
+        D_r1 = float(self.mobility.D_rot1)
+        D_r2 = float(self.mobility.D_rot2)
         r_h1 = self.mobility.radius1
         r_h2 = self.mobility.radius2
         # Reset the adaptive dt controller for this trajectory.
@@ -437,6 +443,7 @@ class NAMSimulator:
                 self._rxn_cutoffs,
                 dt_min=self.params.dt_rxn,
                 dt_rxn_min=self.params.dt_rxn / 4.0,
+                D_rot_frame=D_r1,
             )
             # The divergence drift owed by the scalar collapse of the RPY
             # tensor. Evaluated at the pre-step position, which is where D_t
@@ -452,8 +459,10 @@ class NAMSimulator:
             # Draw the Wiener increments and take the step.
             dW_t = math.sqrt(dt) * self.rng.standard_normal(3)
             dW_r = math.sqrt(dt) * self.rng.standard_normal(3)
-            pos, ori = bd_step_wiener(
-                pos, ori, force, torque, D_t, D_r, dt, dW_t, dW_r, grad_D_t
+            dW_r1 = math.sqrt(dt) * self.rng.standard_normal(3)
+            pos, ori = bd_step_wiener_two_body(
+                pos, ori, force, torque, D_t, D_r1, D_r2, dt, dW_t, dW_r1, dW_r,
+                grad_D_t,
             )
             # Backstep on a large force change, subdividing the Wiener path.
             mol2_new = self._place_mol2(pos, ori)
@@ -471,15 +480,18 @@ class NAMSimulator:
                 s = math.sqrt(hdt / 2.0)
                 dW_mid_t = 0.5 * dW_t + s * self.rng.standard_normal(3)
                 dW_mid_r = 0.5 * dW_r + s * self.rng.standard_normal(3)
-                pos, ori = bd_step_wiener(
+                dW_mid_r1 = 0.5 * dW_r1 + s * self.rng.standard_normal(3)
+                pos, ori = bd_step_wiener_two_body(
                     pos_old,
                     ori_old,
                     force,
                     torque,
                     D_t,
-                    D_r,
+                    D_r1,
+                    D_r2,
                     hdt,
                     dW_mid_t,
+                    dW_mid_r1,
                     dW_mid_r,
                     grad_D_t,
                 )
@@ -487,15 +499,17 @@ class NAMSimulator:
                 f2, t2, _ = self.force_fn(self.mol1, mol2_mid)
                 D_t2 = self.mobility.relative_translational_diffusion(pos)
                 grad_D_t2 = self._grad_D_trans(pos, D_t2, hdt)
-                pos, ori = bd_step_wiener(
+                pos, ori = bd_step_wiener_two_body(
                     pos,
                     ori,
                     f2,
                     t2,
                     D_t2,
-                    D_r,
+                    D_r1,
+                    D_r2,
                     hdt,
                     dW_t - dW_mid_t,
+                    dW_r1 - dW_mid_r1,
                     dW_r - dW_mid_r,
                     grad_D_t2,
                 )
@@ -517,15 +531,18 @@ class NAMSimulator:
                     for _ in range(HS_MAX_REDRAWS):
                         dW_t2 = math.sqrt(dt) * self.rng.standard_normal(3)
                         dW_r2 = math.sqrt(dt) * self.rng.standard_normal(3)
-                        pos_try, ori_try = bd_step_wiener(
+                        dW_r1_2 = math.sqrt(dt) * self.rng.standard_normal(3)
+                        pos_try, ori_try = bd_step_wiener_two_body(
                             pos_old,
                             ori_old,
                             force,
                             torque,
                             D_t_old,
-                            D_r,
+                            D_r1,
+                            D_r2,
                             dt,
                             dW_t2,
+                            dW_r1_2,
                             dW_r2,
                             grad_D_old,
                         )

@@ -605,9 +605,12 @@ class PySTARCEngine:
         chg2 = np.ascontiguousarray(mol2.charges_array(), dtype=np.float64)
         pos1 = np.ascontiguousarray(mol1.positions_array(), dtype=np.float64)
         chg1 = np.ascontiguousarray(mol1.charges_array(), dtype=np.float64)
-        # The torque on mol2 is taken about mol2's charged-atom centroid, used as
-        # one fixed reference for every term so the summed torque is consistent.
-        c2 = _group_centroid(pos2, chg2)
+        # The torque on mol2 is taken about mol2's all-atom centroid, the point
+        # the simulators place and spin the ligand about and the lever-arm
+        # origin of the Newton-third-law receptor torque. One fixed reference
+        # is used for every term so the summed torque is consistent. The GPU
+        # engine uses the same point.
+        c2 = pos2.mean(axis=0)
         # Electrostatic term, evaluating the mol2 atoms in the field of mol1.
         if self._elec1:
             f, t, e = self._elec1.eval_atoms(

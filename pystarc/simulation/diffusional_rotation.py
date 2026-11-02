@@ -80,6 +80,27 @@ def quat_of_rotvec(omega: np.ndarray) -> np.ndarray:
     )
 
 
+def quat_rotate_vector(q: np.ndarray, v: np.ndarray) -> np.ndarray:
+    """Rotate the 3-vector v by the unit quaternion q, given in (w, x, y, z) order.
+
+    This is the vector counterpart of quat_multiply: the same quaternion that
+    is left-multiplied onto an orientation to rotate a body is applied here to
+    a lab-frame vector, so a rigid rotation of a relative configuration can
+    rotate the separation vector and the orientation with one quaternion.
+    """
+    w, x, y, z = q
+    v = np.asarray(v, dtype=float)
+    # q v q* written out as the rotation matrix of q applied to v.
+    R = np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
+    return R @ v
+
+
 def random_unit_quat(rng: np.random.Generator) -> np.ndarray:
     """Return a unit quaternion drawn uniformly from all orientations."""
     q = rng.standard_normal(4)

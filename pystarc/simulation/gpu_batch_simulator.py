@@ -21,6 +21,7 @@ This design saturates the GPU, launching N_traj × N_atoms threads per kernel.
 
 from __future__ import annotations
 from pystarc.simulation.diffusional_rotation import diffusional_rotation
+from pystarc.simulation.diffusional_rotation import quat_multiply, quat_rotate_vector
 from pystarc.simulation.nam_simulator import NAMParameters, SimulationResult
 from pystarc.molsystem.system_state import Fate, TrajectoryResult
 from pystarc.lib.numerical import romberg_integrate
@@ -49,6 +50,56 @@ try:
     _CUPY = True
 except ImportError:
     _CUPY = False
+
+
+def _split_rotational_diffusion(mob, D_r: float) -> Tuple[float, float]:
+    """Return (D_rot1, D_rot2), the receptor's and the ligand's rotational diffusion.
+
+    A mobility that does not carry the per-body split cannot propagate the
+    receptor's rotation of the separation vector, so it falls back to spinning
+    the ligand with the full relative D_r, and says so.
+    """
+    if hasattr(mob, "D_rot1") and hasattr(mob, "D_rot2"):
+        return float(mob.D_rot1), float(mob.D_rot2)
+    warnings.warn(
+        f"{type(mob).__name__} has no D_rot1/D_rot2; the receptor's rotation of "
+        "the separation vector is not propagated and the ligand spins with the "
+        "full relative rotational diffusion.",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+    return 0.0, float(D_r)
+
+
+def _return_rotation_host(
+    q: np.ndarray,
+    pos: np.ndarray,
+    tau_lig: float,
+    tau_rec: float,
+    rng: np.random.Generator,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Rotate returning trajectories for the time they spent in the outer region.
+
+    The two bodies tumble independently over the outer excursion. The ligand's
+    rotation dq1 (tau_lig = t D_rot2) turns only its orientation. The
+    receptor's rotation dq0 (tau_rec = t D_rot1) turns the whole relative
+    configuration by dq0⁻¹ about the origin, the re-entry point on the
+    b-sphere included, exactly as the CPU outer propagator does. The new
+    orientation is dq0⁻¹ dq1 q. q is (N, 4) in (w, x, y, z) order and pos is
+    (N, 3); the inputs are not modified.
+    """
+    q_new = np.array(q, dtype=float, copy=True)
+    pos_new = np.array(pos, dtype=float, copy=True)
+    for i in range(len(q_new)):
+        if tau_lig > 0.0:
+            q_new[i] = quat_multiply(diffusional_rotation(rng, tau_lig), q_new[i])
+        if tau_rec > 0.0:
+            dq0 = diffusional_rotation(rng, tau_rec)
+            dq0_inv = np.array([dq0[0], -dq0[1], -dq0[2], -dq0[3]])
+            q_new[i] = quat_multiply(dq0_inv, q_new[i])
+            pos_new[i] = quat_rotate_vector(dq0_inv, pos_new[i])
+    q_new /= np.linalg.norm(q_new, axis=1, keepdims=True)
+    return q_new, pos_new
 
 
 @dataclass
@@ -647,6 +698,14 @@ class GPUBatchSimulator:
         rng_bb = np.random.default_rng(_bb_seed)
         D_t = float(self.mob.relative_translational_diffusion())
         D_r = float(self.mob.relative_rotational_diffusion())
+        # The relative rotational diffusion is split between the two bodies.
+        # The ligand's share D_r2 spins it about its own centre; the
+        # receptor's share D_r1 is applied as a rigid rotation of the relative
+        # position and orientation about the frame origin (the receptor
+        # centre, and the centre of the b-sphere and escape sphere), which
+        # gives the ligand the tangential diffusion 4 D_r1 r² that the
+        # receptor's tumbling induces.
+        D_r1, D_r2 = _split_rotational_diffusion(self.mob, D_r)
         dt = self.params.dt
         dt_rxn = self.params.dt_rxn
         r_b = self.params.r_start
@@ -1234,41 +1293,28 @@ class GPUBatchSimulator:
                         t_outer_est = max(
                             0.0, (r_esc * r_esc - r_b * r_b) / (6.0 * D_t)
                         )
-                        tau_return = t_outer_est * D_r
-                        if tau_return > 0.0:
-                            q_esc_np = cp.asnumpy(q[new_ret])
-                            dq_np = np.empty_like(q_esc_np)
-                            for _i in range(n_ret):
-                                dq_np[_i] = diffusional_rotation(rng, tau_return)
-                            # Hamilton product q_new = dq × q_escape in
-                            # (w, x, y, z) order, which applies dq from the left.
-                            w1 = dq_np[:, 0]
-                            x1 = dq_np[:, 1]
-                            y1 = dq_np[:, 2]
-                            z1 = dq_np[:, 3]
-                            w2 = q_esc_np[:, 0]
-                            x2 = q_esc_np[:, 1]
-                            y2 = q_esc_np[:, 2]
-                            z2 = q_esc_np[:, 3]
-                            q_new_np = np.stack(
-                                [
-                                    w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
-                                    w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
-                                    w1 * y2 + y1 * w2 + z1 * x2 - x1 * z2,
-                                    w1 * z2 + z1 * w2 + x1 * y2 - y1 * x2,
-                                ],
-                                axis=1,
+                        # The two bodies tumble independently over the outer
+                        # excursion (see _return_rotation_host).
+                        tau_lig = t_outer_est * D_r2
+                        tau_rec = t_outer_est * D_r1
+                        if tau_lig > 0.0 or tau_rec > 0.0:
+                            q_new_np, pos_new_np = _return_rotation_host(
+                                cp.asnumpy(q[new_ret]),
+                                cp.asnumpy(pos[new_ret]),
+                                tau_lig,
+                                tau_rec,
+                                rng,
                             )
-                            q_new_np /= np.linalg.norm(q_new_np, axis=1, keepdims=True)
                             q[new_ret] = cp.asarray(q_new_np)
-                        # When tau_return is 0 the rotation is degenerate, so q
-                        # is left unchanged.
+                            pos[new_ret] = cp.asarray(pos_new_np)
+                        # When both taus are 0 the rotation is degenerate, so q
+                        # and pos are left unchanged.
                         if not getattr(self, "_diff_rot_logged", False):
                             print(
                                 f"  Return rotation: "
                                 f"t_outer_est={t_outer_est:.1f} ps, "
-                                f"D_r={D_r:.4e} rad^2/ps, "
-                                f"tau={tau_return:.3f}"
+                                f"tau_lig={tau_lig:.3f} (D_r2={D_r2:.4e}), "
+                                f"tau_rec={tau_rec:.3f} (D_r1={D_r1:.4e}) rad^2/ps"
                             )
                             self._diff_rot_logged = True
                         # Track the returns.
@@ -1351,7 +1397,9 @@ class GPUBatchSimulator:
             r_sr = r_mag[sr_mask]
             in_outer = r_sr > (self._qb_factor * r_b)  # That is, r > 1.1 × b.
             _frac = 0.1
-            dt_pair = (_frac * _frac / 2.0) * r_sr * r_sr / D_t
+            # The receptor's tumbling moves the ligand tangentially with
+            # diffusion D_r1 r² per direction, which the same bound covers.
+            dt_pair = (_frac * _frac / 2.0) * r_sr * r_sr / (D_t + D_r1 * r_sr * r_sr)
             # Force-change criterion, applied only where the Yukawa force is
             # significant.
             _force_alpha = 0.01
@@ -1512,13 +1560,29 @@ class GPUBatchSimulator:
             _old_pos_sr = pos[sr_idx].copy() if _use_overlap else None
             _old_q_sr = q[sr_idx].copy() if _use_overlap else None
             pos[sr_idx] += drift + sigma_t * noise_t
-            # Rotational update.
+            # Rotational update of the ligand about its own centre.
             noise_r = cp.asarray(
                 rng.standard_normal((int(sr_mask.sum()), 3)), dtype=cp.float64
             )
-            sigma_r = cp.sqrt(2.0 * D_r * dt_arr)[:, None]
-            omega = D_r * dt_arr[:, None] * torques_gpu + sigma_r * noise_r
+            sigma_r = cp.sqrt(2.0 * D_r2 * dt_arr)[:, None]
+            omega = D_r2 * dt_arr[:, None] * torques_gpu + sigma_r * noise_r
             q[sr_idx] = self._apply_rotation_gpu(q[sr_idx], omega)
+            # Rotational update of the receptor, applied as a rigid rotation of
+            # the post-translation relative configuration about the origin.
+            if D_r1 > 0.0:
+                noise_r1 = cp.asarray(
+                    rng.standard_normal((int(sr_mask.sum()), 3)), dtype=cp.float64
+                )
+                pos[sr_idx], q[sr_idx] = self._receptor_rotation_gpu(
+                    pos[sr_idx],
+                    q[sr_idx],
+                    cen_sr,
+                    forces_gpu,
+                    torques_gpu,
+                    dt_arr,
+                    noise_r1,
+                    D_r1,
+                )
             # Overlap check that acts as an elastic wall using atom-pair van der
             # Waals radii. Compute the lab-frame ligand atom positions from the
             # updated centroid and quaternion, then test every (lig_atom,
@@ -2189,6 +2253,53 @@ class GPUBatchSimulator:
         # Normalise the result.
         qnew /= cp.linalg.norm(qnew, axis=1, keepdims=True)
         return qnew
+
+    def _receptor_rotation_gpu(
+        self,
+        pos: "cp.ndarray",
+        q: "cp.ndarray",
+        lever: "cp.ndarray",
+        forces: "cp.ndarray",
+        torques: "cp.ndarray",
+        dt_arr: "cp.ndarray",
+        noise: "cp.ndarray",
+        D_r1: float,
+    ) -> Tuple["cp.ndarray", "cp.ndarray"]:
+        """Apply the receptor's rotational step to (N, 3) positions and (N, 4) quaternions.
+
+        The frame is fixed to the receptor, so the receptor's lab-frame angular
+        displacement omega1 turns the whole relative configuration by -omega1
+        about the origin: the separation vector and the ligand orientation
+        together, by the same rotation. omega1 = D_r1 dt tau1 + sqrt(2 D_r1 dt)
+        noise, with the torque on the receptor about the origin given by
+        Newton's third law, tau1 = -(tau2 + r x F), and r the pre-step centroid
+        (lever) where the force was evaluated. This is the batched counterpart
+        of do_bd_step.receptor_rotation_vector and apply_frame_rotation.
+        """
+        torque_rec = -(torques + cp.cross(lever, forces))
+        sigma = cp.sqrt(2.0 * D_r1 * dt_arr)[:, None]
+        omega1 = D_r1 * dt_arr[:, None] * torque_rec + sigma * noise
+        return (
+            self._rotate_vectors_gpu(pos, -omega1),
+            self._apply_rotation_gpu(q, -omega1),
+        )
+
+    def _rotate_vectors_gpu(self, v: "cp.ndarray", omega: "cp.ndarray") -> "cp.ndarray":
+        """Rotate the (N, 3) vectors v by the (N, 3) rotation vectors omega.
+
+        This is the vector counterpart of _apply_rotation_gpu: the rotation
+        that omega applies to a quaternion from the left is applied here to a
+        lab-frame vector, by the Rodrigues formula
+        v cos θ + (k × v) sin θ + k (k · v)(1 - cos θ) with k the unit axis
+        and θ the angle. Rotations below 1e-10 rad leave v unchanged.
+        """
+        angle = cp.linalg.norm(omega, axis=1, keepdims=True)  # (N,1)
+        safe = angle > 1e-10
+        k = cp.where(safe, omega / cp.where(safe, angle, 1.0), 0.0)
+        cos_t = cp.cos(angle)
+        sin_t = cp.sin(angle)
+        k_dot_v = cp.sum(k * v, axis=1, keepdims=True)
+        return v * cos_t + cp.cross(k, v) * sin_t + k * k_dot_v * (1.0 - cos_t)
 
     def _check_reactions_gpu(self, pos_lig: "cp.ndarray") -> "cp.ndarray":
         """

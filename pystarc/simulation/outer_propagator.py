@@ -51,6 +51,7 @@ from __future__ import annotations
 from pystarc.simulation.step_near_surface import step_near_absorbing_surface
 from pystarc.simulation.diffusional_rotation import diffusional_rotation
 from pystarc.simulation.diffusional_rotation import quat_multiply
+from pystarc.simulation.diffusional_rotation import quat_rotate_vector
 from dataclasses import dataclass
 from scipy import integrate
 from typing import Tuple
@@ -446,10 +447,17 @@ class OuterPropagator:
             def _quat_conj(q):
                 return np.array([q[0], -q[1], -q[2], -q[3]])
 
+            dq0_inv = _quat_conj(dq0)
             ori_new = quat_multiply(dq1, ori)
-            ori_new = quat_multiply(_quat_conj(dq0), ori_new)
+            ori_new = quat_multiply(dq0_inv, ori_new)
             # Normalise the resulting quaternion.
             ori_new = ori_new / np.linalg.norm(ori_new)
+            # The frame is fixed to molecule 0, so its rotation dq0 over the
+            # outer excursion turns the whole relative configuration by
+            # dq0^{-1}: the re-entry point on the b-sphere moves with it, not
+            # only the orientation. Without this the ligand would re-enter on
+            # the ray it left along, as if the receptor had not tumbled.
+            pos = quat_rotate_vector(dq0_inv, pos)
         else:
             ori_new = ori.copy()
         return reached_b, pos, ori_new

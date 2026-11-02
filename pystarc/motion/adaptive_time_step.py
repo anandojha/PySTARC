@@ -52,7 +52,12 @@ _LARGE = 1.0e30
 
 
 def max_time_step(
-    r: float, D_rel: float, D_rot: float, r_hydro1: float, r_hydro2: float
+    r: float,
+    D_rel: float,
+    D_rot: float,
+    r_hydro1: float,
+    r_hydro2: float,
+    D_rot_frame: float = 0.0,
 ) -> float:
     """
     Compute the largest time step the geometry allows.
@@ -68,13 +73,18 @@ def max_time_step(
     The arguments are the current centre-to-centre separation r in Å, the
     relative translational diffusion coefficient D_rel in Å²/ps, the maximum
     rotational diffusion coefficient D_rot in rad²/ps, and the hydrodynamic
-    radii r_hydro1 and r_hydro2 of the two molecules in Å. The function returns
+    radii r_hydro1 and r_hydro2 of the two molecules in Å. D_rot_frame is the
+    receptor's rotational diffusion in rad²/ps, which turns the separation
+    vector; zero recovers the translational bound alone. The function returns
     the maximum step in ps.
     """
     if r <= 0 or D_rel <= 0:
         return 0.2  # Fall back to a safe default when the inputs are non-physical.
-    # Pair constraint, keeping the mean displacement below frac × r.
-    dt_pair = (_FRAC**2 / 2.0) * r**2 / D_rel
+    # Pair constraint, keeping the mean displacement below frac × r. The
+    # receptor's tumbling turns the separation vector and moves the ligand
+    # tangentially with diffusion D_rot_frame × r² per direction, which the
+    # same bound has to cover alongside the translational D_rel.
+    dt_pair = (_FRAC**2 / 2.0) * r**2 / (D_rel + D_rot_frame * r**2)
     # Rotational constraint, dt_rot = π² / D_rot.
     if D_rot > 0:
         dt_rot = math.pi**2 / D_rot
@@ -135,6 +145,7 @@ class AdaptiveTimeStep:
         rxn_distances: list,
         dt_min: float = 0.001,
         dt_rxn_min: float = 1e-6,
+        D_rot_frame: float = 0.0,
     ) -> float:
         """
         Compute the time step for the current Brownian-dynamics step.
@@ -145,10 +156,11 @@ class AdaptiveTimeStep:
         the list rxn_distances of reaction criterion distances in Å. The value
         dt_min is the hard minimum step in ps taken from the time_step_parameters,
         and dt_rxn_min is the hard minimum step in ps used near the reaction
-        boundary. The function returns the step to use in ps.
+        boundary. D_rot_frame is the receptor's rotational diffusion, passed
+        through to max_time_step. The function returns the step to use in ps.
         """
         # Geometric maximum allowed by the current configuration.
-        dt_geo = max_time_step(r, D_rel, D_rot, r_hydro1, r_hydro2)
+        dt_geo = max_time_step(r, D_rel, D_rot, r_hydro1, r_hydro2, D_rot_frame)
         # Tighten the step near the reaction boundary.
         if rxn_distances:
             rho_min = min(rxn_distances)
