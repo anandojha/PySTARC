@@ -14,7 +14,6 @@ dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
     "click>=8.0",
-    "pdb2pqr>=3.5",
     "numba>=0.57",
     "matplotlib>=3.7",
     "pytest>=7.0",

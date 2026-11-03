@@ -60,9 +60,9 @@ git clone https://github.com/anandojha/PySTARC.git
 cd PySTARC
 conda create -n PySTARC python=3.11 -y
 conda activate PySTARC
-conda install -c conda-forge ambertools apbs rdkit openbabel -y
+conda install -c conda-forge ambertools=24.8 apbs rdkit openbabel -y
 conda install -c openeye openeye-toolkits -y
-pip install matplotlib pdb2pqr
+pip install matplotlib
 pip install pystarc --force-reinstall
 ```
 
@@ -103,7 +103,7 @@ examples/
 
 ```
 Python 3.11+
-AmberTools
+AmberTools 24.8
 APBS
 OpenBabel
 RDKit
@@ -113,7 +113,6 @@ SciPy
 Click
 Numba
 Matplotlib
-pdb2pqr
 CuPy
 ```
 

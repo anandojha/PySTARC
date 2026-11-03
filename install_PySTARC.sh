@@ -64,20 +64,22 @@ echo "Using interpreter: $ENV_PY"
 "$ENV_PY" -m pip --version
 # 4. Conda dependencies
 echo ""
-echo "[4/7] Installing conda dependencies (ambertools, apbs)"
-conda install -c conda-forge "numpy>=2.0,<2.6" ambertools apbs rdkit openbabel -y
+echo "[4/7] Installing conda dependencies (ambertools 24.8, apbs)"
+# AmberTools pinned to 24.8, the version PySTARC was validated with. AmberTools 26.0
+# bundles 'proprep', whose metadata pins numpy<2, biopython<1.86 and pyyaml (pip conflicts).
+conda install -c conda-forge "numpy>=2.0,<2.6" "ambertools=24.8" apbs rdkit openbabel -y
 echo "ambertools and apbs installed"
 # OpenEye Toolkits: needed for hsp90/ttk examples (AM1-BCC charges). Needs OE_LICENSE to run.
 conda install -c openeye openeye-toolkits -y || echo "  WARNING: OpenEye install failed; inhibitor examples will not run."
 # 5. GPU + pip dependencies (CuPy only when a GPU was detected)
 echo ""
-echo "[5/7] Installing pip dependencies (matplotlib, pdb2pqr, pytest; CuPy if GPU)."
+echo "[5/7] Installing pip dependencies (matplotlib, pytest; CuPy if GPU)."
 if [ "$GPU_MODE" = "cuda" ]; then
     echo "  NVIDIA GPU detected -> installing $CUPY_PKG for GPU acceleration."
-    "$ENV_PY" -m pip install "$CUPY_PKG" matplotlib pdb2pqr pytest-cov pytest-sugar
+    "$ENV_PY" -m pip install "$CUPY_PKG" matplotlib pytest-cov pytest-sugar
 else
     echo "  No NVIDIA GPU detected ($OS_KIND) -> CPU install; GPU code paths use the NumPy fallback."
-    "$ENV_PY" -m pip install matplotlib pdb2pqr pytest-cov pytest-sugar
+    "$ENV_PY" -m pip install matplotlib pytest-cov pytest-sugar
 fi
 echo "pip dependencies installed"
 # 6. Install PySTARC
@@ -93,7 +95,6 @@ echo ""
 "$ENV_PY" -c "import numpy; print(f'NumPy {numpy.__version__}')"
 "$ENV_PY" -c "import scipy; print(f'SciPy {scipy.__version__}')"
 "$ENV_PY" -c "import matplotlib; print(f'Matplotlib {matplotlib.__version__}')"
-"$ENV_PY" -c "import pdb2pqr; print(f'pdb2pqr')" 2>/dev/null || echo "pdb2pqr not available"
 # On a GPU install, confirm CuPy can actually compile a kernel (it imports fine
 # even when the CUDA toolkit headers are missing). On CPU/macOS CuPy is absent
 # by design and the GPU code paths take the NumPy fallback.
