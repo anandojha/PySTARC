@@ -479,9 +479,8 @@ def check_rxn_atom_numbers(pairs, receptor_pqr, ligand_pqr) -> List[str]:
     PySTARC reads the atom numbers of rxns_xml as 1-based positions in the PQR.
     BrownDye 2 reads them as PQR serial numbers. The two agree when the serials
     of a PQR run 1..N. When they do not, the same file selects different atoms
-    in the two programs. The shipped thrombin receptor skips two serials, and
-    its BrownDye 2 file picked atoms 2-7.5 Å from the intended ones (C23). This
-    prints a warning for each molecule whose referenced numbers are all also
+    in the two programs. This prints a warning for each molecule whose
+    referenced numbers are all also
     serials of its PQR but some of them name a different atom as a serial than
     as a position, and returns the warnings. A ligand split from a complex PQR
     keeps serials that start after the receptor's; numbers written as positions

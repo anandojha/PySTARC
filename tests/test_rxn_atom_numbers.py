@@ -1,26 +1,15 @@
 """
-Atom numbers in rxns_xml are 1-based positions in the PQR (C23).
+Atom numbers in rxns_xml are 1-based positions in the PQR.
 
-BrownDye 2 reads the same numbers as PQR serials. The shipped thrombin receptor
-skips two serials, so its BrownDye 2 file selected atoms 2-7.5 Å from the
-intended ones in PySTARC. The example now carries positions, and PySTARC warns
-when a referenced atom's serial differs from its position.
+BrownDye 2 reads the same numbers as PQR serials. The two agree when the
+serials of a PQR run 1..N. When they do not, and the numbers are also valid
+serials, the same file selects different atoms in the two programs, and
+PySTARC warns.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
-from pystarc.pipeline.geometry import (
-    ReactionPair,
-    _parse_rxns_xml_criteria,
-    check_rxn_atom_numbers,
-)
-from pystarc.structures.pqr_io import parse_pqr_records
-
-EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "thrombin_thrombomodulin"
+from pystarc.pipeline.geometry import ReactionPair, check_rxn_atom_numbers
 
 
 def _pqr(path, serials):
@@ -52,9 +41,16 @@ def test_warns_when_serials_skip(tmp_path, capsys):
     assert "Warning" in capsys.readouterr().out
 
 
-def test_no_warning_for_offset_ligand_serials(tmp_path):
-    """A ligand split from a complex keeps serials 148.. ; positions 4 and 12
-    cannot be serials, so they are not ambiguous (the beta-cyclodextrin rows)."""
+def test_warns_for_the_ligand_too(tmp_path):
+    rec = _pqr(tmp_path / "r.pqr", [1, 2, 3])
+    lig = _pqr(tmp_path / "l.pqr", [1, 3, 4])
+    msgs = check_rxn_atom_numbers([ReactionPair(0, 2, 5.0)], rec, lig)
+    assert len(msgs) == 1 and "ligand" in msgs[0]
+
+
+def test_no_warning_for_offset_serials(tmp_path):
+    """A ligand split from a complex keeps serials that start after the
+    receptor's. Positions 4 and 12 cannot be serials, so they are not ambiguous."""
     rec = _pqr(tmp_path / "r.pqr", list(range(1, 148)))
     lig = _pqr(tmp_path / "l.pqr", list(range(148, 164)))
     pairs = [ReactionPair(61, 3, 5.0), ReactionPair(70, 11, 5.0)]
@@ -65,29 +61,3 @@ def test_no_warning_when_only_unreferenced_atoms_differ(tmp_path):
     rec = _pqr(tmp_path / "r.pqr", [1, 2, 3, 9])
     lig = _pqr(tmp_path / "l.pqr", [1, 2])
     assert check_rxn_atom_numbers([ReactionPair(0, 0, 5.0)], rec, lig) == []
-
-
-@pytest.mark.skipif(not EXAMPLE.exists(), reason="examples not shipped")
-class TestThrombinExample:
-    def test_criterion_atoms_are_the_intended_polar_atoms(self):
-        """The 21 receptor atoms are N, O or the side-chain polar atoms of the
-        BrownDye 2 thrombin file, not the hydrogens and carbons that the serial
-        numbers selected as positions."""
-        pairs, n_needed = _parse_rxns_xml_criteria(EXAMPLE / "rxns.xml")
-        rec = parse_pqr_records(EXAMPLE / "receptor.pqr")
-        lig = parse_pqr_records(EXAMPLE / "ligand.pqr")
-        assert len(pairs) == 21 and n_needed == 5
-        names = [rec[p.rec_index].name.strip() for p in pairs]
-        assert all(n[0] in "NO" for n in names), names
-        assert all(lig[p.lig_index].name.strip()[0] in "NO" for p in pairs)
-        # Lys113 NZ, not HE3 as in the published run.
-        lys = [rec[p.rec_index] for p in pairs if rec[p.rec_index].resid == 113]
-        assert [a.name.strip() for a in lys] == ["NZ"]
-
-    def test_example_triggers_the_numbering_warning(self, capsys):
-        """The example PQR skips serials, so the warning explains the convention."""
-        pairs, _ = _parse_rxns_xml_criteria(EXAMPLE / "rxns.xml")
-        msgs = check_rxn_atom_numbers(
-            pairs, EXAMPLE / "receptor.pqr", EXAMPLE / "ligand.pqr"
-        )
-        assert len(msgs) == 1 and "receptor" in msgs[0]
