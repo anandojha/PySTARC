@@ -473,6 +473,49 @@ def _parse_rxns_xml_criteria(rxns_path):
     return pairs, n_needed
 
 
+def check_rxn_atom_numbers(pairs, receptor_pqr, ligand_pqr) -> List[str]:
+    """Warn when the rxns_xml atom numbers and the PQR serials disagree.
+
+    PySTARC reads the atom numbers of rxns_xml as 1-based positions in the PQR.
+    BrownDye 2 reads them as PQR serial numbers. The two agree when the serials
+    of a PQR run 1..N. When they do not, the same file selects different atoms
+    in the two programs. The shipped thrombin receptor skips two serials, and
+    its BrownDye 2 file picked atoms 2-7.5 Å from the intended ones (C23). This
+    prints a warning for each molecule whose referenced numbers are all also
+    serials of its PQR but some of them name a different atom as a serial than
+    as a position, and returns the warnings. A ligand split from a complex PQR
+    keeps serials that start after the receptor's; numbers written as positions
+    by setup.py are then not serials at all and are not ambiguous.
+    """
+    from pystarc.structures.pqr_io import parse_pqr_records
+
+    msgs = []
+    for label, pqr, indices in (
+        ("receptor", receptor_pqr, sorted({p.rec_index for p in pairs})),
+        ("ligand", ligand_pqr, sorted({p.lig_index for p in pairs})),
+    ):
+        serials = [a.serial for a in parse_pqr_records(pqr)]
+        if serials == list(range(1, len(serials) + 1)):
+            continue
+        if not all(i + 1 in set(serials) for i in indices):
+            continue
+        differ = [i for i in indices if 0 <= i < len(serials) and serials[i] != i + 1]
+        if not differ:
+            continue
+        i = differ[0]
+        msg = (
+            f"  Warning: {Path(pqr).name} is not numbered 1..N, so for "
+            f"{len(differ)} of the {len(indices)} {label} atoms in rxns_xml the "
+            f"position differs from the PQR serial (number {i + 1} is the atom "
+            f"with serial {serials[i]}). PySTARC reads rxns_xml atom numbers as "
+            f"1-based positions. A file that numbers atoms by PQR serial, as "
+            f"BrownDye 2 files do, must be converted to positions."
+        )
+        print(msg)
+        msgs.append(msg)
+    return msgs
+
+
 def auto_detect_reactions(
     geom: "SystemGeometry",
     ghost_atoms: str = "auto",

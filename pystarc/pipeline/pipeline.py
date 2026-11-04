@@ -30,6 +30,7 @@ from pystarc.pipeline.geometry import (
     compute_geometry,
     auto_detect_reactions,
     _parse_rxns_xml_reaction_groups,
+    check_rxn_atom_numbers,
 )
 from pystarc.simulation.nam_simulator import NAMSimulator, NAMParameters
 from pystarc.simulation.gpu_batch_simulator import GPUBatchSimulator
@@ -215,6 +216,11 @@ def run(cfg: PySTARCConfig):
     rxn_stages, rxn_n_needed = (
         rxn_result if isinstance(rxn_result, tuple) else (rxn_result, -1)
     )
+    # rxns_xml atom numbers are positions; warn when the PQR serials differ.
+    if cfg.rxns_xml and Path(cfg.rxns_xml.strip()).exists():
+        check_rxn_atom_numbers(
+            [rp for stage in rxn_stages for rp in stage], receptor_pqr, ligand_pqr
+        )
     # Step 6 runs the Brownian-dynamics simulation.
     print("\n[6] Running BD simulation ...")
     # Load the receptor and ligand molecules.
