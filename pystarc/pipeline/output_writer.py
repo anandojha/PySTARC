@@ -114,6 +114,17 @@ def write_all(
             # the frequency correctly across shards.
             "contact_total_steps": int(sim_data.get("contact_total_steps", 0)),
         }
+        # How the trajectories still running at the end entered P_rxn, and the
+        # range of P_rxn and k_on between counting them all as not reacted and
+        # all as reacted.
+        if hasattr(result, "reaction_probability_bounds"):
+            data["unfinished_in_p_rxn"] = bool(result.unfinished_in_p_rxn)
+            pb_lo, pb_hi = result.reaction_probability_bounds()
+            kb_lo, kb_hi = result.rate_constant_bounds(D_rel, k_b)
+            data["P_rxn_bound_low"] = pb_lo
+            data["P_rxn_bound_high"] = pb_hi
+            data["k_on_bound_low"] = kb_lo
+            data["k_on_bound_high"] = kb_hi
         if k_on > 0:
             data["log10_k_on"] = math.log10(k_on)
         # State-machine runs carry a per-reaction count list. Pass it through

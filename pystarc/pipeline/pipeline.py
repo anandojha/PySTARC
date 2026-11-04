@@ -400,6 +400,8 @@ def run(cfg: PySTARCConfig):
         params._work_dir = str(cfg.work_dir)
         params._kT_scale = cfg.temperature / 298.15
         params._overlap_check = cfg.overlap_check
+        params._stall_check = cfg.stall_check
+        params._unfinished_in_p_rxn = cfg.unfinished_in_p_rxn
         result = gpu_sim.run()
         elapsed = result.elapsed_sec
         total_steps = int(result.steps_per_sec * elapsed)

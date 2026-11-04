@@ -16,6 +16,20 @@ import os
 import re
 
 
+def _p_rxn_denominator(n_reacted, n_escaped, n_max, unfinished_in_p_rxn):
+    """Trajectories in the denominator of the pooled P_rxn."""
+    n = n_reacted + n_escaped
+    return n + n_max if unfinished_in_p_rxn else n
+
+
+def _p_rxn_bounds(n_reacted, n_escaped, n_max):
+    """Pooled P_rxn with every unfinished trajectory counted as not reacted, and as reacted."""
+    n = n_reacted + n_escaped + n_max
+    if n == 0:
+        return 0.0, 1.0
+    return n_reacted / n, (n_reacted + n_max) / n
+
+
 def main():
     """Detect the per-shard bd_N directories, pool their results, and write the
     combined output files. This recomputes the reaction probability and the
@@ -79,6 +93,15 @@ def main():
     ne = sum(r["n_escaped"] for r in runs)
     n_max = sum(r.get("n_max_steps", 0) for r in runs)
     N = nr + ne
+    # Trajectories still running at the end are left out of P_rxn unless the
+    # shards counted them as not reacted (unfinished_in_p_rxn).
+    count_unf = bool(runs[0].get("unfinished_in_p_rxn", False))
+    if any(bool(r.get("unfinished_in_p_rxn", False)) != count_unf for r in runs):
+        print(
+            "  Warning: the shards differ in unfinished_in_p_rxn; "
+            "the first shard's setting is used"
+        )
+    N_p = _p_rxn_denominator(nr, ne, n_max, count_unf)
     # Total recorded contact steps across shards, the denominator for the pooled
     # contact_frequency column (frequency = contacts / recorded steps, not
     # contacts / trajectory count). Prefer the value carried in results.json;
@@ -97,7 +120,7 @@ def main():
     # drop the legacy shards' steps from the pooled contact-frequency denominator.
     if _missing_steps_dirs:
         total_contact_steps += _recover_contact_steps(_missing_steps_dirs)
-    P = nr / N if N > 0 else 0
+    P = nr / N_p if N_p > 0 else 0
     k_b = runs[0]["k_b"]
     D_rel = runs[0].get("D_rel", 0)
     r_start = runs[0].get("r_start", 0)
@@ -111,23 +134,28 @@ def main():
     _warn_run_mismatch(runs)
     CONV = 6.022e8
     k_on = CONV * k_b * P
-    SE = math.sqrt(P * (1 - P) / N) if 0 < P < 1 else 0
+    SE = math.sqrt(P * (1 - P) / N_p) if 0 < P < 1 else 0
     RSE = SE / P if P > 0 else float("inf")
     # Wilson 95% confidence interval for the reaction probability. The audit fix
     # of 2026-05-21 added a guard for the N=0 case and clamped the argument of
     # the square root to be non-negative.
     z = 1.96
-    if N == 0:
+    if N_p == 0:
         P_lo, P_hi = 0.0, 1.0
     else:
-        denom = 1 + z**2 / N
-        centre = (P + z**2 / (2 * N)) / denom
-        sqrt_arg = max(P * (1 - P) / N + z**2 / (4 * N**2), 0.0)
+        denom = 1 + z**2 / N_p
+        centre = (P + z**2 / (2 * N_p)) / denom
+        sqrt_arg = max(P * (1 - P) / N_p + z**2 / (4 * N_p**2), 0.0)
         spread = z * math.sqrt(sqrt_arg) / denom
         P_lo = max(0, centre - spread)
         P_hi = min(1, centre + spread)
     k_lo = CONV * k_b * P_lo
     k_hi = CONV * k_b * P_hi
+    # Range of P_rxn and k_on between counting every unfinished trajectory as
+    # not reacted and as reacted.
+    P_b_lo, P_b_hi = _p_rxn_bounds(nr, ne, n_max)
+    k_bound_lo = CONV * k_b * P_b_lo
+    k_bound_hi = CONV * k_b * P_b_hi
     # Shards run concurrently, so the wall clock is the slowest shard, not the sum.
     shard_walls = [r.get("wall_time_sec", 0) for r in runs]
     wall_time = max(shard_walls) if shard_walls else 0
@@ -157,17 +185,25 @@ def main():
     print(f"  N completed      = {N:,}")
     print(f"  Reacted          = {nr:,}")
     print(f"  Escaped          = {ne:,}")
-    print(f"  Max-steps        = {n_max:,}")
+    print(
+        f"  Max-steps        = {n_max:,}  "
+        f"({'counted as not reacted' if count_unf else 'excluded from P_rxn'})"
+    )
     print(f"  P_rxn            = {P:.6f} ± {SE:.6f}")
     print(f"  Relative SE      = {RSE*100:.2f}%")
     print(f"  k_b              = {k_b:.4f} A3/ps")
     print(f"  k_on             = {k_on:.4e} M-1 s-1")
     print(f"  k_on (± error)     = ({man:.1f} ± {err:.1f}) x 10^{exp} M-1 s-1")
     print(f"  Wilson 95% CI    = [{k_lo:.4e}, {k_hi:.4e}] M-1 s-1")
+    if n_max:
+        print(
+            f"  k_on bound       = [{k_bound_lo:.4e}, {k_bound_hi:.4e}] M-1 s-1  "
+            "(unfinished as not reacted, as reacted)"
+        )
     if targets:
         print(f"  Trajectories needed:")
         for t, n in targets.items():
-            status = "completed" if N >= n else "need more simulations"
+            status = "completed" if N_p >= n else "need more simulations"
             print(f"    For ±{t} RSE: {n:,} ({status})")
     print(f"  {'Converged' if RSE < 0.05 else 'Not converged'} (RSE {RSE*100:.2f}%)")
     print(f"  Wall clock       = {wall_time:.1f} s  (slowest of {len(runs)} shard(s))")
@@ -189,6 +225,11 @@ def main():
         "n_reacted": nr,
         "n_escaped": ne,
         "n_max_steps": n_max,
+        "unfinished_in_p_rxn": count_unf,
+        "P_rxn_bound_low": P_b_lo,
+        "P_rxn_bound_high": P_b_hi,
+        "k_on_bound_low": k_bound_lo,
+        "k_on_bound_high": k_bound_hi,
         "r_start": r_start,
         "r_escape": r_escape,
         "wall_time_sec": wall_time,
@@ -316,7 +357,7 @@ def main():
     # Write a separate convergence report summarising the pooled statistics and
     # whether the relative standard error has dropped below the 5% tolerance.
     conv = {
-        "N": N,
+        "N": N_p,
         "n_reacted": nr,
         "n_escaped": ne,
         "P_rxn": P,

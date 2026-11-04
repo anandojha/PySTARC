@@ -53,6 +53,12 @@ except ImportError:
     _CUPY = False
 
 
+def _stall_detected(done: int, last_done: int, n: int) -> bool:
+    """True when more than 95% of n trajectories are done and fewer than
+    max(2, 0.1% of n) finished since the last check."""
+    return done > int(n * 0.95) and done - last_done < max(2, int(n * 0.001))
+
+
 def _split_rotational_diffusion(mob, D_r: float) -> Tuple[float, float]:
     """Return (D_rot1, D_rot2), the receptor's and the ligand's rotational diffusion.
 
@@ -118,18 +124,35 @@ class GPUBatchResult:
     elapsed_sec: float
     steps_per_sec: float
     sim_data: Dict = None  # Collected trajectory data passed to the output writer.
+    # Count the trajectories still running at the end (n_max_steps) as not
+    # reacted, as BrownDye2 does. When False they are left out of P_rxn.
+    unfinished_in_p_rxn: bool = False
 
     @property
     def n_completed(self) -> int:
         return self.n_reacted + self.n_escaped
 
     @property
+    def n_counted(self) -> int:
+        """Trajectories in the denominator of P_rxn."""
+        if self.unfinished_in_p_rxn:
+            return self.n_completed + self.n_max_steps
+        return self.n_completed
+
+    @property
     def reaction_probability(self) -> float:
-        n = self.n_completed
+        n = self.n_counted
         return self.n_reacted / n if n > 0 else 0.0
 
+    def reaction_probability_bounds(self):
+        """P_rxn with every unfinished trajectory counted as not reacted, and as reacted."""
+        n = self.n_completed + self.n_max_steps
+        if n == 0:
+            return (0.0, 1.0)
+        return (self.n_reacted / n, (self.n_reacted + self.n_max_steps) / n)
+
     def reaction_probability_ci(self, confidence: float = 0.95):
-        n = self.n_completed
+        n = self.n_counted
         if n == 0:
             # With no completed trajectories (no reaction and no escape) the
             # reaction probability is undefined. This usually means the run
@@ -182,33 +205,38 @@ class GPUBatchResult:
                 )
             return CONV * k_D * P / denom
 
+    def _rate_from_p(self, P: float, D_rel: float, k_b: float) -> float:
+        """k_on for a given P_rxn, as used for the confidence interval and bounds."""
+        if P <= 0:
+            return 0.0
+        CONV = 6.022e23 * 1e-30 / 1e-12 / 1e-3
+        if k_b > 0.0:
+            return CONV * k_b * P
+        k_D = 4.0 * math.pi * D_rel * self.r_start
+        beta = self.r_start / self.r_escape
+        denom = 1 - (1 - P) * beta
+        # Reject the same ill-defined denominator regime as rate_constant.
+        if abs(denom) < 1e-12:
+            raise ValueError(
+                "Smoluchowski rate-CI denominator (1 - P*(1 - beta)) is "
+                f"{denom:.3e}, too close to zero "
+                f"(P_rxn={P:.6f}, beta=r_start/r_escape={beta:.6f}); the "
+                "rate is ill-defined. This usually means the reaction "
+                "probability is near 1 with a very small r_start/r_escape "
+                "ratio."
+            )
+        return CONV * k_D * P / denom
+
     def rate_constant_ci(
         self, D_rel: float, k_b: float = 0.0, confidence: float = 0.95
     ):
         p_lo, p_hi = self.reaction_probability_ci(confidence)
+        return (self._rate_from_p(p_lo, D_rel, k_b), self._rate_from_p(p_hi, D_rel, k_b))
 
-        def _k(P):
-            if P <= 0:
-                return 0.0
-            CONV = 6.022e23 * 1e-30 / 1e-12 / 1e-3
-            if k_b > 0.0:
-                return CONV * k_b * P
-            k_D = 4.0 * math.pi * D_rel * self.r_start
-            beta = self.r_start / self.r_escape
-            denom = 1 - (1 - P) * beta
-            # Reject the same ill-defined denominator regime as rate_constant.
-            if abs(denom) < 1e-12:
-                raise ValueError(
-                    "Smoluchowski rate-CI denominator (1 - P*(1 - beta)) is "
-                    f"{denom:.3e}, too close to zero "
-                    f"(P_rxn={P:.6f}, beta=r_start/r_escape={beta:.6f}); the "
-                    "rate is ill-defined. This usually means the reaction "
-                    "probability is near 1 with a very small r_start/r_escape "
-                    "ratio."
-                )
-            return CONV * k_D * P / denom
-
-        return (_k(p_lo), _k(p_hi))
+    def rate_constant_bounds(self, D_rel: float, k_b: float = 0.0):
+        """k_on with every unfinished trajectory counted as not reacted, and as reacted."""
+        p_lo, p_hi = self.reaction_probability_bounds()
+        return (self._rate_from_p(p_lo, D_rel, k_b), self._rate_from_p(p_hi, D_rel, k_b))
 
     def summary(self, D_rel: float, k_b: float = 0.0, confidence: float = 0.95) -> str:
         k = self.rate_constant(D_rel, k_b)
@@ -222,12 +250,19 @@ class GPUBatchResult:
             f"({self.n_reacted:,} reacted + {self.n_escaped:,} escaped)",
         ]
         if self.n_max_steps:
-            lines.append(f"  Max-steps    : {self.n_max_steps:,}  (excluded)")
+            how = "counted as not reacted" if self.unfinished_in_p_rxn else "excluded"
+            lines.append(f"  Max-steps    : {self.n_max_steps:,}  ({how})")
         lines += [
             f"  P_rxn        : {p:.6f}  ({pct}% CI: [{p_lo:.6f}, {p_hi:.6f}])",
             f"  k_on         : {k:.4e} M-1 s-1",
             f"  {pct}% CI     : [{k_lo:.4e}, {k_hi:.4e}] M-1 s-1",
         ]
+        if self.n_max_steps:
+            b_lo, b_hi = self.rate_constant_bounds(D_rel, k_b)
+            lines.append(
+                f"  k_on bound   : [{b_lo:.4e}, {b_hi:.4e}] M-1 s-1  "
+                "(unfinished as not reacted, as reacted)"
+            )
         if k > 0:
             lines.append(f"  log10(k_on)  : {math.log10(k):.3f}")
         lines += [
@@ -1137,6 +1172,12 @@ class GPUBatchSimulator:
         # binding poses, dropping k_on by a factor of 100 for
         # trypsin-benzamidine (2026-05-21). The receptor is fixed in the
         # simulation frame, so the map that OverlapGrid uses is built once here.
+        _stall_check = getattr(self.params, "_stall_check", True)
+        if not _stall_check:
+            print(
+                f"  Stall check off: every trajectory runs until it reacts, "
+                f"escapes or reaches max_steps ({self.params.max_steps:,})"
+            )
         _use_overlap = getattr(self.params, "_overlap_check", True)
         _overlap_grid = None
         _n_overlap_rejected = 0
@@ -1866,9 +1907,10 @@ class GPUBatchSimulator:
             # downward. Stall detection still stops genuinely trapped runs: if
             # more than 95% are done and there has been no progress in 10k steps,
             # the run stops, which catches trajectories trapped in deep potential
-            # wells.
-            if step > 0 and step % 10000 == 0:
-                if done > int(N * 0.95) and done - _stall_done < max(2, int(N * 0.001)):
+            # wells. With stall_check false every trajectory runs until it
+            # reacts, escapes or reaches max_steps.
+            if _stall_check and step > 0 and step % 10000 == 0:
+                if _stall_detected(done, _stall_done, N):
                     print(
                         f"  Stall detected: {N-done} trajectories trapped "
                         f"(+{done-_stall_done} in last 10k steps). Stopping."
@@ -2062,6 +2104,8 @@ class GPUBatchSimulator:
             print(f"  Overlap rejections: {_n_overlap_rejected:,}")
         # Final convergence report.
         _n_comp_final = n_reacted + n_escaped
+        if getattr(self.params, "_unfinished_in_p_rxn", False):
+            _n_comp_final += n_maxsteps
         if _n_comp_final > 0 and self._k_b > 0:
             _p_final = n_reacted / _n_comp_final
             _k_final = _conv_CONV * self._k_b * _p_final
@@ -2157,6 +2201,7 @@ class GPUBatchSimulator:
             elapsed_sec=elapsed,
             steps_per_sec=sps,
             sim_data=sim_data,
+            unfinished_in_p_rxn=getattr(self.params, "_unfinished_in_p_rxn", False),
         )
 
     # GPU helper methods.

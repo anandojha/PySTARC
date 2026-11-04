@@ -5510,6 +5510,26 @@ class TestResultsJSON:
         write_all(tmp_path, result, data, OutputConfig(), k_b=57.47, D_rel=0.434)
         assert (tmp_path / "results.json").exists()
 
+    def test_unfinished_fields(self, tmp_path):
+        """results.json records how the unfinished trajectories entered P_rxn and the bounds."""
+        result = _make_result()
+        result.n_max_steps = 5
+        result.unfinished_in_p_rxn = True
+        write_all(
+            tmp_path,
+            result,
+            _make_dummy_data(),
+            OutputConfig(),
+            k_b=57.47,
+            D_rel=0.434,
+        )
+        d = json.loads((tmp_path / "results.json").read_text())
+        assert d["unfinished_in_p_rxn"] is True
+        assert d["P_rxn"] == pytest.approx(45 / 105)
+        assert d["P_rxn_bound_low"] == pytest.approx(45 / 105)
+        assert d["P_rxn_bound_high"] == pytest.approx(50 / 105)
+        assert d["k_on_bound_high"] > d["k_on_bound_low"]
+
     def test_json_parseable(self, tmp_path):
         """The written results.json parses into a dict."""
         write_all(

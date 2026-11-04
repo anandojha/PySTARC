@@ -196,6 +196,8 @@ class PySTARCConfig:
         DESOLVATION_ALPHA
     )
     max_steps: int = 1000000  # Maximum number of BD steps per trajectory.
+    stall_check: bool = True  # Stop the run when over 95% of trajectories are done and under 0.1% finished in the last 10,000 steps. With false, every trajectory runs until it reacts, escapes or reaches max_steps.
+    unfinished_in_p_rxn: bool = False  # Count trajectories still running at the end as not reacted in P_rxn, as BrownDye2 does. With false they are left out of P_rxn.
     debye_length: float = (
         7.858  # Debye screening length in angstrom (about 150 mM NaCl at 298 K).
     )
@@ -396,6 +398,8 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
         desolvation_alpha=get("desolvation_alpha", cast=float),
         debye_length=get("debye_length", cast=float),
         max_steps=get("max_steps", cast=int, default=1000000),
+        stall_check=get("stall_check", default=True, cast=bool),
+        unfinished_in_p_rxn=get("unfinished_in_p_rxn", default=False, cast=bool),
         ligand_resname=get("ligand_resname", cast=str),
         ligand_charge=get("ligand_charge", default=0, cast=int),
         work_dir=get("work_dir", default="bd_sims", cast=str),
