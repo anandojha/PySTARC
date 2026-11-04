@@ -8,6 +8,7 @@ sensible default.
 
 from __future__ import annotations
 from dataclasses import dataclass, field
+import warnings
 import xml.etree.ElementTree as ET
 from typing import List, Optional
 from pathlib import Path
@@ -195,9 +196,7 @@ class PySTARCConfig:
         # dG = alpha q^2 a^3 / r^4 and the correct base is unity.
         DESOLVATION_ALPHA
     )
-    max_steps: int = 1000000  # Maximum number of BD steps per trajectory.
-    stall_check: bool = True  # Stop the run when over 95% of trajectories are done and under 0.1% finished in the last 10,000 steps. With false, every trajectory runs until it reacts, escapes or reaches max_steps.
-    unfinished_in_p_rxn: bool = False  # Count trajectories still running at the end as not reacted in P_rxn, as BrownDye2 does. With false they are left out of P_rxn.
+    max_steps: int = 1000000  # Step limit per trajectory. A trajectory runs until it reacts, escapes or reaches this limit; at the limit it counts as not reacted. Choose it from a pilot run with pystarc.analysis.step_limit.
     debye_length: float = (
         7.858  # Debye screening length in angstrom (about 150 mM NaCl at 298 K).
     )
@@ -379,6 +378,17 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
     """
     tree = ET.parse(xml_path)
     root = tree.getroot()
+    # Tags of the earlier stall rule and the P_rxn switch (41fbd71). Every
+    # trajectory now runs until it reacts, escapes or reaches max_steps, and a
+    # trajectory at the limit counts as not reacted.
+    for _old in ("stall_check", "unfinished_in_p_rxn"):
+        if root.find(_old) is not None:
+            warnings.warn(
+                f"<{_old}> is no longer used and is ignored: every trajectory "
+                "runs until it reacts, escapes or reaches max_steps, and a "
+                "trajectory at the limit counts as not reacted.",
+                stacklevel=2,
+            )
 
     def get(tag, default=None, cast=str):
         # The registry is authoritative for any tag it names, so this
@@ -398,8 +408,6 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
         desolvation_alpha=get("desolvation_alpha", cast=float),
         debye_length=get("debye_length", cast=float),
         max_steps=get("max_steps", cast=int, default=1000000),
-        stall_check=get("stall_check", default=True, cast=bool),
-        unfinished_in_p_rxn=get("unfinished_in_p_rxn", default=False, cast=bool),
         ligand_resname=get("ligand_resname", cast=str),
         ligand_charge=get("ligand_charge", default=0, cast=int),
         work_dir=get("work_dir", default="bd_sims", cast=str),

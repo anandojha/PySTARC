@@ -16,14 +16,9 @@ import os
 import re
 
 
-def _p_rxn_denominator(n_reacted, n_escaped, n_max, unfinished_in_p_rxn):
-    """Trajectories in the denominator of the pooled P_rxn."""
-    n = n_reacted + n_escaped
-    return n + n_max if unfinished_in_p_rxn else n
-
-
 def _p_rxn_bounds(n_reacted, n_escaped, n_max):
-    """Pooled P_rxn with every unfinished trajectory counted as not reacted, and as reacted."""
+    """Pooled P_rxn with every trajectory at the step limit counted as not
+    reacted (the reported value), and with every one counted as reacted."""
     n = n_reacted + n_escaped + n_max
     if n == 0:
         return 0.0, 1.0
@@ -93,15 +88,9 @@ def main():
     ne = sum(r["n_escaped"] for r in runs)
     n_max = sum(r.get("n_max_steps", 0) for r in runs)
     N = nr + ne
-    # Trajectories still running at the end are left out of P_rxn unless the
-    # shards counted them as not reacted (unfinished_in_p_rxn).
-    count_unf = bool(runs[0].get("unfinished_in_p_rxn", False))
-    if any(bool(r.get("unfinished_in_p_rxn", False)) != count_unf for r in runs):
-        print(
-            "  Warning: the shards differ in unfinished_in_p_rxn; "
-            "the first shard's setting is used"
-        )
-    N_p = _p_rxn_denominator(nr, ne, n_max, count_unf)
+    # A trajectory at the step limit counts as not reacted, so the denominator
+    # of P_rxn is every trajectory that was run.
+    N_p = N + n_max
     # Total recorded contact steps across shards, the denominator for the pooled
     # contact_frequency column (frequency = contacts / recorded steps, not
     # contacts / trajectory count). Prefer the value carried in results.json;
@@ -151,8 +140,8 @@ def main():
         P_hi = min(1, centre + spread)
     k_lo = CONV * k_b * P_lo
     k_hi = CONV * k_b * P_hi
-    # Range of P_rxn and k_on between counting every unfinished trajectory as
-    # not reacted and as reacted.
+    # Range of P_rxn and k_on between counting every trajectory at the step
+    # limit as not reacted (the reported value) and as reacted.
     P_b_lo, P_b_hi = _p_rxn_bounds(nr, ne, n_max)
     k_bound_lo = CONV * k_b * P_b_lo
     k_bound_hi = CONV * k_b * P_b_hi
@@ -185,10 +174,7 @@ def main():
     print(f"  N completed      = {N:,}")
     print(f"  Reacted          = {nr:,}")
     print(f"  Escaped          = {ne:,}")
-    print(
-        f"  Max-steps        = {n_max:,}  "
-        f"({'counted as not reacted' if count_unf else 'excluded from P_rxn'})"
-    )
+    print(f"  Max-steps        = {n_max:,}  (counted as not reacted)")
     print(f"  P_rxn            = {P:.6f} ± {SE:.6f}")
     print(f"  Relative SE      = {RSE*100:.2f}%")
     print(f"  k_b              = {k_b:.4f} A3/ps")
@@ -198,7 +184,7 @@ def main():
     if n_max:
         print(
             f"  k_on bound       = [{k_bound_lo:.4e}, {k_bound_hi:.4e}] M-1 s-1  "
-            "(unfinished as not reacted, as reacted)"
+            "(max-steps trajectories as not reacted, as reacted)"
         )
     if targets:
         print(f"  Trajectories needed:")
@@ -225,7 +211,6 @@ def main():
         "n_reacted": nr,
         "n_escaped": ne,
         "n_max_steps": n_max,
-        "unfinished_in_p_rxn": count_unf,
         "P_rxn_bound_low": P_b_lo,
         "P_rxn_bound_high": P_b_hi,
         "k_on_bound_low": k_bound_lo,

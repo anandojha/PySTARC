@@ -153,7 +153,7 @@ def main():
                     f"  Trajectories   : {cfg.n_trajectories:,}",
                     f"  Reacted        : {result.n_reacted:,}",
                     f"  Escaped        : {result.n_escaped:,}",
-                    f"  Max-steps      : {result.n_max_steps:,}",
+                    f"  Max-steps      : {result.n_max_steps:,}  (counted as not reacted)",
                     f"  P_rxn          : {result.reaction_probability:.6f}",
                 ]
                 # Get k_on from results.json if available
@@ -190,6 +190,7 @@ def main():
                     _conv = analyse_convergence(
                         n_reacted=result.n_reacted,
                         n_escaped=result.n_escaped,
+                        n_max_steps=result.n_max_steps,
                         k_b=_k_b,
                         tol=cfg.convergence_tol,
                         work_dir=str(work_dir),

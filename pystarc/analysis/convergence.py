@@ -52,12 +52,14 @@ def analyse_convergence(
     conv_factor: float = 6.022e8,
     work_dir: str = ".",
     confidence: float = 0.95,
+    n_max_steps: int = 0,
 ) -> dict:
     """
     Run the convergence analysis on a completed Brownian dynamics simulation.
 
     The parameter n_reacted is the total number of trajectories that reacted,
-    and n_escaped is the total number that escaped. k_b is the encounter rate
+    n_escaped is the total number that escaped, and n_max_steps the number that
+    reached the step limit; those count as not reacted. k_b is the encounter rate
     constant in Å³/ps. tol is the relative standard error below which the
     result is considered converged, defaulting to 0.05, that is 5%. conv_factor
     is the factor that converts Å³/ps to M⁻¹ s⁻¹. work_dir is the directory in
@@ -65,9 +67,9 @@ def analyse_convergence(
 
     The function returns a dictionary holding the convergence results.
     """
-    N = n_reacted + n_escaped
+    N = n_reacted + n_escaped + n_max_steps
     if N == 0:
-        return {"converged": False, "reason": "no completed trajectories"}
+        return {"converged": False, "reason": "no trajectories were run"}
     P = n_reacted / N
     k_on = conv_factor * k_b * P
     # Standard error of P_rxn and the relative standard error.
@@ -114,6 +116,7 @@ def analyse_convergence(
         "N": N,
         "n_reacted": n_reacted,
         "n_escaped": n_escaped,
+        "n_max_steps": n_max_steps,
         "P_rxn": P,
         "SE": SE,
         "relative_SE": relative_SE,
@@ -140,7 +143,11 @@ def print_convergence(result: dict) -> str:
         text = "\n".join(lines)
         print(text)
         return text
-    lines.append(f"  N completed      = {result['N']:,}")
+    lines.append(f"  N trajectories   = {result['N']:,}")
+    if result.get("n_max_steps"):
+        lines.append(
+            f"  Max-steps        = {result['n_max_steps']:,}  (counted as not reacted)"
+        )
     lines.append(f"  P_rxn            = {result['P_rxn']:.6f}")
     lines.append(f"  SE(P_rxn)        = {result['SE']:.6f}")
     if result["P_rxn"] > 0:

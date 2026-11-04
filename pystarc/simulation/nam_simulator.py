@@ -676,9 +676,23 @@ class SimulationResult:
         )
 
     @property
+    def n_run(self) -> int:
+        """Every trajectory that was run: reacted, escaped or at the step limit."""
+        return self.n_reacted + self.n_escaped + self.n_max_steps
+
+    @property
     def reaction_probability(self) -> float:
-        n = self.n_reacted + self.n_escaped
+        # A trajectory at the step limit counts as not reacted, as in BrownDye2.
+        n = self.n_run
         return self.n_reacted / n if n > 0 else 0.0
+
+    def reaction_probability_bounds(self):
+        """P_rxn with every trajectory at the step limit counted as not reacted
+        (the reported value), and with every one counted as reacted."""
+        n = self.n_run
+        if n == 0:
+            return (0.0, 1.0)
+        return (self.n_reacted / n, (self.n_reacted + self.n_max_steps) / n)
 
     def rate_constant(self, D_rel: float, k_db: float = 0.0) -> float:
         """
@@ -757,7 +771,7 @@ def _reaction_probability_ci(self, confidence: float = 0.95):
     probability P_rxn. The Wilson (1927) interval is valid even when P_rxn is
     very small.
     """
-    n = self.n_reacted + self.n_escaped
+    n = self.n_run
     if n == 0:
         return (0.0, 1.0)
     z = float(_stats.norm.ppf(0.5 + confidence / 2.0))
@@ -794,6 +808,13 @@ def _rate_constant_ci(self, D_rel: float, confidence: float = 0.95):
     return (_k_from_P(self, p_lo, D_rel), _k_from_P(self, p_hi, D_rel))
 
 
+def _rate_constant_bounds(self, D_rel: float):
+    """k_on with every trajectory at the step limit counted as not reacted
+    (the reported value), and with every one counted as reacted."""
+    p_lo, p_hi = self.reaction_probability_bounds()
+    return (_k_from_P(self, p_lo, D_rel), _k_from_P(self, p_hi, D_rel))
+
+
 def _result_summary(
     self, D_rel: float, k_b: float = 0.0, confidence: float = 0.95
 ) -> str:
@@ -808,12 +829,18 @@ def _result_summary(
         f"  Completed    : {n_comp:,}  ({self.n_reacted:,} reacted + {self.n_escaped:,} escaped)",
     ]
     if self.n_max_steps:
-        lines.append(f"  Max-steps    : {self.n_max_steps:,}  (excluded from P_rxn)")
+        lines.append(f"  Max-steps    : {self.n_max_steps:,}  (counted as not reacted)")
     lines += [
         f"  P_rxn        : {p:.6f}  ({pct}% CI: [{p_lo:.6f}, {p_hi:.6f}])",
         f"  k_on         : {k:.4e} M-1 s-1",
         f"  {pct}% CI     : [{k_lo:.4e}, {k_hi:.4e}] M-1 s-1",
     ]
+    if self.n_max_steps:
+        b_lo, b_hi = _rate_constant_bounds(self, D_rel)
+        lines.append(
+            f"  k_on bound   : [{b_lo:.4e}, {b_hi:.4e}] M-1 s-1  "
+            "(max-steps trajectories as not reacted, as reacted)"
+        )
     if k > 0:
         lines.append(f"  log10(k_on)  : {math.log10(k):.3f}")
     return "\n".join(lines)
@@ -822,4 +849,5 @@ def _result_summary(
 # Attach these helper methods to SimulationResult.
 SimulationResult.reaction_probability_ci = _reaction_probability_ci
 SimulationResult.rate_constant_ci = _rate_constant_ci
+SimulationResult.rate_constant_bounds = _rate_constant_bounds
 SimulationResult.summary = _result_summary

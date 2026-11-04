@@ -53,12 +53,6 @@ except ImportError:
     _CUPY = False
 
 
-def _stall_detected(done: int, last_done: int, n: int) -> bool:
-    """True when more than 95% of n trajectories are done and fewer than
-    max(2, 0.1% of n) finished since the last check."""
-    return done > int(n * 0.95) and done - last_done < max(2, int(n * 0.001))
-
-
 def _split_rotational_diffusion(mob, D_r: float) -> Tuple[float, float]:
     """Return (D_rot1, D_rot2), the receptor's and the ligand's rotational diffusion.
 
@@ -124,44 +118,40 @@ class GPUBatchResult:
     elapsed_sec: float
     steps_per_sec: float
     sim_data: Dict = None  # Collected trajectory data passed to the output writer.
-    # Count the trajectories still running at the end (n_max_steps) as not
-    # reacted, as BrownDye2 does. When False they are left out of P_rxn.
-    unfinished_in_p_rxn: bool = False
 
+    # Every trajectory runs until it reacts, escapes or reaches max_steps. A
+    # trajectory at the step limit (n_max_steps) counts as not reacted, as in
+    # BrownDye2, so the denominator of P_rxn is every trajectory that was run.
     @property
     def n_completed(self) -> int:
+        """Trajectories that reacted or escaped."""
         return self.n_reacted + self.n_escaped
 
     @property
-    def n_counted(self) -> int:
-        """Trajectories in the denominator of P_rxn."""
-        if self.unfinished_in_p_rxn:
-            return self.n_completed + self.n_max_steps
-        return self.n_completed
+    def n_run(self) -> int:
+        """Every trajectory that was run: reacted, escaped or at the step limit."""
+        return self.n_reacted + self.n_escaped + self.n_max_steps
 
     @property
     def reaction_probability(self) -> float:
-        n = self.n_counted
+        n = self.n_run
         return self.n_reacted / n if n > 0 else 0.0
 
     def reaction_probability_bounds(self):
-        """P_rxn with every unfinished trajectory counted as not reacted, and as reacted."""
-        n = self.n_completed + self.n_max_steps
+        """P_rxn with every trajectory at the step limit counted as not reacted
+        (the reported value), and with every one counted as reacted."""
+        n = self.n_run
         if n == 0:
             return (0.0, 1.0)
         return (self.n_reacted / n, (self.n_reacted + self.n_max_steps) / n)
 
     def reaction_probability_ci(self, confidence: float = 0.95):
-        n = self.n_counted
+        n = self.n_run
         if n == 0:
-            # With no completed trajectories (no reaction and no escape) the
-            # reaction probability is undefined. This usually means the run
-            # produced no usable data, for example when every trajectory hit the
-            # max-steps limit before reacting or escaping.
             warnings.warn(
-                "reaction_probability_ci: no completed trajectories "
-                "(n_reacted + n_escaped == 0); the reaction probability is "
-                "undefined and the returned CI [0, 1] is uninformative.",
+                "reaction_probability_ci: no trajectories were run; the "
+                "reaction probability is undefined and the returned CI [0, 1] "
+                "is uninformative.",
                 RuntimeWarning,
                 stacklevel=2,
             )
@@ -234,7 +224,8 @@ class GPUBatchResult:
         return (self._rate_from_p(p_lo, D_rel, k_b), self._rate_from_p(p_hi, D_rel, k_b))
 
     def rate_constant_bounds(self, D_rel: float, k_b: float = 0.0):
-        """k_on with every unfinished trajectory counted as not reacted, and as reacted."""
+        """k_on with every trajectory at the step limit counted as not reacted
+        (the reported value), and with every one counted as reacted."""
         p_lo, p_hi = self.reaction_probability_bounds()
         return (self._rate_from_p(p_lo, D_rel, k_b), self._rate_from_p(p_hi, D_rel, k_b))
 
@@ -250,8 +241,9 @@ class GPUBatchResult:
             f"({self.n_reacted:,} reacted + {self.n_escaped:,} escaped)",
         ]
         if self.n_max_steps:
-            how = "counted as not reacted" if self.unfinished_in_p_rxn else "excluded"
-            lines.append(f"  Max-steps    : {self.n_max_steps:,}  ({how})")
+            lines.append(
+                f"  Max-steps    : {self.n_max_steps:,}  (counted as not reacted)"
+            )
         lines += [
             f"  P_rxn        : {p:.6f}  ({pct}% CI: [{p_lo:.6f}, {p_hi:.6f}])",
             f"  k_on         : {k:.4e} M-1 s-1",
@@ -261,7 +253,7 @@ class GPUBatchResult:
             b_lo, b_hi = self.rate_constant_bounds(D_rel, k_b)
             lines.append(
                 f"  k_on bound   : [{b_lo:.4e}, {b_hi:.4e}] M-1 s-1  "
-                "(unfinished as not reacted, as reacted)"
+                "(max-steps trajectories as not reacted, as reacted)"
             )
         if k > 0:
             lines.append(f"  log10(k_on)  : {math.log10(k):.3f}")
@@ -817,7 +809,6 @@ class GPUBatchSimulator:
         else:
             self._sm_current_state = None
             self._sm_rxn_fire_counts = None
-        _stall_done = 0  # Used for stall detection.
         _resume_step = 0  # Step offset when resuming from a checkpoint.
         # Resume from a checkpoint if one is available.
         _ckpt_dir_resume = Path(getattr(self.params, "_work_dir", "bd_sims"))
@@ -1172,12 +1163,6 @@ class GPUBatchSimulator:
         # binding poses, dropping k_on by a factor of 100 for
         # trypsin-benzamidine (2026-05-21). The receptor is fixed in the
         # simulation frame, so the map that OverlapGrid uses is built once here.
-        _stall_check = getattr(self.params, "_stall_check", True)
-        if not _stall_check:
-            print(
-                f"  Stall check off: every trajectory runs until it reacts, "
-                f"escapes or reaches max_steps ({self.params.max_steps:,})"
-            )
         _use_overlap = getattr(self.params, "_overlap_check", True)
         _overlap_grid = None
         _n_overlap_rejected = 0
@@ -1899,24 +1884,13 @@ class GPUBatchSimulator:
                     _energy_data.append(_esnap)
             # Progress report.
             done = int((status != 0).sum())
-            # The run is bounded by max_steps and by stall detection below. A
-            # hard 99.5% early-exit was removed because it marked the slowest
-            # still-running trajectories as max-steps and excluded them from
-            # P_rxn. Those stragglers linger near the receptor and are
-            # disproportionately reaction-bound, so excluding them biased k_on
-            # downward. Stall detection still stops genuinely trapped runs: if
-            # more than 95% are done and there has been no progress in 10k steps,
-            # the run stops, which catches trajectories trapped in deep potential
-            # wells. With stall_check false every trajectory runs until it
-            # reacts, escapes or reaches max_steps.
-            if _stall_check and step > 0 and step % 10000 == 0:
-                if _stall_detected(done, _stall_done, N):
-                    print(
-                        f"  Stall detected: {N-done} trajectories trapped "
-                        f"(+{done-_stall_done} in last 10k steps). Stopping."
-                    )
-                    break
-                _stall_done = done
+            # The step limit is the only end of a trajectory other than a
+            # reaction or an escape. There is no early exit: a trajectory that
+            # is still running lingers near the receptor and is more likely
+            # than average to react, so stopping the run early biases k_on
+            # downward. Choose max_steps from a pilot run with
+            # pystarc.analysis.step_limit so that the trajectories at the limit
+            # cannot move k_on by more than the tolerance.
             # Live convergence report.
             if done in _conv_milestones and done > _last_conv_done:
                 _last_conv_done = done
@@ -2103,9 +2077,8 @@ class GPUBatchSimulator:
         if _n_overlap_rejected > 0:
             print(f"  Overlap rejections: {_n_overlap_rejected:,}")
         # Final convergence report.
-        _n_comp_final = n_reacted + n_escaped
-        if getattr(self.params, "_unfinished_in_p_rxn", False):
-            _n_comp_final += n_maxsteps
+        # Trajectories at the step limit count as not reacted.
+        _n_comp_final = n_reacted + n_escaped + n_maxsteps
         if _n_comp_final > 0 and self._k_b > 0:
             _p_final = n_reacted / _n_comp_final
             _k_final = _conv_CONV * self._k_b * _p_final
@@ -2118,6 +2091,8 @@ class GPUBatchSimulator:
                 print(f"  Checkpoint removed (run completed successfully)")
         # Package the collected data.
         _outcome = cp.asnumpy(status)
+        # A trajectory still running when the loop ended reached the step limit.
+        _outcome[_outcome == 0] = 3
         _nsteps_np = cp.asnumpy(n_steps)
         # Near-miss data is kept only for escaped trajectories.
         _esc_mask = _outcome == 2
@@ -2201,7 +2176,6 @@ class GPUBatchSimulator:
             elapsed_sec=elapsed,
             steps_per_sec=sps,
             sim_data=sim_data,
-            unfinished_in_p_rxn=getattr(self.params, "_unfinished_in_p_rxn", False),
         )
 
     # GPU helper methods.

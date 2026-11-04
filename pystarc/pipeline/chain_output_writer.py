@@ -200,11 +200,11 @@ def _max_steps_of(results: List[TrajectoryResult]) -> int:
 def _rate_block(sim, results) -> dict:
     """k_on = N_A k_b P_rxn, or a reason why it cannot be reported.
 
-    P_rxn is reacted over reacted plus escaped. Trajectories that ran out of
-    steps committed to neither outcome and are excluded from the denominator
-    rather than counted as escapes. k_b is the encounter rate at the b-surface,
-    computed by the outer propagator. Without that propagator there is no k_b
-    and so no rate.
+    P_rxn is reacted over every trajectory that was run. A trajectory that
+    reached the step limit counts as not reacted, as in BrownDye2, and the
+    bound gives P_rxn and k_on with every such trajectory counted as reacted
+    instead. k_b is the encounter rate at the b-surface, computed by the outer
+    propagator. Without that propagator there is no k_b and so no rate.
     """
     prop = getattr(sim, "_outer_prop", None)
     k_b = getattr(prop, "k_b", None) if prop is not None else None
@@ -223,10 +223,10 @@ def _rate_block(sim, results) -> dict:
         out["k_on"] = None
         out["reason"] = "no outer propagator, so k_b is undefined"
         return out
-    n = n_r + n_e
+    n = n_r + n_e + n_c
     if n == 0:
         out["k_on"] = None
-        out["reason"] = "no trajectory committed to a reaction or an escape"
+        out["reason"] = "no trajectory was run"
         return out
     p = n_r / n
     lo, hi = _wilson(n_r, n)
@@ -245,6 +245,10 @@ def _rate_block(sim, results) -> dict:
             "k_on_low": float(conv * k_b * lo),
             "k_on_high": float(conv * k_b * hi),
             "k_on_units": "M-1 s-1",
+            "P_rxn_bound_low": float(p),
+            "P_rxn_bound_high": float((n_r + n_c) / n),
+            "k_on_bound_low": float(conv * k_b * p),
+            "k_on_bound_high": float(conv * k_b * (n_r + n_c) / n),
         }
     )
     return out

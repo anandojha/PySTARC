@@ -5510,11 +5510,10 @@ class TestResultsJSON:
         write_all(tmp_path, result, data, OutputConfig(), k_b=57.47, D_rel=0.434)
         assert (tmp_path / "results.json").exists()
 
-    def test_unfinished_fields(self, tmp_path):
-        """results.json records how the unfinished trajectories entered P_rxn and the bounds."""
+    def test_max_steps_fields(self, tmp_path):
+        """results.json counts the max-steps trajectories as not reacted and records the bounds."""
         result = _make_result()
         result.n_max_steps = 5
-        result.unfinished_in_p_rxn = True
         write_all(
             tmp_path,
             result,
@@ -5524,7 +5523,8 @@ class TestResultsJSON:
             D_rel=0.434,
         )
         d = json.loads((tmp_path / "results.json").read_text())
-        assert d["unfinished_in_p_rxn"] is True
+        assert "unfinished_in_p_rxn" not in d
+        assert d["n_max_steps"] == 5
         assert d["P_rxn"] == pytest.approx(45 / 105)
         assert d["P_rxn_bound_low"] == pytest.approx(45 / 105)
         assert d["P_rxn_bound_high"] == pytest.approx(50 / 105)
@@ -21188,7 +21188,7 @@ def test_n_zero_early_returns():
     """With no completed trajectories the function returns the early-return dict
     and never reaches the Wilson interval code."""
     result = analyse_convergence(n_reacted=0, n_escaped=0, k_b=1.0)
-    assert result == {"converged": False, "reason": "no completed trajectories"}
+    assert result == {"converged": False, "reason": "no trajectories were run"}
 
 
 def test_healthy_path_wilson_interval_unchanged():
