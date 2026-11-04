@@ -23,6 +23,7 @@ from __future__ import annotations
 from pystarc.simulation.diffusional_rotation import diffusional_rotation
 from pystarc.simulation.diffusional_rotation import quat_multiply, quat_rotate_vector
 from pystarc.simulation.nam_simulator import NAMParameters, SimulationResult
+from pystarc.simulation.overlap_grid import OverlapGrid
 from pystarc.molsystem.system_state import Fate, TrajectoryResult
 from pystarc.lib.numerical import romberg_integrate
 from pystarc.global_defs.constants import VACUUM_PERMITTIVITY_KBT
@@ -1134,17 +1135,26 @@ class GPUBatchSimulator:
         # donor-acceptor distance (about 1.9 Å) but above genuine
         # atom-in-atom interpenetration. An earlier value of 0.75 over-rejected
         # binding poses, dropping k_on by a factor of 100 for
-        # trypsin-benzamidine (2026-05-21).
+        # trypsin-benzamidine (2026-05-21). The receptor is fixed in the
+        # simulation frame, so the map that OverlapGrid uses is built once here.
         _use_overlap = getattr(self.params, "_overlap_check", True)
-        _rec_pos_overlap = None
+        _overlap_grid = None
         _n_overlap_rejected = 0
         _OVERLAP_VDW_FRACTION = 0.5
         if _use_overlap:
             rec_pos_np = self.mol1.positions_array()  # (N_rec, 3)
-            _rec_pos_overlap = cp.asarray(rec_pos_np, dtype=cp.float64)
+            _overlap_grid = OverlapGrid(
+                cp.asarray(rec_pos_np, dtype=cp.float64),
+                self._mol1_radii_overlap,
+                _OVERLAP_VDW_FRACTION,
+                float(self._mol2_radii_overlap.max()),
+                xp=cp,
+            )
             print(
                 f"  Overlap check: atom-pair vdW × {_OVERLAP_VDW_FRACTION:.2f}  "
-                f"({self._N_lig} lig × {len(rec_pos_np)} rec atoms)"
+                f"({self._N_lig} lig × {len(rec_pos_np)} rec atoms, map "
+                f"{' × '.join(str(int(n)) for n in _overlap_grid.shape)} at "
+                f"{_overlap_grid.spacing} Å)"
             )
         # Main Brownian-dynamics loop.
         for step in range(_resume_step, self.params.max_steps):
@@ -1587,59 +1597,23 @@ class GPUBatchSimulator:
             # Waals radii. Compute the lab-frame ligand atom positions from the
             # updated centroid and quaternion, then test every (lig_atom,
             # rec_atom) pair against OVERLAP_VDW_FRACTION × (r_vdw_lig +
-            # r_vdw_rec). The work is chunked over ligand atoms to bound GPU
-            # memory. The per-chunk allocation is the (N_sr, lig_chunk, N_rec, 3)
-            # difference tensor at about 24 bytes per element plus the dist² and
-            # threshold² scratch at about 17 bytes per element, for roughly 41
-            # bytes per element in total.
+            # r_vdw_rec). OverlapGrid clears most atoms with one lookup in a
+            # precomputed map of the receptor and tests only the atoms near the
+            # threshold against every receptor atom, so its decisions are those
+            # of the all-pairs test at a fraction of the cost.
             # Track which still-running trajectories have their move reverted by
             # the overlap check this step, so the bridge crossing below can skip
             # them. None means no overlap check ran.
             _reverted_mask = None
-            if _use_overlap and _rec_pos_overlap is not None:
+            if _use_overlap and _overlap_grid is not None:
                 _new_R_sr = self._quats_to_rotmats(q[sr_idx])  # (N_sr, 3, 3)
                 _new_lig_atoms = (
                     cp.einsum("nij,kj->nki", _new_R_sr, self._mol2_pos0)
                     + pos[sr_idx][:, None, :]
                 )  # (N_sr, N_lig, 3)
-                N_sr_ov = _new_lig_atoms.shape[0]
-                N_lig_ov = _new_lig_atoms.shape[1]
-                N_rec_ov = _rec_pos_overlap.shape[0]
-                # Chunk on two levels, first over trajectories and then over
-                # ligand atoms, so that even at production scale (N_sr of order
-                # 1e6) the inner allocation stays bounded. The original code
-                # chunked only over ligand atoms with a 500 MB budget, and for
-                # large N_sr the per-iteration allocation could reach about
-                # 200 GB even with lig_chunk = 1.
-                _max_bytes_ov = 2 * 1024 * 1024 * 1024  # 2 GB.
-                _bytes_per_traj_per_lig = N_rec_ov * 41
-                _sr_chunk = max(1, int(_max_bytes_ov / max(1, _bytes_per_traj_per_lig)))
-                _sr_chunk = min(_sr_chunk, N_sr_ov)
-                _inside_all = cp.zeros(N_sr_ov, dtype=cp.bool_)
-                for _it0 in range(0, N_sr_ov, _sr_chunk):
-                    _it1 = min(_it0 + _sr_chunk, N_sr_ov)
-                    _n_sr = _it1 - _it0
-                    _lig_chunk = max(
-                        1, int(_max_bytes_ov / max(1, _n_sr * N_rec_ov * 41))
-                    )
-                    _lig_chunk = min(_lig_chunk, N_lig_ov)
-                    for _ic0 in range(0, N_lig_ov, _lig_chunk):
-                        _ic1 = min(_ic0 + _lig_chunk, N_lig_ov)
-                        _diff = (
-                            _new_lig_atoms[_it0:_it1, _ic0:_ic1, None, :]
-                            - _rec_pos_overlap[None, None, :, :]
-                        )  # (sr_chunk, nc, N_rec, 3)
-                        _dist_sq = (_diff * _diff).sum(axis=-1)
-                        _r_l = self._mol2_radii_overlap[_ic0:_ic1]
-                        _thresh = _OVERLAP_VDW_FRACTION * (
-                            _r_l[:, None] + self._mol1_radii_overlap[None, :]
-                        )  # (nc, N_rec)
-                        _thresh_sq = _thresh * _thresh
-                        _overlap_chunk = (_dist_sq < _thresh_sq[None, :, :]).any(
-                            axis=(1, 2)
-                        )
-                        _inside_all[_it0:_it1] = _inside_all[_it0:_it1] | _overlap_chunk
-                        del _diff, _dist_sq, _overlap_chunk
+                _inside_all = _overlap_grid.overlaps(
+                    _new_lig_atoms, self._mol2_radii_overlap
+                )  # (N_sr,)
                 if cp.any(_inside_all):
                     _inside_idx = cp.where(_inside_all)[0]
                     pos[sr_idx[_inside_idx]] = _old_pos_sr[_inside_idx]
