@@ -53,6 +53,21 @@ except ImportError:
     _CUPY = False
 
 
+def _radial_force_derivative(V0: float, r, debye: float, expf):
+    """Radial force F0 = -dV/dr of the screened Coulomb potential
+    V = V0 exp(-r/λ)/r between the net charges, and its derivative dF0/dr.
+
+    expf is exp(-r/λ), passed in so that the caller chooses NumPy or CuPy.
+    With V written including its 1/r, as in BrownDye 2 (outer_propagator.cc),
+        F0 = V (1/r + 1/λ),
+        dF0/dr = -V/λ² - 2 F0/r = -V0 exp(-r/λ) [2/r³ + 2/(r²λ) + 1/(rλ²)].
+    """
+    V = V0 * expf / r
+    Fr0 = V * (1.0 / r + 1.0 / debye)
+    Fr1 = -V / debye**2 - 2.0 * Fr0 / r
+    return Fr0, Fr1
+
+
 def _split_rotational_diffusion(mob, D_r: float) -> Tuple[float, float]:
     """Return (D_rot1, D_rot2), the receptor's and the ligand's rotational diffusion.
 
@@ -1424,7 +1439,8 @@ class GPUBatchSimulator:
             # gives dt_pair = 0.005 × 172² / 0.0187 ≈ 7912 ps, so σ ≈ 17 Å, and
             # at r = 10 it gives dt_pair = 0.005 × 100 / 0.434 ≈ 1.15 ps. The
             # force criterion is
-            #   dt_force = alpha / |D × Fr1|  with alpha = 0.01,
+            #   dt_force = alpha / |D × Fr1|  with alpha = 0.01 and
+            #   Fr1 = dF0/dr, the derivative of the screened Coulomb force,
             # which controls force accuracy and is only active near the Yukawa
             # region. The edge criterion is
             #   dt_edge = min(r-b, q-r)² / (18 D),
@@ -1441,8 +1457,9 @@ class GPUBatchSimulator:
             _force_alpha = 0.01
             if _adt_has_force:
                 _expf = cp.exp(-r_sr / _adt_debye)
-                _Fr0 = _adt_V0 * _expf * (1.0 / r_sr**2 + 1.0 / (r_sr * _adt_debye))
-                _Fr1 = -_adt_V0 * _expf / _adt_debye**2 - 2.0 * _Fr0 / r_sr
+                _Fr0, _Fr1 = _radial_force_derivative(
+                    _adt_V0, r_sr, _adt_debye, _expf
+                )
                 _DFr1 = cp.abs(D_t * _Fr1)
                 _dt_force = cp.where(
                     (_DFr1 > 1e-15) & (r_sr < 3.0 * _adt_debye),
