@@ -1882,11 +1882,11 @@ class GPUBatchSimulator:
                             _sr_np.astype(np.float64),
                             np.full(len(_sr_np), step, dtype=np.float64),
                             cp.asnumpy(pos[sr_idx]),
-                            cp.asnumpy(q[sr_idx])[
-                                :, :3
-                            ],  # Store q0, q1, q2. The component q3 is recovered from the norm.
+                            # All four components: the norm gives only |q3|,
+                            # and q and -q are not kept in one hemisphere.
+                            cp.asnumpy(q[sr_idx]),
                         ]
-                    )  # (n_running, 8)
+                    )  # (n_running, 9)
                     _path_data.append(_snap)
 
                 if _output_cfg is None or getattr(_output_cfg, "energetics", True):

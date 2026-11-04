@@ -59,8 +59,8 @@ def write_all(
     'near_miss_traj' gives the trajectory indices, and 'near_miss_dist' gives
     the minimum-distance values.
 
-    'path_steps' is a list of (n_recorded, 8) arrays with columns
-    [traj_id, step, x, y, z, q0, q1, q2], and 'energy_steps' is a list of
+    'path_steps' is a list of (n_recorded, 9) arrays with columns
+    [traj_id, step, x, y, z, q0, q1, q2, q3], and 'energy_steps' is a list of
     (n_recorded, 6) arrays with columns [traj_id, step, fx, fy, fz, dt].
 
     The histogram arrays are 'radial_bins' with shape (n_bins,) for the bin
@@ -205,12 +205,14 @@ def write_all(
     if output_cfg.full_paths and "path_steps" in sim_data:
         pdata = sim_data["path_steps"]
         if len(pdata) > 0:
-            all_paths = np.vstack(pdata)  # (total_records, 8)
+            all_paths = np.vstack(pdata)  # (total_records, 9)
             p = work_dir / "paths.npz"
+            # Runs before 2026-11-04 stored only q0-q2 (8 columns).
+            cols = ["traj_id", "step", "x", "y", "z", "q0", "q1", "q2", "q3"]
             np.savez_compressed(
                 p,
                 data=all_paths,
-                columns=np.array(["traj_id", "step", "x", "y", "z", "q0", "q1", "q2"]),
+                columns=np.array(cols[: all_paths.shape[1]]),
             )
             written.append(("paths.npz", p))
     # 6. radial_density.csv

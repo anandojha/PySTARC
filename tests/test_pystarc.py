@@ -5468,7 +5468,7 @@ def _make_dummy_data(N=100, n_react=45, n_escape=55, n_pairs=3):
         "near_miss_q": np.random.randn(n_escape, 4),
         "near_miss_traj": np.arange(n_react, N, dtype=np.int64),
         "near_miss_dist": np.random.uniform(3, 15, n_escape),
-        "path_steps": [np.random.randn(50, 8) for _ in range(5)],
+        "path_steps": [np.random.randn(50, 9) for _ in range(5)],
         "energy_steps": [np.random.randn(50, 6) for _ in range(5)],
         "radial_bins": np.linspace(0, 24, 201),
         "radial_counts": np.random.randint(0, 100, 200),
@@ -5753,7 +5753,7 @@ class TestPathsNPZ:
         assert (tmp_path / "paths.npz").exists()
 
     def test_shape_correct(self, tmp_path):
-        """paths.npz data array has 8 columns for traj_id, step, position, and orientation."""
+        """paths.npz data array has 9 columns for traj_id, step, position, and the full quaternion."""
         write_all(
             tmp_path,
             _make_result(),
@@ -5763,7 +5763,27 @@ class TestPathsNPZ:
             D_rel=0.434,
         )
         d = np.load(tmp_path / "paths.npz")
-        assert d["data"].shape[1] == 8  # traj_id, step, x, y, z, q0, q1, q2
+        assert d["data"].shape[1] == 9  # traj_id, step, x, y, z, q0, q1, q2, q3
+        assert list(d["columns"])[-4:] == ["q0", "q1", "q2", "q3"]
+
+    def test_quaternion_sign_kept(self, tmp_path):
+        """A negative q3 is stored as it is, so every saved orientation can be rebuilt."""
+        data = _make_dummy_data()
+        q = np.array([[0.5, -0.5, 0.5, -0.5], [0.1, 0.2, 0.3, -math.sqrt(0.86)]])
+        data["path_steps"] = [
+            np.column_stack([np.arange(2.0), np.zeros(2), np.zeros((2, 3)), q])
+        ]
+        write_all(tmp_path, _make_result(), data, OutputConfig(), k_b=57.47, D_rel=0.434)
+        d = np.load(tmp_path / "paths.npz")
+        assert d["data"][:, 5:9] == pytest.approx(q)
+
+    def test_legacy_eight_columns(self, tmp_path):
+        """Path arrays from runs before the q3 column keep their 8 column names."""
+        data = _make_dummy_data()
+        data["path_steps"] = [np.random.randn(10, 8)]
+        write_all(tmp_path, _make_result(), data, OutputConfig(), k_b=57.47, D_rel=0.434)
+        d = np.load(tmp_path / "paths.npz")
+        assert list(d["columns"]) == ["traj_id", "step", "x", "y", "z", "q0", "q1", "q2"]
 
     def test_disabled(self, tmp_path):
         """Disabling full_paths prevents paths.npz from being written."""
