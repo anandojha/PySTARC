@@ -116,19 +116,26 @@ KEYS = {
     "energetics":          "Save forces and energies every save_interval steps.",
 }
 
-# Run parameters written into input.xml
-BD_PARAMS = (
-    "bd_milestone_radius", "n_trajectories", "apbs_fglen", "apbs_dime",
-    "apbs_cglen", "apbs_coarse_dime", "apbs_fine_dime", "debye_length",
-    "ion_concentration", "ion_radius_pos", "ion_radius_neg", "pdie", "sdie",
-    "srad", "desolvation_alpha", "enable_born2_torque",
-    "hydrodynamic_interactions", "multipole_fallback", "lj_forces",
-    "overlap_check", "soft_repulsion", "gpu_force_batch", "max_steps", "dt",
-    "minimum_core_dt", "minimum_core_reaction_dt", "max_dt", "r_hydro_rec",
-    "r_hydro_lig", "temperature", "seed", "gpu", "n_threads",
-    "convergence_check", "convergence_interval", "convergence_tol",
-    "checkpoint_interval", "save_interval", "full_paths", "energetics",
+# Run parameters written into input.xml, one tuple per config.xml section
+GEOMETRY = ("bd_milestone_radius", "r_hydro_rec", "r_hydro_lig")
+ELECTROSTATICS = (
+    "debye_length", "ion_concentration", "ion_radius_pos", "ion_radius_neg",
+    "pdie", "sdie", "srad", "apbs_fglen", "apbs_dime", "apbs_cglen",
+    "apbs_coarse_dime", "apbs_fine_dime",
 )
+PHYSICS = (
+    "soft_repulsion", "overlap_check", "lj_forces", "hydrodynamic_interactions",
+    "desolvation_alpha", "enable_born2_torque", "multipole_fallback",
+)
+SIMULATION = (
+    "n_trajectories", "max_steps", "dt", "minimum_core_dt",
+    "minimum_core_reaction_dt", "max_dt", "temperature", "seed",
+    "convergence_check", "convergence_interval", "convergence_tol",
+    "checkpoint_interval",
+)
+COMPUTE = ("gpu", "gpu_force_batch", "n_threads")
+OUTPUTS = ("save_interval", "full_paths", "energetics")
+BD_PARAMS = GEOMETRY + ELECTROSTATICS + PHYSICS + SIMULATION + COMPUTE + OUTPUTS
 
 # Run parameters a config.xml may leave out; input.xml then gets these values,
 # which are the defaults of pystarc/pipeline/input_parser.py.
@@ -817,28 +824,22 @@ def _section(order, src, ind, w):
         out.append(first + ("\n" + rest if rest else ""))
     return "\n".join(out)
 
+SECTIONS = (
+    ("structure", STRUCTURE), ("names", NAMES), ("criterion", CRITERION),
+    ("geometry", GEOMETRY), ("electrostatics", ELECTROSTATICS),
+    ("physics", PHYSICS), ("simulation", SIMULATION), ("compute", COMPUTE),
+    ("outputs", OUTPUTS),
+)
+
 def config_xml(cfg):
     c = cfg.get("criterion", {})
-    secs = [(STRUCTURE, cfg), (NAMES, cfg), (CRITERION, c),
-            (BD_PARAMS, cfg)]
+    secs = [(order, c if name == "criterion" else cfg) for name, order in SECTIONS]
     w = max((len(_el(t, src[t], "    ").partition("\n")[0])
              for order, src in secs for t in order if t in src), default=0) + 2
-    return f"""<?xml version="1.0" ?>
-<config>
-  <structure>
-{_section(STRUCTURE, cfg, "    ", w)}
-  </structure>
-  <names>
-{_section(NAMES, cfg, "    ", w)}
-  </names>
-  <criterion>
-{_section(CRITERION, c, "    ", w)}
-  </criterion>
-  <run>
-{_section(BD_PARAMS, cfg, "    ", w)}
-  </run>
-</config>
-"""
+    body = "".join(
+        f"  <{name}>\n{_section(order, src, '    ', w)}\n  </{name}>\n"
+        for (name, order), (_, src) in zip(SECTIONS, secs))
+    return f'<?xml version="1.0" ?>\n<config>\n{body}</config>\n'
 
 if __name__ == "__main__":
     if "--template" in sys.argv:
