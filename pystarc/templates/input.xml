@@ -28,6 +28,7 @@
   <desolvation_alpha> </desolvation_alpha>
   <hydrodynamic_interactions> </hydrodynamic_interactions>
   <overlap_check> </overlap_check>
+  <soft_repulsion> </soft_repulsion>
   <multipole_fallback> </multipole_fallback>
   <lj_forces> </lj_forces>
   <enable_born2_torque> </enable_born2_torque>
@@ -36,6 +37,7 @@
   <max_steps> </max_steps>
   <dt> </dt>
   <minimum_core_dt> </minimum_core_dt>
+  <minimum_core_reaction_dt> </minimum_core_reaction_dt>
   <max_dt> </max_dt>
   <temperature> </temperature>
   <seed> </seed>
@@ -51,5 +53,7 @@
   <!-- Outputs -->
   <outputs>
     <save_interval> </save_interval>
+    <full_paths> </full_paths>
+    <energetics> </energetics>
   </outputs>
 </pystarc>

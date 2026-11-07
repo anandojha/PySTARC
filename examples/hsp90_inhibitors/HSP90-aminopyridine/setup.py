@@ -94,10 +94,12 @@ KEYS = {
     "multipole_fallback":  "Extend the electrostatics beyond the grid by multipole expansion.",
     "lj_forces":           "Apply repulsive forces at close contact.",
     "overlap_check":       "Forbid the ligand from entering the receptor volume.",
+    "soft_repulsion":      "Soft excluded volume of BrownDye 2 between receptor and ligand atoms, in place of the overlap check.",
     "gpu_force_batch":     "Trajectories per GPU force evaluation. 0 selects automatically.",
     "max_steps":           "Step limit per trajectory.",
     "dt":                  "Largest permitted time step (in picoseconds).",
     "minimum_core_dt":     "Smallest permitted time step. 0 imposes no floor.",
+    "minimum_core_reaction_dt": "Smallest time step near the reaction surface. 0 imposes no floor.",
     "max_dt":              "Ceiling on the time step. 0 imposes no ceiling.",
     "r_hydro_rec":         "Receptor hydrodynamic radius. 0 derives it from the PQR.",
     "r_hydro_lig":         "Ligand hydrodynamic radius. 0 derives it from the PQR file.",
@@ -110,6 +112,8 @@ KEYS = {
     "convergence_tol":     "Relative error defining convergence.",
     "checkpoint_interval": "Trajectories between checkpoints. 0 disables checkpointing.",
     "save_interval":       "Steps between saved positions. 0 saves endpoints only.",
+    "full_paths":          "Save positions and orientations every save_interval steps.",
+    "energetics":          "Save forces and energies every save_interval steps.",
 }
 
 # Run parameters written into input.xml
@@ -119,14 +123,21 @@ BD_PARAMS = (
     "ion_concentration", "ion_radius_pos", "ion_radius_neg", "pdie", "sdie",
     "srad", "desolvation_alpha", "enable_born2_torque",
     "hydrodynamic_interactions", "multipole_fallback", "lj_forces",
-    "overlap_check", "gpu_force_batch", "max_steps", "dt", "minimum_core_dt",
-    "max_dt", "r_hydro_rec", "r_hydro_lig", "temperature", "seed", "gpu",
-    "n_threads", "convergence_check", "convergence_interval", "convergence_tol",
-    "checkpoint_interval", "save_interval",
+    "overlap_check", "soft_repulsion", "gpu_force_batch", "max_steps", "dt",
+    "minimum_core_dt", "minimum_core_reaction_dt", "max_dt", "r_hydro_rec",
+    "r_hydro_lig", "temperature", "seed", "gpu", "n_threads",
+    "convergence_check", "convergence_interval", "convergence_tol",
+    "checkpoint_interval", "save_interval", "full_paths", "energetics",
 )
 
+# Run parameters a config.xml may leave out; input.xml then gets these values,
+# which are the defaults of pystarc/pipeline/input_parser.py.
+OPTIONAL = {"soft_repulsion": "false", "minimum_core_reaction_dt": "0",
+            "full_paths": "true", "energetics": "true"}
+
 BOOL = ("enable_born2_torque", "hydrodynamic_interactions", "multipole_fallback",
-        "lj_forces", "overlap_check", "gpu", "convergence_check")
+        "lj_forces", "overlap_check", "soft_repulsion", "gpu", "convergence_check",
+        "full_paths", "energetics")
 
 POLAR = {"N", "O", "S"}
 
@@ -740,10 +751,10 @@ def write_input(path, cfg):
             "ligand_resname": cfg["ligand_resname"],
             "receptor_pqr": "receptor.pqr", "ligand_pqr": "ligand.pqr",
             "rxns_xml": "rxns.xml", "work_dir": cfg.get("bd_work_dir", "bd_sims")}
-    missing = [k for k in BD_PARAMS if k not in cfg]
+    missing = [k for k in BD_PARAMS if k not in cfg and k not in OPTIONAL]
     if missing:
         sys.exit(f"  ERROR: config.xml has no {', '.join(missing)}")
-    vals.update({k: cfg[k] for k in BD_PARAMS})
+    vals.update({k: cfg.get(k, OPTIONAL.get(k)) for k in BD_PARAMS})
     for k, v in vals.items():
         txt = re.sub(rf"<{k}>\s*</{k}>", f"<{k}>{v}</{k}>", txt)
     open(path, "w").write(txt)
