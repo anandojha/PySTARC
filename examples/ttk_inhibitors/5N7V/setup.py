@@ -94,7 +94,7 @@ KEYS = {
     "multipole_fallback":  "Extend the electrostatics beyond the grid by multipole expansion.",
     "lj_forces":           "Apply repulsive forces at close contact.",
     "overlap_check":       "Forbid the ligand from entering the receptor volume.",
-    "soft_repulsion":      "Soft excluded volume of BrownDye 2 between receptor and ligand atoms, in place of the overlap check.",
+    "soft_repulsion":      "Soft excluded volume of BrownDye 2 between receptor and ligand atoms in place of the overlap check.",
     "gpu_force_batch":     "Trajectories per GPU force evaluation. 0 selects automatically.",
     "max_steps":           "Step limit per trajectory.",
     "dt":                  "Largest permitted time step (in picoseconds).",
@@ -116,7 +116,7 @@ KEYS = {
     "energetics":          "Save forces and energies every save_interval steps.",
 }
 
-# Run parameters written into input.xml, one tuple per config.xml section
+# Run parameters written into input.xml grouped by section of config.xml
 GEOMETRY = ("bd_milestone_radius", "r_hydro_rec", "r_hydro_lig")
 ELECTROSTATICS = (
     "debye_length", "ion_concentration", "ion_radius_pos", "ion_radius_neg",
@@ -137,8 +137,8 @@ COMPUTE = ("gpu", "gpu_force_batch", "n_threads")
 OUTPUTS = ("save_interval", "full_paths", "energetics")
 BD_PARAMS = GEOMETRY + ELECTROSTATICS + PHYSICS + SIMULATION + COMPUTE + OUTPUTS
 
-# Run parameters a config.xml may leave out; input.xml then gets these values,
-# which are the defaults of pystarc/pipeline/input_parser.py.
+# Settings a config.xml may leave out and the value input.xml then gets.
+# These are the defaults of pystarc/pipeline/input_parser.py.
 OPTIONAL = {"soft_repulsion": "false", "minimum_core_reaction_dt": "0",
             "full_paths": "true", "energetics": "true"}
 
