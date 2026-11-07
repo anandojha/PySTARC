@@ -24,7 +24,7 @@
     <ligand>auto</ligand>                                        <!-- Ligand side of each pair. Use auto to choose the nearest atom that atom_filter permits. -->
     <atom_filter>all</atom_filter>                               <!-- Element pairings permitted. Options: all, polar, nonpolar, any_polar, and receptor_polar. -->
     <pair_cutoff>7.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
-    <n_needed>7</n_needed>                                       <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. -->
+    <n_needed>3</n_needed>                                       <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. -->
   </criterion>
   <geometry>
     <bd_milestone_radius>30.0000</bd_milestone_radius>           <!-- Radius of the starting sphere (in angstroms). -->
