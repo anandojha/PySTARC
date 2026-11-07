@@ -1,8 +1,9 @@
 <?xml version="1.0" ?>
 <config>
   <structure>
-    <ligand_source>complex_pdb</ligand_source>                   <!-- Source of the receptor and ligand structures. Options: prmtop, complex_pdb, rcsb, and rcsb_smiles. -->
+    <ligand_source>complex_pdb</ligand_source>                   <!-- Source of the receptor and ligand structures. Options: pqr, prmtop, complex_pdb, rcsb, and rcsb_smiles. -->
     <complex_pdb>complex.pdb</complex_pdb>                       <!-- Single PDB containing receptor and ligand. -->
+    <ligand_net_charge>0</ligand_net_charge>                     <!-- Formal charge of the ligand. Blank takes it from the component definition. -->
   </structure>
   <names>
     <ligand_formula>C27 H28 N4 O3</ligand_formula>               <!-- Expected ligand composition. The build aborts on a mismatch. -->
@@ -10,7 +11,7 @@
     <ligand_resname>UNK</ligand_resname>                         <!-- Ligand label written to input.xml. -->
   </names>
   <criterion>
-    <mode>auto</mode>                                            <!-- How the atom pairs of the reaction criterion are chosen. Options: auto and explicit. -->
+    <mode>auto</mode>                                            <!-- How the atom pairs of the reaction criterion are chosen. Options: auto, explicit, and center. -->
     <search_cutoff>5.0</search_cutoff>                           <!-- Search radius for contacts (in angstroms). -->
     <n_pairs>8</n_pairs>                                         <!-- Number of contacts retained. -->
     <atom_filter>all</atom_filter>                               <!-- Element pairings permitted. Options: all, polar, nonpolar, any_polar, and receptor_polar. -->
@@ -37,7 +38,7 @@
     <apbs_fine_dime>0</apbs_fine_dime>                           <!-- Grid points per axis of the fine grid. 0 uses apbs_dime. -->
   </electrostatics>
   <physics>
-    <soft_repulsion>true</soft_repulsion>                       <!-- Soft excluded volume of BrownDye 2 between receptor and ligand atoms in place of the overlap check. Options: true and false. -->
+    <soft_repulsion>true</soft_repulsion>                        <!-- Soft excluded volume of BrownDye 2 between receptor and ligand atoms in place of the overlap check. Options: true and false. -->
     <overlap_check>false</overlap_check>                         <!-- Forbid the ligand from entering the receptor volume. Options: true and false. -->
     <lj_forces>false</lj_forces>                                 <!-- Apply repulsive forces at close contact. Options: true and false. -->
     <hydrodynamic_interactions>true</hydrodynamic_interactions>  <!-- Include hydrodynamic coupling between the two molecules. Options: true and false. -->
@@ -50,7 +51,7 @@
     <max_steps>1000000</max_steps>                               <!-- Step limit per trajectory. -->
     <dt>0.2</dt>                                                 <!-- Largest permitted time step (in picoseconds). -->
     <minimum_core_dt>0.2</minimum_core_dt>                       <!-- Smallest permitted time step. 0 imposes no floor. -->
-    <minimum_core_reaction_dt>0.05</minimum_core_reaction_dt>       <!-- Smallest time step near the reaction surface. 0 imposes no floor. -->
+    <minimum_core_reaction_dt>0.05</minimum_core_reaction_dt>    <!-- Smallest time step near the reaction surface. 0 imposes no floor. -->
     <max_dt>0</max_dt>                                           <!-- Ceiling on the time step. 0 imposes no ceiling. -->
     <temperature>298.15</temperature>                            <!-- Temperature (in kelvin). -->
     <seed>1</seed>                                               <!-- Random number seed. -->
@@ -65,7 +66,7 @@
     <n_threads>32</n_threads>                                    <!-- Number of CPU threads. -->
   </compute>
   <outputs>
-    <save_interval>100</save_interval>                            <!-- Steps between saved positions. 0 saves endpoints only. -->
+    <save_interval>100</save_interval>                           <!-- Steps between saved positions. 0 saves endpoints only. -->
     <full_paths>true</full_paths>                                <!-- Save positions and orientations every save_interval steps. Options: true and false. -->
     <energetics>true</energetics>                                <!-- Save forces and energies every save_interval steps. Options: true and false. -->
   </outputs>

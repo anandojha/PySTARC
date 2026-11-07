@@ -61,7 +61,6 @@ cd PySTARC
 conda create -n PySTARC python=3.11 -y
 conda activate PySTARC
 conda install -c conda-forge ambertools=24.8 apbs rdkit openbabel -y
-conda install -c openeye openeye-toolkits -y
 pip install matplotlib
 pip install pystarc --force-reinstall
 ```
@@ -107,7 +106,6 @@ AmberTools 24.8
 APBS
 OpenBabel
 RDKit
-OpenEye Toolkits
 NumPy
 SciPy
 Click
@@ -115,8 +113,6 @@ Numba
 Matplotlib
 CuPy
 ```
-
-OpenEye Toolkits require a license (OE_LICENSE). Only setup.py in the p38, HSP90, and TTK examples uses them.
 
 ## License
 

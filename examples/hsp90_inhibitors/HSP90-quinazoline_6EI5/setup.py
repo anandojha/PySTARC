@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 
-from openeye import oechem, oequacpac
 import xml.etree.ElementTree as ET
-from rdkit.Chem import AllChem
-from openeye import oechem
+from rdkit.Chem import AllChem, rdDetermineBonds
 from rdkit import Chem
 import urllib.request
 import numpy as np
 import collections
 import subprocess
+import shutil
 import sys
 import os
 import re
@@ -16,15 +15,17 @@ import re
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 SOURCES = {
+    "pqr":         dict(need=("receptor_pqr_file", "ligand_pqr_file"), opt=(), note="Uses receptor and ligand PQR files that already exist"),
     "prmtop":      dict(need=("prmtop", "complex_pdb"), opt=(), note="Uses a topology and PDB that already exist"),
-    "complex_pdb": dict(need=("complex_pdb",), opt=("chain", "ligand_net_charge", "ligand_ccd"), note="Takes one PDB holding the receptor and the ligand"),
-    "rcsb":        dict(need=("pdb_id", "ligand_resid"), opt=("chain", "rec_resid_min", "ligand_net_charge", "ligand_ccd"), note="Downloads the entry and takes the ligand as deposited"),
+    "complex_pdb": dict(need=("complex_pdb",), opt=("chain", "ligand_net_charge", "ligand_ccd", "ligand_protonate"), note="Takes one PDB holding the receptor and the ligand"),
+    "rcsb":        dict(need=("pdb_id", "ligand_resid"), opt=("chain", "rec_resid_min", "ligand_net_charge", "ligand_ccd", "ligand_protonate"), note="Downloads the entry and takes the ligand as deposited"),
     "rcsb_smiles": dict(need=("pdb_id", "ligand_resid", "smiles"), opt=("chain", "keep_hetatm", "ligand_net_charge"), note="Takes the receptor from the entry and builds the ligand from SMILES"),
 }
 
 MODES = {
     "auto":     dict(need=("search_cutoff", "atom_filter", "n_pairs", "pair_cutoff", "n_needed"), opt=("excluded",), note="Locates contacts automatically and keeps one per residue"),
     "explicit": dict(need=("receptor", "ligand", "pair_cutoff", "n_needed"), opt=("receptor_numbering", "atom_filter"), note="Pairs receptor atoms you name one to one with ligand atoms"),
+    "center":   dict(need=("pair_cutoff",), opt=(), note="Pairs the centroid of the receptor with the centroid of the ligand"),
 }
 
 NUMBERING = {
@@ -42,6 +43,8 @@ ATOM_FILTERS = {
 
 KEYS = {
     "ligand_source":       "Source of the receptor and ligand structures.",
+    "receptor_pqr_file":   "Existing receptor PQR with charges and radii. Not named receptor.pqr, which the run remakes.",
+    "ligand_pqr_file":     "Existing ligand PQR with charges and radii. Not named ligand.pqr, which the run remakes.",
     "prmtop":              "Existing AMBER topology.",
     "complex_pdb":         "Single PDB containing receptor and ligand.",
     "pdb_id":              "RCSB entry to download.",
@@ -49,8 +52,9 @@ KEYS = {
     "smiles":              "Ligand SMILES, used in place of the deposited coordinates.",
     "chain":               "Receptor chain retained. Blank retains all chains.",
     "rec_resid_min":       "Lowest receptor residue number retained.",
-    "ligand_net_charge":   "Formal charge of the ligand. Blank defers to OpenEye.",
-    "ligand_ccd":          "Component supplying bond orders when the composition check fails.",
+    "ligand_net_charge":   "Formal charge of the ligand. Blank takes it from the component definition.",
+    "ligand_ccd":          "Component supplying the bond orders and formal charges. Blank uses the residue name of the ligand when it is a component code.",
+    "ligand_protonate":    "Component atoms that each take one proton on top of the component definition. Each adds one to the net charge.",
     "keep_hetatm":         "Het groups retained with the receptor.",
     "ligand_formula":      "Expected ligand composition. The build aborts on a mismatch.",
     "receptor_resname":    "Receptor label written to input.xml.",
@@ -142,7 +146,7 @@ POLAR = {"N", "O", "S"}
 # structure to PQR 
 SKIP_HET = {"HOH", "WAT", "NA", "CL", "MG", "ZN", "ACE", "NME",
             "Na+", "Cl-", "K+", "CAL"}
-JUNK = ["_protein.rst7", "_ligand.rst7", "ligand_oe.mol2", "sqm.in", "sqm.out",
+JUNK = ["_protein.rst7", "_ligand.rst7", "ligand_h.sdf", "sqm.in", "sqm.out",
         "sqm.pdb", "ANTECHAMBER_AC.AC", "ANTECHAMBER_AC.AC0",
         "ANTECHAMBER_BOND_TYPE.AC", "ANTECHAMBER_BOND_TYPE.AC0",
         "ANTECHAMBER_AM1BCC.AC", "ANTECHAMBER_AM1BCC_PRE.AC", "ATOMTYPE.INF",
@@ -259,26 +263,35 @@ def source_prmtop(cfg, W):
     if os.path.exists(p):
         os.remove(p)
 
-def ccd_bond_orders(code, W):
-    """Bond orders from the deposited chemical component, by atom name."""
+def ccd_definition(code, W):
+    """Bond orders and formal charges of the deposited chemical component, by atom name."""
     cif = os.path.join(W, f"{code}.cif")
     if not os.path.exists(cif):
         urllib.request.urlretrieve(
             f"https://files.rcsb.org/ligands/download/{code}.cif", cif)
-    out, inblk = {}, False
+    bonds, charges, block, cols = {}, {}, None, []
     for line in open(cif):
-        if line.startswith("_chem_comp_bond."):
-            inblk = True
+        if line.startswith("#"):
+            block, cols = None, []
             continue
-        if inblk:
-            p = line.split()
-            if len(p) >= 4 and p[0] == code:
-                o = {"SING": 1, "DOUB": 2, "TRIP": 3}.get(p[3])
-                if o:
-                    out[frozenset((p[1].strip(chr(34)), p[2].strip(chr(34))))] = o
-            elif line.startswith("#"):
-                inblk = False
-    return out
+        for b in ("_chem_comp_bond.", "_chem_comp_atom."):
+            if line.startswith(b):
+                block = b
+                cols.append(line.split()[0][len(b):])
+                break
+        else:
+            if block and cols:
+                p = line.split()
+                if len(p) < len(cols) or p[0] != code:
+                    continue
+                row = dict(zip(cols, (v.strip(chr(34)) for v in p)))
+                if block == "_chem_comp_bond.":
+                    o = {"SING": 1, "DOUB": 2, "TRIP": 3}.get(row.get("value_order"))
+                    if o:
+                        bonds[frozenset((row["atom_id_1"], row["atom_id_2"]))] = o
+                elif row.get("charge", "0").lstrip("-+").isdigit():
+                    charges[row["atom_id"]] = int(row["charge"])
+    return bonds, charges
 
 def _formula_counts(formula):
     c = collections.Counter()
@@ -289,8 +302,39 @@ def _formula_counts(formula):
 def _mol_counts(mol):
     c = collections.Counter()
     for a in mol.GetAtoms():
-        c[oechem.OEGetAtomicSymbol(a.GetAtomicNum()).upper()] += 1
+        c[a.GetSymbol().upper()] += 1
     return c
+
+# Residue names that stand for an unnamed ligand and so name no component
+GENERIC_RESNAMES = {"UNK", "UNL", "LIG", "DRG", "INH", "MOL"}
+
+def _restore_names(W, mol):
+    """antechamber numbers the atoms afresh. Give the atoms that came from the
+    structure their component names back. The added hydrogens keep theirs."""
+    path = os.path.join(W, "ligand.mol2")
+    lines = open(path).read().split("\n")
+    i0 = lines.index("@<TRIPOS>ATOM") + 1
+    i1 = next(i for i in range(i0, len(lines)) if lines[i].startswith("@<TRIPOS>"))
+    rows = [i for i in range(i0, i1) if lines[i].strip()]
+    if len(rows) != mol.GetNumAtoms():
+        sys.exit(f"  ERROR: ligand.mol2 has {len(rows)} atoms, the ligand has "
+                 f"{mol.GetNumAtoms()}")
+    taken = set()
+    for i, a in zip(rows, mol.GetAtoms()):
+        f = lines[i].split()
+        el = {"cl": "Cl", "br": "Br"}.get(f[5][:2].lower(), f[5][0].upper())
+        if el != a.GetSymbol():
+            sys.exit(f"  ERROR: atom {f[0]} of ligand.mol2 is {el} where the ligand "
+                     f"has {a.GetSymbol()}, so the atom order changed")
+        info = a.GetPDBResidueInfo()
+        nm = info.GetName().strip() if info is not None else f[1]
+        if nm in taken:
+            nm = f[1]
+        taken.add(nm)
+        f[1] = nm
+        lines[i] = (f"{f[0]:>7} {f[1]:<8} {f[2]:>10} {f[3]:>10} {f[4]:>10} "
+                    f"{f[5]:<6} {f[6]:>3} {f[7]:<8} {f[8]:>10}")
+    open(path, "w").write("\n".join(lines))
 
 def _parameterise(cfg, W):
     _leap(W, "tleap_protein.in",
@@ -298,56 +342,99 @@ def _parameterise(cfg, W):
           "protein = loadpdb protein.pdb\ncheck protein\n"
           "saveamberparm protein protein.prmtop protein.rst7\n"
           "savepdb protein protein_leap.pdb\nquit\n", "protein.prmtop")
-
-    def _read(use_ccd):
-        ifs = oechem.oemolistream(os.path.join(W, "ligand_raw.pdb"))
-        ifs.SetFormat(oechem.OEFormat_PDB)
-        m = oechem.OEMol()
-        oechem.OEReadMolecule(ifs, m)
-        n = 0
-        if use_ccd:
-            ref = ccd_bond_orders(use_ccd, W)
-            for b in m.GetBonds():
-                k = frozenset((b.GetBgn().GetName().strip(),
-                               b.GetEnd().GetName().strip()))
-                if k in ref and b.GetOrder() != ref[k]:
-                    b.SetOrder(ref[k])
-                    n += 1
-            if n:
-                oechem.OEFindRingAtomsAndBonds(m)
-                oechem.OEAssignAromaticFlags(m)
-                # implicit counts are fixed at perception, so redo them or the
-                # hydrogens follow the bonds that were just replaced
-                oechem.OEAssignImplicitHydrogens(m)
-                oechem.OEAssignFormalCharges(m)
-        oechem.OEAddExplicitHydrogens(m)
-        return m, n
-    mol, _n = _read(None)
-    want = _formula_counts(cfg["ligand_formula"])
-    got = _mol_counts(mol)
-    if got != want:
-        code = cfg.get("ligand_ccd") or cfg.get("ligand_resid")
-        if not code:
-            sys.exit(f"  ERROR: composition {dict(got)} against {dict(want)} "
-                     f"and no component code to check the bond orders against")
-        print(f"  composition off by "
-              f"{ {k: got.get(k, 0) - want.get(k, 0) for k in set(got) | set(want) if got.get(k, 0) != want.get(k, 0)} }"
-              f", retrying with the {code} bond orders")
-        mol, n = _read(code)
-        print(f"  {n} bond orders taken from the {code} definition")
-
+    raw = os.path.join(W, "ligand_raw.pdb")
+    resn_pdb = next((l[17:20].strip() for l in open(raw)
+                     if l.startswith(("ATOM", "HETATM"))), "")
+    # The component definition gives the bonds, their orders and the formal
+    # charges. Its code is ligand_ccd, then ligand_resid, then the residue
+    # name of the ligand when the name is not a placeholder.
+    code = cfg.get("ligand_ccd") or cfg.get("ligand_resid") or (
+        resn_pdb if resn_pdb and resn_pdb not in GENERIC_RESNAMES else None)
+    m = Chem.MolFromPDBFile(raw, removeHs=False, sanitize=False)
+    if m is None:
+        sys.exit("  ERROR: RDKit cannot read ligand_raw.pdb")
+    has_h = any(a.GetAtomicNum() == 1 for a in m.GetAtoms())
     netq = cfg.get("ligand_net_charge")
-    if netq is None:
-        netq = sum(a.GetFormalCharge() for a in mol.GetAtoms())
-    print(f"  ligand net charge {netq:+d} e, {mol.NumAtoms()} atoms with hydrogens")
-    if not oequacpac.OEAssignCharges(mol, oequacpac.OEAM1BCCCharges()):
-        sys.exit("  ERROR: OEAssignCharges failed")
-    ofs = oechem.oemolostream(os.path.join(W, "ligand_oe.mol2"))
-    ofs.SetFormat(oechem.OEFormat_MOL2)
-    oechem.OEWriteMolecule(ofs, mol)
-    ofs.close()
-    _sh(W, f"antechamber -i ligand_oe.mol2 -fi mol2 -o ligand.mol2 -fo mol2 "
-            f"-at gaff2 -nc {netq}", "ligand.mol2")
+    if code:
+        bonds, charges = ccd_definition(code, W)
+        name = lambda a: a.GetPDBResidueInfo().GetName().strip()
+        known = {x for k in bonds for x in k}
+        unknown = sorted({name(a) for a in m.GetAtoms()} - known)
+        if unknown:
+            sys.exit(f"  ERROR: atoms {unknown} are not in the {code} definition, "
+                     f"so the ligand atom names do not follow the component")
+        kinds = {1: Chem.BondType.SINGLE, 2: Chem.BondType.DOUBLE,
+                 3: Chem.BondType.TRIPLE}
+        rw = Chem.RWMol(m)
+        for i, j in [(b.GetBeginAtomIdx(), b.GetEndAtomIdx()) for b in rw.GetBonds()]:
+            rw.RemoveBond(i, j)
+        idx = {name(a): a.GetIdx() for a in rw.GetAtoms()}
+        n = 0
+        for pair, o in bonds.items():
+            a1, a2 = tuple(pair)
+            if a1 in idx and a2 in idx:
+                rw.AddBond(idx[a1], idx[a2], kinds[o])
+                n += 1
+        for a in rw.GetAtoms():
+            a.SetFormalCharge(charges.get(name(a), 0))
+        # A proton named in ligand_protonate raises the formal charge of its
+        # atom by one. AddHs then places the hydrogen from the geometry.
+        prot = [_name(x) for x in (cfg.get("ligand_protonate") or ())]
+        for nm in prot:
+            if nm not in idx:
+                sys.exit(f"  ERROR: ligand_protonate names {nm}, which is not a ligand atom")
+            a = rw.GetAtomWithIdx(idx[nm])
+            if a.GetSymbol() not in ("N", "O", "S"):
+                sys.exit(f"  ERROR: ligand_protonate names {nm}, a {a.GetSymbol()} atom. "
+                         f"Protons go on N, O or S")
+            a.SetFormalCharge(a.GetFormalCharge() + 1)
+        m = rw.GetMol()
+        q_ccd = sum(a.GetFormalCharge() for a in m.GetAtoms())
+        print(f"  {n} bonds with their orders and the formal charges from the "
+              f"{code} definition"
+              + (f", one proton added on each of {', '.join(prot)}" if prot else "")
+              + f", net charge {q_ccd:+d} e")
+        if netq is None:
+            netq = q_ccd
+        elif netq != q_ccd:
+            sys.exit(f"  ERROR: ligand_net_charge {netq:+d} differs from the "
+                     f"{q_ccd:+d} of the {code} definition")
+    else:
+        if cfg.get("ligand_protonate"):
+            sys.exit("  ERROR: ligand_protonate needs a component definition, "
+                     "name the component in ligand_ccd")
+        if netq is None:
+            sys.exit(f"  ERROR: no component definition for {resn_pdb or 'the ligand'}, "
+                     f"so set ligand_net_charge, or name the component in ligand_ccd")
+        if has_h:
+            rdDetermineBonds.DetermineBondOrders(m, charge=netq)
+            print("  bond orders from the geometry, with the hydrogens of the PDB")
+        else:
+            rdDetermineBonds.DetermineBonds(m, charge=netq)
+            print("  bonds and bond orders from the heavy atom geometry")
+    for a in m.GetAtoms():
+        a.SetNoImplicit(False)
+        a.SetNumExplicitHs(0)
+    try:
+        Chem.SanitizeMol(m)
+    except Exception as e:
+        sys.exit(f"  ERROR: the ligand chemistry does not sanitize ({e}). "
+                 f"Check ligand_protonate and the component")
+    m = Chem.AddHs(m, addCoords=True)
+    want, got = _formula_counts(cfg["ligand_formula"]), _mol_counts(m)
+    if got != want:
+        off = {k: got.get(k, 0) - want.get(k, 0)
+               for k in sorted(set(got) | set(want)) if got.get(k, 0) != want.get(k, 0)}
+        sys.exit(f"  ERROR: ligand composition off by {off} against "
+                 f"{cfg['ligand_formula']}. Check ligand_net_charge and the component")
+    print(f"  ligand net charge {netq:+d} e, {m.GetNumAtoms()} atoms with hydrogens")
+    Chem.MolToMolFile(m, os.path.join(W, "ligand_h.sdf"))
+    _sh(W, "obabel ligand_h.sdf -o mol2 -O ligand_obabel.mol2", "ligand_obabel.mol2")
+    resn = cfg.get("ligand_resid") or cfg["ligand_resname"]
+    _sh(W, f"antechamber -i ligand_obabel.mol2 -fi mol2 -o ligand.mol2 -fo mol2 "
+           f"-c bcc -at gaff2 -nc {netq} -rn {resn} -pf y -j 4 -dr no",
+        "ligand.mol2")
+    _restore_names(W, m)
     _sh(W, "parmchk2 -i ligand.mol2 -f mol2 -o ligand.frcmod -s gaff2",
         "ligand.frcmod")
     _leap(W, "tleap_ligand.in",
@@ -384,8 +471,8 @@ def source_complex_pdb(cfg, W):
 def source_rcsb(cfg, W):
     """Fetch the entry, extract chain and ligand, parameterise.
 
-    CONECT records for the ligand come across too, so OpenEye reads the bond
-    orders from the deposit instead of guessing them from geometry.
+    CONECT records for the ligand come across too and the bond orders come
+    from the component definition when the composition check asks for them.
     """
     pid = cfg["pdb_id"]
     entry = os.path.join(W, f"{pid}.pdb")
@@ -498,7 +585,22 @@ def source_rcsb_smiles(cfg, W):
     print(f"  protein {len(prot)} atoms, {len(het)} kept het atoms")
     _parameterise_smiles(cfg, W)
 
-HANDLERS = {"prmtop": source_prmtop, "complex_pdb": source_complex_pdb,
+def source_pqr(cfg, W):
+    """Receptor and ligand PQR files that already exist, charges and radii included."""
+    for key, out in (("receptor_pqr_file", "receptor.pqr"),
+                     ("ligand_pqr_file", "ligand.pqr")):
+        src = os.path.join(W, cfg[key])
+        if not os.path.exists(src):
+            sys.exit(f"  ERROR: no {cfg[key]}")
+        dst = os.path.join(W, out)
+        if os.path.abspath(src) == os.path.abspath(dst):
+            sys.exit(f"  ERROR: {key} must not be {out}, which the run remakes")
+        shutil.copyfile(src, dst)
+        n = sum(1 for l in open(dst) if l.startswith(("ATOM", "HETATM")))
+        print(f"  {out}: {n} atoms from {cfg[key]}")
+
+HANDLERS = {"pqr": source_pqr, "prmtop": source_prmtop,
+            "complex_pdb": source_complex_pdb,
             "rcsb": source_rcsb, "rcsb_smiles": source_rcsb_smiles}
 
 # reaction criterion and output files
@@ -635,6 +737,14 @@ def pairs_explicit(rec, lig, c, rmap=None, lmap=None):
         out.append((i, j, c["pair_cutoff"], d))
     return out
 
+def pair_center(rec, lig, c):
+    """One pair between the centroids. PySTARC appends a ghost atom at the
+    centroid of each molecule as its last atom. The pair names the position
+    after the last real atom on both sides."""
+    R = np.mean([a["xyz"] for a in rec], axis=0)
+    L = np.mean([a["xyz"] for a in lig], axis=0)
+    return (len(rec), len(lig), c["pair_cutoff"], float(np.linalg.norm(R - L)))
+
 def write_rxns(path, pairs, n_needed):
     body = "".join(
         f"        <pair><atoms> {i + 1} {j + 1} </atoms>"
@@ -681,7 +791,7 @@ def build(**cfg):
     if c["mode"] == "auto":
         if c.get("atom_filter") not in ATOM_FILTERS:
             sys.exit(f"atom_filter must be one of {sorted(ATOM_FILTERS)}")
-    else:
+    elif c["mode"] == "explicit":
         auto = c["ligand"] == "auto" or "auto" in c["ligand"]
         if auto and c.get("atom_filter") not in ATOM_FILTERS:
             sys.exit(f"ligand auto needs atom_filter, one of {sorted(ATOM_FILTERS)}")
@@ -696,14 +806,18 @@ def build(**cfg):
     rec = read_pqr(os.path.join(W, "receptor.pqr"))
     lig = read_pqr(os.path.join(W, "ligand.pqr"))
     check_formula(lig, cfg["ligand_formula"])
-    pairs = (pairs_auto(rec, lig, c) if c["mode"] == "auto"
-             else pairs_explicit(rec, lig, c, extra.get("rmap"),
-                                 extra.get("lmap")))
-    if len(pairs) < c["n_needed"]:
-        sys.exit(f"  ERROR: {len(pairs)} pairs found, n_needed is {c['n_needed']}")
-    write_rxns(os.path.join(W, "rxns.xml"), pairs, c["n_needed"])
+    if c["mode"] == "auto":
+        pairs = pairs_auto(rec, lig, c)
+    elif c["mode"] == "explicit":
+        pairs = pairs_explicit(rec, lig, c, extra.get("rmap"), extra.get("lmap"))
+    else:
+        pairs = [pair_center(rec, lig, c)]
+    n_needed = 1 if c["mode"] == "center" else c["n_needed"]
+    if len(pairs) < n_needed:
+        sys.exit(f"  ERROR: {len(pairs)} pairs found, n_needed is {n_needed}")
+    write_rxns(os.path.join(W, "rxns.xml"), pairs, n_needed)
     write_input(os.path.join(W, "input.xml"), cfg)
-    print(f"  {len(pairs)} pairs, n_needed {c['n_needed']}")
+    print(f"  {len(pairs)} pairs, n_needed {n_needed}")
     geometry_check(rec, lig, cfg)
     tidy(W, cfg)
 
@@ -756,9 +870,10 @@ def geometry_check(rec, lig, cfg):
     print(f"  rmax={rmax:.1f} lmax={lmax:.1f} b={b:.0f} fglen={fg:.0f}  "
           f"{'OK' if ok else 'WARNING, b-surface outside the grid'}")
 
-STRUCTURE = ("ligand_source", "prmtop", "complex_pdb", "pdb_id",
+STRUCTURE = ("ligand_source", "receptor_pqr_file", "ligand_pqr_file",
+             "prmtop", "complex_pdb", "pdb_id",
              "ligand_resid", "smiles", "chain", "rec_resid_min",
-             "ligand_net_charge", "ligand_ccd", "keep_hetatm")
+             "ligand_net_charge", "ligand_ccd", "ligand_protonate", "keep_hetatm")
 NAMES = ("ligand_formula", "receptor_resname", "ligand_resname")
 CRITERION = ("mode", "receptor_numbering", "search_cutoff", "n_pairs",
              "receptor", "ligand", "atom_filter", "excluded", "pair_cutoff",
@@ -770,7 +885,8 @@ def _el(t, v, ind):
                        for r, a, n in v)
         return f"{ind}<{t}>\n{rows}{ind}</{t}>"
     if isinstance(v, (list, tuple)):
-        rows = "".join(f'{ind}  <atom name="{_name(x)}"/>\n' for x in v) if t == "ligand" \
+        rows = "".join(f'{ind}  <atom name="{_name(x)}"/>\n' for x in v) \
+            if t in ("ligand", "ligand_protonate") \
             else "".join(f"{ind}  <item>{_name(x)}</item>\n" for x in v)
         return f"{ind}<{t}>\n{rows}{ind}</{t}>"
     return f"{ind}<{t}>{v}</{t}>"

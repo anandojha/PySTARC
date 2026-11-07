@@ -1,7 +1,7 @@
 <?xml version="1.0" ?>
 <config>
   <structure>
-    <ligand_source>prmtop</ligand_source>                        <!-- Source of the receptor and ligand structures. Options: prmtop, complex_pdb, rcsb, and rcsb_smiles. -->
+    <ligand_source>prmtop</ligand_source>                        <!-- Source of the receptor and ligand structures. Options: pqr, prmtop, complex_pdb, rcsb, and rcsb_smiles. -->
     <prmtop>complex.parm7</prmtop>                               <!-- Existing AMBER topology. -->
     <complex_pdb>complex.pdb</complex_pdb>                       <!-- Single PDB containing receptor and ligand. -->
   </structure>
@@ -11,25 +11,13 @@
     <ligand_resname>APN</ligand_resname>                         <!-- Ligand label written to input.xml. -->
   </names>
   <criterion>
-    <mode>explicit</mode>                                        <!-- How the atom pairs of the reaction criterion are chosen. Options: auto and explicit. -->
-    <receptor>                                                   <!-- Receptor side of each pair. The pair counts when this atom is within the cutoff of its ligand atom. -->
-      <target resid="1" atom="C4" resname="MGO"/>
-      <target resid="2" atom="C4" resname="MGO"/>
-      <target resid="3" atom="C4" resname="MGO"/>
-      <target resid="4" atom="C4" resname="MGO"/>
-      <target resid="5" atom="C4" resname="MGO"/>
-      <target resid="6" atom="C4" resname="MGO"/>
-      <target resid="7" atom="C4" resname="MGO"/>
-    </receptor>
-    <ligand>auto</ligand>                                        <!-- Ligand side of each pair. Use auto to choose the nearest atom that atom_filter permits. -->
-    <atom_filter>all</atom_filter>                               <!-- Element pairings permitted. Options: all, polar, nonpolar, any_polar, and receptor_polar. -->
-    <pair_cutoff>7.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
-    <n_needed>3</n_needed>                                       <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. -->
+    <mode>center</mode>                                          <!-- How the atom pairs of the reaction criterion are chosen. Options: auto, explicit, and center. -->
+    <pair_cutoff>8.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
   </criterion>
   <geometry>
-    <bd_milestone_radius>30.0000</bd_milestone_radius>           <!-- Radius of the starting sphere (in angstroms). -->
-    <r_hydro_rec>0.0000</r_hydro_rec>                            <!-- Receptor hydrodynamic radius. 0 derives it from the PQR. -->
-    <r_hydro_lig>0.0000</r_hydro_lig>                            <!-- Ligand hydrodynamic radius. 0 derives it from the PQR file. -->
+    <bd_milestone_radius>30.0</bd_milestone_radius>              <!-- Radius of the starting sphere (in angstroms). -->
+    <r_hydro_rec>0.0</r_hydro_rec>                               <!-- Receptor hydrodynamic radius. 0 derives it from the PQR. -->
+    <r_hydro_lig>0.0</r_hydro_lig>                               <!-- Ligand hydrodynamic radius. 0 derives it from the PQR file. -->
   </geometry>
   <electrostatics>
     <debye_length>7.85751</debye_length>                         <!-- Electrostatic screening length of the salt (in angstroms). -->
