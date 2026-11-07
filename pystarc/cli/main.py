@@ -154,6 +154,30 @@ def pqr_to_xml(pqr_file, output):
     click.echo(f"Written: {out}  ({len(mol.atoms)} atoms)")
 
 
+# Draw the figures of a finished run from its analysis files.
+@cli.command("plot")
+@click.argument("run_dir")
+@click.option("--out", "-o", default=None, help="Output directory (default <run_dir>/figures)")
+@click.option("--dpi", default=500, show_default=True, help="Resolution of the PNG files")
+@click.option(
+    "--only",
+    default=None,
+    help="Comma separated subset of rate,radial,first_hitting,first_passage,steps",
+)
+def plot_cmd(run_dir, out, dpi, only):
+    """Figures from the analysis files of a finished run (any system, any size)."""
+    from pystarc.analysis.plots import FIGURES, plot_run
+
+    which = tuple(w.strip() for w in only.split(",") if w.strip()) if only else FIGURES
+    unknown = [w for w in which if w not in FIGURES]
+    if unknown:
+        raise click.BadParameter(f"unknown figure(s): {', '.join(unknown)}; choose from {', '.join(FIGURES)}")
+    status = plot_run(run_dir, out, dpi=dpi, which=which)
+    for name, note in status.items():
+        click.echo(f"  {name}: {note}")
+    click.echo(f"figures in {out or Path(run_dir) / 'figures'}")
+
+
 def main():
     cli()
 
