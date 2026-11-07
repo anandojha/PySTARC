@@ -151,6 +151,7 @@ bd_sims/
 ```
 
 ## Expected results
+The values below are from the published runs, before the soft wall, the one reaction distance and the criteria now in config.xml. They will be replaced when the revised runs finish.
 ```
 Complex  Inhibitor    Experimental k_on (M⁻¹s⁻¹)  PySTARC k_on (M⁻¹s⁻¹)
 2X9E     NMS-P715     6.38e5                      (3.51 ± 0.10)e6

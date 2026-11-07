@@ -151,6 +151,7 @@ bd_sims/
 ```
 
 ## Expected results
+The values below are from the published runs, before the soft wall, the one reaction distance and the criteria now in config.xml. They will be replaced when the revised runs finish.
 ```
 Complex                 Experimental k_on (M⁻¹s⁻¹)  PySTARC k_on (M⁻¹s⁻¹)
 BCD_1-butanol           2.80e8                      (2.67 ± 0.04)e8

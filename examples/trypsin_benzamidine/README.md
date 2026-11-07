@@ -139,6 +139,7 @@ bd_sims/
 ```
 
 ## Expected results
+The values below are from the published runs, before the soft wall, the one reaction distance and the criteria now in config.xml. They will be replaced when the revised runs finish.
 ```
 Experimental k_on  2.90e7 M⁻¹s⁻¹
 PySTARC k_on       (2.76 ± 0.06)e7 M⁻¹s⁻¹
