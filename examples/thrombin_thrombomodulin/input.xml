@@ -28,6 +28,7 @@
   <desolvation_alpha>1.0</desolvation_alpha>
   <hydrodynamic_interactions>true</hydrodynamic_interactions>
   <overlap_check>false</overlap_check>
+  <soft_repulsion>true</soft_repulsion>
   <multipole_fallback>true</multipole_fallback>
   <lj_forces>false</lj_forces>
   <!-- BD simulation -->
@@ -35,6 +36,7 @@
   <max_steps>1000000</max_steps>
   <dt>1.0</dt>
   <minimum_core_dt>1.0</minimum_core_dt>
+  <minimum_core_reaction_dt>0.05</minimum_core_reaction_dt>
   <max_dt>100</max_dt>
   <temperature>298.15</temperature>
   <seed>11111111</seed>

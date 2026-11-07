@@ -53,7 +53,7 @@
     <apbs_fine_dime>0</apbs_fine_dime>                                             <!-- Grid points per axis of the fine grid. 0 uses apbs_dime. -->
   </electrostatics>
   <physics>
-    <soft_repulsion>false</soft_repulsion>                                         <!-- Soft excluded volume of BrownDye 2 between receptor and ligand atoms in place of the overlap check. Options: true and false. -->
+    <soft_repulsion>true</soft_repulsion>                                         <!-- Soft excluded volume of BrownDye 2 between receptor and ligand atoms in place of the overlap check. Options: true and false. -->
     <overlap_check>false</overlap_check>                                           <!-- Forbid the ligand from entering the receptor volume. Options: true and false. -->
     <lj_forces>false</lj_forces>                                                   <!-- Apply repulsive forces at close contact. Options: true and false. -->
     <hydrodynamic_interactions>true</hydrodynamic_interactions>                    <!-- Include hydrodynamic coupling between the two molecules. Options: true and false. -->
@@ -66,7 +66,7 @@
     <max_steps>10000000</max_steps>                                                <!-- Step limit per trajectory. -->
     <dt>0.2</dt>                                                                   <!-- Largest permitted time step (in picoseconds). -->
     <minimum_core_dt>0.2</minimum_core_dt>                                         <!-- Smallest permitted time step. 0 imposes no floor. -->
-    <minimum_core_reaction_dt>0</minimum_core_reaction_dt>                         <!-- Smallest time step near the reaction surface. 0 imposes no floor. -->
+    <minimum_core_reaction_dt>0.05</minimum_core_reaction_dt>                         <!-- Smallest time step near the reaction surface. 0 imposes no floor. -->
     <max_dt>0</max_dt>                                                             <!-- Ceiling on the time step. 0 imposes no ceiling. -->
     <temperature>298.15</temperature>                                              <!-- Temperature (in kelvin). -->
     <seed>1</seed>                                                                 <!-- Random number seed. -->
