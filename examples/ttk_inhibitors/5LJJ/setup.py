@@ -708,6 +708,12 @@ def build(**cfg):
     tidy(W, cfg)
 
 def find_templates():
+    # The template must come from the code that runs the input. The run
+    # scripts name that code in PYTHONPATH so it is tried first.
+    for base in os.environ.get("PYTHONPATH", "").split(os.pathsep):
+        t = os.path.join(base, "pystarc", "templates")
+        if base and os.path.isdir(t):
+            return os.path.abspath(t)
     here = os.path.dirname(os.path.abspath(__file__))
     for i in range(10):
         base = os.path.join(here, *[".."] * i) if i else here
