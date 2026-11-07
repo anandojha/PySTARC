@@ -9,7 +9,6 @@ import urllib.request
 import numpy as np
 import collections
 import subprocess
-import math
 import sys
 import os
 import re
@@ -24,18 +23,13 @@ SOURCES = {
 }
 
 MODES = {
-    "auto":     dict(need=("search_cutoff", "atom_filter", "n_pairs", "n_needed"), opt=("pair_cutoff", "buffer", "rounding", "excluded"), note="Locates contacts automatically and keeps one per residue"),
-    "explicit": dict(need=("receptor", "ligand", "n_needed"), opt=("receptor_numbering", "cutoffs", "buffer", "rounding", "atom_filter"), note="Pairs receptor atoms you name one to one with ligand atoms"),
+    "auto":     dict(need=("search_cutoff", "atom_filter", "n_pairs", "pair_cutoff", "n_needed"), opt=("excluded",), note="Locates contacts automatically and keeps one per residue"),
+    "explicit": dict(need=("receptor", "ligand", "pair_cutoff", "n_needed"), opt=("receptor_numbering", "atom_filter"), note="Pairs receptor atoms you name one to one with ligand atoms"),
 }
 
 NUMBERING = {
     "pdb":      "Read as deposited",
     "internal": "Read as renumbered from 1",
-}
-
-ROUNDINGS = {
-    "nearest": "Takes the distance to the nearest half angstrom",
-    "up":      "Takes the distance up to the next half angstrom",
 }
 
 ATOM_FILTERS = {
@@ -69,10 +63,7 @@ KEYS = {
     "ligand":              "Ligand side of each pair. Use auto to choose the nearest atom that atom_filter permits.",
     "atom_filter":         "Element pairings permitted.",
     "excluded":            "Atom names omitted from the search.",
-    "pair_cutoff":         "One distance defining every pair (in angstroms).",
-    "cutoffs":             "Distance defining each pair (in angstroms), in the same order as receptor.",
-    "buffer":              "Each cutoff is the measured contact distance and the buffer (in angstroms).",
-    "rounding":            "Rule reducing the buffered distance to a half angstrom.",
+    "pair_cutoff":         "Reaction distance for every pair (in angstroms).",
     "n_needed":            "Pairs that must be inside their cutoff at once for a trajectory to count as reacted.",
     "bd_milestone_radius": "Radius of the starting sphere (in angstroms).",
     "n_trajectories":      "Number of Brownian dynamics trajectories.",
@@ -548,9 +539,6 @@ def check_formula(lig, formula):
 def _name(x):
     return x[0] if isinstance(x, (list, tuple)) else x
 
-def half(d, how):
-    return math.ceil(d * 2) / 2 if how == "up" else round(d * 2) / 2
-
 def keeper(kind):
     return {"all": lambda a, b: True,
             "polar": lambda a, b: a in POLAR and b in POLAR,
@@ -577,9 +565,7 @@ def pairs_auto(rec, lig, c):
         if rec[i]["resid"] in seen:
             continue
         seen.add(rec[i]["resid"])
-        cut = (half(d + c["buffer"], c.get("rounding", "nearest"))
-               if "buffer" in c else c["pair_cutoff"])
-        out.append((i, j, cut, d))
+        out.append((i, j, c["pair_cutoff"], d))
         if len(out) >= c["n_pairs"]:
             break
     return out
@@ -614,17 +600,9 @@ def pairs_explicit(rec, lig, c, rmap=None, lmap=None):
     if len(R) != len(L):
         sys.exit(f"  ERROR: {len(R)} receptor targets against {len(L)} ligand "
                  f"atoms, explicit mode pairs them one to one")
-    if "cutoffs" in c:
-        cuts = c["cutoffs"]
-        if not isinstance(cuts, (list, tuple)):
-            cuts = [cuts] * len(R)
-        if len(cuts) != len(R):
-            sys.exit(f"  ERROR: {len(cuts)} cutoffs for {len(R)} pairs")
-    else:
-        cuts = [None] * len(R)
     out = []
     pdb_num = c.get("receptor_numbering", "internal") == "pdb"
-    for (resid, aname, resname), lname, cut in zip(R, L, cuts):
+    for (resid, aname, resname), lname in zip(R, L):
         nm = _name(lname)
         if pdb_num:
             if not rmap:
@@ -654,9 +632,7 @@ def pairs_explicit(rec, lig, c, rmap=None, lmap=None):
             if j is None:
                 sys.exit(f"  ERROR: no ligand atom {nm}")
         d = float(np.linalg.norm(rec[i]["xyz"] - lig[j]["xyz"]))
-        if cut is None:
-            cut = half(d + c["buffer"], c.get("rounding", "nearest"))
-        out.append((i, j, cut, d))
+        out.append((i, j, c["pair_cutoff"], d))
     return out
 
 def write_rxns(path, pairs, n_needed):
@@ -705,11 +681,7 @@ def build(**cfg):
     if c["mode"] == "auto":
         if c.get("atom_filter") not in ATOM_FILTERS:
             sys.exit(f"atom_filter must be one of {sorted(ATOM_FILTERS)}")
-        if ("pair_cutoff" in c) == ("buffer" in c):
-            sys.exit("give exactly one of pair_cutoff or buffer")
     else:
-        if ("cutoffs" in c) == ("buffer" in c):
-            sys.exit("give exactly one of cutoffs or buffer")
         auto = c["ligand"] == "auto" or "auto" in c["ligand"]
         if auto and c.get("atom_filter") not in ATOM_FILTERS:
             sys.exit(f"ligand auto needs atom_filter, one of {sorted(ATOM_FILTERS)}")
@@ -717,10 +689,8 @@ def build(**cfg):
             sys.exit("atom_filter only applies with ligand auto, so remove it")
     if c.get("receptor_numbering", "internal") not in NUMBERING:
         sys.exit(f"receptor_numbering must be one of {sorted(NUMBERING)}")
-    if c.get("rounding", "nearest") not in ROUNDINGS:
-        sys.exit(f"rounding must be one of {sorted(ROUNDINGS)}")
-    if "rounding" in c and "buffer" not in c:
-        sys.exit("rounding only applies with buffer, so remove it")
+    if not isinstance(c["pair_cutoff"], (int, float)) or c["pair_cutoff"] <= 0:
+        sys.exit("pair_cutoff must be a distance in angstroms above zero")
     W = cfg.get("work_dir", HERE)
     extra = HANDLERS[src](cfg, W) or {}
     rec = read_pqr(os.path.join(W, "receptor.pqr"))
@@ -786,7 +756,7 @@ STRUCTURE = ("ligand_source", "prmtop", "complex_pdb", "pdb_id",
 NAMES = ("ligand_formula", "receptor_resname", "ligand_resname")
 CRITERION = ("mode", "receptor_numbering", "search_cutoff", "n_pairs",
              "receptor", "ligand", "atom_filter", "excluded", "pair_cutoff",
-             "cutoffs", "buffer", "rounding", "n_needed")
+             "n_needed")
 
 def _el(t, v, ind):
     if t == "receptor":
@@ -805,7 +775,7 @@ def _listed(names):
 
 def _doc(t):
     table = {"ligand_source": SOURCES, "mode": MODES,
-             "atom_filter": ATOM_FILTERS, "rounding": ROUNDINGS,
+             "atom_filter": ATOM_FILTERS,
              "receptor_numbering": NUMBERING}.get(t)
     if table:
         return f"{KEYS[t]} Options: {_listed(table)}."

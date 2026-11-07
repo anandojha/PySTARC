@@ -23,8 +23,7 @@
     </receptor>
     <ligand>auto</ligand>                                        <!-- Ligand side of each pair. Use auto to choose the nearest atom that atom_filter permits. -->
     <atom_filter>polar</atom_filter>                             <!-- Element pairings permitted. Options: all, polar, nonpolar, any_polar, and receptor_polar. -->
-    <buffer>1.0</buffer>                                         <!-- Each cutoff is the measured contact distance and the buffer (in angstroms). -->
-    <rounding>up</rounding>                                      <!-- Rule reducing the buffered distance to a half angstrom. Options: nearest and up. -->
+    <pair_cutoff>7.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
     <n_needed>3</n_needed>                                       <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. -->
   </criterion>
   <geometry>

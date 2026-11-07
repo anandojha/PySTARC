@@ -27,12 +27,7 @@
       <atom name="FD3"/>
       <atom name="FD3"/>
     </ligand>
-    <cutoffs>                                                    <!-- Distance defining each pair (in angstroms), in the same order as receptor. -->
-      <item>7.0</item>
-      <item>7.0</item>
-      <item>7.0</item>
-      <item>7.0</item>
-    </cutoffs>
+    <pair_cutoff>7.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
     <n_needed>3</n_needed>                                       <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. -->
   </criterion>
   <geometry>
