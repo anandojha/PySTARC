@@ -5302,9 +5302,9 @@ class TestOutputConfig:
                 assert getattr(oc, f.name) is True, f"{f.name} should default True"
 
     def test_save_interval_default(self):
-        """The OutputConfig save_interval defaults to 10."""
+        """The OutputConfig save_interval defaults to 100."""
         oc = OutputConfig()
-        assert oc.save_interval == 10
+        assert oc.save_interval == 100
 
     def test_custom_save_interval(self):
         """OutputConfig accepts a custom save_interval of 100."""

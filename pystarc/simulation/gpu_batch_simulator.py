@@ -883,9 +883,9 @@ class GPUBatchSimulator:
         # Allocate the data-collection arrays. Per-trajectory tracking is always
         # collected because it is lightweight.
         _output_cfg = getattr(self.params, "_output_cfg", None)
-        _save_interval = 10
+        _save_interval = 100
         if _output_cfg is not None:
-            _save_interval = max(getattr(_output_cfg, "save_interval", 10), 1)
+            _save_interval = max(getattr(_output_cfg, "save_interval", 100), 1)
         if _resume_ckpt is not None and "start_pos" in _resume_ckpt.files:
             # Restore the per-trajectory history so a resumed run continues the
             # full record instead of capturing mid-flight positions as starts.

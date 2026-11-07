@@ -63,7 +63,7 @@ class OutputConfig:
         True  # pose_clusters.csv stores clustered encounter orientations.
     )
     save_interval: int = (
-        10  # Record full paths every N steps. A value of 0 saves endpoints only.
+        100  # Record full paths every N steps. A value of 0 saves endpoints only.
     )
 
 
@@ -506,7 +506,7 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
             transition_matrix=oget("transition_matrix", True, bool),
             energetics=oget("energetics", True, bool),
             pose_clusters=oget("pose_clusters", True, bool),
-            save_interval=oget("save_interval", 10, int),
+            save_interval=oget("save_interval", 100, int),
         )
     # Parse the <chain> block, which selects chain BD mode. When present, it
     # dispatches the simulation to the chain BD pipeline. The block is optional and
