@@ -112,6 +112,7 @@ MINIMUM_CORE_REACTION_DT: float = 0.0  # ps, sentinel
 # term the same scalar multiplies drift and noise, D(r) factors out of the
 # generator, and the splitting probability is unchanged by hydrodynamics.
 HYDRODYNAMIC_INTERACTIONS: bool = True
+SAVE_INTERVAL: int = 100  # steps between saved path points, 0 saves endpoints only
 
 # ---------------------------------------------------------------------------
 # The registry consulted by both readers of pystarc_input.xml

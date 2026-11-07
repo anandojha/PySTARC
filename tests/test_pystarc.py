@@ -5302,14 +5302,14 @@ class TestOutputConfig:
                 assert getattr(oc, f.name) is True, f"{f.name} should default True"
 
     def test_save_interval_default(self):
-        """The OutputConfig save_interval defaults to 100."""
+        """The OutputConfig save_interval defaults to the package SAVE_INTERVAL."""
         oc = OutputConfig()
-        assert oc.save_interval == 100
+        assert oc.save_interval == D.SAVE_INTERVAL
 
     def test_custom_save_interval(self):
-        """OutputConfig accepts a custom save_interval of 100."""
-        oc = OutputConfig(save_interval=100)
-        assert oc.save_interval == 100
+        """OutputConfig accepts a custom save_interval."""
+        oc = OutputConfig(save_interval=7)
+        assert oc.save_interval == 7
 
     def test_disable_heavy_outputs(self):
         """Disabling full_paths and energetics leaves results_json True."""
@@ -5325,11 +5325,11 @@ class TestOutputConfig:
         assert len(fields(oc)) == 15
 
     def test_pystarc_config_has_outputs(self):
-        """PySTARCConfig provides an outputs block with results_json True and save_interval 10."""
+        """PySTARCConfig provides an outputs block with results_json True and the default save_interval."""
         cfg = PySTARCConfig()
         assert cfg.outputs is not None
         assert cfg.outputs.results_json is True
-        assert cfg.outputs.save_interval == 10
+        assert cfg.outputs.save_interval == D.SAVE_INTERVAL
 
 
 # XML parsing tests
@@ -5354,7 +5354,7 @@ class TestOutputXMLParsing:
         cfg = parse(p)
         assert cfg.outputs.results_json is True
         assert cfg.outputs.full_paths is True
-        assert cfg.outputs.save_interval == 10
+        assert cfg.outputs.save_interval == D.SAVE_INTERVAL
 
     def test_disable_paths(self, tmp_path):
         """Disabling full_paths in the XML outputs block leaves the other defaults unchanged."""
