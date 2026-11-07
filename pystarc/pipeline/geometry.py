@@ -515,6 +515,25 @@ def check_rxn_atom_numbers(pairs, receptor_pqr, ligand_pqr) -> List[str]:
     return msgs
 
 
+def check_rxn_atom_range(pairs, n_rec: int, n_lig: int) -> None:
+    """Stop when a reaction pair names an atom past the end of its molecule.
+
+    n_rec and n_lig count the GHO ghost atom appended to each molecule. CuPy
+    wraps an index past the end of an array around to its start instead of
+    raising, so an out of range pair would test another atom without a word.
+    """
+    bad = [
+        (p.rec_index + 1, p.lig_index + 1)
+        for p in pairs
+        if not (0 <= p.rec_index < n_rec and 0 <= p.lig_index < n_lig)
+    ]
+    if bad:
+        raise ValueError(
+            f"rxns_xml pairs {bad} name atoms outside the receptor (1 to {n_rec}) "
+            f"or the ligand (1 to {n_lig}), counting the GHO ghost atom of each"
+        )
+
+
 def auto_detect_reactions(
     geom: "SystemGeometry",
     ghost_atoms: str = "auto",

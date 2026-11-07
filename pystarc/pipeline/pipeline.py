@@ -31,6 +31,7 @@ from pystarc.pipeline.geometry import (
     auto_detect_reactions,
     _parse_rxns_xml_reaction_groups,
     check_rxn_atom_numbers,
+    check_rxn_atom_range,
 )
 from pystarc.simulation.nam_simulator import NAMSimulator, NAMParameters
 from pystarc.simulation.gpu_batch_simulator import GPUBatchSimulator
@@ -226,6 +227,11 @@ def run(cfg: PySTARCConfig):
     # Load the receptor and ligand molecules.
     mol_rec = parse_pqr(receptor_pqr)
     mol_lig = parse_pqr(ligand_pqr)
+    check_rxn_atom_range(
+        [rp for stage in rxn_stages for rp in stage],
+        len(mol_rec.atoms),
+        len(mol_lig.atoms),
+    )
     # Load the force engine, auto-detecting the fastest available backend. The
     # code prefers the GPU (CuPy), then Numba, and finally falls back to NumPy.
     engine = load_dx_directory(

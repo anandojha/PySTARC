@@ -16,7 +16,7 @@
     <n_pairs>8</n_pairs>                                         <!-- Number of contacts retained. -->
     <atom_filter>all</atom_filter>                               <!-- Element pairings permitted. Options: all, polar, nonpolar, any_polar, and receptor_polar. -->
     <pair_cutoff>7.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
-    <n_needed>6</n_needed>                                       <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. -->
+    <n_needed>6</n_needed>                                       <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. Not used by mode center. -->
   </criterion>
   <geometry>
     <bd_milestone_radius>55.0</bd_milestone_radius>              <!-- Radius of the starting sphere (in angstroms). -->

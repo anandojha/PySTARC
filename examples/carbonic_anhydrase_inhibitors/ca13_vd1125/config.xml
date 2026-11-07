@@ -6,7 +6,7 @@
     <ligand_resid>V15</ligand_resid>                                                      <!-- Residue name of the ligand within the RCSB entry. -->
     <smiles>CC(C)(C)NC1=C(C(F)=C(F)C(=C1F)S([NH-])(=O)=O)S(=O)(=O)CCC1=CC=CC=C1</smiles>  <!-- Ligand SMILES, used in place of the deposited coordinates. -->
     <chain>A</chain>                                                                      <!-- Receptor chain retained. Blank retains all chains. -->
-    <ligand_net_charge>-1</ligand_net_charge>                                             <!-- Formal charge of the ligand. Blank takes it from the component definition. -->
+    <ligand_net_charge>-1</ligand_net_charge>                                             <!-- Formal charge of the ligand. Blank takes it from the component definition or the SMILES. Required when the ligand has neither. -->
     <keep_hetatm>                                                                         <!-- Het groups retained with the receptor. -->
       <item>ZN</item>
     </keep_hetatm>
@@ -31,7 +31,7 @@
       <atom name="N1"/>
     </ligand>
     <pair_cutoff>7.0</pair_cutoff>                                                        <!-- Reaction distance for every pair (in angstroms). -->
-    <n_needed>2</n_needed>                                                                <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. -->
+    <n_needed>2</n_needed>                                                                <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. Not used by mode center. -->
   </criterion>
   <geometry>
     <bd_milestone_radius>60.0</bd_milestone_radius>                                       <!-- Radius of the starting sphere (in angstroms). -->

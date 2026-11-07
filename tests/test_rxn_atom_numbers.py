@@ -9,7 +9,11 @@ PySTARC warns.
 
 from __future__ import annotations
 
-from pystarc.pipeline.geometry import ReactionPair, check_rxn_atom_numbers
+from pystarc.pipeline.geometry import (
+    ReactionPair,
+    check_rxn_atom_numbers,
+    check_rxn_atom_range,
+)
 
 
 def _pqr(path, serials):
@@ -61,3 +65,18 @@ def test_no_warning_when_only_unreferenced_atoms_differ(tmp_path):
     rec = _pqr(tmp_path / "r.pqr", [1, 2, 3, 9])
     lig = _pqr(tmp_path / "l.pqr", [1, 2])
     assert check_rxn_atom_numbers([ReactionPair(0, 0, 5.0)], rec, lig) == []
+
+
+def test_rxn_atom_range_accepts_the_ghost_positions():
+    """The last position of each molecule, the GHO ghost atom, is in range."""
+    check_rxn_atom_range([ReactionPair(147, 21, 8.0)], 148, 22)
+
+
+def test_rxn_atom_range_stops_a_pair_past_the_end():
+    """A pair one past the end of the ligand or a zero position stops the run."""
+    import pytest
+
+    with pytest.raises(ValueError):
+        check_rxn_atom_range([ReactionPair(147, 22, 8.0)], 148, 22)
+    with pytest.raises(ValueError):
+        check_rxn_atom_range([ReactionPair(-1, 0, 8.0)], 148, 22)

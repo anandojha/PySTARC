@@ -3,7 +3,7 @@
   <structure>
     <ligand_source>complex_pdb</ligand_source>                   <!-- Source of the receptor and ligand structures. Options: pqr, prmtop, complex_pdb, rcsb, and rcsb_smiles. -->
     <complex_pdb>complex.pdb</complex_pdb>                       <!-- Single PDB containing receptor and ligand. -->
-    <ligand_net_charge>0</ligand_net_charge>                     <!-- Formal charge of the ligand. Blank takes it from the component definition. -->
+    <ligand_net_charge>0</ligand_net_charge>                     <!-- Formal charge of the ligand. Blank takes it from the component definition or the SMILES. Required when the ligand has neither. -->
   </structure>
   <names>
     <ligand_formula>C25 H31 N5 O4</ligand_formula>               <!-- Expected ligand composition. The build aborts on a mismatch. -->
@@ -16,7 +16,7 @@
     <n_pairs>8</n_pairs>                                         <!-- Number of contacts retained. -->
     <atom_filter>all</atom_filter>                               <!-- Element pairings permitted. Options: all, polar, nonpolar, any_polar, and receptor_polar. -->
     <pair_cutoff>7.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
-    <n_needed>6</n_needed>                                       <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. -->
+    <n_needed>6</n_needed>                                       <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. Not used by mode center. -->
   </criterion>
   <geometry>
     <bd_milestone_radius>55.0</bd_milestone_radius>              <!-- Radius of the starting sphere (in angstroms). -->

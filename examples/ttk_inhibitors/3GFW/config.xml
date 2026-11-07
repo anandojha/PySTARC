@@ -6,7 +6,7 @@
     <ligand_resid>S22</ligand_resid>                             <!-- Residue name of the ligand within the RCSB entry. -->
     <chain>A</chain>                                             <!-- Receptor chain retained. Blank retains all chains. -->
     <rec_resid_min>515</rec_resid_min>                           <!-- Lowest receptor residue number retained. -->
-    <ligand_net_charge>0</ligand_net_charge>                     <!-- Formal charge of the ligand. Blank takes it from the component definition. -->
+    <ligand_net_charge>0</ligand_net_charge>                     <!-- Formal charge of the ligand. Blank takes it from the component definition or the SMILES. Required when the ligand has neither. -->
   </structure>
   <names>
     <ligand_formula>C28 H33 N5 O4 S</ligand_formula>             <!-- Expected ligand composition. The build aborts on a mismatch. -->
@@ -24,7 +24,7 @@
     <ligand>auto</ligand>                                        <!-- Ligand side of each pair. Use auto to choose the nearest atom that atom_filter permits. -->
     <atom_filter>polar</atom_filter>                             <!-- Element pairings permitted. Options: all, polar, nonpolar, any_polar, and receptor_polar. -->
     <pair_cutoff>7.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
-    <n_needed>3</n_needed>                                       <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. -->
+    <n_needed>3</n_needed>                                       <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. Not used by mode center. -->
   </criterion>
   <geometry>
     <bd_milestone_radius>60.0</bd_milestone_radius>              <!-- Radius of the starting sphere (in angstroms). -->
