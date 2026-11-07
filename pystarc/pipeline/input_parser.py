@@ -243,6 +243,9 @@ class PySTARCConfig:
     max_dt: float = 0.0  # Ceiling on the timestep. A value of 0 imposes no cap.
     # Physics extensions.
     overlap_check: bool = True  # Prevent the ligand from entering the receptor volume.
+    soft_repulsion: bool = (
+        False  # Soft excluded volume of BrownDye 2, V = kT (0.9345 (r_i + r_j) / r)^12 between receptor and ligand atoms; replaces the hard overlap check.
+    )
     multipole_fallback: bool = (
         True  # Use a dipole and quadrupole far-field expansion beyond the APBS grid.
     )
@@ -345,6 +348,15 @@ class PySTARCConfig:
             raise FileNotFoundError(f"PDB not found: {self.pdb}")
         if self.n_trajectories < 1:
             raise ValueError("n_trajectories must be >= 1")
+        if self.soft_repulsion and self.lj_forces:
+            # Both add a repulsion between receptor and ligand atoms, so together
+            # they would count the excluded volume twice.
+            raise ValueError(
+                "<soft_repulsion> and <lj_forces> both add a repulsion between "
+                "receptor and ligand atoms, so together they count it twice. "
+                "Use <soft_repulsion>true</soft_repulsion> with "
+                "<lj_forces>false</lj_forces>."
+            )
         return self
 
 
@@ -457,6 +469,7 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
         ),
         max_dt=get("max_dt", default=0.0, cast=float),
         overlap_check=get("overlap_check", default=True, cast=bool),
+        soft_repulsion=get("soft_repulsion", default=False, cast=bool),
         multipole_fallback=get("multipole_fallback", default=True, cast=bool),
         lj_forces=get("lj_forces", default=False, cast=bool),
         enable_born2_torque=get("enable_born2_torque", default=True, cast=bool),

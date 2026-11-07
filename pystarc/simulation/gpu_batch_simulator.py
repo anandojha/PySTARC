@@ -24,6 +24,11 @@ from pystarc.simulation.diffusional_rotation import diffusional_rotation
 from pystarc.simulation.diffusional_rotation import quat_multiply, quat_rotate_vector
 from pystarc.simulation.nam_simulator import NAMParameters, SimulationResult
 from pystarc.simulation.overlap_grid import OverlapGrid
+from pystarc.forces.soft_repulsion import (
+    A_FACTOR as SOFT_A_FACTOR,
+    SoftRepulsion,
+    surface_time_step,
+)
 from pystarc.molsystem.system_state import Fate, TrajectoryResult
 from pystarc.lib.numerical import romberg_integrate
 from pystarc.global_defs.constants import VACUUM_PERMITTIVITY_KBT
@@ -1179,23 +1184,81 @@ class GPUBatchSimulator:
         # trypsin-benzamidine (2026-05-21). The receptor is fixed in the
         # simulation frame, so the map that OverlapGrid uses is built once here.
         _use_overlap = getattr(self.params, "_overlap_check", True)
+        # The soft repulsion of BrownDye 2, V = kT (0.9345 (r_i + r_j) / r)^12
+        # between every receptor and ligand atom, replaces the hard check.
+        _use_soft = bool(getattr(self.params, "_soft_repulsion", False))
+        if _use_soft:
+            _use_overlap = False
+        # With either excluded-volume model the time step has to resolve the
+        # receptor surface. The pair step from the centre distance alone is tens
+        # of ps at the surface of a protein, which moves the ligand several Å
+        # into the receptor at every step.
+        _surface_dt = _use_overlap or _use_soft
         _overlap_grid = None
+        _room_grid = None
+        _soft = None
         _n_overlap_rejected = 0
         _OVERLAP_VDW_FRACTION = 0.5
+        _SURFACE_MARGIN = 8.0  # Å of map beyond the reach of the contact test
+        rec_pos_np = self.mol1.positions_array()  # (N_rec, 3)
         if _use_overlap:
-            rec_pos_np = self.mol1.positions_array()  # (N_rec, 3)
             _overlap_grid = OverlapGrid(
                 cp.asarray(rec_pos_np, dtype=cp.float64),
                 self._mol1_radii_overlap,
                 _OVERLAP_VDW_FRACTION,
                 float(self._mol2_radii_overlap.max()),
                 xp=cp,
+                margin=_SURFACE_MARGIN,
             )
+            _room_grid = _overlap_grid
             print(
                 f"  Overlap check: atom-pair vdW × {_OVERLAP_VDW_FRACTION:.2f}  "
                 f"({self._N_lig} lig × {len(rec_pos_np)} rec atoms, map "
                 f"{' × '.join(str(int(n)) for n in _overlap_grid.shape)} at "
                 f"{_overlap_grid.spacing} Å)"
+            )
+        if _use_soft:
+            _soft = SoftRepulsion(
+                rec_pos_np, self.mol1.radii_array(), self.mol2.radii_array(), xp=cp
+            )
+            # The room before contact is measured against the contact distance
+            # of the repulsion, 0.9345 (r_i + r_j), where V = 1 kT. Ghost atoms
+            # (radius <= 0) exert no repulsion, so they are no contacts either.
+            _rec_real = self.mol1.radii_array() > 0.0
+            _room_lig_idx = cp.asarray(
+                np.nonzero(self.mol2.radii_array() > 0.0)[0], dtype=cp.int64
+            )
+            _room_lig_radii = self._mol2_radii_overlap[_room_lig_idx]
+            _room_grid = OverlapGrid(
+                cp.asarray(rec_pos_np[_rec_real], dtype=cp.float64),
+                self._mol1_radii_overlap[cp.asarray(_rec_real)],
+                SOFT_A_FACTOR,
+                float(_room_lig_radii.max()),
+                xp=cp,
+                margin=_SURFACE_MARGIN,
+            )
+            print(
+                f"  Soft repulsion: kT (0.9345 (r_i + r_j) / r)^12 up to "
+                f"r = 2 × 0.9345 (r_i + r_j)  ({self._N_lig} lig × "
+                f"{len(rec_pos_np)} rec atoms, cells "
+                f"{' × '.join(str(int(n)) for n in _soft.shape)} of {_soft.h:.2f} Å)"
+            )
+        if _use_overlap:
+            _room_lig_idx = None
+            _room_lig_radii = self._mol2_radii_overlap
+        # Near the surface an atom moves by translation, by the spin of the
+        # ligand about its centroid (lever up to rho_max) and by the tumbling of
+        # the receptor (lever up to the receptor extent), so the surface limits
+        # use the atom mobility D_t + D_r2 rho_max^2 + D_r1 min(r + rho_max, R)^2.
+        _rho_max = float(cp.linalg.norm(self._mol2_pos0, axis=1).max())
+        _rec_extent = float(
+            np.linalg.norm(rec_pos_np[self.mol1.radii_array() > 0.0], axis=1).max()
+        ) if np.any(self.mol1.radii_array() > 0.0) else 0.0
+        if _surface_dt:
+            print(
+                "  Surface time step: sqrt(6 D dt) <= 0.7 × room and "
+                "D |F| dt <= 0.5 Å near the receptor"
+                + ("; D K dt <= 0.05 on the soft wall" if _use_soft else "")
             )
         # Main Brownian-dynamics loop.
         for step in range(_resume_step, self.params.max_steps):
@@ -1398,6 +1461,12 @@ class GPUBatchSimulator:
             # Batch the force computation to limit GPU memory use.
             forces_gpu = cp.zeros((N_sr, 3), dtype=cp.float64)
             torques_gpu = cp.zeros((N_sr, 3), dtype=cp.float64)
+            _room_gpu = (
+                cp.full(N_sr, cp.inf, dtype=cp.float64) if _surface_dt else None
+            )
+            _stiff_gpu = (
+                cp.zeros(N_sr, dtype=cp.float64) if _soft is not None else None
+            )
             for _fb0 in range(0, N_sr, _force_batch):
                 _fb1 = min(_fb0 + _force_batch, N_sr)
                 _R_b = R_sr[_fb0:_fb1]
@@ -1410,6 +1479,18 @@ class GPUBatchSimulator:
                 )
                 forces_gpu[_fb0:_fb1] = _f_b
                 torques_gpu[_fb0:_fb1] = _t_b
+                if _soft is not None:
+                    _f_s, _t_s, _, _k_s = _soft(_pos_lig_b, _cen_b)
+                    forces_gpu[_fb0:_fb1] += _f_s
+                    torques_gpu[_fb0:_fb1] += _t_s
+                    _stiff_gpu[_fb0:_fb1] = _k_s
+                if _surface_dt:
+                    _room_gpu[_fb0:_fb1] = _room_grid.clearance(
+                        _pos_lig_b
+                        if _room_lig_idx is None
+                        else _pos_lig_b[:, _room_lig_idx],
+                        _room_lig_radii,
+                    )
                 del _pos_lig_b
             # forces_gpu now has shape (N_sr, 3).
             # Save the old pair distances for the Brownian bridge. After the BD
@@ -1529,6 +1610,20 @@ class GPUBatchSimulator:
                     _needs_refinement,
                     cp.minimum(dt_arr, _dt_rxn_floored),
                     dt_arr,
+                )
+            if _surface_dt:
+                _lever_rec = cp.minimum(r_sr + _rho_max, _rec_extent)
+                _D_atom = D_t + D_r2 * _rho_max**2 + D_r1 * _lever_rec * _lever_rec
+                # Drift of an atom: translation plus the spin from the torque.
+                _drift_rate = D_t * cp.linalg.norm(
+                    forces_gpu, axis=1
+                ) + D_r2 * _rho_max * cp.linalg.norm(torques_gpu, axis=1)
+                dt_arr = surface_time_step(
+                    dt_arr,
+                    _room_gpu,
+                    _drift_rate / _D_atom,
+                    _D_atom,
+                    stiffness=_stiff_gpu,
                 )
             # Cap the adaptive Δt to prevent the drift from dominating the noise
             # at large separations.

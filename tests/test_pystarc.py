@@ -23321,3 +23321,178 @@ def test_energy_is_penalty_and_force_is_outward_for_either_sign(q):
     # and the magnitude scales as q^2, not q
     g2 = alpha * (2.0 * q) ** 2 * g
     assert np.allclose(g2, 4.0 * u, rtol=1e-12)
+
+
+# Soft excluded-volume repulsion V = kT (0.9345 (r_i + r_j) / r)^12 and the
+# surface time step.
+from pystarc.forces import soft_repulsion as srep
+from pystarc.simulation.overlap_grid import OverlapGrid as _OverlapGridSR
+
+
+def _soft_system(seed=1, n_rec=300, n_lig=10, n_pose=40):
+    rng = np.random.default_rng(seed)
+    rec = rng.uniform(-10.0, 10.0, (n_rec, 3))
+    rr = rng.uniform(1.0, 2.0, n_rec)
+    lr = rng.uniform(1.0, 1.9, n_lig)
+    poses = rng.uniform(-13.0, 13.0, (n_pose, 1, 3)) + rng.normal(
+        0.0, 1.5, (n_pose, n_lig, 3)
+    )
+    return rec, rr, lr, poses
+
+
+def test_soft_repulsion_pair_law():
+    """V is 1 kT at the contact distance a, falls as r^-12 and vanishes beyond 2a."""
+    e, fox = srep.pair_terms(np.array([1.0, 1.5, 1.999, 2.001]), np.ones(4))
+    assert e[0] == pytest.approx(1.0)
+    assert e[1] == pytest.approx(1.5**-12)
+    assert e[2] == pytest.approx(1.999**-12)
+    assert e[3] == 0.0 and fox[3] == 0.0
+    assert fox[0] == pytest.approx(12.0)
+
+
+def test_soft_repulsion_cells_match_all_pairs():
+    """The cell-list search finds every pair inside the cutoff."""
+    rec, rr, lr, poses = _soft_system()
+    s = srep.SoftRepulsion(rec, rr, lr)
+    f_c, e_c, k_c = s.atom_terms(poses)
+    f_r, e_r, k_r = srep.repulsion_reference(poses, lr, rec, rr)
+    assert np.allclose(e_c, e_r, rtol=1e-12, atol=1e-12)
+    assert np.allclose(k_c, k_r, rtol=1e-12, atol=1e-9)
+    assert np.allclose(f_c, f_r, rtol=1e-10, atol=1e-9)
+
+
+def test_soft_repulsion_force_is_minus_energy_gradient():
+    """The force on a ligand atom is minus the gradient of the pair energies."""
+    rec, rr, lr, poses = _soft_system(seed=2)
+    s = srep.SoftRepulsion(rec, rr, lr)
+    f, _, _ = s.atom_terms(poses)
+    h = 1e-6
+    for t in range(5):
+        for k in range(3):
+            up = poses.copy()
+            up[t, 0, k] += h
+            dn = poses.copy()
+            dn[t, 0, k] -= h
+            g = (s.atom_terms(up)[1][t, 0] - s.atom_terms(dn)[1][t, 0]) / (2.0 * h)
+            assert -g == pytest.approx(f[t, 0, k], rel=1e-6, abs=1e-6)
+
+
+def test_soft_repulsion_pushes_apart_and_torque_about_centroid():
+    """The force points away from the receptor atom; the torque is about the centroid."""
+    rec = np.zeros((1, 3))
+    rr = np.array([1.5])
+    lr = np.array([1.5, 1.5])
+    pose = np.array([[[2.5, 0.0, 0.0], [2.5, 3.0, 0.0]]])
+    s = srep.SoftRepulsion(rec, rr, lr)
+    c = pose.mean(axis=1)
+    F, T, E, K = s(pose, c)
+    f_atom, e_atom, k_atom = s.atom_terms(pose)
+    assert f_atom[0, 0, 0] > 0.0
+    assert np.allclose(F, f_atom.sum(axis=1))
+    assert np.allclose(T, np.cross(pose - c[:, None, :], f_atom).sum(axis=1))
+    assert E[0] == pytest.approx(e_atom.sum())
+
+
+def test_soft_repulsion_ignores_ghost_atoms():
+    """Atoms with radius zero or below take no part in the repulsion."""
+    rec = np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]])
+    rr = np.array([1.5, 0.0])
+    lr = np.array([1.5, 0.0])
+    pose = np.array([[[3.0, 0.0, 0.0], [0.6, 0.0, 0.0]]])
+    s = srep.SoftRepulsion(rec, rr, lr)
+    f, e, _ = s.atom_terms(pose)
+    assert np.all(f[0, 1] == 0.0) and e[0, 1] == 0.0
+    ref, _, _ = srep.repulsion_reference(pose[:, :1], lr[:1], rec[:1], rr[:1])
+    assert np.allclose(f[0, 0], ref[0, 0])
+
+
+def test_surface_time_step_limits():
+    """The step shrinks with the room before contact and with the drift."""
+    dt = np.array([100.0, 100.0, 100.0, 0.5])
+    room = np.array([0.0, 1.0, 20.0, 20.0])
+    fmag = np.array([0.0, 0.0, 10.0, 0.0])
+    D = 0.04
+    out = srep.surface_time_step(dt, room, fmag, D)
+    assert out[0] == pytest.approx(0.1**2 / (12.0 * D))  # contact counts 0.1 A
+    assert out[1] == pytest.approx(1.0 / (12.0 * D))
+    assert out[2] == pytest.approx(0.5 / (D * 10.0))
+    assert out[3] == 0.5
+
+
+def test_overlap_grid_clearance_is_a_lower_bound():
+    """clearance() never exceeds the true room, and positive room never overlaps."""
+    rng = np.random.default_rng(0)
+    rec = rng.uniform(-10.0, 10.0, (200, 3))
+    rr = rng.uniform(1.2, 1.9, 200)
+    lr = rng.uniform(1.0, 1.9, 12)
+    for margin in (0.0, 8.0):
+        g = _OverlapGridSR(rec, rr, 0.5, float(lr.max()), xp=np, margin=margin)
+        poses = rng.uniform(-16.0, 16.0, (300, 1, 3)) + rng.normal(
+            0.0, 2.0, (300, 12, 3)
+        )
+        c = g.clearance(poses, lr)
+        d = np.linalg.norm(poses[:, :, None, :] - rec[None, None, :, :], axis=-1)
+        true = (d - 0.5 * rr[None, None, :] - 0.5 * lr[None, :, None]).min(axis=(1, 2))
+        assert np.all(c <= np.maximum(true, 0.0) + 1e-9)
+        assert not np.any(g.overlaps(poses, lr) & (c > 0.0))
+
+
+def test_soft_repulsion_input_flag(tmp_path):
+    """The soft_repulsion tag defaults to false and is read from the input file."""
+    assert PySTARCConfig().soft_repulsion is False
+    xml = tmp_path / "test.xml"
+    xml.write_text(
+        """<?xml version="1.0" ?>
+<pystarc>
+  <receptor_pqr>r.pqr</receptor_pqr>
+  <ligand_pqr>l.pqr</ligand_pqr>
+  <soft_repulsion>true</soft_repulsion>
+</pystarc>"""
+    )
+    assert parse(xml).soft_repulsion is True
+
+
+def test_soft_repulsion_refuses_lj_forces(tmp_path):
+    """The soft wall and the LJ repulsion together would count the excluded volume
+    twice, so the input is refused; either one alone is accepted."""
+    def write(soft, lj):
+        xml = tmp_path / f"soft_{soft}_lj_{lj}.xml"
+        xml.write_text(
+            f"""<?xml version="1.0" ?>
+<pystarc>
+  <receptor_pqr>r.pqr</receptor_pqr>
+  <ligand_pqr>l.pqr</ligand_pqr>
+  <soft_repulsion>{soft}</soft_repulsion>
+  <lj_forces>{lj}</lj_forces>
+</pystarc>"""
+        )
+        return xml
+    with pytest.raises(ValueError, match="count it twice"):
+        parse(write("true", "true"))
+    assert parse(write("true", "false")).soft_repulsion is True
+    assert parse(write("false", "true")).lj_forces is True
+
+
+def test_soft_repulsion_stiffness_is_radial_curvature():
+    """The pair stiffness is the radial second derivative 156 kT (a/r)^12 / r^2."""
+    rec = np.zeros((1, 3))
+    rr = np.array([1.0])
+    lr = np.array([1.0])
+    s = srep.SoftRepulsion(rec, rr, lr)
+    r0, h = 1.75, 1e-4
+    def energy(r):
+        return s.atom_terms(np.array([[[r, 0.0, 0.0]]]))[1][0, 0]
+    curv = (energy(r0 + h) - 2.0 * energy(r0) + energy(r0 - h)) / (h * h)
+    k = s.atom_terms(np.array([[[r0, 0.0, 0.0]]]))[2][0, 0]
+    assert k == pytest.approx(curv, rel=1e-5)
+    a = srep.A_FACTOR * 2.0
+    assert k == pytest.approx(156.0 * (a / r0) ** 12 / r0**2, rel=1e-12)
+
+
+def test_surface_time_step_curvature_limit():
+    """With a stiffness K the step keeps D K dt at most curv_max."""
+    out = srep.surface_time_step(
+        np.array([1.0]), np.array([5.0]), np.array([0.0]), 0.5, stiffness=np.array([400.0])
+    )
+    assert out[0] == pytest.approx(0.05 / (0.5 * 400.0))
+

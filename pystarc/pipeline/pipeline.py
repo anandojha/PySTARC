@@ -406,10 +406,16 @@ def run(cfg: PySTARCConfig):
         params._work_dir = str(cfg.work_dir)
         params._kT_scale = cfg.temperature / 298.15
         params._overlap_check = cfg.overlap_check
+        params._soft_repulsion = getattr(cfg, "soft_repulsion", False)
         result = gpu_sim.run()
         elapsed = result.elapsed_sec
         total_steps = int(result.steps_per_sec * elapsed)
     else:
+        if getattr(cfg, "soft_repulsion", False):
+            raise ValueError(
+                "soft_repulsion runs on the GPU path only. Set <gpu>true</gpu> "
+                "on a machine with CuPy."
+            )
         print(f"\n  Using CPU NAM Simulator ({cfg.n_threads} threads)")
         result = sim.run()
         elapsed = time.time() - t0
@@ -475,7 +481,9 @@ def run(cfg: PySTARCConfig):
         print(f"  Multipole far-field (monopole + dipole + quadrupole)")
     else:
         print(f"  Multipole far-field disabled (monopole only)")
-    if cfg.overlap_check:
+    if getattr(cfg, "soft_repulsion", False):
+        print(f"  Soft repulsion kT (0.9345 (r_i + r_j) / r)^12 (replaces the overlap check)")
+    elif cfg.overlap_check:
         print(f"  Overlap check (elastic wall at receptor surface)")
     else:
         print(f"  Overlap check disabled")

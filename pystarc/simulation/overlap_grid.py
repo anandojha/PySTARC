@@ -41,6 +41,7 @@ class OverlapGrid:
         max_lig_radius: float,
         spacing: float = 0.3,
         xp=np,
+        margin: float = 0.0,
     ):
         self.xp = xp
         self.fraction = float(fraction)
@@ -52,8 +53,10 @@ class OverlapGrid:
         self.slack = self.spacing * math.sqrt(3.0) / 2.0 + 1e-6
         # A ligand atom farther than reach from every receptor atom cannot
         # overlap, so the grid covers the receptor with reach to spare on every
-        # side, and atoms off the grid are clear.
-        reach = (
+        # side, and atoms off the grid are clear. The margin (Å) extends the map
+        # further, so that clearance() reads the room of atoms near the surface
+        # from the map instead of the coarser bounds used off the map.
+        reach = margin + (
             self.fraction * (float(self.rec_radii.max()) + float(max_lig_radius))
             + self.slack
         )
@@ -80,6 +83,51 @@ class OverlapGrid:
             dist = xp.sqrt((diff * diff).sum(axis=-1))
             grid[p0:p1] = (dist - f_r[None, :]).min(axis=1)
         return grid.reshape(nx, ny, nz)
+
+    def clearance(self, lig_pos, lig_radii):
+        """Return a (n,) lower bound on the room each pose has before it overlaps.
+
+        For a ligand atom at y the room is g(y) - fraction * r_lig, the distance
+        by which the atom can approach the receptor before the overlap test
+        fires; the grid error (slack) is taken off. An atom off the map is at
+        least its distance d to the bounding box of the receptor atoms from
+        every receptor atom, so d - fraction (r_rec_max + r_lig) is a lower
+        bound for it. The pose value is the smallest atom value, clipped at
+        zero. lig_pos has shape (n, N_lig, 3).
+        """
+        xp = self.xp
+        lig_radii = xp.asarray(lig_radii, dtype=xp.float64)
+        ijk = xp.rint((lig_pos - self.origin) / self.spacing).astype(xp.int64)
+        on_grid = ((ijk >= 0) & (ijk < self.shape)).all(axis=-1)
+        ijk = xp.minimum(xp.maximum(ijk, 0), self.shape - 1)
+        g_n = self.grid[ijk[..., 0], ijk[..., 1], ijk[..., 2]]
+        room = g_n - self.slack - self.fraction * lig_radii[None, :]
+        if getattr(self, "_clr_consts", None) is None:
+            # Computed once: the receptor bounding box, the largest scaled
+            # radius, and the sphere around the receptor centroid that holds
+            # every receptor atom with its scaled radius.
+            c = self.rec_pos.mean(axis=0)
+            r_ext = float(
+                (
+                    xp.sqrt(((self.rec_pos - c) ** 2).sum(axis=1))
+                    + self.fraction * self.rec_radii
+                ).max()
+            )
+            self._clr_consts = (
+                self.rec_pos.min(axis=0),
+                self.rec_pos.max(axis=0),
+                self.fraction * float(self.rec_radii.max()),
+                c,
+                r_ext,
+            )
+        lo_in, hi_in, fr_max, c, r_ext = self._clr_consts
+        out = xp.maximum(xp.maximum(lo_in - lig_pos, lig_pos - hi_in), 0.0)
+        d_in = xp.sqrt((out * out).sum(axis=-1))
+        room_off = d_in - fr_max - self.fraction * lig_radii[None, :]
+        d_c = xp.sqrt(((lig_pos - c) ** 2).sum(axis=-1))
+        room_off = xp.maximum(room_off, d_c - r_ext - self.fraction * lig_radii[None, :])
+        room = xp.where(on_grid, room, room_off)
+        return xp.maximum(room.min(axis=1), 0.0)
 
     def overlaps(self, lig_pos, lig_radii, budget: int = 1 << 22):
         """Return a (n,) boolean array, true where any atom of pose n overlaps.
