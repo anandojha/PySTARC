@@ -13,8 +13,10 @@ source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate PySTARC
 
 BASE="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "$0")" && pwd)}"
-ROOT="$BASE"
+ROOT=${PYSTARC_ROOT:-$BASE}
 while [ ! -f "$ROOT/run_pystarc.py" ] && [ "$ROOT" != "/" ]; do ROOT="$(dirname "$ROOT")"; done
+[ -f "$ROOT/run_pystarc.py" ] || { echo "PySTARC not found. Set PYSTARC_ROOT to the PySTARC folder"; exit 1; }
+export PYTHONPATH=$ROOT
 
 cd "$BASE"
 rm -rf bd_sims

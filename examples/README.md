@@ -16,3 +16,9 @@
 </table>
 
 Each directory provides a dedicated README file describing its input files, the execution procedure, and the generated output files for analysis.
+
+## Running a copy outside the repository
+The scripts find PySTARC by looking in the folders above them. For a copy of an example kept elsewhere, point them at the code once:
+```
+export PYSTARC_ROOT=~/PySTARC
+```
