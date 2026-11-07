@@ -16,12 +16,12 @@
     <n_pairs>6</n_pairs>                                         <!-- Number of contacts retained. -->
     <atom_filter>polar</atom_filter>                             <!-- Element pairings permitted. Options: all, polar, nonpolar, any_polar, and receptor_polar. -->
     <pair_cutoff>7.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
-    <n_needed>6</n_needed>                                       <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. -->
+    <n_needed>3</n_needed>                                       <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. -->
   </criterion>
   <geometry>
     <bd_milestone_radius>45.0000</bd_milestone_radius>           <!-- Radius of the starting sphere (in angstroms). -->
-    <r_hydro_rec>22.5000</r_hydro_rec>                           <!-- Receptor hydrodynamic radius. 0 derives it from the PQR. -->
-    <r_hydro_lig>5.0000</r_hydro_lig>                            <!-- Ligand hydrodynamic radius. 0 derives it from the PQR file. -->
+    <r_hydro_rec>22.3728</r_hydro_rec>                           <!-- Receptor hydrodynamic radius. 0 derives it from the PQR. -->
+    <r_hydro_lig>4.9867</r_hydro_lig>                            <!-- Ligand hydrodynamic radius. 0 derives it from the PQR file. -->
   </geometry>
   <electrostatics>
     <debye_length>7.85751</debye_length>                         <!-- Electrostatic screening length of the salt (in angstroms). -->
@@ -47,14 +47,14 @@
     <multipole_fallback>true</multipole_fallback>                <!-- Extend the electrostatics beyond the grid by multipole expansion. Options: true and false. -->
   </physics>
   <simulation>
-    <n_trajectories>5000000</n_trajectories>                     <!-- Number of Brownian dynamics trajectories. -->
+    <n_trajectories>10000000</n_trajectories>                     <!-- Number of Brownian dynamics trajectories. -->
     <max_steps>1000000</max_steps>                               <!-- Step limit per trajectory. -->
     <dt>0.2</dt>                                                 <!-- Largest permitted time step (in picoseconds). -->
     <minimum_core_dt>0.2</minimum_core_dt>                       <!-- Smallest permitted time step. 0 imposes no floor. -->
     <minimum_core_reaction_dt>0.05</minimum_core_reaction_dt>       <!-- Smallest time step near the reaction surface. 0 imposes no floor. -->
     <max_dt>0</max_dt>                                           <!-- Ceiling on the time step. 0 imposes no ceiling. -->
     <temperature>298.15</temperature>                            <!-- Temperature (in kelvin). -->
-    <seed>1</seed>                                               <!-- Random number seed. -->
+    <seed>20261107</seed>                                               <!-- Random number seed. -->
     <convergence_check>true</convergence_check>                  <!-- Run convergence analysis after the simulation. Options: true and false. -->
     <convergence_interval>10</convergence_interval>              <!-- Reporting interval for the running rate. -->
     <convergence_tol>0.05</convergence_tol>                      <!-- Relative error defining convergence. -->
