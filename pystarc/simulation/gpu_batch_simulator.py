@@ -1025,6 +1025,9 @@ class GPUBatchSimulator:
         # atom. For charged spheres L = 0 and D_eff = D_trans exactly, while for
         # thrombin D_eff ≈ 2 × D_trans because rotation doubles the effective
         # diffusion coefficient.
+        # With hydrodynamic interactions each step moves the pair with D_par at
+        # the separation at the start of the step. The bridge then takes that D
+        # in place of D_trans for the translational part (_bridge_D_dt).
         if self._rec_gho_pos is not None and len(self._rec_gho_indices) > 0:
             r_h_rec = float(getattr(self.mob, "radius1", 1.0))
             r_h_lig = float(getattr(self.mob, "radius2", 1.0))
@@ -1044,6 +1047,11 @@ class GPUBatchSimulator:
             L_lig = np.linalg.norm(lig_gho_body, axis=1)  # (n_pairs,)
             D_eff_np = D_t + D_rot_rec * L_rec**2 + D_rot_lig * L_lig**2
             self._bb_D_eff = cp.asarray(D_eff_np, dtype=cp.float64)  # (n_pairs,)
+            # The rotation part alone. With hydrodynamic interactions the bridge
+            # adds it to the translational D of each step.
+            self._bb_D_rot = cp.asarray(
+                D_rot_rec * L_rec**2 + D_rot_lig * L_lig**2, dtype=cp.float64
+            )  # (n_pairs,)
             print(
                 f"  BB D_eff: D_trans={D_t:.5f}, D_rot_rec={D_rot_rec:.6f}, "
                 f"D_rot_lig={D_rot_lig:.6f}"
@@ -1053,8 +1061,14 @@ class GPUBatchSimulator:
                 f"max={D_eff_np.max():.5f}, mean={D_eff_np.mean():.5f} Å²/ps "
                 f"({D_eff_np.mean()/D_t:.1f}x D_trans)"
             )
+            if self._use_hi:
+                print(
+                    "  BB D_eff with HI takes D_par(r) at the start of each step "
+                    "in place of D_trans"
+                )
         else:
             self._bb_D_eff = None
+            self._bb_D_rot = None
         # Print startup diagnostics in verbose mode.
         print(f"\n  Diagnostic dump (verbose mode)")
         print(
@@ -1795,11 +1809,7 @@ class GPUBatchSimulator:
                 _x1 = _new_pair_dists - _cutoffs
                 _both_above = (_x0 > 0) & (_x1 > 0)
                 if cp.any(_both_above):
-                    if self._bb_D_eff is not None:
-                        _Deff = self._bb_D_eff[None, :]
-                        _Ddt = _Deff * dt_arr[:, None]
-                    else:
-                        _Ddt = D_t * dt_arr[:, None]
+                    _Ddt = self._bridge_D_dt(D_par_arr, dt_arr, D_t)
                     _Ddt = cp.maximum(_Ddt, cp.full_like(_Ddt, 1e-30))
                     _p_cross = cp.exp(-_x0 * _x1 / _Ddt)
                     _p_cross = cp.where(_both_above, _p_cross, cp.zeros_like(_p_cross))
@@ -2389,6 +2399,24 @@ class GPUBatchSimulator:
             self._rotate_vectors_gpu(pos, -omega1),
             self._apply_rotation_gpu(q, -omega1),
         )
+
+    def _bridge_D_dt(
+        self, D_par_arr: "cp.ndarray", dt_arr: "cp.ndarray", D_t: float
+    ) -> "cp.ndarray":
+        """D times dt of each reaction pair distance over one step for the bridge.
+
+        The translational part is the D the step moved the pair with. With
+        hydrodynamic interactions that is D_par at the separation at the start
+        of the step (D_par_arr per trajectory). Without them it is the far field
+        D_trans held in _bb_D_eff. Rotation adds D_rot × L² for each molecule.
+        Returns shape (N, n_pairs) or (N, 1) when no pair atoms are set.
+        """
+        if self._bb_D_eff is None:
+            D = D_par_arr[:, None] if self._use_hi else D_t
+            return D * dt_arr[:, None]
+        if self._use_hi:
+            return (D_par_arr[:, None] + self._bb_D_rot[None, :]) * dt_arr[:, None]
+        return self._bb_D_eff[None, :] * dt_arr[:, None]
 
     def _rotate_vectors_gpu(self, v: "cp.ndarray", omega: "cp.ndarray") -> "cp.ndarray":
         """Rotate the (N, 3) vectors v by the (N, 3) rotation vectors omega.
