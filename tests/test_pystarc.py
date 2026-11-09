@@ -19331,6 +19331,18 @@ def test_successful_outer_propagator_setup_is_silent():
     assert len(runtime_warnings) == 0
 
 
+def _running_total(dts):
+    """Add the steps one at a time in order as the engine does.
+
+    sum() in Python 3.12 and later compensates the rounding of a float sum and
+    can differ from a running total in the last digits.
+    """
+    total = 0.0
+    for dt in dts:
+        total += dt
+    return total
+
+
 def test_time_ps_sums_actual_adaptive_steps():
     """result.time_ps equals the sum of the adaptive steps actually applied, not steps times the nominal dt."""
     mol1, mol2, mobility, pathway_set, params = _make_inputs()
@@ -19355,7 +19367,7 @@ def test_time_ps_sums_actual_adaptive_steps():
     assert result.fate == Fate.ESCAPED
     assert applied_dts  # The controller was queried at least once.
     # The reported time is the running total of the applied adaptive steps.
-    assert result.time_ps == sum(applied_dts)
+    assert result.time_ps == _running_total(applied_dts)
     assert abs(result.time_ps - result.steps * params.dt) > 1.0
     assert result.time_ps > 0.0
 
@@ -19403,7 +19415,7 @@ def test_time_ps_accumulates_backstep_half_steps():
 
     # At least one backstep must fire for this test to exercise the half-step path.
     assert backstep_count["n"] > 0
-    assert result.time_ps == sum(applied_dts)
+    assert result.time_ps == _running_total(applied_dts)
 
 
 # --- merged from test_auditfix2_parallel.py ---
