@@ -347,6 +347,7 @@ def run(cfg: PySTARCConfig):
         n_threads=cfg.n_threads,
         hydrodynamic_interactions=_hi_flag,
         use_hard_sphere=True,
+        use_brownian_bridge=getattr(cfg, "brownian_bridge", True),
         verbose=True,
         minimum_core_dt=getattr(cfg, "minimum_core_dt", 0.0),
         minimum_core_reaction_dt=getattr(cfg, "minimum_core_reaction_dt", 0.0),

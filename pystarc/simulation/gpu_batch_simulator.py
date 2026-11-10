@@ -1207,6 +1207,11 @@ class GPUBatchSimulator:
         # The soft repulsion of BrownDye 2, V = kT (0.9345 (r_i + r_j) / r)^12
         # between every receptor and ligand atom, replaces the hard check.
         _use_soft = bool(getattr(self.params, "_soft_repulsion", False))
+        # With the Brownian bridge off a reaction counts only when the criterion
+        # holds at the end of a step (input key brownian_bridge).
+        _use_bridge = bool(getattr(self.params, "use_brownian_bridge", True))
+        if not _use_bridge:
+            print("  Brownian bridge off. Reactions are checked at the end of each step only.")
         if _use_soft:
             _use_overlap = False
         # With either excluded-volume model the time step has to resolve the
@@ -1794,7 +1799,8 @@ class GPUBatchSimulator:
             # state-machine reaction has exactly one pair, matching the
             # flattened-pair layout used elsewhere.
             if (
-                _old_pair_dists is not None
+                _use_bridge
+                and _old_pair_dists is not None
                 and len(sr_idx) > 0
                 and self._rec_gho_pos is not None
             ):
