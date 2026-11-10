@@ -845,11 +845,17 @@ class GPUBatchForceEngine:
         N_rec = self._rec_pos_gpu.shape[0]
         result_f = cp.zeros((N_traj, 3), dtype=cp.float64)
         result_t = cp.zeros((N_traj, 3), dtype=cp.float64)
-        # Get the extent of the ligand Born grid and skip if no receptor atom
-        # can reach it.
+        # Get the reach of the ligand Born grids. A chunk is skipped only when
+        # no receptor atom can fall inside any ligand Born grid. The reach takes
+        # every grid so the order of the grids does not matter. A box corner
+        # lies further out than the box half width. The reach is therefore the
+        # largest distance from the ligand center to a corner of the usable box
+        # of any ligand Born grid.
         if self._lig_born_grids_gpu:
-            g = self._lig_born_grids_gpu[0]
-            lig_grid_radius = float(max(abs(g["lo"][0]), abs(g["hi"][0])))
+            lig_grid_radius = max(
+                float(np.linalg.norm(np.maximum(np.abs(g["lo"]), np.abs(g["hi"]))))
+                for g in self._lig_born_grids_gpu
+            )
         else:
             return result_f, result_t
         # Choose the chunk size to keep the (chunk, N_rec, 3) array under about
@@ -861,12 +867,12 @@ class GPUBatchForceEngine:
             c1 = min(c0 + chunk_size, N_traj)
             nc = c1 - c0
             # Skip the chunk if all centroids are too far for any receptor atom
-            # to fall inside the ligand Born grid.
+            # to fall inside any ligand Born grid.
             r_cen = cp.linalg.norm(centroids[c0:c1], axis=1)
             rec_max_r = float(cp.linalg.norm(self._rec_pos_gpu, axis=1).max())
             min_possible_dist = float(r_cen.min()) - rec_max_r
             if min_possible_dist > lig_grid_radius:
-                continue  # no receptor atom can be inside the ligand Born grid
+                continue  # no receptor atom can be inside any ligand Born grid
             # Receptor positions relative to the ligand centroid,
             # rec_pos_rel = rec_pos - centroid, with shape (nc, N_rec, 3).
             rec_pos_rel = self._rec_pos_gpu[None, :, :] - centroids[c0:c1, None, :]
