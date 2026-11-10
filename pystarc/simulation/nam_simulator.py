@@ -348,8 +348,8 @@ class NAMSimulator:
         # Reset the adaptive dt controller for this trajectory.
         self._dt_ctrl.reset()
         # The Brownian bridge state holds the pair distances from the top of the
-        # previous iteration, the dt actually used in the previous outer step,
-        # and the diffusion at the start of that step. It is None on the first
+        # previous iteration, the time the previous move took, and the
+        # diffusion of that move averaged over its time. It is None on the first
         # iteration. The bridge code path runs only when use_brownian_bridge is
         # True and the pathway_set has reactions to track.
         _has_reactions = (
@@ -456,6 +456,9 @@ class NAMSimulator:
             # advances the full dt; a force backstep advances it as two hdt
             # half steps that sum to the same dt.
             step_dt = dt
+            # The bridge takes the diffusion of the move averaged over step_dt.
+            # A single step moves with D_t over the whole dt.
+            D_eff_bb = D_t
             # Draw the Wiener increments and take the step.
             dW_t = math.sqrt(dt) * self.rng.standard_normal(3)
             dW_r = math.sqrt(dt) * self.rng.standard_normal(3)
@@ -513,8 +516,12 @@ class NAMSimulator:
                     dW_r - dW_mid_r,
                     grad_D_t2,
                 )
-                self._dt_ctrl._last_dt = hdt  # Record the dt actually used.
+                self._dt_ctrl._last_dt = hdt  # The next step grows from hdt.
                 step_dt = hdt + hdt  # Sum of the two half steps of the backstep.
+                # The first half step moves with D_t and the second with D_t2.
+                # The whole move has D dt = D_t hdt + D_t2 hdt. The mean of D_t
+                # and D_t2 times step_dt gives the same D dt.
+                D_eff_bb = 0.5 * (D_t + D_t2)
             # Reject the step if it produces a hard-sphere collision.
             if self.params.use_hard_sphere:
                 mol2_trial = self._place_mol2(pos, ori)
@@ -526,6 +533,9 @@ class NAMSimulator:
                     # the redrawn step.
                     D_t_old = self.mobility.relative_translational_diffusion(pos_old)
                     grad_D_old = self._grad_D_trans(pos_old, D_t_old, dt)
+                    # A redrawn move is one full step with D_t_old. The bridge
+                    # takes the same D.
+                    D_eff_bb = D_t_old
                     HS_MAX_REDRAWS = 5
                     pos_try, ori_try = pos_old, ori_old
                     for _ in range(HS_MAX_REDRAWS):
@@ -557,17 +567,15 @@ class NAMSimulator:
                         pos, ori = pos_old, ori_old
             # Save the state for the next iteration's Brownian bridge check.
             # The pair distances in cur_pair_dists were captured before this
-            # step. The effective dt is whatever the dt controller actually
-            # applied, which is set on every call to get_dt and overwritten to
-            # hdt when a backstep fires. The diffusion at the start of this step
-            # (at pos_old) is the correct bridge diffusion over the interval
-            # from pos_old to pos.
+            # step. The bridge needs D dt summed over the whole move from
+            # pos_old to pos. The bridge gets the time of the move in step_dt
+            # and the mean diffusion over the move in D_eff_bb. After a force
+            # backstep the controller holds hdt in _last_dt. _last_dt only sets
+            # how far the next step may grow.
             if _bb_active:
                 prev_pair_dists = cur_pair_dists
-                prev_dt_outer = float(self._dt_ctrl._last_dt or 0.0)
-                prev_D_eff_bb = float(
-                    self.mobility.relative_translational_diffusion(pos_old)
-                )
+                prev_dt_outer = float(step_dt)
+                prev_D_eff_bb = float(D_eff_bb)
             # Advance the running physical time by the step actually applied.
             elapsed_ps += step_dt
         return TrajectoryResult(
