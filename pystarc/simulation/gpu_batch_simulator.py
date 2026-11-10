@@ -43,12 +43,10 @@ import math
 import warnings
 import copy
 import time
-from pystarc.global_defs.constants import KBT_KCAL
 from pystarc.global_defs.defaults import (
     SAVE_INTERVAL,
     HYDRODYNAMIC_INTERACTIONS,
     SOLVENT_DIELECTRIC,
-    VISCOSITY,
 )
 
 try:
@@ -724,6 +722,42 @@ class GPUBatchSimulator:
                 lo = mid
         return float(b + 0.5 * (lo + hi))
 
+    def _hi_constants(self, D_t: float) -> Tuple[float, ...]:
+        """Constants of the RPY D_par(r) that the step uses with hydrodynamic
+        interactions.
+
+        Returns (dpre, D0, Deng, a2, S, Ad, am2, p). The prefactor dpre is
+        kT/(6π η). D0 = dpre (1/a0 + 1/a1) is the value D_par reaches far
+        from contact. Both come from the mobility D_t as in the k_b integrand
+        of _compute_return_prob. For a mobility built from radii D_par then
+        tends to D_t at the temperature and viscosity of the mobility. The step without hydrodynamic
+        interactions, k_b and p_b use the same D_t. Deng is the constant
+        D_par once the smaller sphere lies inside the larger. a2, S, Ad, am2
+        and p depend on the radii alone.
+        """
+        a0 = float(getattr(self.mob, "radius1", 0.0))
+        a1 = float(getattr(self.mob, "radius2", 0.0))
+        # Checked first because ainv divides by both radii.
+        if not (a0 > 0.0 and a1 > 0.0):
+            raise ValueError(
+                "hydrodynamic interactions need two strictly positive "
+                f"radii, got a0={a0} A, a1={a1} A"
+            )
+        # dpre × ainv = D_t gives dpre = D_t / ainv.
+        ainv = 1.0 / a0 + 1.0 / a1
+        dpre = D_t / ainv
+        D0 = D_t
+        Deng = D0 - 2.0 * dpre / max(a0, a1)
+        a2 = 0.5 * (a0**2 + a1**2)
+        # The pair mobility is split at contact, r = a0 + a1, and
+        # again where the smaller sphere is swallowed by the larger,
+        # r = |a0 - a1|. Inside that second boundary the relative mobility
+        # is the difference of the two self mobilities and does not depend
+        # on r at all. Precomputed so the step loop stays elementwise.
+        S = a0 + a1
+        Ad = abs(a0 - a1)
+        return dpre, D0, Deng, a2, S, Ad, Ad * Ad, a0 * a1
+
     def run(self) -> GPUBatchResult:
         """Run all trajectories as a single GPU batch."""
         # Warm up the GPU by forcing CuPy and CUDA kernel JIT compilation before
@@ -1140,34 +1174,16 @@ class GPUBatchSimulator:
         # Pre-compute the hydrodynamic-interaction constants to avoid Python
         # overhead per step.
         if self._use_hi:
-            # Solvent viscosity in kBT.ps/A^3 at T_DEFAULT.
-            _hi_mu = VISCOSITY / KBT_KCAL
-            _hi_Df = 1.0 / _hi_mu
-            _hi_pi6 = 6.0 * math.pi
-            _hi_a0 = float(getattr(self.mob, "radius1", 0.0))
-            _hi_a1 = float(getattr(self.mob, "radius2", 0.0))
-            # Checked before _hi_ainv, which divides by both radii.
-            if not (_hi_a0 > 0.0 and _hi_a1 > 0.0):
-                raise ValueError(
-                    "hydrodynamic interactions need two strictly positive "
-                    f"radii, got a0={_hi_a0} A, a1={_hi_a1} A"
-                )
-            _hi_a2 = 0.5 * (_hi_a0**2 + _hi_a1**2)
-            _hi_ainv = (
-                _hi_Df / (_hi_pi6 * _hi_a0) + _hi_Df / (_hi_pi6 * _hi_a1)
-            ) / _hi_Df
-            # The pair mobility is split at contact, r = a0 + a1, and
-            # again where the smaller sphere is swallowed by the larger,
-            # r = |a0 - a1|. Inside that second boundary the relative mobility
-            # is the difference of the two self mobilities and does not depend
-            # on r at all. Precomputed so the step loop stays elementwise.
-            _hi_dpre = _hi_Df / _hi_pi6
-            _hi_S = _hi_a0 + _hi_a1
-            _hi_Ad = abs(_hi_a0 - _hi_a1)
-            _hi_am2 = _hi_Ad * _hi_Ad
-            _hi_p = _hi_a0 * _hi_a1
-            _hi_D0 = _hi_Df * _hi_ainv
-            _hi_Deng = _hi_D0 - 2.0 * _hi_dpre / max(_hi_a0, _hi_a1)
+            (
+                _hi_dpre,
+                _hi_D0,
+                _hi_Deng,
+                _hi_a2,
+                _hi_S,
+                _hi_Ad,
+                _hi_am2,
+                _hi_p,
+            ) = self._hi_constants(D_t)
         # Set up the convergence milestones and the checkpointing.
         _conv_interval = getattr(self.params, "convergence_interval", 10)
         if _conv_interval > 0:
