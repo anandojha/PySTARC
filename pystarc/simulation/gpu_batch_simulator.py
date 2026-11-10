@@ -1051,58 +1051,47 @@ class GPUBatchSimulator:
         # reaction surface while still bounding it from below. This matches the
         # minimum_core_reaction_dt semantics of the reference BD engine.
         _min_core_rxn_dt = float(getattr(self.params, "minimum_core_reaction_dt", 0.0))
-        # Pre-compute the effective diffusion coefficient for the Brownian
-        # bridge. Pair distances change because of both translation and
-        # rotation, so
-        #   D_eff = D_trans + D_rot_rec × L_rec² + D_rot_lig × L_lig²
-        # where L is the lever arm, the distance from the centroid to the GHO
-        # atom. For charged spheres L = 0 and D_eff = D_trans exactly, while for
-        # thrombin D_eff ≈ 2 × D_trans because rotation doubles the effective
-        # diffusion coefficient.
-        # With hydrodynamic interactions each step moves the pair with D_par at
-        # the separation at the start of the step. The bridge then takes that D
-        # in place of D_trans for the translational part (_bridge_D_dt).
+        # The Brownian bridge needs the diffusion coefficient D of each pair
+        # distance over one step. Translation moves the pair with D_trans. With
+        # hydrodynamic interactions it moves the pair with D_par at the
+        # separation at the start of the step instead (_bridge_D_dt). The two
+        # rotations of the step move the pair atoms through their lever arms.
+        # The receptor lever arm g_rec runs from the origin to the receptor pair
+        # atom. The ligand lever arm R g_lig runs from the ligand centroid to
+        # the ligand pair atom. To first order only the part of a lever arm
+        # across the pair changes the pair distance. So
+        #   D = D_trans + D_r1 |g_rec × s|² + D_r2 |R g_lig × s|²
+        # with s the unit pair vector at the start of the step (_bridge_D_rot).
+        # The bridge takes the D_r1 and D_r2 of the step. For charged spheres
+        # both lever arms are zero and D = D_trans exactly. The lever arm
+        # lengths L give the upper bound D_trans + D_r1 L_rec² + D_r2 L_lig².
+        # A pair reaches the bound when both lever arms stand at right angles
+        # to it.
         if self._rec_gho_pos is not None and len(self._rec_gho_indices) > 0:
-            r_h_rec = float(getattr(self.mob, "radius1", 1.0))
-            r_h_lig = float(getattr(self.mob, "radius2", 1.0))
-            # Per-molecule translational diffusion coefficients, not D_rel which
-            # is their sum. Here D_trans_rec = kT/(6πμa_rec) = D_rel ×
-            # a_lig/(a_rec+a_lig), and the rotational coefficient follows the
-            # Stokes-Einstein-Debye relation D_rot = D_trans × 3/(4a²).
-            a_sum = r_h_rec + r_h_lig if (r_h_rec + r_h_lig) > 0 else 1.0
-            D_trans_rec = D_t * r_h_lig / a_sum
-            D_trans_lig = D_t * r_h_rec / a_sum
-            D_rot_rec = D_trans_rec * 3.0 / (4.0 * r_h_rec**2) if r_h_rec > 0 else 0.0
-            D_rot_lig = D_trans_lig * 3.0 / (4.0 * r_h_lig**2) if r_h_lig > 0 else 0.0
-            # Lever arms, the distance from the centroid to the GHO atom.
-            rec_gho_np = cp.asnumpy(self._rec_gho_pos)  # (n_pairs, 3)
-            lig_gho_body = cp.asnumpy(self._mol2_pos0[self._lig_gho_indices])
-            L_rec = np.linalg.norm(rec_gho_np, axis=1)  # (n_pairs,)
-            L_lig = np.linalg.norm(lig_gho_body, axis=1)  # (n_pairs,)
-            D_eff_np = D_t + D_rot_rec * L_rec**2 + D_rot_lig * L_lig**2
-            self._bb_D_eff = cp.asarray(D_eff_np, dtype=cp.float64)  # (n_pairs,)
-            # The rotation part alone. With hydrodynamic interactions the bridge
-            # adds it to the translational D of each step.
-            self._bb_D_rot = cp.asarray(
-                D_rot_rec * L_rec**2 + D_rot_lig * L_lig**2, dtype=cp.float64
-            )  # (n_pairs,)
+            # Lever arm lengths for the upper bound in the log.
+            L_rec = np.linalg.norm(cp.asnumpy(self._rec_gho_pos), axis=1)
+            L_lig = np.linalg.norm(
+                cp.asnumpy(self._mol2_pos0[self._lig_gho_indices]), axis=1
+            )
+            D_max_np = D_t + D_r1 * L_rec**2 + D_r2 * L_lig**2  # (n_pairs,)
             print(
-                f"  BB D_eff: D_trans={D_t:.5f}, D_rot_rec={D_rot_rec:.6f}, "
-                f"D_rot_lig={D_rot_lig:.6f}"
+                f"  BB D_eff: D_trans={D_t:.5f}, D_rot_rec={D_r1:.6f}, "
+                f"D_rot_lig={D_r2:.6f}"
             )
             print(
-                f"  BB D_eff per pair: min={D_eff_np.min():.5f}, "
-                f"max={D_eff_np.max():.5f}, mean={D_eff_np.mean():.5f} Å²/ps "
-                f"({D_eff_np.mean()/D_t:.1f}x D_trans)"
+                f"  BB D_eff per pair: min={D_max_np.min():.5f}, "
+                f"max={D_max_np.max():.5f}, mean={D_max_np.mean():.5f} Å²/ps "
+                f"({D_max_np.mean()/D_t:.1f}x D_trans) at most"
+            )
+            print(
+                "  BB D_eff takes the lever arms across the pair at the start "
+                "of each step"
             )
             if self._use_hi:
                 print(
                     "  BB D_eff with HI takes D_par(r) at the start of each step "
                     "in place of D_trans"
                 )
-        else:
-            self._bb_D_eff = None
-            self._bb_D_rot = None
         # Print startup diagnostics in verbose mode.
         print(f"\n  Diagnostic dump (verbose mode)")
         print(
@@ -1825,7 +1814,12 @@ class GPUBatchSimulator:
                 _x1 = _new_pair_dists - _cutoffs
                 _both_above = (_x0 > 0) & (_x1 > 0)
                 if cp.any(_both_above):
-                    _Ddt = self._bridge_D_dt(D_par_arr, dt_arr, D_t)
+                    # The rotation part of D takes the pose at the start of the
+                    # step. _old_pair_dists holds the same pose.
+                    _D_rot = self._bridge_D_rot(
+                        _lig_gho_old, cen_sr, _old_pair_dists, D_r1, D_r2
+                    )
+                    _Ddt = self._bridge_D_dt(D_par_arr, dt_arr, D_t, _D_rot)
                     _Ddt = cp.maximum(_Ddt, cp.full_like(_Ddt, 1e-30))
                     _p_cross = cp.exp(-_x0 * _x1 / _Ddt)
                     _p_cross = cp.where(_both_above, _p_cross, cp.zeros_like(_p_cross))
@@ -2417,22 +2411,61 @@ class GPUBatchSimulator:
         )
 
     def _bridge_D_dt(
-        self, D_par_arr: "cp.ndarray", dt_arr: "cp.ndarray", D_t: float
+        self,
+        D_par_arr: "cp.ndarray",
+        dt_arr: "cp.ndarray",
+        D_t: float,
+        D_rot: "cp.ndarray" = None,
     ) -> "cp.ndarray":
         """D times dt of each reaction pair distance over one step for the bridge.
 
         The translational part is the D the step moved the pair with. With
         hydrodynamic interactions that is D_par at the separation at the start
         of the step (D_par_arr per trajectory). Without them it is the far field
-        D_trans held in _bb_D_eff. Rotation adds D_rot × L² for each molecule.
-        Returns shape (N, n_pairs) or (N, 1) when no pair atoms are set.
+        D_trans. D_rot is the rotation part from _bridge_D_rot with shape
+        (N, n_pairs). Returns shape (N, n_pairs) or (N, 1) when D_rot is None.
         """
-        if self._bb_D_eff is None:
-            D = D_par_arr[:, None] if self._use_hi else D_t
+        D = D_par_arr[:, None] if self._use_hi else D_t
+        if D_rot is None:
             return D * dt_arr[:, None]
-        if self._use_hi:
-            return (D_par_arr[:, None] + self._bb_D_rot[None, :]) * dt_arr[:, None]
-        return self._bb_D_eff[None, :] * dt_arr[:, None]
+        return (D + D_rot) * dt_arr[:, None]
+
+    def _bridge_D_rot(
+        self,
+        lig_gho: "cp.ndarray",
+        centroids: "cp.ndarray",
+        pair_dists: "cp.ndarray",
+        D_r1: float,
+        D_r2: float,
+    ) -> "cp.ndarray":
+        """Rotation part of the diffusion coefficient of each pair distance.
+
+        lig_gho holds the (N, n_pairs, 3) ligand pair atoms and centroids the
+        (N, 3) ligand centroids at the start of the step. pair_dists holds the
+        (N, n_pairs) pair distances of the same pose. The step turns the ligand
+        about its centroid by omega2 with D_r2. It turns the relative
+        configuration about the origin by -omega1 with D_r1. To first order
+        the two turns move the pair vector d by
+            omega2 × R g_lig - omega1 × (g_rec + d)
+        with R g_lig the ligand pair atom from the ligand centroid and g_rec
+        the receptor pair atom from the origin. The term omega1 × d stands at
+        right angles to d and leaves the distance unchanged. With s = d / |d|
+        the distance changes by omega2 · (R g_lig × s) - omega1 · (g_rec × s).
+        The noise in omega1 and omega2 is independent with variance 2 D_r1 dt
+        and 2 D_r2 dt per axis. So the pair distance diffuses with
+            D_r1 |g_rec × s|² + D_r2 |R g_lig × s|²
+        on top of the translation. A lever arm along the pair adds nothing. A
+        lever arm at right angles to the pair adds D_r L². No lever arm of
+        length L adds more. Returns shape (N, n_pairs).
+        """
+        rec = cp.broadcast_to(self._rec_gho_pos, lig_gho.shape)
+        # A pair at zero distance has no direction and gets no rotation part.
+        s = (lig_gho - rec) / cp.maximum(pair_dists, 1e-12)[:, :, None]
+        rec_x = cp.cross(rec, s)
+        lig_x = cp.cross(lig_gho - centroids[:, None, :], s)
+        return D_r1 * cp.sum(rec_x * rec_x, axis=2) + D_r2 * cp.sum(
+            lig_x * lig_x, axis=2
+        )
 
     def _rotate_vectors_gpu(self, v: "cp.ndarray", omega: "cp.ndarray") -> "cp.ndarray":
         """Rotate the (N, 3) vectors v by the (N, 3) rotation vectors omega.
