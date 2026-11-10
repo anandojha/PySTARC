@@ -54,7 +54,7 @@
     <lj_forces>false</lj_forces>                                 <!-- Apply repulsive forces at close contact. Options: true and false. -->
     <hydrodynamic_interactions>true</hydrodynamic_interactions>  <!-- Include hydrodynamic coupling between the two molecules. Options: true and false. -->
     <desolvation_alpha>1.0</desolvation_alpha>                   <!-- Scaling applied to the desolvation penalty. -->
-    <enable_born2_torque>false</enable_born2_torque>             <!-- Include the reciprocal desolvation torque on the receptor. Options: true and false. -->
+    <enable_born2_torque>true</enable_born2_torque>              <!-- Include the reciprocal desolvation torque on the receptor. Options: true and false. -->
     <multipole_fallback>true</multipole_fallback>                <!-- Extend the electrostatics beyond the grid by multipole expansion. Options: true and false. -->
   </physics>
   <simulation>
