@@ -50,6 +50,7 @@ from typing import List, Tuple
 from pathlib import Path
 import numpy as np
 import subprocess
+from pystarc.global_defs.defaults import GHOST_NAMES
 import hashlib
 import shutil
 import json
@@ -119,7 +120,7 @@ def _read_pqr_atoms(pqr_path: Path):
     return [
         (r.x, r.y, r.z, r.radius)
         for r in parse_pqr_records(pqr_path)
-        if r.name.strip().upper() != "GHO"
+        if r.name.strip().upper() not in GHOST_NAMES
     ]
 
 

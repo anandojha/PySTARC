@@ -42,6 +42,7 @@ from pystarc.global_defs.defaults import (
     REFERENCE_DEFAULTS,
     REFERENCE_LOCAL_TAGS,
 )
+from pystarc.global_defs.defaults import GHOST_NAMES
 
 # Residue names that count as solvent or ions and are stripped before the
 # calculation. The set is deliberately broad and covers the water and ion
@@ -334,7 +335,7 @@ def split_receptor_ligand(
 
 
 def centroid(atoms: List[PQRAtom]) -> np.ndarray:
-    coords = np.array([[a.x, a.y, a.z] for a in atoms if a.name != "GHO"])
+    coords = np.array([[a.x, a.y, a.z] for a in atoms if a.name.strip().upper() not in GHOST_NAMES])
     return coords.mean(axis=0)
 
 
@@ -435,7 +436,7 @@ def compute_grid_params(
     coarse spacing, and the dimension count along each axis is glen/spacing + 1
     rounded up to an odd number. The grid centre is the heavy-atom centroid.
     """
-    atoms_real = [a for a in atoms if a.name != "GHO"]
+    atoms_real = [a for a in atoms if a.name.strip().upper() not in GHOST_NAMES]
     if not atoms_real:
         raise ValueError(
             "compute_grid_params received no real atoms. The atom list is "

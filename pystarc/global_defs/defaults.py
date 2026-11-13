@@ -114,6 +114,10 @@ MINIMUM_CORE_REACTION_DT: float = 0.0  # ps, sentinel
 # generator, and the splitting probability is unchanged by hydrodynamics.
 HYDRODYNAMIC_INTERACTIONS: bool = True
 SAVE_INTERVAL: int = 100  # steps between saved path points, 0 saves endpoints only
+# Ghost atoms carry no charge and no radius. GHO marks the centre of each
+# molecule and PKT the centre of the bound ligand in the receptor. Both are
+# left out of the centring, the grid sizing and the hydrodynamic radius.
+GHOST_NAMES = ("GHO", "PKT")
 
 # ---------------------------------------------------------------------------
 # The registry consulted by both readers of pystarc_input.xml

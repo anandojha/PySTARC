@@ -11,12 +11,12 @@
     <ligand_resname>BEN</ligand_resname>                         <!-- Ligand label written to input.xml. -->
   </names>
   <criterion>
-    <mode>auto</mode>                                            <!-- How the atom pairs of the reaction criterion are chosen. Options: auto, explicit, and center. -->
-    <search_cutoff>6.0</search_cutoff>                           <!-- Search radius for contacts (in angstroms). -->
-    <n_pairs>6</n_pairs>                                         <!-- Number of contacts retained. -->
+    <mode>contacts</mode>                                        <!-- How the atom pairs of the reaction criterion are chosen. Options: contacts, centroid, and site. -->
+    <search_cutoff>6.0</search_cutoff>                           <!-- Mode contacts with pairs picked from the crystal contacts. Search radius (in angstroms). -->
+    <n_pairs>6</n_pairs>                                         <!-- Mode contacts with pairs picked from the crystal contacts. Number of contacts retained, one or an even number. -->
     <atom_filter>polar</atom_filter>                             <!-- Element pairings permitted. Options: all, polar, nonpolar, any_polar, and receptor_polar. -->
-    <pair_cutoff>7.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
-    <n_needed>3</n_needed>                                       <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. Not used by mode center. -->
+    <pair_cutoff>7.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). Mode site takes this or margin. -->
+    <n_needed>3</n_needed>                                       <!-- Mode contacts only. Pairs that must be inside their cutoff at once: 1 for one pair, half of them for an even number of pairs. -->
   </criterion>
   <geometry>
     <bd_milestone_radius>45.0</bd_milestone_radius>              <!-- Radius of the starting sphere (in angstroms). -->

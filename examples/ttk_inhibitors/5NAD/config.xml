@@ -17,17 +17,8 @@
     <ligand_resname>8RH</ligand_resname>                         <!-- Ligand label written to input.xml. -->
   </names>
   <criterion>
-    <mode>explicit</mode>                                        <!-- How the atom pairs of the reaction criterion are chosen. Options: auto, explicit, and center. -->
-    <receptor_numbering>pdb</receptor_numbering>                 <!-- Numbering for the target residues. Options: pdb and internal. -->
-    <receptor>                                                   <!-- Receptor side of each pair. The pair counts when this atom is within the cutoff of its ligand atom. -->
-      <target resid="603" atom="O" resname="GLU"/>
-      <target resid="605" atom="O" resname="GLY"/>
-      <target resid="605" atom="N" resname="GLY"/>
-    </receptor>
-    <ligand>auto</ligand>                                        <!-- Ligand side of each pair. Use auto to choose the nearest atom that atom_filter permits. -->
-    <atom_filter>polar</atom_filter>                             <!-- Element pairings permitted. Options: all, polar, nonpolar, any_polar, and receptor_polar. -->
-    <pair_cutoff>7.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
-    <n_needed>3</n_needed>                                       <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. Not used by mode center. -->
+    <mode>site</mode>                                            <!-- How the atom pairs of the reaction criterion are chosen. Options: contacts, centroid, and site. -->
+    <margin>3.0</margin>                                         <!-- Mode site only. Distance added to the closest accessible approach of the ligand center to the site ghost atom. The cutoff is rounded to the nearest 0.25 A (in angstroms). -->
   </criterion>
   <geometry>
     <bd_milestone_radius>60.0</bd_milestone_radius>              <!-- Radius of the starting sphere (in angstroms). -->

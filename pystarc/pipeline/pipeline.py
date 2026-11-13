@@ -257,7 +257,8 @@ def run(cfg: PySTARCConfig):
     for pqr_path in (receptor_pqr, ligand_pqr):
         atoms = read_pqr(pqr_path)
         # Skip injection if a GHO atom is already present, for example when the
-        # user supplied PQR files that were already injected.
+        # user supplied PQR files that were already injected. A pocket ghost PKT
+        # does not count, the receptor is still centred and gets its GHO.
         if any(a.name.strip().upper() == "GHO" for a in atoms):
             print(f"  {pqr_path.name}: GHO already present - skipping")
             continue

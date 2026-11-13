@@ -426,7 +426,7 @@ class RunFigures:
         if not p.exists():
             return None
         recs = parse_pqr_records(p)
-        keep = [i for i, r in enumerate(recs) if r.name.strip().upper() != "GHO" and not r.name.strip().upper().startswith("H")]
+        keep = [i for i, r in enumerate(recs) if r.name.strip().upper() not in ("GHO", "PKT") and not r.name.strip().upper().startswith("H")]
         pos = np.array([[recs[i].x, recs[i].y, recs[i].z] for i in keep], float)
         rad = np.array([recs[i].radius for i in keep], float)
         serial = np.array([i + 1 for i in keep], int)

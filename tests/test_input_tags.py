@@ -116,9 +116,10 @@ def test_rigid_input_must_name_the_excluded_volume(tmp_path):
 
 
 @pytest.mark.parametrize("setup", [p for p in sorted(EXAMPLES.glob("**/setup.py"))
-                                   if "BD_PARAMS" in p.read_text()], ids=lambda p: p.parent.name)
+                                   if "BD_PARAMS" in p.read_text() or "build_inputs" in p.read_text()],
+                         ids=lambda p: p.parent.name)
 def test_input_written_from_an_example_config_parses_without_warning(tmp_path, setup):
-    """The template filled from config.xml as write_input of setup.py fills it."""
+    """The template filled from config.xml as write_input of build_inputs fills it."""
     vals = {"soft_repulsion": "false", "minimum_core_reaction_dt": "0", "full_paths": "true",
             "energetics": "true"}
     for sec in ET.parse(setup.parent / "config.xml").getroot():

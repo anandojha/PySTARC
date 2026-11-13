@@ -17,21 +17,10 @@
     <ligand_resname>V13</ligand_resname>                                          <!-- Ligand label written to input.xml. -->
   </names>
   <criterion>
-    <mode>explicit</mode>                                                         <!-- How the atom pairs of the reaction criterion are chosen. Options: auto, explicit, and center. -->
-    <receptor>                                                                    <!-- Receptor side of each pair. The pair counts when this atom is within the cutoff of its ligand atom. -->
-      <target resid="195" atom="OG1" resname="THR"/>
-      <target resid="93" atom="NE2" resname="HIE"/>
-      <target resid="91" atom="NE2" resname="HIE"/>
-      <target resid="116" atom="ND1" resname="HIE"/>
-    </receptor>
-    <ligand>                                                                      <!-- Ligand side of each pair. Use auto to choose the nearest atom that atom_filter permits. -->
-      <atom name="N"/>
-      <atom name="N"/>
-      <atom name="N"/>
-      <atom name="N"/>
-    </ligand>
-    <pair_cutoff>7.0</pair_cutoff>                                                <!-- Reaction distance for every pair (in angstroms). -->
-    <n_needed>2</n_needed>                                                        <!-- Pairs that must be inside their cutoff at once for a trajectory to count as reacted. Not used by mode center. -->
+    <mode>site</mode>                                                             <!-- How the atom pairs of the reaction criterion are chosen. Options: contacts, centroid, and site. -->
+    <margin>3.0</margin>                                                          <!-- Mode site only. Distance added to the closest accessible approach of the ligand center to the site ghost atom. The cutoff is rounded to the nearest 0.25 A (in angstroms). -->
+    <pocket_ligand>AZM</pocket_ligand>                                            <!-- Mode site with a ligand built from SMILES. Residue name of the deposited ligand whose centroid marks the site. -->
+    <pocket_ligand_resid>701</pocket_ligand_resid>                                <!-- Residue number of pocket_ligand when the chain holds several copies. -->
   </criterion>
   <geometry>
     <bd_milestone_radius>60.0</bd_milestone_radius>                               <!-- Radius of the starting sphere (in angstroms). -->

@@ -47,6 +47,7 @@ from pystarc.global_defs.defaults import (
     BD_MILESTONE_RADIUS_INNER,
     QB_FACTOR,
 )
+from pystarc.global_defs.defaults import GHOST_NAMES
 from pystarc.structures.molecules import needed_pairs
 
 
@@ -192,8 +193,11 @@ def analyse_molecule(
     atoms = parse_pqr(pqr_path)
     if not atoms:
         raise ValueError(f"No atoms found in {pqr_path}")
-    coords = np.array([[a.x, a.y, a.z] for a in atoms])
-    radii = np.array([a.radius for a in atoms])
+    # The pocket ghost PKT sits inside the receptor surface and is no part of
+    # its body. GHO stays in, as it always has.
+    body = [a for a in atoms if a.name.strip().upper() not in GHOST_NAMES[1:]]
+    coords = np.array([[a.x, a.y, a.z] for a in body])
+    radii = np.array([a.radius for a in body])
     # The b-sphere radius (max_radius) is always computed geometrically. It is
     # used to set up the Brownian dynamics, not in the Stokes-Einstein relation.
     centroid = coords.mean(axis=0)
