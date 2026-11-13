@@ -24,7 +24,8 @@ this serves as a fallback for points that fall outside all loaded DX grids.
 """
 
 from __future__ import annotations
-from pystarc.global_defs.constants import BJERRUM_LENGTH, DEFAULT_DEBYE_LENGTH
+from pystarc.global_defs.constants import BJERRUM_LENGTH
+from pystarc.global_defs.defaults import DEBYE_LENGTH
 from typing import List, Optional, Tuple
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -55,7 +56,7 @@ class EffectiveCharges:
         self,
         positions: np.ndarray,  # (N,3) [Å]
         charges: np.ndarray,  # (N,)  [e]
-        debye_length: float = DEFAULT_DEBYE_LENGTH,
+        debye_length: float = DEBYE_LENGTH,
         bjerrum_length: float = BJERRUM_LENGTH,
     ):
         self.positions = np.asarray(positions, dtype=np.float64)
@@ -115,7 +116,7 @@ class EffectiveCharges:
     def from_xml(
         cls,
         xml_path: str | Path,
-        debye_length: float = DEFAULT_DEBYE_LENGTH,
+        debye_length: float = DEBYE_LENGTH,
         bjerrum_length: float = BJERRUM_LENGTH,
     ) -> "EffectiveCharges":
         """
@@ -209,7 +210,7 @@ class EffectiveCharges:
 def load_effective_charges(
     directory: str | Path,
     prefix: str,
-    debye_length: float = DEFAULT_DEBYE_LENGTH,
+    debye_length: float = DEBYE_LENGTH,
     bjerrum_length: float = BJERRUM_LENGTH,
 ) -> Optional[EffectiveCharges]:
     """

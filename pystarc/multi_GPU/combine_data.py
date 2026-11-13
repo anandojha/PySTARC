@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 Combine the output files from a split PySTARC run back into a single bd_sims
-directory. The script automatically detects the per-shard directories
-bd_sims/bd_1, bd_sims/bd_2, and so on, and writes combined files in exactly the
-same formats that a single-GPU run would produce.
+directory. The script pools the shards that split.json lists (or, without it,
+every bd_N directory) and writes combined files in exactly the same formats
+that a single-GPU run would produce. It exits with code 1 on errors.
 """
 
 import numpy as np
+import statistics
 import argparse
 import json
 import math
@@ -43,7 +44,7 @@ def main():
     bd_sims = os.path.abspath(args.bd_sims)
     if not os.path.isdir(bd_sims):
         print(f"  Error: {bd_sims} not found.")
-        return
+        return 1
     # Find every bd_N shard directory and sort them by the integer N.
     pattern = re.compile(r"^bd_\d+$")
     subdirs = sorted(
@@ -54,9 +55,19 @@ def main():
         ],
         key=lambda x: int(os.path.basename(x).split("_")[1]),
     )
+    # The splitter's split.json names the shards of this run and their sizes.
+    split = None
+    split_path = os.path.join(bd_sims, "split.json")
+    if os.path.exists(split_path):
+        with open(split_path) as f:
+            split = {s["dir"]: s for s in json.load(f)["shards"]}
+        left_out = [os.path.basename(d) for d in subdirs if os.path.basename(d) not in split]
+        if left_out:
+            print(f"  Left out (not in split.json): {', '.join(left_out)}")
+        subdirs = [os.path.join(bd_sims, d) for d in split]
     if not subdirs:
         print(f"  Error: no bd_N directories found in {bd_sims}")
-        return
+        return 1
     # Read the results.json from each shard, recording which shards have
     # finished and which are still missing their output.
     runs = []
@@ -70,6 +81,13 @@ def main():
         with open(rj) as f:
             runs.append(json.load(f))
         dirs_valid.append(d)
+        want = split[os.path.basename(d)]["n_trajectories"] if split else None
+        if want is not None and runs[-1]["n_trajectories"] != want:
+            print(
+                f"  Error: {os.path.basename(d)} ran {runs[-1]['n_trajectories']:,} "
+                f"trajectories, split.json gives {want:,}."
+            )
+            return 1
         print(
             f"  {os.path.basename(d)}: {runs[-1]['n_reacted']:,} reacted, {runs[-1]['n_escaped']:,} escaped"
         )
@@ -77,7 +95,7 @@ def main():
         print(f"  Skipped (not finished): {', '.join(dirs_missing)}")
     if not runs:
         print("  Error: no completed runs found")
-        return
+        return 1
     # Pool the trajectory counts across all completed shards. The reaction
     # probability P is the fraction of trajectories that reacted, and the
     # association rate constant follows from
@@ -121,14 +139,15 @@ def main():
     # give a meaningless rate constant. The first-shard values are still used so
     # consistent runs are unaffected.
     _warn_run_mismatch(runs)
+    conf = runs[0].get("confidence_level", 0.95)
+    conv_tol = runs[0].get("convergence_tol", 0.05)
     CONV = 6.022e8
     k_on = CONV * k_b * P
     SE = math.sqrt(P * (1 - P) / N_p) if 0 < P < 1 else 0
     RSE = SE / P if P > 0 else float("inf")
-    # Wilson 95% confidence interval for the reaction probability. The audit fix
-    # of 2026-05-21 added a guard for the N=0 case and clamped the argument of
-    # the square root to be non-negative.
-    z = 1.96
+    # Wilson interval for the reaction probability at the shards' confidence
+    # level, with z = 1.96 at 0.95 as in convergence.json.
+    z = 1.96 if abs(conf - 0.95) < 1e-9 else statistics.NormalDist().inv_cdf(0.5 + conf / 2)
     if N_p == 0:
         P_lo, P_hi = 0.0, 1.0
     else:
@@ -151,7 +170,8 @@ def main():
     aggregate_gpu_sec = sum(shard_walls)  # total GPU seconds across shards
     # Aggregate throughput is all shard steps over the shared wall clock.
     total_steps = sum(
-        r.get("steps_per_sec", 0) * r.get("wall_time_sec", 0) for r in runs
+        r.get("total_steps") or r.get("steps_per_sec", 0) * r.get("wall_time_sec", 0)
+        for r in runs
     )
     steps_sec = total_steps / wall_time if wall_time > 0 else 0
     # Split k_on into a mantissa and a power of ten so it can be printed in
@@ -166,8 +186,8 @@ def main():
     # standard error using N ≈ (1 - P) / (P × tol²) for each tolerance.
     targets = {}
     if 0 < P < 1:
-        for tol in [0.10, 0.05, 0.01]:
-            targets[f"{int(tol*100)}%"] = int(math.ceil((1 - P) / (P * tol**2)))
+        for t in [0.10, 0.05, 0.01]:
+            targets[f"{int(t*100)}%"] = int(math.ceil((1 - P) / (P * t**2)))
 
     # Print a human-readable summary of the combined run.
     print(f"\n  Combined results ({len(runs)}/{len(subdirs)} runs)")
@@ -179,8 +199,9 @@ def main():
     print(f"  Relative SE      = {RSE*100:.2f}%")
     print(f"  k_b              = {k_b:.4f} A3/ps")
     print(f"  k_on             = {k_on:.4e} M-1 s-1")
-    print(f"  k_on (± error)     = ({man:.1f} ± {err:.1f}) x 10^{exp} M-1 s-1")
-    print(f"  Wilson 95% CI    = [{k_lo:.4e}, {k_hi:.4e}] M-1 s-1")
+    if k_on > 0:
+        print(f"  k_on (± error)     = ({man:.1f} ± {err:.1f}) x 10^{exp} M-1 s-1")
+    print(f"  {'Wilson ' + format(100 * conf, 'g') + '% CI':<17s}= [{k_lo:.4e}, {k_hi:.4e}] M-1 s-1")
     if n_max:
         print(
             f"  k_on bound       = [{k_bound_lo:.4e}, {k_bound_hi:.4e}] M-1 s-1  "
@@ -191,7 +212,7 @@ def main():
         for t, n in targets.items():
             status = "completed" if N_p >= n else "need more simulations"
             print(f"    For ±{t} RSE: {n:,} ({status})")
-    print(f"  {'Converged' if RSE < 0.05 else 'Not converged'} (RSE {RSE*100:.2f}%)")
+    print(f"  {'Converged' if RSE < conv_tol else 'Not converged'} (RSE {RSE*100:.2f}%)")
     print(f"  Wall clock       = {wall_time:.1f} s  (slowest of {len(runs)} shard(s))")
     print(f"  Aggregate GPU-s  = {aggregate_gpu_sec:.1f} s  (sum over shards)")
     # Assemble the combined results dictionary that will be written to disk.
@@ -220,9 +241,11 @@ def main():
         "wall_time_sec": wall_time,
         "aggregate_gpu_sec": aggregate_gpu_sec,
         "steps_per_sec": steps_sec,
-        "confidence_level": 0.95,
-        "log10_k_on": math.log10(k_on) if k_on > 0 else 0,
+        "confidence_level": conf,
+        "convergence_tol": conv_tol,
     }
+    if k_on > 0:
+        results["log10_k_on"] = math.log10(k_on)
     # When the simulation ran in state-machine mode, each sub-run records how
     # many times every reaction fired. A sub-run's results.json may carry a list
     # of reaction entries, each with a name, a fire count n_fired, and the states
@@ -235,15 +258,16 @@ def main():
             name = entry.get("name")
             if name is None:
                 continue
-            if name not in per_rxn:
-                per_rxn[name] = {
+            key = (name, entry.get("state_before"), entry.get("state_after"))
+            if key not in per_rxn:
+                per_rxn[key] = {
                     "name": name,
                     "n_fired": 0,
                     "state_before": entry.get("state_before"),
                     "state_after": entry.get("state_after"),
                 }
-                rxn_order.append(name)
-            per_rxn[name]["n_fired"] += int(entry.get("n_fired", 0))
+                rxn_order.append(key)
+            per_rxn[key]["n_fired"] += int(entry.get("n_fired", 0))
     if per_rxn:
         results["completed_reactions"] = [per_rxn[n] for n in rxn_order]
         print("\n  Per-reaction firing counts (summed across sub-runs):")
@@ -276,12 +300,14 @@ def main():
     )
     _concat_csv(
         dirs_valid,
-        "fpt_distribution.csv",
+        "bd_time_to_reaction.csv",
         bd_sims,
         reindex="traj_id",
         offsets=traj_offsets,
     )
-    _concat_csv(dirs_valid, "pose_clusters.csv", bd_sims)
+    _concat_csv(
+        dirs_valid, "pose_clusters.csv", bd_sims, reindex="traj_id", offsets=traj_offsets
+    )
     _sum_csv(
         dirs_valid,
         "radial_density.csv",
@@ -289,6 +315,7 @@ def main():
         sum_col="count",
         recompute_col="density",
         density_mode=True,
+        time_col="time_ps",
     )
     _sum_csv(
         dirs_valid,
@@ -297,6 +324,7 @@ def main():
         sum_col="n_contacts",
         recompute_col="frequency",
         total_N=total_contact_steps,
+        time_col="time_ps",
     )
     _sum_csv(
         dirs_valid,
@@ -328,7 +356,7 @@ def main():
         dirs_valid,
         "angular_map.npz",
         bd_sims,
-        sum_key="counts",
+        sum_key=["counts", "time_ps"],
         copy_keys=["theta_centers", "phi_centers"],
     )
     _sum_npz(
@@ -338,9 +366,8 @@ def main():
         sum_key="counts",
         copy_keys=["bins"],
     )
-    _pool_p_commit(dirs_valid, "p_commit.npz", bd_sims)
     # Write a separate convergence report summarising the pooled statistics and
-    # whether the relative standard error has dropped below the 5% tolerance.
+    # whether the relative standard error has dropped below the tolerance.
     conv = {
         "N": N_p,
         "n_reacted": nr,
@@ -353,13 +380,15 @@ def main():
         "SE_kon": CONV * k_b * SE,
         "wilson_CI": [k_lo, k_hi],
         "wilson_CI_P": [P_lo, P_hi],
-        "converged": RSE < 0.05 if P > 0 else False,
-        "tol": 0.05,
-        "tol_pct": 5.0,
+        "converged": RSE < conv_tol if P > 0 else False,
+        "confidence_level": conf,
+        "tol": conv_tol,
+        "tol_pct": conv_tol * 100,
         "N_needed": targets,
     }
     _save_json(conv, os.path.join(bd_sims, "convergence.json"))
     print(f"\n  All files saved -> {bd_sims}/")
+    return 0
 
 
 def _warn_run_mismatch(runs):
@@ -382,6 +411,8 @@ def _warn_run_mismatch(runs):
         ("D_rel", ref.get("D_rel")),
         ("r_start", ref.get("r_start")),
         ("r_escape", ref.get("r_escape")),
+        ("confidence_level", ref.get("confidence_level")),
+        ("convergence_tol", ref.get("convergence_tol")),
     ]
     for key, ref_val in checks:
         if ref_val is None:
@@ -488,6 +519,7 @@ def _sum_csv(
     recompute_col=None,
     total_N=None,
     density_mode=False,
+    time_col=None,
 ):
     """Sum histogram-style CSV files across shards bin by bin.
 
@@ -505,11 +537,15 @@ def _sum_csv(
       - otherwise the column is recomputed as count / total_N, where total_N is
         the pooled denominator supplied by the caller (the recorded step count
         for contact_frequency, not the trajectory count).
+
+    time_col names a column of times in ps that is summed and kept as a float.
     """
     all_data = {}
     header = None
     key_cols = None
-    cols_to_sum = [sum_col] if sum_col else (sum_cols or [])
+    cols_to_sum = ([sum_col] if sum_col else (sum_cols or [])) + (
+        [time_col] if time_col else []
+    )
     for d in dirs:
         fpath = os.path.join(d, filename)
         if not os.path.exists(fpath):
@@ -568,6 +604,9 @@ def _sum_csv(
             for sc in sum_cols:
                 if sc in row:
                     row[sc] = int(float(row[sc]))
+    if time_col:
+        for row in rows:
+            row[time_col] = f"{float(row[time_col]):.6f}"
     out_path = os.path.join(out_dir, filename)
     with open(out_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=header)
@@ -624,72 +663,35 @@ def _concat_npz(
 
 
 def _sum_npz(dirs, filename, out_dir, sum_key, copy_keys=None):
-    """Sum the array stored under sum_key across shards element by element.
+    """Sum the arrays stored under sum_key (a name or a list of names) across
+    shards element by element.
 
-    The arrays from every shard (for example counts, a transition matrix, or
-    commitment counts) are added together. Any arrays named in copy_keys, such as
-    the bin centres or milestone labels, are copied from the first shard that has
+    The arrays from every shard (for example counts, times or a transition
+    matrix) are added together. Any arrays named in copy_keys, such as the bin
+    centres or milestone labels, are copied from the first shard that has
     them, since they are shared across shards.
     """
-    total = None
+    keys = [sum_key] if isinstance(sum_key, str) else list(sum_key)
+    totals = {}
     copies = {}
     for d in dirs:
         fpath = os.path.join(d, filename)
         if not os.path.exists(fpath):
             continue
         npz = np.load(fpath, allow_pickle=True)
-        if sum_key in npz:
-            arr = npz[sum_key]
-            total = arr if total is None else total + arr
+        for k in keys:
+            if k in npz:
+                totals[k] = npz[k] if k not in totals else totals[k] + npz[k]
         if not copies and copy_keys:
             for ck in copy_keys:
                 if ck in npz:
                     copies[ck] = npz[ck]
-    if total is None:
+    if not totals:
         return
     out_path = os.path.join(out_dir, filename)
-    save_dict = {sum_key: total}
-    save_dict.update(copies)
-    np.savez(out_path, **save_dict)
-    print(f"    {filename} ({sum_key}: {total.shape})")
-
-
-def _pool_p_commit(dirs, filename, out_dir):
-    """Pool the commitment probability across shards by summing counts.
-
-    Each shard's p_commit.npz stores the per-bin reaction probability p_commit
-    and the per-bin sample count n_samples over a shared set of radial bins
-    r_bins. Probabilities cannot be averaged across shards, so the per-bin
-    reacted count is recovered as p_commit times n_samples, the reacted counts
-    and the sample counts are each summed across shards, and the pooled
-    probability is the summed reacted count divided by the summed sample count.
-    """
-    r_bins = None
-    reacted = None
-    n_total = None
-    for d in dirs:
-        fpath = os.path.join(d, filename)
-        if not os.path.exists(fpath):
-            continue
-        npz = np.load(fpath, allow_pickle=True)
-        if "p_commit" not in npz or "n_samples" not in npz:
-            continue
-        n = np.array(npz["n_samples"], dtype=float)
-        rc = np.array(npz["p_commit"], dtype=float) * n
-        reacted = rc if reacted is None else reacted + rc
-        n_total = n if n_total is None else n_total + n
-        if r_bins is None and "r_bins" in npz:
-            r_bins = npz["r_bins"]
-    if n_total is None:
-        return
-    pooled = np.divide(reacted, n_total, out=np.zeros_like(reacted), where=n_total > 0)
-    out_path = os.path.join(out_dir, filename)
-    save_dict = {"p_commit": pooled, "n_samples": n_total}
-    if r_bins is not None:
-        save_dict["r_bins"] = r_bins
-    np.savez(out_path, **save_dict)
-    print(f"    {filename} (p_commit: {pooled.shape})")
+    np.savez(out_path, **totals, **copies)
+    print(f"    {filename} ({', '.join(f'{k}: {v.shape}' for k, v in totals.items())})")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

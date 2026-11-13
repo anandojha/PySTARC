@@ -10,15 +10,17 @@ the handoff is only unbiased if molecular dynamics is seeded from the poses
 that diffusion actually delivers, in the proportions it delivers them.
 
 That ensemble is the first hitting point distribution. For every trajectory
-that reaches the reaction criterion, the configuration is recorded at the
-*first* moment the criterion fires, not at any later crossing, so the
-distribution carries the statistical weight of the diffusive stage.
+that reaches the reaction criterion, the configuration is recorded at the end
+of the step in which the criterion first fires, not at any later crossing, so
+the distribution carries the statistical weight of the diffusive stage. When
+the Brownian bridge caught a crossing inside the step (bridge_only 1), that
+pose lies just outside the criterion.
 
-The rigid engine already records exactly this. When the criterion first fires
-the ligand centroid and orientation quaternion are stored, and the writer in
-pipeline/output_writer.py emits them as encounters.csv with the columns
+The rigid engine records this pose. The ligand centroid and orientation
+quaternion are stored, and the writer in pipeline/output_writer.py emits them
+as encounters.csv with the columns
 
-    traj_id, step, x, y, z, q0, q1, q2, q3, n_pairs_satisfied
+    traj_id, step, x, y, z, q0, q1, q2, q3, n_pairs_satisfied, bridge_only
 
 For a rigid body those seven numbers are a complete description of the pose,
 so the atomic coordinates follow exactly, with no loss, from

@@ -46,11 +46,12 @@ def make_run(tmp: Path, n_react: int = 40, n_total: int = 400, with_optional: bo
     _write_csv(run / "trajectories.csv", ["traj_id", "outcome", "n_steps", "total_time_ps"], rows)
     r = np.arange(0.5, 100, 1.0)
     dens = np.exp(-((r - 25) / 6) ** 2) * 1e-5 + 1e-7 * (r < r_escape)
-    _write_csv(run / "radial_density.csv", ["r_center", "r_low", "r_high", "count", "density"],
-               [[rc, rc - 0.5, rc + 0.5, int(d * 1e9), d] for rc, d in zip(r, dens)])
+    vol = 4.0 / 3.0 * np.pi * ((r + 0.5) ** 3 - (r - 0.5) ** 3)
+    _write_csv(run / "radial_density.csv", ["r_center", "r_low", "r_high", "count", "density", "time_ps"],
+               [[rc, rc - 0.5, rc + 0.5, int(d * 1e9), d, d * v * 1e9] for rc, d, v in zip(r, dens, vol)])
     react_ids = np.nonzero(reacted)[0]
-    _write_csv(run / "fpt_distribution.csv", ["traj_id", "first_passage_time_ps", "min_distance"],
-               [[int(i), float(rng.exponential(20000)), 2.0] for i in react_ids])
+    _write_csv(run / "bd_time_to_reaction.csv", ["traj_id", "bd_time_ps", "n_returns", "min_distance"],
+               [[int(i), float(rng.exponential(20000)), 0, 2.0] for i in react_ids])
     (run / "receptor.pqr").write_text(
         "ATOM      1  OG1 THR A 196      1.0  2.0  3.0 -0.6 1.5\n"
         "ATOM      2  NE2 HIS A  91      1.0  2.0  3.0 -0.3 1.55\n"
@@ -94,11 +95,11 @@ def test_run_without_reactions_still_plots(tmp_path):
     status = plot_run(run, tmp_path / "figs", dpi=60)
     assert status["rate"] == "ok"
     assert status["radial"] == "ok"
-    assert status["first_passage"] == "note: no reactions"
+    assert status["bd_time"] == "note: no reactions"
     assert status["steps"] == "note: no reactions, escaped only"
     assert status["first_hitting"].startswith("skipped: no reactions")
     assert (tmp_path / "figs" / "fig_rate.png").exists()
-    assert (tmp_path / "figs" / "fig_first_passage.png").exists()
+    assert (tmp_path / "figs" / "fig_bd_time.png").exists()
     assert not (tmp_path / "figs" / "fig_first_hitting.png").exists()
 
 
@@ -123,9 +124,9 @@ def test_rate_scale_falls_back_to_kon_over_prxn(tmp_path):
 def test_cli_plot_command(tmp_path):
     run = make_run(tmp_path)
     out = tmp_path / "cli_figs"
-    result = CliRunner().invoke(cli, ["plot", str(run), "--out", str(out), "--dpi", "60", "--only", "rate,first_passage"])
+    result = CliRunner().invoke(cli, ["plot", str(run), "--out", str(out), "--dpi", "60", "--only", "rate,bd_time"])
     assert result.exit_code == 0, result.output
-    assert (out / "fig_rate.png").exists() and (out / "fig_first_passage.png").exists()
+    assert (out / "fig_rate.png").exists() and (out / "fig_bd_time.png").exists()
     assert not (out / "fig_radial.png").exists()
     bad = CliRunner().invoke(cli, ["plot", str(run), "--only", "nope"])
     assert bad.exit_code != 0
@@ -211,7 +212,7 @@ def test_radial_profile_stops_at_escape_radius(tmp_path):
 def test_two_dimensional_figures_share_one_page_size(tmp_path):
     import matplotlib.image as mpimg
     run = make_run(tmp_path)
-    plot_run(run, tmp_path / "figs", dpi=60, which=("rate", "radial", "first_passage", "steps"))
+    plot_run(run, tmp_path / "figs", dpi=60, which=("rate", "radial", "bd_time", "steps"))
     shapes = {mpimg.imread(f).shape for f in (tmp_path / "figs").glob("fig_*.png")}
     assert len(list((tmp_path / "figs").glob("fig_*.png"))) == 4
     assert len(shapes) == 1

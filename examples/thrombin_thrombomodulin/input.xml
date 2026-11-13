@@ -34,9 +34,7 @@
   <!-- BD simulation -->
   <n_trajectories>1000000</n_trajectories>
   <max_steps>1000000</max_steps>
-  <dt>1.0</dt>
   <minimum_core_dt>1.0</minimum_core_dt>
-  <minimum_core_reaction_dt>0.05</minimum_core_reaction_dt>
   <max_dt>100</max_dt>
   <temperature>298.15</temperature>
   <seed>11111111</seed>

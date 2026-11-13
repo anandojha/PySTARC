@@ -12,9 +12,9 @@
   <r_hydro_lig>0.0</r_hydro_lig>           
   <!-- Electrostatics -->
   <debye_length>7.828</debye_length>
-  <ion_concentration>0.0</ion_concentration>
-  <ion_radius_pos>0.95</ion_radius_pos>
-  <ion_radius_neg>1.81</ion_radius_neg>
+  <ion_concentration>0.15</ion_concentration>
+  <ion_radius_pos>0.0</ion_radius_pos>
+  <ion_radius_neg>0.0</ion_radius_neg>
   <pdie>78.0</pdie>
   <sdie>78.0</sdie>
   <srad>0.0</srad>
@@ -33,7 +33,6 @@
   <!-- BD simulation -->
   <n_trajectories>1000000</n_trajectories>
   <max_steps>1000000</max_steps>
-  <dt>0.2</dt>
   <minimum_core_dt>0.0</minimum_core_dt>   
   <max_dt>0</max_dt>
   <temperature>298.15</temperature>

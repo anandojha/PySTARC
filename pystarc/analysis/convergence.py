@@ -25,7 +25,7 @@ a target precision is
 
 where RSE_target is the desired relative standard error.
 
-The 95% confidence interval on P_rxn is computed from the Wilson score
+The confidence interval on P_rxn (95% by default) is the Wilson score
 interval,
 
     P ∈ [p̂ + z²/2n ± z√(p̂(1-p̂)/n + z²/4n²)] / (1 + z²/n)
@@ -126,6 +126,7 @@ def analyse_convergence(
         "wilson_CI": [wilson_lo_kon, wilson_hi_kon],
         "wilson_CI_P": [wilson_lo, wilson_hi],
         "converged": converged,
+        "confidence_level": confidence,
         "tol": tol,
         "tol_pct": tol * 100,
         "N_needed": targets,
@@ -158,17 +159,17 @@ def print_convergence(result: dict) -> str:
     else:
         lines.append(f"  Relative SE      = inf (P_rxn = 0, no reactions)")
     lines.append(
-        f"  Wilson 95% CI    = [{result['wilson_CI'][0]:.4e}, "
+        f"  Wilson {100 * result.get('confidence_level', 0.95):g}% CI    = [{result['wilson_CI'][0]:.4e}, "
         f"{result['wilson_CI'][1]:.4e}] M⁻¹s⁻¹"
     )
     tol_pct = result["tol_pct"]
     if result["converged"]:
         lines.append(
-            f"  Converged (relative SE {result['relative_SE_pct']:.2f}% < {tol_pct:.0f}% threshold)"
+            f"  Converged (relative SE {result['relative_SE_pct']:.2f}% < {tol_pct:g}% threshold)"
         )
     else:
         lines.append(
-            f"  Not converged (relative SE {result['relative_SE_pct']:.2f}% > {tol_pct:.0f}% threshold)"
+            f"  Not converged (relative SE {result['relative_SE_pct']:.2f}% > {tol_pct:g}% threshold)"
         )
     if result["N_needed"]:
         lines.append(f"  Trajectories needed")

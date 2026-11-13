@@ -60,14 +60,13 @@ bd_sims/
 ├── encounters.csv                Records of the encounter events
 ├── near_misses.csv               Records of the close approaches
 ├── contact_frequency.csv         Frequency of each native contact
-├── pose_clusters.csv             Clusters of the bound poses
+├── pose_clusters.csv             Rotation angles of the encounter poses in 8 bins
 ├── milestone_flux.csv            Outward and inward crossings through the concentric shells
-├── radial_density.csv            Radial density profile of the ligand
-├── fpt_distribution.csv          Distribution of the first passage times
-├── angular_map.npz               Angular map of the encounters
-├── energetics.npz                Interaction energetics along the trajectories
+├── radial_density.csv            BD steps and BD time per radial shell
+├── bd_time_to_reaction.csv       BD time inside r_esc of each reacting trajectory
+├── angular_map.npz               BD steps and BD time per angular bin
+├── energetics.npz                Force and time step along the saved paths
 ├── paths.npz                     Samples of the reactive paths
-├── p_commit.npz                  Committor probabilities
 └── transition_matrix.npz         Markov transition matrix between the concentric shells
 ```
 
@@ -99,14 +98,13 @@ bd_sims/
 │   ├── encounters.csv                Records of the encounter events
 │   ├── near_misses.csv               Records of the close approaches
 │   ├── contact_frequency.csv         Frequency of each native contact
-│   ├── pose_clusters.csv             Clusters of the bound poses
+│   ├── pose_clusters.csv             Rotation angles of the encounter poses in 8 bins
 │   ├── milestone_flux.csv            Outward and inward crossings through the concentric shells
-│   ├── radial_density.csv            Radial density profile of the ligand
-│   ├── fpt_distribution.csv          Distribution of the first passage times
-│   ├── angular_map.npz               Angular map of the encounters
-│   ├── energetics.npz                Interaction energetics along the trajectories
+│   ├── radial_density.csv            BD steps and BD time per radial shell
+│   ├── bd_time_to_reaction.csv       BD time inside r_esc of each reacting trajectory
+│   ├── angular_map.npz               BD steps and BD time per angular bin
+│   ├── energetics.npz                Force and time step along the saved paths
 │   ├── paths.npz                     Samples of the reactive paths
-│   ├── p_commit.npz                  Committor probabilities
 │   └── transition_matrix.npz         Markov transition matrix between the concentric shells
 ├── ...
 ├── bd_N/                             Directory from the Nth GPU
@@ -126,14 +124,13 @@ bd_sims/
 ├── encounters.csv                    Records of the encounter events
 ├── near_misses.csv                   Records of the close approaches
 ├── contact_frequency.csv             Frequency of each native contact
-├── pose_clusters.csv                 Clusters of the bound poses
+├── pose_clusters.csv                 Rotation angles of the encounter poses in 8 bins
 ├── milestone_flux.csv                Outward and inward crossings through the concentric shells
-├── radial_density.csv                Radial density profile of the ligand
-├── fpt_distribution.csv              Distribution of the first passage times
-├── angular_map.npz                   Angular map of the encounters
-├── energetics.npz                    Interaction energetics along the trajectories
+├── radial_density.csv                BD steps and BD time per radial shell
+├── bd_time_to_reaction.csv           BD time inside r_esc of each reacting trajectory
+├── angular_map.npz                   BD steps and BD time per angular bin
+├── energetics.npz                    Force and time step along the saved paths
 ├── paths.npz                         Samples of the reactive paths
-├── p_commit.npz                      Committor probabilities
 └── transition_matrix.npz             Markov transition matrix between the concentric shells
 ```
 

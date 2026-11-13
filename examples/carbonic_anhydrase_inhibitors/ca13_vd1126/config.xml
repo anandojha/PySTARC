@@ -58,15 +58,15 @@
     <lj_forces>false</lj_forces>                                                   <!-- Apply repulsive forces at close contact. Options: true and false. -->
     <hydrodynamic_interactions>true</hydrodynamic_interactions>                    <!-- Include hydrodynamic coupling between the two molecules. Options: true and false. -->
     <desolvation_alpha>1.0</desolvation_alpha>                                     <!-- Scaling applied to the desolvation penalty. -->
-    <enable_born2_torque>true</enable_born2_torque>                                <!-- Include the reciprocal desolvation torque on the receptor. Options: true and false. -->
+    <enable_born2_torque>true</enable_born2_torque>                                <!-- Include Born desolvation direction 2, the ligand Born field on the receptor charges (force and torque on the ligand). Options: true and false. -->
     <multipole_fallback>true</multipole_fallback>                                  <!-- Extend the electrostatics beyond the grid by multipole expansion. Options: true and false. -->
   </physics>
   <simulation>
     <n_trajectories>20000000</n_trajectories>                                      <!-- Number of Brownian dynamics trajectories. -->
     <max_steps>10000000</max_steps>                                                <!-- Step limit per trajectory. -->
-    <dt>0.2</dt>                                                                   <!-- Largest permitted time step (in picoseconds). -->
+    <dt>0.2</dt>                                                                   <!-- Outer step of chain BD (in picoseconds). Rigid runs ignore it. -->
     <minimum_core_dt>0.2</minimum_core_dt>                                         <!-- Smallest permitted time step. 0 imposes no floor. -->
-    <minimum_core_reaction_dt>0.05</minimum_core_reaction_dt>                      <!-- Smallest time step near the reaction surface. 0 imposes no floor. -->
+    <minimum_core_reaction_dt>0.05</minimum_core_reaction_dt>                      <!-- Floor of the reaction refinement in state-machine runs. Flattened criteria ignore it. -->
     <max_dt>0</max_dt>                                                             <!-- Ceiling on the time step. 0 imposes no ceiling. -->
     <temperature>298.15</temperature>                                              <!-- Temperature (in kelvin). -->
     <seed>1</seed>                                                                 <!-- Random number seed. -->
@@ -77,12 +77,12 @@
   </simulation>
   <compute>
     <gpu>true</gpu>                                                                <!-- Evaluate forces on the GPU. Options: true and false. -->
-    <gpu_force_batch>1000</gpu_force_batch>                                        <!-- Trajectories per GPU force evaluation. 0 selects automatically. -->
+    <gpu_force_batch>0</gpu_force_batch>                                           <!-- Trajectories per GPU force evaluation. 0 selects automatically. -->
     <n_threads>32</n_threads>                                                      <!-- Number of CPU threads. -->
   </compute>
   <outputs>
     <save_interval>100</save_interval>                                             <!-- Steps between saved positions. 0 saves endpoints only. -->
     <full_paths>true</full_paths>                                                  <!-- Save positions and orientations every save_interval steps. Options: true and false. -->
-    <energetics>true</energetics>                                                  <!-- Save forces and energies every save_interval steps. Options: true and false. -->
+    <energetics>true</energetics>                                                  <!-- Save the force and the time step every save_interval steps. Options: true and false. -->
   </outputs>
 </config>

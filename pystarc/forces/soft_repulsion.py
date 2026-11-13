@@ -19,9 +19,13 @@ pose it bounds the curvature of the wall that the pose feels.
 The receptor is fixed in the simulation frame, so its atoms are sorted once
 into cubic cells of the largest cutoff length. A ligand atom then interacts
 only with the receptor atoms of its own cell and the 26 neighbouring cells. On
-the GPU each (trajectory, ligand atom) pair is one CUDA thread; the per-atom
-forces are reduced to the force and the torque about the ligand centroid of
-each trajectory.
+the GPU one kernel sums the real ligand atoms of each trajectory into the
+force, the torque about the ligand centroid, the energy and the stiffness of
+the pose. Each pose has one CUDA thread per real atom, at most 256, and the
+first thread adds the threads of its pose in order. For a ligand of up to 256
+real atoms the sum therefore runs in atom order. In a larger ligand thread l
+first adds the real atoms l, l + 256, l + 512 and so on, so the order is fixed
+but not the atom order.
 """
 
 from __future__ import annotations
@@ -42,33 +46,31 @@ A_FACTOR = 0.9345
 CUTOFF = 2.0
 
 _KERNEL_CODE = r"""
-extern "C" __global__
-void soft_repulsion_kernel(
-    const double* lig_pos, const double* lig_rad,
+__device__ void atom_terms(
+    const double x, const double y, const double z, const double rj,
     const double* rec_pos, const double* rec_rad, const int* cell_start,
     const double ox, const double oy, const double oz, const double h,
     const int nx, const int ny, const int nz,
-    const double afac, const double cut,
-    const int n_traj, const int n_lig,
-    double* f_out, double* e_out, double* k_out)
+    const double afac, const double cut, const double rmax, double* out)
 {
-    const int tid = blockDim.x * blockIdx.x + threadIdx.x;
-    if (tid >= n_traj * n_lig) return;
-    const int j = tid % n_lig;
-    const double x = lig_pos[3 * tid];
-    const double y = lig_pos[3 * tid + 1];
-    const double z = lig_pos[3 * tid + 2];
-    const double rj = lig_rad[j];
     const int cx = (int)floor((x - ox) / h);
     const int cy = (int)floor((y - oy) / h);
     const int cz = (int)floor((z - oz) / h);
+    // A cell farther than the longest cutoff of this atom holds no pair in
+    // range and is skipped; 1e-6 A covers the rounding of the cell bounds.
+    const double reach = cut * afac * (rj + rmax) + 1e-6;
+    const double reach2 = reach * reach;
     double fx = 0.0, fy = 0.0, fz = 0.0, e = 0.0, kk = 0.0;
     for (int ix = cx - 1; ix <= cx + 1; ++ix) {
         if (ix < 0 || ix >= nx) continue;
+        const double bx = fmax(fmax(ox + ix * h - x, x - ox - (ix + 1) * h), 0.0);
         for (int iy = cy - 1; iy <= cy + 1; ++iy) {
             if (iy < 0 || iy >= ny) continue;
+            const double by = fmax(fmax(oy + iy * h - y, y - oy - (iy + 1) * h), 0.0);
             for (int iz = cz - 1; iz <= cz + 1; ++iz) {
                 if (iz < 0 || iz >= nz) continue;
+                const double bz = fmax(fmax(oz + iz * h - z, z - oz - (iz + 1) * h), 0.0);
+                if (bx * bx + by * by + bz * bz > reach2) continue;
                 const int c = (ix * ny + iy) * nz + iz;
                 for (int k = cell_start[c]; k < cell_start[c + 1]; ++k) {
                     const double dx = x - rec_pos[3 * k];
@@ -92,11 +94,89 @@ void soft_repulsion_kernel(
             }
         }
     }
-    f_out[3 * tid] = fx;
-    f_out[3 * tid + 1] = fy;
-    f_out[3 * tid + 2] = fz;
-    e_out[tid] = e;
-    k_out[tid] = kk;
+    out[0] = fx;
+    out[1] = fy;
+    out[2] = fz;
+    out[3] = e;
+    out[4] = kk;
+}
+
+extern "C" __global__
+void soft_repulsion_kernel(
+    const double* lig_pos, const double* lig_rad,
+    const double* rec_pos, const double* rec_rad, const int* cell_start,
+    const double ox, const double oy, const double oz, const double h,
+    const int nx, const int ny, const int nz,
+    const double afac, const double cut, const double rmax,
+    const int n_traj, const int n_lig,
+    double* f_out, double* e_out, double* k_out)
+{
+    const int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    if (tid >= n_traj * n_lig) return;
+    double t[5];
+    atom_terms(lig_pos[3 * tid], lig_pos[3 * tid + 1], lig_pos[3 * tid + 2],
+               lig_rad[tid % n_lig], rec_pos, rec_rad, cell_start,
+               ox, oy, oz, h, nx, ny, nz, afac, cut, rmax, t);
+    f_out[3 * tid] = t[0];
+    f_out[3 * tid + 1] = t[1];
+    f_out[3 * tid + 2] = t[2];
+    e_out[tid] = t[3];
+    k_out[tid] = t[4];
+}
+
+// Thread (pose, lane) adds the real atoms real[lane], real[lane + lanes], ...
+// of its pose, and the first thread of the pose adds the lanes in order, so
+// with at most 256 real atoms the atoms are summed in index order.
+extern "C" __global__ __launch_bounds__(256, 4)
+void soft_repulsion_poses(
+    const double* lig_pos, const double* lig_rad,
+    const double* rec_pos, const double* rec_rad, const int* cell_start,
+    const double ox, const double oy, const double oz, const double h,
+    const int nx, const int ny, const int nz,
+    const double afac, const double cut, const double rmax,
+    const int n_traj, const int n_lig, const double* cen,
+    const int* real, const int n_real, const int lanes,
+    double* force, double* torque, double* energy, double* stiff)
+{
+    __shared__ double part[8 * 256];
+    double* s = part + threadIdx.x;
+    const int lane = threadIdx.x % lanes;
+    const int t = blockIdx.x * (blockDim.x / lanes) + threadIdx.x / lanes;
+    for (int i = 0; i < 8; ++i) s[256 * i] = 0.0;
+    if (t < n_traj) {
+        for (int i = lane; i < n_real; i += lanes) {
+            const int j = real[i];
+            const double* p = lig_pos + 3 * ((long long)t * n_lig + j);
+            double a[5];
+            atom_terms(p[0], p[1], p[2], lig_rad[j], rec_pos, rec_rad, cell_start,
+                       ox, oy, oz, h, nx, ny, nz, afac, cut, rmax, a);
+            // Lever arm about the centroid; each product of the cross product
+            // is rounded before the difference.
+            const double lx = p[0] - cen[3 * t];
+            const double ly = p[1] - cen[3 * t + 1];
+            const double lz = p[2] - cen[3 * t + 2];
+            s[0] += a[0];
+            s[256] += a[1];
+            s[512] += a[2];
+            s[768] += __dsub_rn(__dmul_rn(ly, a[2]), __dmul_rn(lz, a[1]));
+            s[1024] += __dsub_rn(__dmul_rn(lz, a[0]), __dmul_rn(lx, a[2]));
+            s[1280] += __dsub_rn(__dmul_rn(lx, a[1]), __dmul_rn(ly, a[0]));
+            s[1536] += a[3];
+            s[1792] += a[4];
+        }
+    }
+    __syncthreads();
+    if (lane != 0 || t >= n_traj) return;
+    double r[8];
+    for (int i = 0; i < 8; ++i) r[i] = s[256 * i];
+    for (int l = 1; l < lanes; ++l)
+        for (int i = 0; i < 8; ++i) r[i] += s[256 * i + l];
+    for (int i = 0; i < 3; ++i) {
+        force[3 * t + i] = r[i];
+        torque[3 * t + i] = r[3 + i];
+    }
+    energy[t] = r[6];
+    stiff[t] = r[7];
 }
 """
 
@@ -178,12 +258,23 @@ class SoftRepulsion:
         self.rec_pos = rec_pos[order]
         self.rec_radii = rec_radii[order]
         if xp is not np:
-            self._kernel = xp.RawKernel(_KERNEL_CODE, "soft_repulsion_kernel")
+            module = xp.RawModule(code=_KERNEL_CODE)
+            self._kernel = module.get_function("soft_repulsion_kernel")
+            self._poses = module.get_function("soft_repulsion_poses")
             self._rec_pos_d = xp.asarray(self.rec_pos.ravel())
             self._rec_rad_d = xp.asarray(self.rec_radii)
             self._cell_start_d = xp.asarray(self.cell_start)
             self._lig_rad_d = xp.asarray(self.lig_radii)
             self._lig_mask_d = xp.asarray(self.lig_mask)
+            self._lig_real_d = xp.asarray(np.nonzero(self.lig_mask)[0], dtype=xp.int32)
+            self._cells = (
+                self._rec_pos_d, self._rec_rad_d, self._cell_start_d,
+                np.float64(self.origin[0]), np.float64(self.origin[1]),
+                np.float64(self.origin[2]), np.float64(self.h),
+                np.int32(nx), np.int32(ny), np.int32(nz),
+                np.float64(A_FACTOR), np.float64(CUTOFF),
+                np.float64(self.rec_radii.max()),
+            )
 
     def atom_terms(self, lig_pos):
         """Per-atom forces (n, N_lig, 3), energies (n, N_lig) and stiffnesses (n, N_lig)."""
@@ -200,19 +291,11 @@ class SoftRepulsion:
             if total:
                 threads = 256
                 blocks = (total + threads - 1) // threads
-                nx, ny, nz = self.shape
                 self._kernel(
                     (blocks,),
                     (threads,),
-                    (
-                        lig_pos, self._lig_rad_d, self._rec_pos_d, self._rec_rad_d,
-                        self._cell_start_d,
-                        np.float64(self.origin[0]), np.float64(self.origin[1]),
-                        np.float64(self.origin[2]), np.float64(self.h),
-                        np.int32(nx), np.int32(ny), np.int32(nz),
-                        np.float64(A_FACTOR), np.float64(CUTOFF),
-                        np.int32(n), np.int32(m), f, e, k,
-                    ),
+                    (lig_pos, self._lig_rad_d) + self._cells
+                    + (np.int32(n), np.int32(m), f, e, k),
                 )
             mask = self._lig_mask_d
             return f * mask[None, :, None], e * mask[None, :], k * mask[None, :]
@@ -254,11 +337,33 @@ class SoftRepulsion:
 
     def __call__(self, lig_pos, centroids):
         xp = self.xp
-        f_atom, e_atom, k_atom = self.atom_terms(lig_pos)
-        force = f_atom.sum(axis=1)
-        lever = lig_pos - centroids[:, None, :]
-        torque = xp.cross(lever, f_atom, axis=2).sum(axis=1)
-        return force, torque, e_atom.sum(axis=1), k_atom.sum(axis=1)
+        if xp is np:
+            f_atom, e_atom, k_atom = self.atom_terms(lig_pos)
+            force = f_atom.sum(axis=1)
+            lever = lig_pos - centroids[:, None, :]
+            torque = xp.cross(lever, f_atom, axis=2).sum(axis=1)
+            return force, torque, e_atom.sum(axis=1), k_atom.sum(axis=1)
+        lig_pos = xp.ascontiguousarray(lig_pos, dtype=xp.float64)
+        centroids = xp.ascontiguousarray(centroids, dtype=xp.float64)
+        n, m, _ = lig_pos.shape
+        force = xp.empty((n, 3), dtype=xp.float64)
+        torque = xp.empty((n, 3), dtype=xp.float64)
+        energy = xp.empty(n, dtype=xp.float64)
+        stiff = xp.empty(n, dtype=xp.float64)
+        if n:
+            # One thread per real atom (a thread takes several atoms of a
+            # large ligand), whole poses in blocks of at most 256 threads.
+            n_real = len(self._lig_real_d)
+            lanes = max(1, min(n_real, 256))
+            per_block = 256 // lanes
+            self._poses(
+                ((n + per_block - 1) // per_block,),
+                (per_block * lanes,),
+                (lig_pos, self._lig_rad_d) + self._cells
+                + (np.int32(n), np.int32(m), centroids, self._lig_real_d,
+                   np.int32(n_real), np.int32(lanes), force, torque, energy, stiff),
+            )
+        return force, torque, energy, stiff
 
 
 def surface_time_step(

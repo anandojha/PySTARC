@@ -162,7 +162,7 @@ def pqr_to_xml(pqr_file, output):
 @click.option(
     "--only",
     default=None,
-    help="Comma separated subset of rate,radial,first_hitting,first_passage,steps",
+    help="Comma separated subset of rate,radial,first_hitting,bd_time,steps",
 )
 def plot_cmd(run_dir, out, dpi, only):
     """Figures from the analysis files of a finished run (any system, any size)."""

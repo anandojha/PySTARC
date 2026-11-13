@@ -30,7 +30,9 @@ SOLUTE_DIELECTRIC: float = 4.0  # relative permittivity of protein interior
 
 # Debye screening length for about 150 mM monovalent salt at 298.15 K. The
 # electrostatic force carries the factor exp(-r/lambda_D), and the desolvation
-# grid carries (1 + kappa r)^2 exp(-2 kappa r) with kappa = 1/lambda_D.
+# grid carries (1 + kappa r)^2 exp(-2 kappa r) with kappa = 1/lambda_D. A rigid
+# input without <debye_length> takes it from ion_concentration, sdie and
+# temperature instead (input_parser.debye_from_ions).
 DEBYE_LENGTH: float = 7.858  # Å
 
 # Probe radius used to roll the solvent excluded surface in APBS.
@@ -42,12 +44,12 @@ SOLVENT_PROBE_RADIUS: float = 1.5  # Å
 #                              = 143.93262 kcal/mol.ps/A^3.
 PA_S_TO_INTERNAL: float = 143.93262
 
-# Water viscosity in those units. Cross-check: motion/do_bd_step.py carries
-# WATER_VISCOSITY = 0.243 kBT.ps/A^3 in a different convention, and
-# 0.243 * 0.592545 kcal/mol per kBT = 0.14399, agreeing to 0.2 percent.
+# Water viscosity in those units, 0.890 mPa.s. motion/do_bd_step.py carries the
+# BrownDye 2 value WATER_VISCOSITY = 0.243 kBT.ps/A^3, and 0.243 * 0.592545
+# kcal/mol per kBT = 0.14399, 1.124 times this one.
 #
-# The viscosity is taken at T_DEFAULT, so the thermal energy and the solvent
-# friction in D_t = kBT/(6 pi eta r) refer to the same temperature.
+# The viscosity is that of water at 25 C at every run temperature:
+# <temperature> scales kBT only, and <relative_viscosity> must be 1.
 VISCOSITY: float = ETA_WATER * PA_S_TO_INTERNAL
 
 # ---------------------------------------------------------------------------
@@ -68,10 +70,9 @@ DESOLVATION_ALPHA: float = 1.0
 # constructed so that k_on does not depend on this choice.
 BD_MILESTONE_RADIUS: float = 30.0  # Å
 
-# Radius of the reaction sphere. Zero is a sentinel meaning the reaction cutoff
-# falls back to the b surface radius, which makes the two spheres coincide and
-# reduces k_on to the bare encounter rate. PySTARCConfig.validate rejects that
-# degenerate case rather than reporting a rate that ignores the binding site.
+# GHO-GHO reaction distance of the automatic criterion. Zero is a sentinel for
+# no such criterion: auto_detect_reactions refuses the GHO path unless
+# 0 < bd_milestone_radius_inner < bd_milestone_radius.
 BD_MILESTONE_RADIUS_INNER: float = 0.0  # Å, sentinel
 
 # The escape sphere sits at this multiple of the b surface radius. A trajectory
@@ -86,8 +87,8 @@ QB_FACTOR: float = 1.1
 # Integration
 # ---------------------------------------------------------------------------
 
-# Outer region timestep, and the smaller step taken inside the reaction shell
-# where the force varies fastest.
+# Fixed outer step of chain BD; rigid runs ignore it. DT_RXN is the step the CPU
+# model takes inside the reaction shell.
 DT: float = 0.2  # ps
 DT_RXN: float = 0.05  # ps
 
@@ -95,9 +96,9 @@ DT_RXN: float = 0.05  # ps
 # motion, so it needs a step an order of magnitude shorter than a rigid body.
 CHAIN_DT: float = 0.01  # ps
 
-# Lower bounds on the adaptive timestep. Zero means no bound is imposed and the
-# step is free to follow the local force gradient. These are floors and are a
-# separate quantity from DT and DT_RXN above, which are step sizes.
+# Floors of the adaptive time step, zero for none. minimum_core_dt bounds every
+# step; minimum_core_reaction_dt bounds only the reaction refinement of
+# state-machine runs. They are floors, not step sizes like DT and DT_RXN.
 MINIMUM_CORE_DT: float = 0.0  # ps, sentinel
 MINIMUM_CORE_REACTION_DT: float = 0.0  # ps, sentinel
 

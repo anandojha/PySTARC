@@ -195,7 +195,9 @@ def parse_config(xml_path: Path) -> BDSurfaceConfig:
             return default
         val = node.text.strip()
         if cast is bool:
-            return val.lower() in ("true", "1", "yes")
+            from pystarc.pipeline.input_parser import parse_flag
+
+            return parse_flag(tag, val)
         return cast(val)
 
     return BDSurfaceConfig(
@@ -233,6 +235,16 @@ def parse_config(xml_path: Path) -> BDSurfaceConfig:
     )
 
 
+def _col8(v: float) -> str:
+    """v in eight columns, with fewer decimals when three would touch the field before it."""
+    s = f"{v:8.3f}"
+    for d in (2, 1, 0):
+        if s[0] == " ":
+            break
+        s = f"{v:8.{d}f}"
+    return s
+
+
 # Utilities for reading, writing, and transforming PQR atom records.
 @dataclass
 class PQRAtom:
@@ -252,7 +264,7 @@ class PQRAtom:
         # here would otherwise trip up downstream parsers.
         return (
             f"HETATM{self.serial:5d} {self.name:<4s} {self.resname:<4s}"
-            f"{self.resid:5d}    {self.x:8.3f}{self.y:8.3f}{self.z:8.3f}"
+            f"{self.resid:5d}    {self.x:8.3f}{_col8(self.y)}{_col8(self.z)}"
             f"  {self.charge:7.4f}  {self.radius:6.4f}\n"
         )
 

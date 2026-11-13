@@ -830,7 +830,7 @@ def _result_summary(
     k_lo, k_hi = self.rate_constant_ci(D_rel, confidence)
     p = self.reaction_probability
     p_lo, p_hi = self.reaction_probability_ci(confidence)
-    pct = int(confidence * 100)
+    pct = f"{100 * confidence:g}"
     n_comp = self.n_reacted + self.n_escaped
     lines = [
         f"  Trajectories : {self.n_trajectories:,}",

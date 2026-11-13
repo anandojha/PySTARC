@@ -240,6 +240,15 @@ class ContactPair:
         )
 
 
+def needed_pairs(n_needed: int, n_pairs: int, name: str = "reaction") -> int:
+    """Pairs a criterion needs: -1 means all, otherwise 1 to n_pairs."""
+    if n_needed != -1 and not 1 <= n_needed <= n_pairs:
+        raise ValueError(
+            f"{name}: n_needed is {n_needed}; use -1 for all pairs or 1 to {n_pairs}"
+        )
+    return n_pairs if n_needed == -1 else n_needed
+
+
 # A reaction criterion defined by a set of atomic contacts.
 @dataclass
 class ReactionCriteria:
@@ -269,8 +278,8 @@ class ReactionCriteria:
         reaches the threshold, which is n_needed when set and otherwise the total
         number of pairs. A criterion with an effective threshold of zero, meaning
         n_needed is set to 0 or n_needed is left negative while the pair list is
-        empty, can never fire. This matches BrownDye2, which reports such an empty
-        or zero-needed criterion as not satisfied.
+        empty, never fires here. The input readers refuse such criteria
+        (needed_pairs).
         """
         threshold = len(self.pairs) if self.n_needed < 0 else self.n_needed
         if threshold == 0:

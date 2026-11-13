@@ -1,4 +1,4 @@
-"""Figures of a finished run (rate, radial, first_hitting, first_passage, steps), drawn from the summary files of its bd_sims folder."""
+"""Figures of a finished run (rate, radial, first_hitting, bd_time, steps), drawn from the summary files of its bd_sims folder."""
 from __future__ import annotations
 
 import csv
@@ -18,7 +18,7 @@ NAVY, RED, GOLD, BLUE = "#2c3e50", "#c0392b", "#d4a13a", "#4a6fa5"
 Z95 = 1.959964
 AVOGADRO_CONV = 6.02214076e8
 
-FIGURES = ("rate", "radial", "first_hitting", "first_passage", "steps")
+FIGURES = ("rate", "radial", "first_hitting", "bd_time", "steps")
 
 _STYLE = {
     "font.family": "sans-serif",
@@ -308,7 +308,12 @@ class RunFigures:
         if not p.exists():
             return "skipped: radial_density.csv missing"
         rad = read_csv_columns(p)
-        r, dens = rad["r_center"], rad["density"]
+        if "time_ps" not in rad:
+            return "skipped: radial_density.csv has no time_ps column"
+        # Time per shell volume. The step counts weight short and long steps
+        # alike, so only the time gives the density.
+        r = rad["r_center"]
+        dens = rad["time_ps"] / (4.0 / 3.0 * np.pi * (rad["r_high"] ** 3 - rad["r_low"] ** 3))
         if self.r_escape:
             inside = r <= float(self.r_escape)
             r, dens = r[inside], dens[inside]
@@ -340,18 +345,17 @@ class RunFigures:
             ax.axvline(self.r_escape, color="0.5", ls="--", lw=1.4)
             ax.text(self.r_escape - 1, y_text, "escape surface", color="0.4", fontsize=_STYLE["legend.fontsize"], rotation=90, va="bottom", ha="right")
         ax.set_xlabel(r"Solute–solute centroid distance $\mathit{r}$ (Å)")
-        ax.set_ylabel(r"Radial distribution function $\mathit{g}(\mathit{r})$")
+        ax.set_ylabel(r"Time density relative to the $\mathit{b}$ surface")
         return None
 
-    def draw_first_passage(self, ax) -> str | None:
-        p = self.run / "fpt_distribution.csv"
+    def draw_bd_time(self, ax) -> str | None:
+        p = self.run / "bd_time_to_reaction.csv"
         if not p.exists():
-            return "skipped: fpt_distribution.csv missing"
-        fpt = read_csv_columns(p)
-        times = fpt.get("first_passage_time_ps", np.array([]))
+            return "skipped: bd_time_to_reaction.csv missing"
+        times = read_csv_columns(p).get("bd_time_ps", np.array([]))
         if len(times) == 0:
             ax.text(0.5, 0.5, "no reactions", ha="center", va="center", transform=ax.transAxes, color="0.4")
-            ax.set_xlabel("First passage time (ns)")
+            ax.set_xlabel(r"BD time inside $\mathit{r}_\mathrm{esc}$ (ns)")
             ax.set_ylabel(r"Probability density (ns$^{-1}$)")
             return "note: no reactions"
         ns = times / 1000.0
@@ -362,7 +366,7 @@ class RunFigures:
         ax.axvline(med, color=RED, ls="--", lw=1.8, label="Median")
         linear_axis(ax, "x", 0.0, float(ns.max()))
         linear_axis(ax, "y", 0.0, float(dens.max()))
-        ax.set_xlabel("First passage time (ns)")
+        ax.set_xlabel(r"BD time inside $\mathit{r}_\mathrm{esc}$ (ns)")
         ax.set_ylabel(r"Probability density (ns$^{-1}$)")
         centers = 0.5 * (edges[:-1] + edges[1:])
         line = np.column_stack([np.full(25, med), np.linspace(0.0, float(dens.max()), 25)])

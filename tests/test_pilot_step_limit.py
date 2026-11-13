@@ -168,3 +168,13 @@ class TestCLI:
         rec = recommend_max_steps(n_steps, ["escaped"] * 50, p_rxn=0.01)
         rec["warnings"].append("a warning")
         assert "Warning: a warning" in format_report(rec, n_steps)
+
+
+def test_fit_never_lowers_an_observed_survivor():
+    """One slow trajectory of 2,000 stays visible: the fit of the fast bulk may
+    not recommend a limit at which that trajectory is still running."""
+    n_steps, outcomes = _exponential_pilot(n=1999, seed=5)
+    n_steps.append(155_000)
+    outcomes.append("escaped")
+    rec = recommend_max_steps(n_steps, outcomes, p_rxn=0.01)
+    assert rec["max_steps"] >= 155_000

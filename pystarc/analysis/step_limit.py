@@ -16,8 +16,9 @@ is taken from the pilot (reacted over every trajectory run) or given, for
 example from an earlier run when the pilot is too small to see a reaction.
 
 Beyond the observed range of the pilot, or below its statistical resolution
-(no trajectory of N can show a survival below about 1/N), S(n) is
-extrapolated with an exponential fitted to the tail of the observed curve. A
+(3/N), S(n) is extrapolated with an exponential fitted to the tail of the
+observed curve. Within the observed range the fit can raise the observed
+survival but not lower it. A
 tail that does not decay (trajectories at the pilot limit with no finish in
 the last part of the pilot range) is reported as trapped: those trajectories
 are stuck, not slow, and no step limit will resolve them. The usual causes are
@@ -208,10 +209,10 @@ def recommend_max_steps(
             return (s_obs if s_obs is not None else n_at_limit / N), "trapped"
         if fit is not None:
             s_fit = _fit_survival(fit, cap)
-            if s_obs is not None:
-                # Within the observed range the fit only refines a value below
-                # the resolution of the pilot.
-                return max(s_fit, 0.0), "extrapolated"
+            # Within the observed range the fit may raise a survival below the
+            # resolution of the pilot, never lower it.
+            if s_obs is not None and s_obs > s_fit:
+                return s_obs, "observed"
             return s_fit, "extrapolated"
         if s_obs is not None:
             return s_obs, "observed"

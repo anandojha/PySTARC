@@ -159,6 +159,8 @@ if os.path.isdir(log_dir):
         sim_kb = float(m.group(1)) if m else None
         m = re.search(r"return_prob:\s+([\d.]+)", txt)
         sim_rp = float(m.group(1)) if m else None
+        m = re.search(r"Trajectories\s+:\s+([\d,]+)", txt)
+        sim_n = int(m.group(1).replace(",", "")) if m else None
 print(f"  {'':28s}  {'Analytical':>14s}  {'Simulation':>14s}  {'Ref':>14s}")
 print(f"  {'-'*28}  {'-'*14}  {'-'*14}  {'-'*14}")
 
@@ -168,20 +170,16 @@ def cmp(label, exact, sim, ref_str):
     print(f"  {label:<28s}  {exact:14.6f}  {sv:>14s}  {ref_str:>14s}")
 
 
-cmp("k_b (ų/ps)", k_b, sim_kb, "64.45")
+cmp("k_b (ų/ps)", k_b, sim_kb, f"{k_b:.3f}")
 cmp("return_prob", rp, sim_rp, "-")
-cmp("P_rxn", Prxn, sim_prxn, "0.49")
+cmp("P_rxn", Prxn, sim_prxn, f"{Prxn:.6f}")
 
-if sim_prxn is not None and sim_kon is not None:
-    print(f"  {'k_on (M⁻¹s⁻¹)':<28s}  {kon:14.4e}  {sim_kon:14.4e}  {'1.90e+10':>14s}")
-    err = abs(sim_prxn - Prxn) / Prxn * 100
-    print(f"\n  Simulation vs exact analytical: P_rxn error = {err:.1f}%")
-    if err < 5:
-        print("  Pass: Excellent agreement (<5%)")
-    elif err < 10:
-        print("   Marginal (<10%)")
-    else:
-        print(f"  Fail ({err:.0f}%)")
+if sim_prxn is not None and sim_kon is not None and sim_n:
+    print(f"  {'k_on (M⁻¹s⁻¹)':<28s}  {kon:14.4e}  {sim_kon:14.4e}  {kon:14.4e}")
+    se = math.sqrt(Prxn * (1 - Prxn) / sim_n)
+    z = (sim_prxn - Prxn) / se
+    print(f"\n  Simulation vs exact analytical: P_rxn z = {z:+.2f}  (SE {se:.6f}, N {sim_n:,})")
+    print("  Pass (|z| < 3)" if abs(z) < 3 else "  Fail (|z| >= 3)")
 else:
     print(f"\n  Run simulation first, then re-run this script.")
 print()

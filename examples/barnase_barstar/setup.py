@@ -428,10 +428,12 @@ input_xml = f"""<?xml version="1.0"?>
   <work_dir>{WORK_DIR}</work_dir>
   <gpu>{C['gpu']}</gpu>
   <desolvation_alpha>{DESOLVATION_ALPHA}</desolvation_alpha>
-  <save_interval>{C['save_interval']}</save_interval>
   <convergence_check>{C['convergence_check']}</convergence_check>
   <convergence_interval>{C['convergence_interval']}</convergence_interval>
   <convergence_tol>{C['convergence_tol']}</convergence_tol>
+  <outputs>
+    <save_interval>{C['save_interval']}</save_interval>
+  </outputs>
   <chain>
     <chain_json>{CHAIN_JSON}</chain_json>
     <reaction_pairs_json>{REACTION_PAIRS_JSON}</reaction_pairs_json>

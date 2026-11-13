@@ -29,6 +29,7 @@ from pystarc.pipeline.make_pqr import build_complex, make_combined_pqr, split_pq
 from pystarc.pipeline.geometry import (
     compute_geometry,
     auto_detect_reactions,
+    _parse_rxns_xml_criteria,
     _parse_rxns_xml_reaction_groups,
     check_rxn_atom_numbers,
     check_rxn_atom_range,
@@ -42,17 +43,16 @@ from pystarc.forces.electrostatic.grid_force import DXGrid
 from pystarc.pipeline.input_parser import PySTARCConfig
 from pystarc.pipeline.parameterize import parameterize
 from pystarc.pipeline.output_writer import write_all
-from pystarc.forces.engine import load_dx_directory
+from pystarc.forces.engine import PySTARCEngine
+from pystarc.forces.multipole import load_effective_charges
 from pystarc.pipeline.run_apbs import run_apbs_both
 from pystarc.structures.pqr_io import parse_pqr
 from pystarc.pipeline.extract import extract
 import subprocess as _sp
 from pathlib import Path
 import shutil
-import time
 from pystarc.global_defs.defaults import (
     DEBYE_LENGTH,
-    DESOLVATION_ALPHA,
     DT_RXN,
     HYDRODYNAMIC_INTERACTIONS,
     SOLVENT_DIELECTRIC,
@@ -65,24 +65,109 @@ except ImportError:
     cp = None
 
 
+
+def _run_key(cfg, W: Path) -> str:
+    """Fingerprint a checkpoint must carry to be resumed: SHA-256 of the parsed
+    settings without the run-control keys, and of the PQR, rxns and DX inputs."""
+    import hashlib
+
+    skip = {
+        "n_trajectories", "seed", "max_steps", "work_dir", "n_threads",
+        "gpu_force_batch", "checkpoint_interval", "convergence_interval",
+        "confidence_interval", "outputs",
+    }
+    items = sorted((k, repr(v)) for k, v in vars(cfg).items() if k not in skip)
+    h = hashlib.sha256(repr(items).encode())
+    rxns = [Path(cfg.rxns_xml.strip())] if cfg.rxns_xml.strip() else []
+    for p in sorted(W.glob("*.pqr")) + sorted(W.glob("*.dx")) + rxns:
+        if p.exists():
+            m = hashlib.md5()
+            with open(p, "rb") as f:
+                for block in iter(lambda: f.read(1 << 24), b""):
+                    m.update(block)
+            h.update(p.name.encode() + m.digest())
+    return h.hexdigest()
+
+def _checklist(cfg, params, geom, k_b, gpu_engine, cpu_engine, result):
+    """Checklist lines built from the settings and the engines the run used."""
+    e = gpu_engine
+    alpha = cfg.desolvation_alpha
+    src = lambda v: "XML" if v > 0 else "MC"
+    lines = [
+        "Checklist",
+        f"  Temperature = {cfg.temperature:.2f} K  (kT = {cfg.temperature / 298.15:.6f})",
+        f"  k_b Romberg integral           (k_b={k_b:.4f} ų/ps)"
+        if e is not None
+        else f"  k_b of the outer propagator    (k_db={getattr(result, 'k_db', 0.0):.4f} ų/ps)",
+        f"  HI in k_b integral             ({'enabled' if params.hydrodynamic_interactions else 'disabled'})",
+        f"  Hydro radii  receptor {geom.receptor.hydrodynamic_r:.4f} Å ({src(cfg.r_hydro_rec)}), "
+        f"ligand {geom.ligand.hydrodynamic_r:.4f} Å ({src(cfg.r_hydro_lig)})",
+    ]
+    if e is not None:
+        lines.append(
+            f"  APBS grids finest first ({len(e._elec_grids_gpu)} elec, {len(e._born_grids_gpu)} Born)"
+        )
+        lines.append(
+            "  Multipole far-field (monopole + dipole + quadrupole)"
+            if e._has_yukawa and e._multipole is not None
+            else "  Monopole far-field" if e._has_yukawa
+            else "  No far-field force beyond the grids"
+        )
+        born1 = alpha != 0 and len(e._born_grids_gpu) > 0
+        born2 = born1 and bool(e._lig_born_grids_gpu)
+        if params._soft_repulsion:
+            lines.append("  Soft repulsion kT (0.9345 (r_i + r_j) / r)^12 (replaces the overlap check)")
+        elif params._overlap_check:
+            lines.append("  Overlap check (overlapping moves are rejected)")
+        else:
+            lines.append("  Overlap check disabled")
+        lines.append(
+            "  WCA repulsive forces (LJ from PQR radii)" if e._use_lj else "  LJ forces disabled"
+        )
+    else:
+        lines.append("  APBS grids finest first, no far-field force beyond the grids")
+        born1 = alpha != 0 and bool(cpu_engine._born1)
+        born2 = born1 and bool(cpu_engine._born2)
+        lines.append("  Hard-sphere check (always on in the CPU model)")
+    lines.append(
+        f"  Born both directions            (alpha={alpha:.8f})" if born2
+        else f"  Born on the ligand atoms only   (alpha={alpha:.8f})" if born1
+        else "  Born desolvation off"
+    )
+    lines.append("  Variable dt (pair_dt + force_dt + edge_dt)")
+    lines.append(
+        f"  minimum_core_dt = {cfg.minimum_core_dt:g} ps"
+        if cfg.minimum_core_dt > 0
+        else "  No minimum_core_dt floor"
+    )
+    lines.append(
+        "  Isotropic D(r) with HI for the BD step"
+        if params.hydrodynamic_interactions
+        else "  Isotropic D_rel for BD step"
+    )
+    lines += [
+        "  Outer propagator: return_prob at r_escape",
+        "  Diffusional rotation on return from r_escape",
+        "  Brownian bridge at reaction surface"
+        if params.use_brownian_bridge
+        else "  Brownian bridge off (reaction test at the end of each step)",
+        "  Position refresh after return (prevents r-overshoot)",
+    ]
+    return lines
+
+
 def run(cfg: PySTARCConfig):
     """
     Run the full pipeline that takes a PDB file and returns k_on.
 
     All intermediate files are written into cfg.work_dir.
     """
-    t0 = time.time()
     W = cfg.work_dir
     print(f"  PDB           : {cfg.pdb}")
     print(f"  Ligand resname: {cfg.ligand_resname}")
     print(f"  Work dir      : {W}")
     print(f"  b-surface     : {cfg.bd_milestone_radius:.1f} Å  (start sphere)")
-    rxn_r = (
-        cfg.bd_milestone_radius_inner
-        if cfg.bd_milestone_radius_inner > 0
-        else cfg.bd_milestone_radius
-    )
-    print(f"  Reaction (q)  : {rxn_r:.1f} Å  (reaction sphere)")
+    print(f"  Reactions     : {cfg.rxns_xml.strip() or 'ghost_atoms ' + cfg.ghost_atoms.strip()}")
     _resc = (
         cfg.r_escape
         if getattr(cfg, "r_escape", 0.0) > 0
@@ -126,11 +211,14 @@ def run(cfg: PySTARCConfig):
             raise FileNotFoundError(f"receptor_pqr not found: {receptor_pqr}")
         if not ligand_pqr.exists():
             raise FileNotFoundError(f"ligand_pqr not found: {ligand_pqr}")
-        # Copy the files into the work directory so that APBS can read them.
-        if receptor_pqr.resolve() != (W / "receptor.pqr").resolve():
-            shutil.copy(receptor_pqr, W / "receptor.pqr")
-        if ligand_pqr.resolve() != (W / "ligand.pqr").resolve():
-            shutil.copy(ligand_pqr, W / "ligand.pqr")
+        # Copy the files into the work directory so that APBS can read them. A
+        # link left there is replaced by a private copy, so the centring below
+        # never writes into the file it points to.
+        for src, dst in ((receptor_pqr, W / "receptor.pqr"), (ligand_pqr, W / "ligand.pqr")):
+            if dst.is_symlink() or src.resolve() != dst.resolve():
+                data = src.read_bytes()
+                dst.unlink(missing_ok=True)
+                dst.write_bytes(data)
         receptor_pqr = W / "receptor.pqr"
         ligand_pqr = W / "ligand.pqr"
         print("[3] PQR files ready (pre-computed).")
@@ -195,6 +283,13 @@ def run(cfg: PySTARCConfig):
         dime=getattr(cfg, "apbs_dime", 129),
         coarse_dime=getattr(cfg, "apbs_coarse_dime", 0),
         fine_dime=getattr(cfg, "apbs_fine_dime", 0),
+        ligand_dime=cfg.apbs_ligand_dime,
+    )
+    # every Born level present is read, so a third, finer level is used when given
+    born = lambda m: sorted(W.glob(f"{m}[0-9]_born.dx"))
+    rec_e, rec_b, lig_e, lig_b = (
+        [DXGrid.from_file(p) for p in g]
+        for g in (rec_dx[:2], born("receptor"), lig_dx[:2], born("ligand"))
     )
     # Step 5 computes the geometry of the system.
     geom = compute_geometry(
@@ -218,7 +313,7 @@ def run(cfg: PySTARCConfig):
         rxn_result if isinstance(rxn_result, tuple) else (rxn_result, -1)
     )
     # rxns_xml atom numbers are positions; warn when the PQR serials differ.
-    if cfg.rxns_xml and Path(cfg.rxns_xml.strip()).exists():
+    if cfg.rxns_xml.strip():
         check_rxn_atom_numbers(
             [rp for stage in rxn_stages for rp in stage], receptor_pqr, ligand_pqr
         )
@@ -234,10 +329,12 @@ def run(cfg: PySTARCConfig):
     )
     # Load the force engine, auto-detecting the fastest available backend. The
     # code prefers the GPU (CuPy), then Numba, and finally falls back to NumPy.
-    engine = load_dx_directory(
-        W,
-        mol1_prefix="receptor",
-        mol2_prefix="ligand",
+    engine = PySTARCEngine(
+        elec_mol1=rec_e,
+        elec_mol2=lig_e,
+        born_mol1=rec_b,
+        born_mol2=lig_b,
+        eff_charges_mol1=load_effective_charges(W, "receptor", cfg.debye_length),
         debye_length=cfg.debye_length,
         desolvation_alpha=cfg.desolvation_alpha,
     )
@@ -283,7 +380,7 @@ def run(cfg: PySTARCConfig):
                     for rp in rg.pairs
                 ]
                 crit = ReactionCriteria(
-                    name=rg.name or "reaction",
+                    name=rg.name,
                     pairs=pairs,
                     n_needed=rg.n_needed,
                     state_before=rg.state_before,
@@ -291,7 +388,7 @@ def run(cfg: PySTARCConfig):
                 )
                 reactions.append(
                     ReactionInterface(
-                        name=rg.name or "reaction",
+                        name=rg.name,
                         criteria=crit,
                         state_before=rg.state_before,
                         state_after=rg.state_after,
@@ -302,12 +399,10 @@ def run(cfg: PySTARCConfig):
                     f"({len(pairs)} pair(s), n_needed={rg.n_needed})"
                 )
         else:
-            print(
-                "  State-machine reactions requested but no reactions parsed; "
-                "falling back to the flattened-pairs path."
-            )
-            _use_state_machine = False
+            raise ValueError(f"{cfg.rxns_xml} holds no reaction")
     if not _use_state_machine:
+        if cfg.rxns_xml.strip():
+            _parse_rxns_xml_criteria(Path(cfg.rxns_xml.strip()).expanduser(), single=True)
         for stage_idx, stage_pairs in enumerate(rxn_stages):
             pairs = []
             for rp in stage_pairs:
@@ -365,14 +460,9 @@ def run(cfg: PySTARCConfig):
     # user requested cfg.gpu but cupy was unavailable and the engine fell back to
     # a CPU backend, this branch is skipped and gpu_sim remains None.
     gpu_sim = None
+    batch_engine = None
     if cfg.gpu and engine.backend == "cupy":
         print("\n  Using GPU Batch Simulator - all trajectories on GPU simultaneously")
-
-        def _load_dx(prefix, suffix):
-            return [
-                DXGrid.from_file(p) for p in sorted(W.glob(f"{prefix}[0-9]{suffix}"))
-            ]
-
         # Set up the multipole expansion used for the far-field, which adds the
         # dipole and quadrupole terms beyond the monopole.
         _mp_expansion = None
@@ -382,18 +472,19 @@ def run(cfg: PySTARCConfig):
                 charges=mol_rec.charges_array(),
                 debye_length=cfg.debye_length,
                 sdie=cfg.sdie,
+                kT_scale=cfg.temperature / 298.15,
             )
             print(_mp_expansion.summary())
         batch_engine = GPUBatchForceEngine(
-            elec_grids=_load_dx("receptor", ".dx"),
-            born_grids=_load_dx("receptor", "_born.dx"),
+            elec_grids=rec_e,
+            born_grids=rec_b,
             alpha=cfg.desolvation_alpha,
             receptor_charge=float(mol_rec.total_charge()),
             debye_length=cfg.debye_length,
             sdie=cfg.sdie,
             # Born desolvation acts in both directions. Here the ligand Born grid
             # is evaluated on the receptor atoms.
-            lig_born_grids=_load_dx("ligand", "_born.dx"),
+            lig_born_grids=lig_b,
             rec_positions=mol_rec.positions_array(),
             rec_charges=mol_rec.charges_array(),
             multipole_expansion=_mp_expansion,
@@ -401,6 +492,7 @@ def run(cfg: PySTARCConfig):
             lig_radii=mol_lig.radii_array() if cfg.lj_forces else None,
             use_lj=cfg.lj_forces,
             enable_born2_torque=cfg.enable_born2_torque,
+            kT_scale=cfg.temperature / 298.15,
         )
         gpu_sim = GPUBatchSimulator(
             mol_rec, mol_lig, mob, pathway_set, params, batch_engine
@@ -408,15 +500,17 @@ def run(cfg: PySTARCConfig):
         # Attach the configuration so that the simulator knows what to collect.
         params._output_cfg = cfg.outputs
         params.max_dt = getattr(cfg, "max_dt", 0.0)
+        params.gpu_force_batch = cfg.gpu_force_batch
         params.checkpoint_interval = cfg.checkpoint_interval
         params.convergence_interval = cfg.convergence_interval
         params._work_dir = str(cfg.work_dir)
         params._kT_scale = cfg.temperature / 298.15
         params._overlap_check = cfg.overlap_check
         params._soft_repulsion = getattr(cfg, "soft_repulsion", False)
+        if cfg.checkpoint_interval > 0:
+            params._run_key = _run_key(cfg, W)
         result = gpu_sim.run()
-        elapsed = result.elapsed_sec
-        total_steps = int(result.steps_per_sec * elapsed)
+        total_steps = result.total_steps
     else:
         if getattr(cfg, "soft_repulsion", False):
             raise ValueError(
@@ -425,7 +519,6 @@ def run(cfg: PySTARCConfig):
             )
         print(f"\n  Using CPU NAM Simulator ({cfg.n_threads} threads)")
         result = sim.run()
-        elapsed = time.time() - t0
         total_steps = sum(r.steps for r in sim.results)
     # Print the results. First gather the hardware information for the summary footer.
     n_gpu = 0
@@ -446,17 +539,9 @@ def run(cfg: PySTARCConfig):
     print("=" * 64)
     print("  Results")
     print("=" * 64)
-    # The result summary already includes the reaction probability P_rxn, k_on,
-    # its confidence interval, the wall-clock time, the BD steps per second, and
-    # the backend used. We pass the Romberg estimate of k_b into the two-level
-    # k_on formula. On the GPU we use the Romberg value, while on the CPU we pass
-    # zero, which selects the Smoluchowski expression.
-    # On the GPU path gpu_sim carries the Romberg k_b estimate. When the GPU was
-    # requested but the cupy backend was not available, gpu_sim is None and we
-    # fall back to k_b = 0.0, which selects the Smoluchowski expression just like
-    # the CPU path. Guarding on gpu_sim is not None avoids a NameError without
-    # changing the value used on either healthy path.
-    _k_b = getattr(gpu_sim, "_k_b", 0.0) if gpu_sim is not None else 0.0
+    # The GPU k_on is CONV k_b P with the Romberg k_b. The CPU result uses the
+    # k_db of its outer propagator and ignores the k_b passed here.
+    _k_b = gpu_sim._k_b if gpu_sim is not None else 0.0
     print(result.summary(D_rel, _k_b, cfg.confidence_interval))
     print(f"  Total steps  : {total_steps:,}")
     # Hardware footer
@@ -466,56 +551,9 @@ def run(cfg: PySTARCConfig):
     else:
         print(f"  CPU threads  : {cfg.n_threads}")
     print("=" * 64)
-    # Print a checklist of the active physics settings to the log.
-    _hi = getattr(cfg, "hydrodynamic_interactions", HYDRODYNAMIC_INTERACTIONS)
-    _rh_r = getattr(cfg, "r_hydro_rec", 0.0)
-    _rh_l = getattr(cfg, "r_hydro_lig", 0.0)
-    _desolv = getattr(cfg, "desolvation_alpha", DESOLVATION_ALPHA)
-    _mcd = getattr(cfg, "minimum_core_dt", 0.0)
     print()
-    print("Checklist")
-    _kT_scale = cfg.temperature / 298.15
-    print(f"  Temperature = {cfg.temperature:.2f} K  (kT = {_kT_scale:.6f})")
-    print(f"  k_b Romberg integral           (k_b={_k_b:.4f} ų/ps)")
-    print(f"  HI in k_b integral             ({'enabled' if _hi else 'disabled'})")
-    print(
-        f"  Hydro radii from XML           (rec={_rh_r:.4f}, lig={_rh_l:.4f})"
-        if _rh_r > 0
-        else "  Hydro radii from MC"
-    )
-    print(f"  Fine-only APBS grid + Yukawa monopole fallback")
-    if cfg.multipole_fallback:
-        print(f"  Multipole far-field (monopole + dipole + quadrupole)")
-    else:
-        print(f"  Multipole far-field disabled (monopole only)")
-    if getattr(cfg, "soft_repulsion", False):
-        print(f"  Soft repulsion kT (0.9345 (r_i + r_j) / r)^12 (replaces the overlap check)")
-    elif cfg.overlap_check:
-        print(f"  Overlap check (elastic wall at receptor surface)")
-    else:
-        print(f"  Overlap check disabled")
-    if cfg.lj_forces:
-        print(f"  WCA repulsive forces (LJ from PQR radii)")
-    else:
-        print(
-            f"  LJ forces disabled (use <lj_forces>true</lj_forces> for tight contact)"
-        )
-    print(
-        f"  Born both directions            (alpha={_desolv:.8f})"
-        if _desolv > 0
-        else "  Born desolvation disabled (alpha=0)"
-    )
-    print(f"  Variable dt (pair_dt + force_dt + edge_dt)")
-    print(
-        f"  minimum_core_dt = {_mcd:.1f} ps"
-        if _mcd > 0
-        else "  No minimum_core_dt floor"
-    )
-    print(f"  Isotropic D_rel for BD step")
-    print(f"  Outer propagator: return_prob at r_escape")
-    print(f"  Diffusional rotation on return from r_escape")
-    print(f"  Brownian bridge at reaction surface")
-    print(f"  Position refresh after return (prevents r-overshoot)")
+    for line in _checklist(cfg, params, geom, _k_b, batch_engine, engine, result):
+        print(line)
     # Write the output files.
     if cfg.gpu and hasattr(result, "sim_data") and result.sim_data is not None:
         write_all(
@@ -526,6 +564,7 @@ def run(cfg: PySTARCConfig):
             k_b=_k_b,
             D_rel=D_rel,
             confidence=cfg.confidence_interval,
+            convergence_tol=cfg.convergence_tol,
         )
     # Clean up the temporary files.
     tmp_dir = cfg.work_dir / "tmp"

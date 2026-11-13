@@ -25,7 +25,7 @@
     <bd_milestone_radius>60.0</bd_milestone_radius>                                        <!-- Radius of the starting sphere (in angstroms). -->
     <n_trajectories>200</n_trajectories>                                                   <!-- Number of Brownian dynamics trajectories. -->
     <max_steps>500000</max_steps>                                                          <!-- Step limit per trajectory. -->
-    <dt>0.2</dt>                                                                           <!-- Largest permitted time step (in picoseconds). -->
+    <dt>0.2</dt>                                                                           <!-- Outer step of chain BD (in picoseconds). -->
     <dt_chain>0.025</dt_chain>                                                             <!-- Chain time step (in picoseconds). -->
     <chain_steps_per_outer>8</chain_steps_per_outer>                                       <!-- Chain steps per outer step. -->
     <n_equilibration_steps>0</n_equilibration_steps>                                       <!-- Chain steps before each trajectory. 0 skips it. -->

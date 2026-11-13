@@ -184,6 +184,7 @@ class TestConfig:
 <pystarc>
   <receptor_pqr>r.pqr</receptor_pqr>
   <ligand_pqr>l.pqr</ligand_pqr>
+  <soft_repulsion>true</soft_repulsion>
   <max_steps>50000</max_steps>
   <stall_check>false</stall_check>
   <unfinished_in_p_rxn>true</unfinished_in_p_rxn>

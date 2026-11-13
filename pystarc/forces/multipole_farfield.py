@@ -74,6 +74,7 @@ class MultipoleExpansion:
         charges: np.ndarray,
         debye_length: float,
         sdie: float = 78.0,
+        kT_scale: float = 1.0,
     ):
         """
         Build the monopole, dipole, and quadrupole moments of the molecule.
@@ -81,12 +82,12 @@ class MultipoleExpansion:
         The argument positions is an (N, 3) array of atom positions in Å,
         centered at the molecular centroid. The argument charges is an (N,)
         array of atom partial charges in e. The argument debye_length is the
-        Debye screening length in Å, and sdie is the solvent dielectric
-        constant.
+        Debye screening length in Å, sdie is the solvent dielectric constant
+        and kT_scale is T / 298.15 K, which puts the potential in kBT at T.
         """
         self.debye = debye_length
-        eps0 = VACUUM_PERMITTIVITY_KBT  # vacuum permittivity in e²/(kBT·Å)
-        self.eps = sdie * eps0
+        eps0 = VACUUM_PERMITTIVITY_KBT  # vacuum permittivity in e²/(kBT·Å) at 298.15 K
+        self.eps = sdie * eps0 * kT_scale
         self.four_pi_eps = 4.0 * math.pi * self.eps
         # Monopole: the total charge Q.
         self.Q = float(np.sum(charges))

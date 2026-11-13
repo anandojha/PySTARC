@@ -161,8 +161,9 @@ def main():
                 if rj_path.exists():
                     rj = json.loads(rj_path.read_text())
                     _footer.append(f"  k_on           : {rj['k_on']:.4e} M-1 s-1")
+                    _ci = f"{100 * rj.get('confidence_level', cfg.confidence_interval):g}% CI"
                     _footer.append(
-                        f"  95% CI         : [{rj['k_on_low']:.4e}, {rj['k_on_high']:.4e}]"
+                        f"  {_ci:<15s}: [{rj['k_on_low']:.4e}, {rj['k_on_high']:.4e}]"
                     )
                     # Formatted with error: (value ± error) × 10^n
                     _kon = rj["k_on"]
@@ -194,6 +195,7 @@ def main():
                         k_b=_k_b,
                         tol=cfg.convergence_tol,
                         work_dir=str(work_dir),
+                        confidence=cfg.confidence_interval,
                     )
                     print_convergence(_conv)
                     save_convergence(_conv, work_dir=str(work_dir))

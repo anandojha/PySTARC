@@ -21,6 +21,7 @@ def write_all(
     k_b: float,
     D_rel: float,
     confidence: float = 0.95,
+    convergence_tol: float = 0.05,
 ):
     """
     Write every enabled output file into work_dir.
@@ -40,18 +41,19 @@ def write_all(
     2 means escaped, and 3 means the trajectory hit the maximum step count,
     'n_steps' giving the number of steps taken in each trajectory, 'min_dist'
     giving the closest-approach distance, 'step_at_min' giving the step at
-    which that closest approach occurred, 'total_time_ps' giving the
-    accumulated simulation time, 'n_returns' counting how many times the
-    trajectory returned from the escape sphere, and 'bb_triggered' which is
-    True when a Brownian bridge caught the reaction.
+    which that closest approach occurred, 'total_time_ps' giving the BD
+    time inside r_esc (a return to b adds none), 'n_returns' counting how many times the
+    trajectory returned from the escape sphere, and 'bb_triggered' which is 1
+    when the reaction needed a crossing of the Brownian bridge, that is when
+    fewer than n_needed pairs ended the step inside their cutoff (in
+    state-machine mode, when the fired pair ended outside).
 
     The reaction (encounter) arrays cover the M trajectories that reacted.
-    'encounter_pos' with shape (M, 3) is the ligand centroid at reaction,
-    'encounter_q' with shape (M, 4) is the ligand orientation at reaction,
-    'encounter_traj' gives the trajectory indices, 'encounter_step' gives the
-    step numbers, and 'encounter_n_pairs' gives the number of contact pairs
-    satisfied. 'rxn_pair_dists_at_encounter' with shape (M, n_pairs) holds the
-    pair distances at the moment of reaction.
+    'encounter_pos' with shape (M, 3) is the ligand centroid at the end of the
+    reacting step, 'encounter_q' with shape (M, 4) is the ligand orientation
+    there, 'encounter_traj' gives the trajectory indices, 'encounter_step'
+    gives the step numbers, 'encounter_n_pairs' gives the number of pairs that
+    fired and 'encounter_bridge_only' is the bb_triggered flag of the row.
 
     The near-miss arrays cover the K escaped trajectories at their closest
     approach. 'near_miss_pos' with shape (K, 3) is the centroid at closest
@@ -61,13 +63,16 @@ def write_all(
 
     'path_steps' is a list of (n_recorded, 9) arrays with columns
     [traj_id, step, x, y, z, q0, q1, q2, q3], and 'energy_steps' is a list of
-    (n_recorded, 6) arrays with columns [traj_id, step, fx, fy, fz, dt].
+    (n_recorded, 6) arrays with columns [traj_id, step, fx, fy, fz, dt], the
+    force and the time step, with no energies.
 
     The histogram arrays are 'radial_bins' with shape (n_bins,) for the bin
-    edges, 'radial_counts' with shape (n_bins-1,) for the histogram counts,
-    'angular_theta' and 'angular_phi' for the theta and phi bin centers, and
-    'angular_counts' with shape (n_theta, n_phi) for the two-dimensional
-    angular histogram.
+    edges, 'radial_counts' with shape (n_bins-1,) for the BD steps per bin,
+    'radial_time_ps' for the time per bin, 'angular_theta' and 'angular_phi'
+    for the theta and phi bin centres (phi is the azimuth atan2(y, x)), and
+    'angular_counts' and 'angular_time_ps' with shape (n_theta, n_phi) for the
+    steps and the time per angular bin. Step counts weight every adaptive
+    step alike, the time maps weight it by its dt.
 
     The milestone arrays are 'milestone_radii' for the milestone radii,
     'milestone_flux_out' for the outward crossings, and 'milestone_flux_in'
@@ -75,6 +80,7 @@ def write_all(
 
     The contact and transition data are 'contact_pair_counts' with shape
     (n_pairs,) giving how often each pair was within the cutoff,
+    'contact_pair_time_ps' giving the time each pair spent there,
     'contact_total_steps' giving the total number of steps counted,
     'trans_bins' giving the radial bin edges for the transition matrix, and
     'trans_matrix' with shape (n_bins, n_bins) giving the count matrix.
@@ -108,7 +114,9 @@ def write_all(
             "r_escape": result.r_escape,
             "wall_time_sec": result.elapsed_sec,
             "steps_per_sec": result.steps_per_sec,
+            "total_steps": int(getattr(result, "total_steps", 0)),
             "confidence_level": confidence,
+            "convergence_tol": convergence_tol,
             # Total recorded contact steps, the denominator of the
             # contact_frequency column. Persisted so multi-GPU combine can pool
             # the frequency correctly across shards.
@@ -174,14 +182,15 @@ def write_all(
             etraj = sim_data["encounter_traj"]
             estep = sim_data["encounter_step"]
             enpairs = sim_data["encounter_n_pairs"]
+            ebridge = sim_data["encounter_bridge_only"]
             with open(p, "w") as f:
-                f.write("traj_id,step,x,y,z,q0,q1,q2,q3,n_pairs_satisfied\n")
+                f.write("traj_id,step,x,y,z,q0,q1,q2,q3,n_pairs_satisfied,bridge_only\n")
                 for i in range(len(epos)):
                     f.write(
                         f"{int(etraj[i])},{int(estep[i])},"
                         f"{epos[i,0]:.6f},{epos[i,1]:.6f},{epos[i,2]:.6f},"
                         f"{eq[i,0]:.6f},{eq[i,1]:.6f},{eq[i,2]:.6f},{eq[i,3]:.6f},"
-                        f"{int(enpairs[i])}\n"
+                        f"{int(enpairs[i])},{int(ebridge[i])}\n"
                     )
             written.append(("encounters.csv", p))
     # 4. near_misses.csv
@@ -219,9 +228,10 @@ def write_all(
     if output_cfg.radial_density and "radial_bins" in sim_data:
         bins = sim_data["radial_bins"]
         counts = sim_data["radial_counts"]
+        times = sim_data["radial_time_ps"]
         p = work_dir / "radial_density.csv"
         with open(p, "w") as f:
-            f.write("r_center,r_low,r_high,count,density\n")
+            f.write("r_center,r_low,r_high,count,density,time_ps\n")
             total = counts.sum() if counts.sum() > 0 else 1
             for i in range(len(counts)):
                 rc = 0.5 * (bins[i] + bins[i + 1])
@@ -230,7 +240,7 @@ def write_all(
                 rho = counts[i] / (total * vol) if vol > 0 else 0
                 f.write(
                     f"{rc:.4f},{bins[i]:.4f},{bins[i+1]:.4f},"
-                    f"{int(counts[i])},{rho:.8e}\n"
+                    f"{int(counts[i])},{rho:.8e},{times[i]:.6f}\n"
                 )
         written.append(("radial_density.csv", p))
     # 7. angular_map.npz
@@ -239,33 +249,38 @@ def write_all(
         np.savez_compressed(
             p,
             counts=sim_data["angular_counts"],
+            time_ps=sim_data["angular_time_ps"],
             theta_centers=sim_data["angular_theta"],
             phi_centers=sim_data["angular_phi"],
         )
         written.append(("angular_map.npz", p))
-    # 8. fpt_distribution.csv
-    if output_cfg.fpt_distribution and "outcome" in sim_data:
+    # 8. bd_time_to_reaction.csv, the BD time inside r_esc of each reacting
+    # trajectory. A return to b from r_esc adds no time, so the rows with
+    # n_returns 0 hold the whole time to reaction.
+    if output_cfg.bd_time_to_reaction and "outcome" in sim_data:
         outcome = sim_data["outcome"]
         ttime = sim_data["total_time_ps"]
+        nret = sim_data["n_returns"]
         mdist = sim_data["min_dist"]
         reacted_mask = outcome == 1
         if reacted_mask.any():
-            p = work_dir / "fpt_distribution.csv"
+            p = work_dir / "bd_time_to_reaction.csv"
             with open(p, "w") as f:
-                f.write("traj_id,first_passage_time_ps,min_distance\n")
+                f.write("traj_id,bd_time_ps,n_returns,min_distance\n")
                 for i in np.where(reacted_mask)[0]:
-                    f.write(f"{i},{ttime[i]:.4f},{mdist[i]:.6f}\n")
-            written.append(("fpt_distribution.csv", p))
+                    f.write(f"{i},{ttime[i]:.4f},{int(nret[i])},{mdist[i]:.6f}\n")
+            written.append(("bd_time_to_reaction.csv", p))
     # 9. contact_frequency.csv
     if output_cfg.contact_frequency and "contact_pair_counts" in sim_data:
         counts = sim_data["contact_pair_counts"]
+        times = sim_data["contact_pair_time_ps"]
         total = sim_data.get("contact_total_steps", 1)
         p = work_dir / "contact_frequency.csv"
         with open(p, "w") as f:
-            f.write("pair_index,n_contacts,frequency\n")
+            f.write("pair_index,n_contacts,frequency,time_ps\n")
             for i, c in enumerate(counts):
                 freq = c / total if total > 0 else 0
-                f.write(f"{i},{int(c)},{freq:.8e}\n")
+                f.write(f"{i},{int(c)},{freq:.8e},{times[i]:.6f}\n")
         written.append(("contact_frequency.csv", p))
     # 10. milestone_flux.csv
     if output_cfg.milestone_flux and "milestone_radii" in sim_data:
@@ -281,55 +296,14 @@ def write_all(
                     f"{int(fout[i]-fin[i])}\n"
                 )
         written.append(("milestone_flux.csv", p))
-    # 11. p_commit.npz
-    if output_cfg.p_commit and "outcome" in sim_data:
-        outcome = sim_data["outcome"]
-        spos = sim_data["start_pos"]
-        r_start = np.linalg.norm(spos, axis=1)
-        # The committor is the fraction of committed trajectories that reacted. A
-        # trajectory is committed only if it reacted (outcome 1) or escaped
-        # (outcome 2). Trajectories that exhausted their step budget without
-        # committing are censored and must be left out of the denominator,
-        # otherwise they bias the committor low.
-        committed = (outcome == 1) | (outcome == 2)
-        # Every trajectory starts on the b-surface, so the starting radius is
-        # essentially constant and cannot resolve a committor profile. When its
-        # spread is negligible, collapse to a single bin holding the overall
-        # committor; otherwise bin by starting radius.
-        r_span = float(r_start.max() - r_start.min()) if len(r_start) else 0.0
-        if r_span < 1e-6:
-            n_bins = 1
-            r_lo = float(r_start.min()) if len(r_start) else 0.0
-            bins = np.array([r_lo, r_lo + 1.0])
-        else:
-            n_bins = 50
-            bins = np.linspace(r_start.min(), r_start.max(), n_bins + 1)
-        p_react = np.zeros(n_bins)
-        n_count = np.zeros(n_bins)
-        for i in range(len(outcome)):
-            if not committed[i]:
-                continue
-            idx = min(np.searchsorted(bins, r_start[i]) - 1, n_bins - 1)
-            idx = max(idx, 0)
-            n_count[idx] += 1
-            if outcome[i] == 1:
-                p_react[idx] += 1
-        p_commit_arr = np.divide(
-            p_react, n_count, out=np.zeros_like(p_react), where=n_count > 0
-        )
-        p_path = work_dir / "p_commit.npz"
-        np.savez_compressed(
-            p_path, r_bins=bins, p_commit=p_commit_arr, n_samples=n_count
-        )
-        written.append(("p_commit.npz", p_path))
-    # 12. transition_matrix.npz
+    # 11. transition_matrix.npz
     if output_cfg.transition_matrix and "trans_matrix" in sim_data:
         p = work_dir / "transition_matrix.npz"
         np.savez_compressed(
             p, bins=sim_data["trans_bins"], counts=sim_data["trans_matrix"]
         )
         written.append(("transition_matrix.npz", p))
-    # 13. energetics.npz
+    # 12. energetics.npz, the force and dt at the recorded steps.
     if output_cfg.energetics and "energy_steps" in sim_data:
         edata = sim_data["energy_steps"]
         if len(edata) > 0:
@@ -341,13 +315,11 @@ def write_all(
                 columns=np.array(["traj_id", "step", "fx", "fy", "fz", "dt"]),
             )
             written.append(("energetics.npz", p))
-    # 14. pose_clusters.csv
+    # 13. pose_clusters.csv, the rotation angle of each encounter pose in 8
+    # fixed bins, θ = 2 arccos(|q0|). No structural clustering.
     if output_cfg.pose_clusters and "encounter_q" in sim_data:
         eq = sim_data["encounter_q"]
         if len(eq) > 5:
-            # Simple angular clustering. Convert each quaternion to the
-            # rotation angle θ and bin the angles into octants, where
-            # θ = 2 arccos(|q0|).
             angles = 2.0 * np.arccos(np.clip(np.abs(eq[:, 0]), 0, 1))
             n_clusters = min(8, len(eq))
             bins = np.linspace(0, np.pi, n_clusters + 1)

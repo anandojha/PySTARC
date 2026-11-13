@@ -32,11 +32,17 @@ low-dielectric environment near the other molecule.
 
 The grids are sized differently for the two partners. The receptor
 electrostatic grid extends to cover the b-surface radius, which may
-require an fglen override for large proteins. The ligand grid is
-auto-sized tightly around the molecular extent, which prevents the Born
-energy from blowing up where the grid would otherwise sample empty
-space. A safety margin of three grid spacings from the boundary is
-excluded to avoid APBS boundary condition artifacts.
+require an fglen override for large proteins. The Born grids are sized
+to the molecular extent, and the coarse one is widened at its spacing
+until the box the force engine reads, one spacing in from each face,
+holds every point within the 15 Å desolvation cutoff of an atom. The
+force engine leaves three spacings at the faces of the APBS grids to
+avoid boundary condition artifacts. The ligand grids are sized to the ligand
+with ligand_dime points per axis.
+
+A set of grids is reused only when its key file holds the SHA-1 of the
+centred PQR, every grid input and GRID_FORMAT. Any change to the grid writers
+bumps GRID_FORMAT.
 """
 
 from __future__ import annotations
@@ -44,8 +50,18 @@ from typing import List, Tuple
 from pathlib import Path
 import numpy as np
 import subprocess
+import hashlib
 import shutil
+import json
 import math
+
+GRID_FORMAT = 2
+
+
+def _grid_key(pqr_path: Path, settings: dict) -> str:
+    h = hashlib.sha1(Path(pqr_path).read_bytes())
+    h.update(json.dumps({**settings, "grid_format": GRID_FORMAT}, sort_keys=True).encode())
+    return h.hexdigest()
 
 
 def _run(cmd: str, cwd: Path, step: str):
@@ -221,6 +237,20 @@ def _compute_grid_params(
     return coarse, fine
 
 
+def _born_reach(params: dict, pqr_path: Path) -> dict:
+    """Widen a Born grid at its spacing so that the box the force engine reads,
+    one spacing in from each face, holds every point within the desolvation
+    cutoff of an atom of radius > 0. The dime grows by an even number, so the
+    old nodes keep their positions."""
+    from .desolvation_grid import CUTOFF
+
+    xyz = np.array([a[:3] for a in _read_pqr_atoms(pqr_path) if a[3] > 0.0])
+    sp = params["spacing"]
+    half = np.abs(xyz - np.array(params["gcent"])).max() + CUTOFF + sp
+    n = max(params["dime"][0], 2 * int(np.ceil(half / sp)) + 1)
+    return dict(params, dime=[n] * 3, glen=[sp * (n - 1)] * 3)
+
+
 def _write_apbs_input(
     pqr_path: Path,
     out_dx_name: str,
@@ -254,8 +284,8 @@ def _write_apbs_input(
         ""
         if is_born or ion_conc <= 0
         else (
-            f"  ion charge +1 conc {ion_conc:.4f} radius {ion_radius_pos:.5f}\n"
-            f"  ion charge -1 conc {ion_conc:.4f} radius {ion_radius_neg:.5f}\n"
+            f"  ion charge +1 conc {ion_conc:g} radius {ion_radius_pos:.5f}\n"
+            f"  ion charge -1 conc {ion_conc:g} radius {ion_radius_neg:.5f}\n"
         )
     )
     lines = [
@@ -293,8 +323,8 @@ def _write_apbs_input(
         lines.append(f"  bcfl sdh\n")
     lines += [
         ion_str,
-        f"  pdie {dielectric_in:.1f}\n",
-        f"  sdie {sdie:.2f}\n",
+        f"  pdie {dielectric_in:g}\n",
+        f"  sdie {sdie:g}\n",
         f"  srfm smol\n",
         f"  chgm spl2\n",
         f"  sdens 10.0\n",
@@ -401,15 +431,31 @@ def run_apbs(
     while inside the molecule at r < 2 Å it uses the fine DX (0.032 Å
     spacing).
     """
-    _check_tool("apbs")
-    # Skip APBS if all DX files already exist, for example when they were
-    # symlinked from a parent directory.
     expected_dx = [
-        work_dir / f"{mol_name}{i}{s}.dx" for i in [0, 1] for s in ["", "_born"]
+        work_dir / f"{mol_name}{i}{s}.dx" for s in ["", "_born"] for i in [0, 1]
     ]
-    if all(f.exists() for f in expected_dx):
-        print(f"  [4] APBS - {mol_name}: all DX files present, skipping.")
+    key_path = work_dir / f"{mol_name}_grids.key"
+    key = _grid_key(
+        pqr_path,
+        dict(
+            ion_conc=ion_conc, debye_length=debye_length, pdie=dielectric_in,
+            sdie=dielectric_out, srad=srad, temp=temp, dime=dime,
+            coarse_dime=coarse_dime, fine_dime=fine_dime, cglen=cglen_override,
+            fglen=fglen_override, ion_radius_pos=ion_radius_pos,
+            ion_radius_neg=ion_radius_neg,
+        ),
+    )
+    if (
+        all(f.exists() for f in expected_dx)
+        and key_path.is_file()
+        and key_path.read_text().strip() == key
+    ):
+        print(f"  [4] APBS - {mol_name}: grids match key {key[:12]}, reusing them.")
         return expected_dx
+    # Unlinking removes links of a shard without writing through them.
+    for f in expected_dx + [key_path]:
+        f.unlink(missing_ok=True)
+    _check_tool("apbs")
     # Electrostatic grid, which uses the fglen override to cover the
     # b-sphere.
     coarse_elec, fine_elec = _compute_grid_params(
@@ -422,13 +468,12 @@ def run_apbs(
         coarse_dime,
         fine_dime,
     )
-    # Born grid, auto-sized to the molecular extent. The Born energy decays
-    # to zero within a few Å of the dielectric boundary, so there is no need
-    # to extend it to the b-sphere. Using the large override would create
-    # artificial Born gradients far from the surface.
+    # Born grids sized to the molecule with dime points per axis on both
+    # levels, the coarse one widened to the desolvation cutoff.
     coarse_born, fine_born = _compute_grid_params(
         pqr_path, srad, debye_length, dime, 0.0, 0.0
-    )  # auto-sized grid for the Born calculation
+    )
+    coarse_born = _born_reach(coarse_born, pqr_path)
     print(
         f"    Elec grid (coarse): spacing={coarse_elec['spacing']:.4f}Å  "
         f"glen={coarse_elec['glen'][0]:.2f}Å  dime={coarse_elec['dime'][0]}"
@@ -529,6 +574,7 @@ def run_apbs(
 
         for f in work_dir.glob("io.mc"):
             f.unlink(missing_ok=True)
+    key_path.write_text(key + "\n")
     return dx_files
 
 
@@ -549,9 +595,7 @@ def run_apbs_both(
     fglen_override: float = 0.0,
     coarse_dime: int = 0,
     fine_dime: int = 0,
-    # These are kept only for API compatibility.
-    fine_spacing: float = 0.5,
-    coarse_spacing: float = 2.0,
+    ligand_dime: int = 129,
 ) -> Tuple[List[Path], List[Path]]:
     """
     Run APBS for both the receptor and the ligand using two-level grids.
@@ -579,7 +623,7 @@ def run_apbs_both(
         coarse_dime,
         fine_dime,
     )
-    # The ligand uses auto-computed grid sizes and the standard dime = 129.
+    # The ligand grids are sized to the ligand with ligand_dime points per axis.
     lig_dx = run_apbs(
         ligand_pqr,
         "ligand",
@@ -590,7 +634,7 @@ def run_apbs_both(
         dielectric_out,
         srad,
         temp,
-        129,
+        ligand_dime,
         ion_radius_pos,
         ion_radius_neg,
         0.0,

@@ -7,7 +7,13 @@ chain and molecule files.
 """
 
 from __future__ import annotations
-from pystarc.structures.molecules import Atom, Molecule, ContactPair, ReactionCriteria
+from pystarc.structures.molecules import (
+    Atom,
+    Molecule,
+    ContactPair,
+    ReactionCriteria,
+    needed_pairs,
+)
 from pystarc.pathways.reaction_interface import ReactionInterface, PathwaySet
 from typing import List, Optional, Tuple, Dict
 import xml.etree.ElementTree as ET
@@ -75,6 +81,7 @@ def parse_reaction_xml(path: str | Path) -> PathwaySet:
                 )
             pairs.append(ContactPair(int(v1), int(v2), float(dist_raw)))
         n_needed = int(rxn_elem.get("n_needed", "-1"))
+        needed_pairs(n_needed, len(pairs), f"{path}, reaction {name!r}")
         state_before = rxn_elem.get("state_before")
         state_after = rxn_elem.get("state_after")
         criteria = ReactionCriteria(

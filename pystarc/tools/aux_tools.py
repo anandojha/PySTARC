@@ -11,6 +11,7 @@ contact pairs, and evaluates the Born solvation energy of a charged sphere.
 from __future__ import annotations
 from pystarc.structures.molecules import Atom, Molecule, BoundingBox
 from pystarc.global_defs.constants import BJERRUM_LENGTH
+from pystarc.global_defs.defaults import SOLUTE_DIELECTRIC, SOLVENT_DIELECTRIC
 from typing import List, Tuple, Optional, Dict
 from pystarc.global_defs.constants import PI
 import numpy as np
@@ -155,7 +156,10 @@ def contact_distances(
 
 
 def born_integral(
-    charge: float, radius: float, eps_in: float = 4.0, eps_out: float = 78.54
+    charge: float,
+    radius: float,
+    eps_in: float = SOLUTE_DIELECTRIC,
+    eps_out: float = SOLVENT_DIELECTRIC,
 ) -> float:
     """
     Compute the Born solvation energy of a charged sphere, that is, the work of

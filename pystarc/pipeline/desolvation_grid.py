@@ -45,6 +45,7 @@ import numpy as np
 COULOMB_KCAL = 332.0637  # e^2/(4 pi eps0), kcal/mol.Angstrom/e^2
 KB_KCAL = 0.0019872041  # kcal/mol/K
 DEN_FLOOR = 0.5  # floor on (r^2 - a^2), Angstrom^2
+CUTOFF = 15.0  # Angstrom, contributions past it are dropped
 DEFAULT_DEBYE = 7.858  # Angstrom, 150 mM
 
 
@@ -78,7 +79,7 @@ def desolvation_field_on_grid(
     eps_s: float = 78.0,
     temp: float = 298.15,
     debye_length: float = DEFAULT_DEBYE,
-    cutoff: float = 15.0,
+    cutoff: float = CUTOFF,
     chunk: int = 4_000_000,
 ) -> np.ndarray:
     """

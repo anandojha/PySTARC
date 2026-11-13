@@ -38,7 +38,8 @@ Brownian-dynamics simulation begins.
 """
 
 from __future__ import annotations
-from pystarc.global_defs.constants import BJERRUM_LENGTH, DEFAULT_DEBYE_LENGTH, KBT_KCAL
+from pystarc.global_defs.constants import BJERRUM_LENGTH, KBT_KCAL
+from pystarc.global_defs.defaults import DEBYE_LENGTH
 from typing import Optional, Tuple
 from pathlib import Path
 import numpy as np
@@ -50,7 +51,7 @@ def debye_huckel_energy(
     q1: float,
     q2: float,
     r: float,
-    debye_length: float = DEFAULT_DEBYE_LENGTH,
+    debye_length: float = DEBYE_LENGTH,
     bjerrum_length: float = BJERRUM_LENGTH,
 ) -> float:
     """
@@ -72,7 +73,7 @@ def debye_huckel_force(
     q1: float,
     q2: float,
     r_vec: np.ndarray,
-    debye_length: float = DEFAULT_DEBYE_LENGTH,
+    debye_length: float = DEBYE_LENGTH,
     bjerrum_length: float = BJERRUM_LENGTH,
 ) -> np.ndarray:
     """

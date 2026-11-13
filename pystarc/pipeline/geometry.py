@@ -42,7 +42,12 @@ from dataclasses import dataclass
 from pathlib import Path
 import warnings
 import numpy as np
-from pystarc.global_defs.defaults import BD_MILESTONE_RADIUS, BD_MILESTONE_RADIUS_INNER
+from pystarc.global_defs.defaults import (
+    BD_MILESTONE_RADIUS,
+    BD_MILESTONE_RADIUS_INNER,
+    QB_FACTOR,
+)
+from pystarc.structures.molecules import needed_pairs
 
 
 @dataclass
@@ -341,6 +346,11 @@ def compute_geometry(
             total_charge=lig.total_charge,
         )
     r_start = bd_milestone_radius
+    if not (r_escape == 0.0 or r_escape > QB_FACTOR * r_start):
+        raise ValueError(
+            f"r_escape must be 0 (2 x b) or above {QB_FACTOR} x b = "
+            f"{QB_FACTOR * r_start:g} Å, got {r_escape}"
+        )
     r_escape = r_escape if r_escape > 0.0 else 2.0 * r_start
     print(
         f"  Receptor : {rec.n_atoms:5d} atoms  q={rec.total_charge:+.2f} e  "
@@ -375,102 +385,92 @@ class ReactionPair:
     cutoff: float  # distance cutoff in Å
 
 
-def _parse_rxns_xml_criteria(rxns_path):
+def _read_reactions(rxns_path):
     """
-    Parse the rxns XML file and extract the reaction pair criteria.
+    Read every reaction of a rxns file, the BrownDye 2 format, strictly.
 
-    Two formats are supported. The first uses an <atom1> element holding the
-    receptor index, charge, and cutoff, together with an <atom2> element holding
-    the ligand index. The second uses an <atoms> element holding the receptor and
-    ligand indices, together with a <distance> element holding the cutoff.
-
-    The atom indices in the XML are one-based. They are converted here by
-    subtracting one so that the simulator uses them directly as zero-based indices
-    during ContactPair construction.
+    Returns (groups, first_state). A pair is <atoms> with the one-based
+    receptor and ligand atom numbers (the first number is the receptor atom,
+    the second the ligand atom, whatever <molecules> says) and a positive
+    <distance>, or <atom1> holding the receptor number, its charge and the
+    cutoff with <atom2> holding the ligand number. A missing <n_needed> means
+    all pairs, -1 says the same, and any other value must lie between 1 and the
+    number of pairs. The name is <name>, else <n>, else reaction_k. Anything
+    else raises ValueError naming the file and the reaction.
     """
-    pairs = []
-    n_needed = -1  # a value of -1 means all pairs, which is the reference default
-    declared_n_needed = []  # the explicit n_needed of each reaction, in order
     try:
-        tree = ET.parse(str(rxns_path))
-        root = tree.getroot()
-        for reaction in root.iter("reaction"):
-            crit = reaction.find("criterion")
-            if crit is None:
-                continue
-            # Read n_needed for this reaction. It is scoped to the reaction and
-            # defaults to -1 so that a reaction without an explicit n_needed does
-            # not inherit the value parsed from a previous reaction. The previous
-            # code shared a single n_needed across reactions, which mis-parsed
-            # multi-reaction files. Single-reaction files are unaffected.
-            rxn_n_needed = -1
-            nn_node = crit.find("n_needed")
-            if nn_node is not None:
-                try:
-                    rxn_n_needed = int(nn_node.text.strip())
-                    declared_n_needed.append(rxn_n_needed)
-                except ValueError:
-                    pass
-            # The flattened path merges all pairs into a single criterion and can
-            # carry only one n_needed. Use this reaction's value, which for a
-            # single-reaction file reproduces the prior behavior exactly.
-            n_needed = rxn_n_needed
-            for pair_node in crit.findall("pair"):
-                # First format: an <atom1> element with the receptor index,
-                # charge, and cutoff, and an <atom2> element with the ligand index.
-                a1 = pair_node.find("atom1")
-                a2 = pair_node.find("atom2")
-                if a1 is not None and a2 is not None:
-                    try:
-                        p1 = a1.text.strip().split()
-                        p2 = a2.text.strip().split()
-                        rec_idx = int(p1[0]) - 1  # convert one-based to zero-based
-                        lig_idx = int(p2[0]) - 1
-                        cutoff = float(p1[2]) if len(p1) >= 3 else 5.0
-                        pairs.append(
-                            ReactionPair(
-                                rec_index=rec_idx,
-                                lig_index=lig_idx,
-                                cutoff=cutoff,
-                            )
-                        )
-                    except (ValueError, IndexError):
-                        continue
-                    continue
-                # Second format: an <atoms> element with the receptor and ligand
-                # indices, and a <distance> element with the cutoff.
-                atoms_node = pair_node.find("atoms")
-                distance_node = pair_node.find("distance")
-                if atoms_node is not None and distance_node is not None:
-                    try:
-                        idx = atoms_node.text.strip().split()
-                        rec_idx = int(idx[0]) - 1  # convert one-based to zero-based
-                        lig_idx = int(idx[1]) - 1
-                        cutoff = float(distance_node.text.strip())
-                        pairs.append(
-                            ReactionPair(
-                                rec_index=rec_idx,
-                                lig_index=lig_idx,
-                                cutoff=cutoff,
-                            )
-                        )
-                    except (ValueError, IndexError):
-                        continue
-    except Exception as e:
-        print(f"  Warning: could not parse rxns XML {rxns_path}: {e}")
-    # The flattened path returns a single n_needed for all merged pairs. If the
-    # file declares more than one distinct n_needed across reactions, that
-    # information cannot be represented here and the per-reaction parser
-    # (_parse_rxns_xml_reaction_groups) should be used instead.
-    if len(set(declared_n_needed)) > 1:
-        warnings.warn(
-            f"rxns XML {rxns_path} declares differing n_needed values "
-            f"{declared_n_needed} across reactions. The flattened criteria "
-            f"path keeps only the last reaction's value ({n_needed}); use the "
-            f"state-machine reaction parser to preserve per-reaction n_needed.",
-            stacklevel=2,
+        root = ET.parse(str(rxns_path)).getroot()
+    except ET.ParseError as e:
+        raise ValueError(f"rxns file {rxns_path} is not valid XML: {e}") from None
+    fs = (root.findtext(".//first_state") or "").strip() or None
+    groups = []
+    for k, reaction in enumerate(root.iter("reaction"), start=1):
+        name = (
+            (reaction.findtext("name") or "").strip()
+            or (reaction.findtext("n") or "").strip()
+            or f"reaction_{k}"
         )
-    return pairs, n_needed
+        where = f"{rxns_path}, reaction {name!r}"
+        crit = reaction.find("criterion")
+        if crit is None or crit.find("criterion") is not None:
+            raise ValueError(f"{where}: needs one <criterion> without nested criteria")
+        pairs = []
+        for j, pair in enumerate(crit.findall("pair"), start=1):
+            try:
+                if pair.find("atom1") is not None and pair.find("atom2") is not None:
+                    p1 = pair.findtext("atom1").split()
+                    idx = [int(p1[0]), int(pair.findtext("atom2").split()[0])]
+                    cutoff = float(p1[2])
+                else:
+                    idx = [int(x) for x in pair.findtext("atoms").split()]
+                    cutoff = float(pair.findtext("distance"))
+                    if len(idx) != 2:
+                        raise ValueError
+            except (AttributeError, IndexError, TypeError, ValueError):
+                raise ValueError(
+                    f"{where}, pair {j}: needs <atoms> with two atom numbers and "
+                    "<distance>, or <atom1> with the cutoff and <atom2>"
+                ) from None
+            if min(idx) < 1 or not cutoff > 0:
+                raise ValueError(
+                    f"{where}, pair {j}: atom numbers start at 1 and the cutoff "
+                    f"must be positive, got {idx} and {cutoff}"
+                )
+            pairs.append(ReactionPair(idx[0] - 1, idx[1] - 1, cutoff))
+        if not pairs:
+            raise ValueError(f"{where}: the criterion has no pair")
+        nn = (crit.findtext("n_needed") or "").strip()
+        try:
+            n_needed = int(nn) if nn else -1
+        except ValueError:
+            raise ValueError(f"{where}: <n_needed> must be a whole number, got {nn!r}") from None
+        needed_pairs(n_needed, len(pairs), where)
+        groups.append(
+            ReactionGroup(
+                name=name,
+                state_before=(reaction.findtext("state_before") or "").strip() or None,
+                state_after=(reaction.findtext("state_after") or "").strip() or None,
+                pairs=pairs,
+                n_needed=n_needed,
+            )
+        )
+    return groups, fs
+
+
+def _parse_rxns_xml_criteria(rxns_path, single=False):
+    """Pairs of every reaction of a rxns file with the n_needed of a single
+    reaction (-1 when the file holds several). With single, a file of several
+    reactions raises, since one criterion cannot hold their n_needed."""
+    groups, _ = _read_reactions(rxns_path)
+    if single and len(groups) > 1:
+        raise ValueError(
+            f"{rxns_path} holds {len(groups)} reactions. Without "
+            "<state_machine_reactions> put all pairs in one reaction with its "
+            "n_needed, or set state_machine_reactions true with one pair per "
+            "reaction."
+        )
+    pairs = [p for g in groups for p in g.pairs]
+    return pairs, groups[0].n_needed if len(groups) == 1 else -1
 
 
 def check_rxn_atom_numbers(pairs, receptor_pqr, ligand_pqr) -> List[str]:
@@ -542,40 +542,30 @@ def auto_detect_reactions(
     bd_milestone_radius_inner: float = BD_MILESTONE_RADIUS_INNER,
 ) -> "List[List[ReactionPair]]":
     """
-    Build the reaction criteria from GHO ghost atoms.
+    Build the reaction criterion.
 
-    The function tries several sources in order of priority. When rxns_xml is
-    given, the criteria are parsed from the reference implementation rxns file.
-    When ghost_atoms holds a manual specification, it is parsed as triplets of
-    receptor index, ligand index, and cutoff. When ghost_atoms is 'auto', the GHO
-    atoms in the PQR are detected and bd_milestone_radius is used as the cutoff.
-    If no GHO atoms are found, a clear error is raised, since the centroid
-    fallback was removed because it is physically wrong.
+    A given rxns_xml is the criterion, read strictly, with no fallback. Without
+    it a manual ghost_atoms specification is read as triplets of receptor index,
+    ligand index and cutoff. With ghost_atoms 'auto' the GHO atoms of the PQR
+    files react at bd_milestone_radius_inner, which must lie between 0 and
+    bd_milestone_radius.
     """
-    # First priority: the rxns XML file.
     if rxns_xml and rxns_xml.strip():
-        rxns_path = Path(rxns_xml.strip())
-        # A relative rxns_xml path is interpreted relative to the current
-        # working directory, which Path already does. Resolution against the PDB
-        # parent directory is intentionally not implemented, so a relative path
-        # that does not exist relative to the working directory is reported as
-        # not found below.
-        if rxns_path.exists():
-            pairs, n_needed = _parse_rxns_xml_criteria(rxns_path)
-            if pairs:
-                nn_str = str(n_needed) if n_needed > 0 else f"all ({len(pairs)})"
-                print(
-                    f"  GHO criteria from rxns XML ({rxns_path.name}): "
-                    f"{len(pairs)} pair(s), n_needed={nn_str}"
-                )
-                for p in pairs:
-                    print(
-                        f"    rec[{p.rec_index}] -- lig[{p.lig_index}] < {p.cutoff:.1f} A"
-                    )
-                return [pairs], n_needed
-            print(f"  Warning: no pairs in {rxns_path.name}, falling back")
-        else:
-            print(f"  Warning: rxns_xml not found: {rxns_xml}")
+        # A relative path is taken from the current working directory.
+        rxns_path = Path(rxns_xml.strip()).expanduser()
+        if not rxns_path.is_file():
+            raise FileNotFoundError(f"rxns_xml not found: {rxns_path} (cwd {Path.cwd()})")
+        pairs, n_needed = _parse_rxns_xml_criteria(rxns_path)
+        if not pairs:
+            raise ValueError(f"rxns file {rxns_path} holds no reaction")
+        nn_str = f"all ({len(pairs)})" if n_needed == -1 else str(n_needed)
+        print(
+            f"  Reaction criterion from {rxns_path.name}: "
+            f"{len(pairs)} pair(s), n_needed={nn_str}"
+        )
+        for p in pairs:
+            print(f"    rec[{p.rec_index}] -- lig[{p.lig_index}] < {p.cutoff:.1f} A")
+        return [pairs], n_needed
     # Second priority: a manual ghost_atoms specification.
     if ghost_atoms.strip().lower() != "auto":
         pairs = []
@@ -595,6 +585,7 @@ def auto_detect_reactions(
                     cutoff=float(parts[2]),
                 )
             )
+        print(f"  Reaction criterion from ghost_atoms: {len(pairs)} pair(s), n_needed=all")
         return [pairs], -1
     # Third priority: auto-detect the GHO atoms in the PQR.
     rec_ghosts = geom.receptor.ghost_indices
@@ -604,20 +595,18 @@ def auto_detect_reactions(
         rec_gho = rec_ghosts[0]
         lig_gho = lig_ghosts[0]
         # The reaction fires when the GHO-to-GHO distance falls below
-        # bd_milestone_radius. The b-surface is the outer milestone at
-        # bd_milestone_radius, where the ligand starts, and the q-surface is the
-        # inner milestone at bd_milestone_radius_inner, where the reaction occurs.
-        # The ligand starts on the b-surface and reacts when it reaches the
-        # q-surface.
-        rxn_cutoff = (
-            bd_milestone_radius_inner
-            if bd_milestone_radius_inner > 0
-            else bd_milestone_radius
-        )
+        # bd_milestone_radius_inner, inside the b surface where the ligand starts.
+        rxn_cutoff = bd_milestone_radius_inner
+        if not 0 < rxn_cutoff < bd_milestone_radius:
+            raise ValueError(
+                "The GHO criterion needs 0 < bd_milestone_radius_inner < "
+                f"bd_milestone_radius, got {rxn_cutoff} and {bd_milestone_radius}. "
+                "Give <rxns_xml>, <ghost_atoms> or an inner radius."
+            )
         pairs = [ReactionPair(rec_gho, lig_gho, rxn_cutoff)]
         print(
             f"  GHO reaction criterion: rec[{rec_gho}] -- lig[{lig_gho}] "
-            f"< {rxn_cutoff:.1f} A  (q-surface / inner milestone)"
+            f"< {rxn_cutoff:.1f} A  (bd_milestone_radius_inner)"
         )
         return [pairs], 1
     # No GHO atoms were found, so raise a clear error. The centroid fallback was
@@ -638,7 +627,7 @@ class ReactionGroup:
     """
     One reaction with optional state-machine labels.
 
-    The field name is the reaction name read from the <n> element. The field
+    The field name is the reaction name read from the <name> element (or <n>). The field
     state_before is the source state, and the trajectory must be in this state
     for the reaction to fire. The field state_after is the destination state, and
     the trajectory enters this state after the reaction fires. The field pairs is
@@ -669,7 +658,7 @@ def _parse_rxns_xml_reaction_groups(rxns_path):
           <first_state>b_surface</first_state>
           <reactions>
             <reaction>
-              <n>name1</n>
+              <name>name1</name>
               <state_before>src</state_before>
               <state_after>dst</state_after>
               <criterion>
@@ -685,96 +674,13 @@ def _parse_rxns_xml_reaction_groups(rxns_path):
         </roottag>
 
     The atom indices in the XML are one-based, and this parser converts them to
-    zero-based. Reactions without state labels have state_before and state_after
+    zero-based. The first number of <atoms> is the receptor atom. Reaction names
+    must differ. Reactions without state labels have state_before and state_after
     set to None, in which case the caller can synthesize defaults or fall back to
     the flattened-pairs path.
     """
-    groups = []
-    first_state = None
-    try:
-        tree = ET.parse(str(rxns_path))
-        root = tree.getroot()
-        fs_node = root.find(".//first_state")
-        if fs_node is not None and fs_node.text:
-            first_state = fs_node.text.strip()
-        for reaction in root.iter("reaction"):
-            # Read the reaction name from the <n> element.
-            n_node = reaction.find("n")
-            rxn_name = (
-                n_node.text.strip() if (n_node is not None and n_node.text) else ""
-            )
-            # Read the state labels.
-            sb_node = reaction.find("state_before")
-            sa_node = reaction.find("state_after")
-            state_before = (
-                sb_node.text.strip() if (sb_node is not None and sb_node.text) else None
-            )
-            state_after = (
-                sa_node.text.strip() if (sa_node is not None and sa_node.text) else None
-            )
-            # Read the criterion, which holds the pair list and n_needed.
-            crit = reaction.find("criterion")
-            if crit is None:
-                continue
-            rxn_n_needed = -1
-            nn_node = crit.find("n_needed")
-            if nn_node is not None and nn_node.text:
-                try:
-                    rxn_n_needed = int(nn_node.text.strip())
-                except ValueError:
-                    pass
-            rxn_pairs = []
-            for pair_node in crit.findall("pair"):
-                # First format: an <atom1> element with the receptor index and an
-                # <atom2> element with the ligand index.
-                a1 = pair_node.find("atom1")
-                a2 = pair_node.find("atom2")
-                if a1 is not None and a2 is not None:
-                    try:
-                        p1 = a1.text.strip().split()
-                        p2 = a2.text.strip().split()
-                        rec_idx = int(p1[0]) - 1
-                        lig_idx = int(p2[0]) - 1
-                        cutoff = float(p1[2]) if len(p1) >= 3 else 5.0
-                        rxn_pairs.append(
-                            ReactionPair(
-                                rec_index=rec_idx,
-                                lig_index=lig_idx,
-                                cutoff=cutoff,
-                            )
-                        )
-                    except (ValueError, IndexError):
-                        continue
-                    continue
-                # Second format: an <atoms> element with the receptor and ligand
-                # indices, and a <distance> element with the cutoff.
-                atoms_node = pair_node.find("atoms")
-                distance_node = pair_node.find("distance")
-                if atoms_node is not None and distance_node is not None:
-                    try:
-                        idx = atoms_node.text.strip().split()
-                        rec_idx = int(idx[0]) - 1
-                        lig_idx = int(idx[1]) - 1
-                        cutoff = float(distance_node.text.strip())
-                        rxn_pairs.append(
-                            ReactionPair(
-                                rec_index=rec_idx,
-                                lig_index=lig_idx,
-                                cutoff=cutoff,
-                            )
-                        )
-                    except (ValueError, IndexError):
-                        continue
-            if rxn_pairs:
-                groups.append(
-                    ReactionGroup(
-                        name=rxn_name,
-                        state_before=state_before,
-                        state_after=state_after,
-                        pairs=rxn_pairs,
-                        n_needed=rxn_n_needed,
-                    )
-                )
-    except Exception as e:
-        print(f"  Warning: could not parse rxns XML {rxns_path}: {e}")
+    groups, first_state = _read_reactions(rxns_path)
+    names = [g.name for g in groups]
+    if len(set(names)) < len(names):
+        raise ValueError(f"rxns file {rxns_path}: reaction names repeat: {names}")
     return groups, first_state

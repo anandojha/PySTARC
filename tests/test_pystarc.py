@@ -107,7 +107,6 @@ from pystarc.global_defs.constants import (
     ANG_TO_M,
     AVOGADRO,
     BJERRUM_LENGTH,
-    DEFAULT_DEBYE_LENGTH,
     EPS0_SI,
     EPS_WATER,
     ETA_WATER,
@@ -200,7 +199,6 @@ from pystarc.tools.aux_tools import (
 from pystarc.multi_GPU.combine_data import (
     _concat_csv,
     _concat_npz,
-    _pool_p_commit,
     _recover_contact_steps,
     _save_json,
     _sum_csv,
@@ -439,8 +437,8 @@ class TestConstants:
         assert abs(FOUR_PI - 4 * math.pi) < 1e-14
 
     def test_debye_length_positive(self):
-        """The default Debye length DEFAULT_DEBYE_LENGTH is positive."""
-        assert DEFAULT_DEBYE_LENGTH > 0
+        """The default Debye length DEBYE_LENGTH is positive."""
+        assert DEBYE_LENGTH > 0
 
     def test_eta_water_positive(self):
         """The water viscosity ETA_WATER is positive."""
@@ -3311,7 +3309,6 @@ class TestConstantPhysicalRanges:
         [
             ("T_DEFAULT", 295, 305),
             ("BJERRUM_LENGTH", 6, 8),
-            ("DEFAULT_DEBYE_LENGTH", 5, 15),
         ],
     )
     def test_constant_range(self, v, lo, hi):
@@ -4106,7 +4103,7 @@ class TestSeparationAndDecay:
     @pytest.mark.parametrize("sep", [5.0, 10.0, 15.0, 20.0, 25.0])
     def test_dh_decays_exponentially(self, sep):
         """The Debye-Huckel energy ratio over one Debye length matches (sep/(sep+λ))*exp(-1)."""
-        lam = DEFAULT_DEBYE_LENGTH
+        lam = DEBYE_LENGTH
         E1 = debye_huckel_energy(1.0, 1.0, sep)
         E2 = debye_huckel_energy(1.0, 1.0, sep + lam)
         # E2/E1 ≈ (sep/(sep+λ)) * exp(-1)
@@ -4353,10 +4350,9 @@ class TestGHOInjection:
     """Tests for GHO ghost atom auto-injection."""
 
     def test_rxns_xml_parser_handles_missing_file(self):
-        """_parse_rxns_xml_criteria returns an empty pair list and n_needed of -1 for a missing file."""
-        pairs, n_needed = _parse_rxns_xml_criteria(Path("/nonexistent/rxns.xml"))
-        assert pairs == []
-        assert n_needed == -1
+        """_parse_rxns_xml_criteria raises for a missing file."""
+        with pytest.raises(FileNotFoundError):
+            _parse_rxns_xml_criteria(Path("/nonexistent/rxns.xml"))
 
 
 class TestCOFFDROPChain:
@@ -4472,14 +4468,12 @@ class TestGeometryRxnsXML:
         assert n_needed == -1
 
     def test_auto_detect_missing_rxns_xml_raises_without_gho(self):
-        # Missing rxns.xml + no GHO -> RuntimeError (no silent fallback)
-        """auto_detect_reactions raises RuntimeError when the rxns.xml is missing and no GHO atoms exist."""
+        """auto_detect_reactions raises when the given rxns.xml is missing, with no fallback."""
 
         rec = MoleculeGeometry(10, 5, 0, np.zeros(3), 20.0, 20.0, [], [], 1.0)
         lig = MoleculeGeometry(5, 2, 0, np.zeros(3), 5.0, 5.0, [], [], 0.0)
         geom = SystemGeometry(rec, lig, 25.0, 50.0)
-        # Missing rxns.xml -> warning printed, then falls to auto-detect -> no GHO -> error
-        with pytest.raises(RuntimeError, match="No GHO ghost atoms"):
+        with pytest.raises(FileNotFoundError, match="rxns_xml not found"):
             auto_detect_reactions(
                 geom, ghost_atoms="auto", rxns_xml="/nonexistent/rxns.xml"
             )
@@ -5227,6 +5221,7 @@ class TestMultipoleFallbackConfig:
 <pystarc>
   <receptor_pqr>r.pqr</receptor_pqr>
   <ligand_pqr>l.pqr</ligand_pqr>
+  <overlap_check>true</overlap_check>
   <multipole_fallback>false</multipole_fallback>
 </pystarc>"""
         )
@@ -5266,6 +5261,7 @@ class TestLJForcesConfig:
 <pystarc>
   <receptor_pqr>r.pqr</receptor_pqr>
   <ligand_pqr>l.pqr</ligand_pqr>
+  <overlap_check>true</overlap_check>
   <lj_forces>true</lj_forces>
 </pystarc>"""
         )
@@ -5319,10 +5315,9 @@ class TestOutputConfig:
         assert oc.results_json is True
 
     def test_field_count(self):
-        """OutputConfig has 15 fields, 14 booleans plus the integer save_interval."""
+        """OutputConfig has 14 fields, 13 booleans plus the integer save_interval."""
         oc = OutputConfig()
-        # 14 bool flags + 1 int save_interval = 15 fields
-        assert len(fields(oc)) == 15
+        assert len(fields(oc)) == 14
 
     def test_pystarc_config_has_outputs(self):
         """PySTARCConfig provides an outputs block with results_json True and the default save_interval."""
@@ -5341,6 +5336,7 @@ class TestOutputXMLParsing:
 <pystarc>
   <receptor_pqr>r.pqr</receptor_pqr>
   <ligand_pqr>l.pqr</ligand_pqr>
+  <overlap_check>true</overlap_check>
   <n_trajectories>100</n_trajectories>
   {outputs_block}
 </pystarc>"""
@@ -5464,6 +5460,7 @@ def _make_dummy_data(N=100, n_react=45, n_escape=55, n_pairs=3):
         "encounter_traj": np.arange(n_react, dtype=np.int64),
         "encounter_step": np.random.randint(100, 500, n_react).astype(np.int64),
         "encounter_n_pairs": np.full(n_react, n_pairs, dtype=np.int64),
+        "encounter_bridge_only": np.random.randint(0, 2, n_react),
         "near_miss_pos": np.random.randn(n_escape, 3),
         "near_miss_q": np.random.randn(n_escape, 4),
         "near_miss_traj": np.arange(n_react, N, dtype=np.int64),
@@ -5472,13 +5469,16 @@ def _make_dummy_data(N=100, n_react=45, n_escape=55, n_pairs=3):
         "energy_steps": [np.random.randn(50, 6) for _ in range(5)],
         "radial_bins": np.linspace(0, 24, 201),
         "radial_counts": np.random.randint(0, 100, 200),
-        "angular_theta": np.linspace(0, np.pi, 36),
-        "angular_phi": np.linspace(0, 2 * np.pi, 72),
+        "radial_time_ps": np.random.uniform(0, 100, 200),
+        "angular_theta": (np.arange(36) + 0.5) * np.pi / 36,
+        "angular_phi": (np.arange(72) + 0.5) * 2 * np.pi / 72 - np.pi,
         "angular_counts": np.random.randint(0, 50, (36, 72)),
+        "angular_time_ps": np.random.uniform(0, 50, (36, 72)),
         "milestone_radii": np.linspace(10, 20, 11),
         "milestone_flux_out": np.random.randint(0, 500, 11),
         "milestone_flux_in": np.random.randint(0, 500, 11),
         "contact_pair_counts": np.random.randint(0, 1000, n_pairs),
+        "contact_pair_time_ps": np.random.uniform(0, 1000, n_pairs),
         "contact_total_steps": 50000,
         "trans_bins": np.linspace(0, 24, 51),
         "trans_matrix": np.random.randint(0, 100, (50, 50)),
@@ -5880,10 +5880,9 @@ class TestTransitionMatrix:
 
 
 class TestPCommit:
-    """Test p_commit.npz output."""
+    """p_commit.npz is not written: a start-radius histogram is no committor."""
 
-    def test_values_in_01(self, tmp_path):
-        """p_commit.npz commitor probabilities all lie within [0, 1]."""
+    def test_not_written(self, tmp_path):
         write_all(
             tmp_path,
             _make_result(),
@@ -5892,9 +5891,7 @@ class TestPCommit:
             k_b=57.47,
             D_rel=0.434,
         )
-        d = np.load(tmp_path / "p_commit.npz")
-        assert np.all(d["p_commit"] >= 0)
-        assert np.all(d["p_commit"] <= 1)
+        assert not (tmp_path / "p_commit.npz").exists()
 
 
 class TestEdgeCases:
@@ -5930,10 +5927,9 @@ class TestEdgeCases:
             full_paths=False,
             radial_density=False,
             angular_map=False,
-            fpt_distribution=False,
+            bd_time_to_reaction=False,
             contact_frequency=False,
             milestone_flux=False,
-            p_commit=False,
             transition_matrix=False,
             energetics=False,
             pose_clusters=False,
@@ -5944,7 +5940,7 @@ class TestEdgeCases:
         assert len(written) == 0
 
     def test_file_count_all_enabled(self, tmp_path):
-        """write_all produces 14 files when all outputs are enabled."""
+        """write_all produces 13 files when all outputs are enabled (no p_commit.npz)."""
         written = write_all(
             tmp_path,
             _make_result(),
@@ -5953,7 +5949,7 @@ class TestEdgeCases:
             k_b=57.47,
             D_rel=0.434,
         )
-        assert len(written) == 14
+        assert len(written) == 13
 
 
 class TestConvergenceAnalysis:
@@ -7632,7 +7628,7 @@ class TestGeometryRxnsCriteria:
         assert n_needed == 2
 
     def test_parse_empty_criterion(self):
-        """_parse_rxns_xml_criteria returns no pairs for an empty criterion element."""
+        """_parse_rxns_xml_criteria raises for an empty criterion element."""
         xml = (
             '<?xml version="1.0"?>\n<reactions>\n'
             "  <reaction><criterion></criterion></reaction>\n</reactions>\n"
@@ -7640,9 +7636,9 @@ class TestGeometryRxnsCriteria:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
             f.write(xml)
             f.flush()
-            pairs, n_needed = _parse_rxns_xml_criteria(Path(f.name))
+            with pytest.raises(ValueError, match="the criterion has no pair"):
+                _parse_rxns_xml_criteria(Path(f.name))
         os.unlink(f.name)
-        assert len(pairs) == 0
 
 
 # COFFDROP _parse_ff with synthetic XML
@@ -16376,6 +16372,7 @@ class TestChainBDInputXML:
 <pystarc>
   <receptor_pqr>r.pqr</receptor_pqr>
   <ligand_pqr>l.pqr</ligand_pqr>
+  <overlap_check>true</overlap_check>
 </pystarc>"""
         xml_path = tmp_path / "input.xml"
         xml_path.write_text(xml)
@@ -16711,7 +16708,7 @@ class TestChainBDWriters:
         oc_none = OutputConfig(
             encounters_csv=False,
             near_misses_csv=False,
-            fpt_distribution=False,
+            bd_time_to_reaction=False,
             contact_frequency=False,
             energetics=False,
         )
@@ -17084,7 +17081,6 @@ class TestChainBDDeferredOutputs:
 
         oc = OutputConfig()
         # Pre-conditions: deferred flags default to True
-        assert oc.p_commit is True
         assert oc.transition_matrix is True
         assert oc.pose_clusters is True
         # The actual call should not crash even with deferred flags True
@@ -18006,6 +18002,7 @@ class TestMinimumCoreDtFloor:
             "<pystarc_input>\n"
             "  <receptor_pqr>fake_rec.pqr</receptor_pqr>\n"
             "  <ligand_pqr>fake_lig.pqr</ligand_pqr>\n"
+            "  <overlap_check>true</overlap_check>\n"
             "  <minimum_core_dt>0.123</minimum_core_dt>\n"
             "  <minimum_core_reaction_dt>0.045</minimum_core_reaction_dt>\n"
             f"  <work_dir>{tmp_path / 'wd'}</work_dir>\n"
@@ -19105,33 +19102,6 @@ def test_combine_sum_npz_transition_matrix_keys(tmp_path):
     out = np.load(tmp_path / "transition_matrix.npz")
     np.testing.assert_allclose(out["counts"], np.full((3, 3), 3.0))
     np.testing.assert_allclose(out["bins"], bins)
-
-
-def test_combine_pool_p_commit_uses_count_pooling(tmp_path):
-    """The pooled commitment probability is the summed reacted count over the summed sample count, not a probability average."""
-    d0 = tmp_path / "bd_0"
-    d1 = tmp_path / "bd_1"
-    d0.mkdir()
-    d1.mkdir()
-    r_bins = np.linspace(0.0, 5.0, 3)
-    np.savez(
-        d0 / "p_commit.npz",
-        r_bins=r_bins,
-        p_commit=np.array([0.2, 0.5]),
-        n_samples=np.array([10.0, 4.0]),
-    )
-    np.savez(
-        d1 / "p_commit.npz",
-        r_bins=r_bins,
-        p_commit=np.array([0.2, 0.0]),
-        n_samples=np.array([30.0, 0.0]),
-    )
-
-    _pool_p_commit([str(d0), str(d1)], "p_commit.npz", str(tmp_path))
-    out = np.load(tmp_path / "p_commit.npz")
-    # Bin 0: (0.2*10 + 0.2*30) / 40 = 0.2 ; Bin 1: (0.5*4 + 0) / 4 = 0.5
-    np.testing.assert_allclose(out["p_commit"], [0.2, 0.5])
-    np.testing.assert_allclose(out["n_samples"], [40.0, 4.0])
 
 
 # Consolidated audit-fix and low-severity regression tests.
@@ -20253,6 +20223,7 @@ def _write_input_without_tag(tmp_path: Path) -> Path:
 <pystarc_input>
     <receptor_pqr>receptor.pqr</receptor_pqr>
     <ligand_pqr>ligand.pqr</ligand_pqr>
+    <overlap_check>true</overlap_check>
     <ligand_resname>BEN</ligand_resname>
     <ligand_charge>1</ligand_charge>
     <work_dir>{work_dir}</work_dir>
@@ -20281,12 +20252,13 @@ def test_born2_parser_default_matches_dataclass(tmp_path):
 
 
 def test_born2_explicit_false_is_respected(tmp_path):
-    """An explicit false enable_born2_torque tag disables the BORN2 torque."""
+    """An explicit false enable_born2_torque tag disables Born direction 2, force and torque."""
     work_dir = tmp_path / "bd_sims"
     xml = f"""<?xml version="1.0" ?>
 <pystarc_input>
     <receptor_pqr>receptor.pqr</receptor_pqr>
     <ligand_pqr>ligand.pqr</ligand_pqr>
+    <overlap_check>true</overlap_check>
     <ligand_resname>BEN</ligand_resname>
     <ligand_charge>1</ligand_charge>
     <work_dir>{work_dir}</work_dir>
@@ -21299,17 +21271,16 @@ def test_multi_reaction_second_without_n_needed_does_not_inherit(tmp_path):
     assert n_needed == -1
 
 
-def test_multi_reaction_conflicting_n_needed_warns(tmp_path):
-    """When two reactions declare different n_needed values, the flattened
-    parser cannot represent both and emits a warning, keeping the last
-    reaction's value."""
+def test_multi_reaction_files_are_refused_as_one_criterion(tmp_path):
+    """A flattened run refuses a file of several reactions, and an n_needed
+    above the pair count of its reaction raises."""
     xml = tmp_path / "multi_conflict.xml"
+    _write_two_reaction_xml(xml, second_has_n_needed=False)
+    with pytest.raises(ValueError, match="holds 2 reactions"):
+        _parse_rxns_xml_criteria(xml, single=True)
     _write_two_reaction_xml(xml, second_has_n_needed=True)
-    with pytest.warns(UserWarning, match="differing n_needed"):
-        pairs, n_needed = _parse_rxns_xml_criteria(xml)
-    assert len(pairs) == 3
-    # The last reaction declared n_needed=3.
-    assert n_needed == 3
+    with pytest.raises(ValueError, match="n_needed is 3"):
+        _parse_rxns_xml_criteria(xml)
 
 
 def test_single_reaction_n_needed_unchanged(tmp_path):
@@ -21378,35 +21349,32 @@ def _make_result_test_lowsev_gpu_sim_guards(n_reacted, n_escaped, r_start, r_esc
     )
 
 
-def test_rate_constant_guard_raises_on_degenerate_denominator():
+def test_rate_constant_without_k_b_raises():
     res = _make_result_test_lowsev_gpu_sim_guards(
         n_reacted=50, n_escaped=50, r_start=2.0, r_escape=1.0
     )
-    assert res.reaction_probability == 0.5
-    with pytest.raises(ValueError, match="denominator"):
-        res.rate_constant(D_rel=1.0, k_b=0.0)
+    for k_b in (0.0, float("nan")):
+        with pytest.raises(ValueError, match="k_b must be finite and positive"):
+            res.rate_constant(D_rel=1.0, k_b=k_b)
+        with pytest.raises(ValueError, match="k_b must be finite and positive"):
+            res.rate_constant_ci(D_rel=1.0, k_b=k_b)
 
 
 def test_rate_constant_ci_finite_at_p_max():
     res = _make_result_test_lowsev_gpu_sim_guards(
         n_reacted=100, n_escaped=0, r_start=1.0, r_escape=1.0e30
     )
-    lo, hi = res.rate_constant_ci(D_rel=1.0, k_b=0.0)
+    lo, hi = res.rate_constant_ci(D_rel=1.0, k_b=2.5)
     assert 0.0 <= lo <= hi
     assert math.isfinite(hi)
 
 
-def test_rate_constant_healthy_path_unchanged():
+def test_rate_constant_is_conv_k_b_p():
     res = _make_result_test_lowsev_gpu_sim_guards(
         n_reacted=30, n_escaped=70, r_start=10.0, r_escape=50.0
     )
-    D_rel = 0.25
-    P = res.reaction_probability
     CONV = 6.022e23 * 1e-30 / 1e-12 / 1e-3
-    k_D = 4.0 * math.pi * D_rel * res.r_start
-    beta = res.r_start / res.r_escape
-    expected = CONV * k_D * P / (1.0 - (1.0 - P) * beta)
-    assert res.rate_constant(D_rel=D_rel, k_b=0.0) == expected
+    assert res.rate_constant(D_rel=0.25, k_b=3.0) == CONV * 3.0 * 0.3
 
 
 def test_rate_constant_steering_path_unchanged():
@@ -21722,9 +21690,9 @@ def test_missing_bd_sims_after_grid_gen_reports_clear_error(
     bd_sims = tmp_path / "bd_sims"
     assert not bd_sims.exists()
 
-    # Must return cleanly rather than raising FileNotFoundError from os.listdir.
+    # Must return an error code rather than raising FileNotFoundError from os.listdir.
     result = module.main()
-    assert result is None
+    assert result == 1
 
     out = capsys.readouterr().out
     assert "did not create" in out
@@ -21745,7 +21713,7 @@ def test_grid_gen_failure_returns_without_listdir(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(module.sys, "argv", ["multi_GPU_runs.py", str(xml_path)])
 
     result = module.main()
-    assert result is None
+    assert result == 1
     out = capsys.readouterr().out
     assert "grid generation failed" in out
 
@@ -21836,7 +21804,7 @@ def test_run_source_initializes_gpu_sim_and_guards_access():
     src = inspect.getsource(pipeline.run)
     # The defensive initialization must be present before any branch uses it.
     assert "gpu_sim = None" in src
-    assert 'getattr(gpu_sim, "_k_b", 0.0) if gpu_sim is not None else 0.0' in src
+    assert "gpu_sim._k_b if gpu_sim is not None else 0.0" in src
     ast.parse(src.strip())
 
 
@@ -22674,13 +22642,12 @@ def _collect():
                 )
                 if fname == "getattr" and len(node.args) == 3:
                     key = node.args[1]
-                    if (
-                        isinstance(key, ast.Constant)
-                        and key.value in PHYSICS_DEFAULT_NAMES
-                    ):
+                    # The engine's _debye is the configured debye_length.
+                    name = {"_debye": "debye_length"}.get(getattr(key, "value", None), getattr(key, "value", None))
+                    if isinstance(key, ast.Constant) and name in PHYSICS_DEFAULT_NAMES:
                         v = _literal(node.args[2])
                         if v is not None:
-                            found[key.value][v].append((rel, node.lineno))
+                            found[name][v].append((rel, node.lineno))
     return found
 
 
@@ -22708,9 +22675,12 @@ def test_physics_default_is_defined_once(name):
 
     values = {_normalise(v) for v in sites}
     allowed = {_normalise(v) for v in DECLARED_DIFFERENCES.get(name, set())}
+    registry = D.INPUT_DEFAULTS.get(name, getattr(D, name.upper(), None))
+    if registry is not None:
+        allowed.add(_normalise(registry))
 
     undeclared = values - allowed
-    if len(values) > 1 and len(undeclared) > 1:
+    if undeclared if registry is not None else (len(values) > 1 and len(undeclared) > 1):
         detail = []
         for v, locs in sorted(sites.items(), key=lambda kv: str(kv[0])):
             for rel, line in locs:

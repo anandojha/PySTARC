@@ -62,7 +62,6 @@ KCAL_TO_J: float = (
 KCAL_PER_MOL_TO_KBT: float = 1.0 / KBT_KCAL  # kcal/mol to kBT
 # Ion properties (default NaCl)
 DEFAULT_IONIC_STRENGTH: float = 0.15  # mol/L
-DEFAULT_DEBYE_LENGTH: float = 7.9  # Å at 150 mM NaCl, 298 K
 # Reference viscosity for diffusion coefficients. The diffusion coefficient
 # D = kBT / (6 π η r) is computed at runtime, and this is the viscosity η of water.
 # Solvent viscosity at T_DEFAULT, water at 25°C. It is taken at the same
@@ -89,7 +88,6 @@ __all__ = [
     "KCAL_TO_J",
     "KCAL_PER_MOL_TO_KBT",
     "DEFAULT_IONIC_STRENGTH",
-    "DEFAULT_DEBYE_LENGTH",
     "ETA_WATER",
     "PI",
     "TWO_PI",

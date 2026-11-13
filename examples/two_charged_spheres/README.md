@@ -59,14 +59,13 @@ bd_sims/
 ├── encounters.csv                Records of the encounter events
 ├── near_misses.csv               Records of the close approaches
 ├── contact_frequency.csv         Frequency of each native contact
-├── pose_clusters.csv             Clusters of the bound poses
+├── pose_clusters.csv             Rotation angles of the encounter poses in 8 bins
 ├── milestone_flux.csv            Outward and inward crossings through the concentric shells
-├── radial_density.csv            Radial density profile of the ligand
-├── fpt_distribution.csv          Distribution of the first passage times
-├── angular_map.npz               Angular map of the encounters
-├── energetics.npz                Interaction energetics along the trajectories
+├── radial_density.csv            BD steps and BD time per radial shell
+├── bd_time_to_reaction.csv       BD time inside r_esc of each reacting trajectory
+├── angular_map.npz               BD steps and BD time per angular bin
+├── energetics.npz                Force and time step along the saved paths
 ├── paths.npz                     Samples of the reactive paths
-├── p_commit.npz                  Committor probabilities
 ├── transition_matrix.npz         Markov transition matrix between the concentric shells
 └── convergence_seed_*/           convergence.py multi seed run written by run.sh only
 ```
@@ -95,14 +94,13 @@ bd_sims/
 │   ├── encounters.csv                Records of the encounter events
 │   ├── near_misses.csv               Records of the close approaches
 │   ├── contact_frequency.csv         Frequency of each native contact
-│   ├── pose_clusters.csv             Clusters of the bound poses
+│   ├── pose_clusters.csv             Rotation angles of the encounter poses in 8 bins
 │   ├── milestone_flux.csv            Outward and inward crossings through the concentric shells
-│   ├── radial_density.csv            Radial density profile of the ligand
-│   ├── fpt_distribution.csv          Distribution of the first passage times
-│   ├── angular_map.npz               Angular map of the encounters
-│   ├── energetics.npz                Interaction energetics along the trajectories
+│   ├── radial_density.csv            BD steps and BD time per radial shell
+│   ├── bd_time_to_reaction.csv       BD time inside r_esc of each reacting trajectory
+│   ├── angular_map.npz               BD steps and BD time per angular bin
+│   ├── energetics.npz                Force and time step along the saved paths
 │   ├── paths.npz                     Samples of the reactive paths
-│   ├── p_commit.npz                  Committor probabilities
 │   └── transition_matrix.npz         Markov transition matrix between the concentric shells
 ├── ...
 ├── bd_N/                             Directory from the Nth GPU
@@ -122,21 +120,20 @@ bd_sims/
 ├── encounters.csv                    Records of the encounter events
 ├── near_misses.csv                   Records of the close approaches
 ├── contact_frequency.csv             Frequency of each native contact
-├── pose_clusters.csv                 Clusters of the bound poses
+├── pose_clusters.csv                 Rotation angles of the encounter poses in 8 bins
 ├── milestone_flux.csv                Outward and inward crossings through the concentric shells
-├── radial_density.csv                Radial density profile of the ligand
-├── fpt_distribution.csv              Distribution of the first passage times
-├── angular_map.npz                   Angular map of the encounters
-├── energetics.npz                    Interaction energetics along the trajectories
+├── radial_density.csv                BD steps and BD time per radial shell
+├── bd_time_to_reaction.csv           BD time inside r_esc of each reacting trajectory
+├── angular_map.npz                   BD steps and BD time per angular bin
+├── energetics.npz                    Force and time step along the saved paths
 ├── paths.npz                         Samples of the reactive paths
-├── p_commit.npz                      Committor probabilities
 └── transition_matrix.npz             Markov transition matrix between the concentric shells
 ```
 
 ## Expected results
 ```
-k_b     64.45 Å³/ps
-P_rxn   0.49
-k_on    1.90e10 M⁻¹s⁻¹
-analytical.py compares the rate against the exact Smoluchowski solution and reports Pass within 5%
+k_b     64.68 Å³/ps
+P_rxn   0.451
+k_on    1.76e10 M⁻¹s⁻¹
+analytical.py compares P_rxn against the exact Smoluchowski solution and reports Pass when |z| < 3
 ```
