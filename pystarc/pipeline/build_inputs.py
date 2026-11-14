@@ -9,8 +9,6 @@ rcsb_smiles. The reaction criterion modes are contacts, centroid and site.
 """
 
 import xml.etree.ElementTree as ET
-from rdkit.Chem import AllChem, rdDetermineBonds
-from rdkit import Chem
 import urllib.request
 import numpy as np
 import collections
@@ -33,7 +31,7 @@ SOURCES = {
 MODES = {
     "contacts": dict(need=("pair_cutoff", "n_needed"), opt=("receptor", "ligand", "receptor_numbering", "atom_filter", "search_cutoff", "n_pairs", "excluded"), note="Atom pairs listed in the config or picked from the crystal contacts"),
     "centroid": dict(need=("pair_cutoff",), opt=(), note="Pairs the centroid of the receptor with the centroid of the ligand"),
-    "site":     dict(need=(), opt=("pair_cutoff", "margin", "pocket_ligand", "pocket_ligand_resid"), note="Pairs the centroid of the ligand with a ghost atom at the centroid of the bound ligand"),
+    "site":     dict(need=(), opt=("pair_cutoff", "margin", "receptor", "ligand", "receptor_numbering", "pocket_ligand", "pocket_ligand_resid"), note="Pairs a receptor anchor atom with a ligand anchor atom, or a ghost atom at the centroid of the bound ligand with the centroid of the ligand"),
 }
 
 NUMBERING = {
@@ -72,13 +70,13 @@ KEYS = {
     "receptor_numbering":  "Numbering for the target residues.",
     "search_cutoff":       "Mode contacts with pairs picked from the crystal contacts. Search radius (in angstroms).",
     "n_pairs":             "Mode contacts with pairs picked from the crystal contacts. Number of contacts retained, one or an even number.",
-    "receptor":            "Mode contacts with listed pairs. Receptor side of each pair. The pair counts when this atom is within the cutoff of its ligand atom.",
-    "ligand":              "Ligand side of each pair. Use auto to choose the nearest atom that atom_filter permits.",
+    "receptor":            "Receptor side of each listed pair of mode contacts, or the receptor anchor atom of mode site. A pair counts when its receptor atom is within the cutoff of its ligand atom.",
+    "ligand":              "Ligand side of each listed pair of mode contacts, or the ligand anchor atom of mode site. In mode contacts, auto chooses the nearest atom that atom_filter permits.",
     "atom_filter":         "Element pairings permitted.",
     "excluded":            "Atom names omitted from the search.",
     "pair_cutoff":         "Reaction distance for every pair (in angstroms). Mode site takes this or margin.",
-    "margin":              "Mode site only. Distance added to the closest accessible approach of the ligand center to the site ghost atom. The cutoff is rounded to the nearest 0.25 A (in angstroms).",
-    "pocket_ligand":       "Mode site with a ligand built from SMILES. Residue name of the deposited ligand whose centroid marks the site.",
+    "margin":              "Mode site only. Distance added to the closest accessible approach of the ligand anchor atom to the receptor anchor atom, or of the ligand centroid to the site ghost atom. The cutoff is rounded to the nearest 0.25 A (in angstroms).",
+    "pocket_ligand":       "Mode site without anchor atoms and with a ligand built from SMILES. Residue name of the deposited ligand whose centroid marks the site.",
     "pocket_ligand_resid": "Residue number of pocket_ligand when the chain holds several copies.",
     "n_needed":            "Mode contacts only. Pairs that must be inside their cutoff at once: 1 for one pair, half of them for an even number of pairs.",
     "bd_milestone_radius": "Radius of the starting sphere (in angstroms).",
@@ -475,6 +473,8 @@ def _restore_names(W, mol):
     open(path, "w").write("\n".join(lines))
 
 def _parameterize(cfg, W):
+    from rdkit.Chem import rdDetermineBonds
+    from rdkit import Chem
     _leap(W, "tleap_protein.in",
           "source leaprc.protein.ff14SB\nsource leaprc.water.tip3p\n"
           "protein = loadpdb protein.pdb\ncheck protein\n"
@@ -737,6 +737,8 @@ def _parameterize_smiles(cfg, W):
     embedded from the config seed, so the geometry and therefore the charges
     are reproducible.
     """
+    from rdkit.Chem import AllChem
+    from rdkit import Chem
     mol = Chem.MolFromSmiles(cfg["smiles"])
     if mol is None:
         sys.exit(f"  ERROR: RDKit cannot read the SMILES {cfg['smiles']!r}")
@@ -916,6 +918,17 @@ def check_criterion(c, src):
             sys.exit("  ERROR: Mode site takes exactly one of pair_cutoff and margin.")
         if "margin" in c and (not isinstance(c["margin"], (int, float)) or c["margin"] < 0):
             sys.exit("  ERROR: margin must be a distance of 0 or more (in angstroms).")
+        anchors = [k for k in ("receptor", "ligand") if c.get(k) not in (None, "", [], ())]
+        if anchors:
+            if len(anchors) == 1 or len(_list(c["receptor"])) != 1 or len(_list(c["ligand"])) != 1:
+                sys.exit("  ERROR: Mode site with anchor atoms takes one receptor target and one ligand atom.")
+            if _name(_list(c["ligand"])[0]) == "auto":
+                sys.exit("  ERROR: The ligand anchor atom of mode site must be named, since auto applies only to mode contacts.")
+            if "pocket_ligand" in c or "pocket_ligand_resid" in c:
+                sys.exit("  ERROR: pocket_ligand marks the site only without anchor atoms, so remove it.")
+            return mode
+        if "receptor_numbering" in c:
+            sys.exit("  ERROR: receptor_numbering applies in mode site only to anchor atoms.")
         if src == "rcsb_smiles" and not c.get("pocket_ligand"):
             sys.exit("  ERROR: Mode site with a ligand built from SMILES needs pocket_ligand, "
                      "the deposited ligand whose centroid marks the site.")
@@ -979,45 +992,52 @@ def resid_map(pdb_path, chain=None, resid_min=None):
             seen.append(r)
     return {r: i + 1 for i, r in enumerate(seen)}
 
-def contacts_listed(rec, lig, c, rmap=None):
-    R, L = _list(c["receptor"]), c["ligand"]
-    if any(not (isinstance(r, tuple) and len(r) == 3) for r in R):
+def receptor_atom(rec, target, c, rmap=None):
+    """Index of the receptor atom of one <target resid atom resname/> entry."""
+    if not (isinstance(target, tuple) and len(target) == 3):
         sys.exit('  ERROR: receptor needs <target resid="..." atom="..." '
                  'resname="..."/> entries')
+    resid, aname, resname = target
+    if c.get("receptor_numbering", "internal") == "pdb":
+        if not rmap:
+            sys.exit("  ERROR: receptor_numbering is pdb but no map given")
+        if resid not in rmap:
+            sys.exit(f"  ERROR: residue {resid} is not in the source PDB")
+        resid = rmap[resid]
+    i = next((k for k, a in enumerate(rec) if a["resid"] == resid
+              and a["name"] == aname and a["resname"] == resname), None)
+    if i is None:
+        sys.exit(f"  ERROR: no {resname}{resid} {aname} in the receptor")
+    return i
+
+def ligand_atom(lig, name):
+    """Index of the ligand atom of this name. ligand.pqr carries the names of the structure."""
+    js = [k for k, b in enumerate(lig) if b["name"] == name]
+    if len(js) != 1:
+        sys.exit(f"  ERROR: {'no' if not js else 'more than one'} ligand atom "
+                 f"{name} in ligand.pqr")
+    return js[0]
+
+def contacts_listed(rec, lig, c, rmap=None):
+    R, L = _list(c["receptor"]), c["ligand"]
     L = ["auto"] * len(R) if L == "auto" else _list(L)
     if len(R) != len(L):
         sys.exit(f"  ERROR: {len(R)} receptor targets against {len(L)} ligand "
                  f"atoms, listed pairs match them one to one")
     out = []
-    pdb_num = c.get("receptor_numbering", "internal") == "pdb"
-    for (resid, aname, resname), lname in zip(R, L):
-        nm = _name(lname)
-        if pdb_num:
-            if not rmap:
-                sys.exit("  ERROR: receptor_numbering is pdb but no map given")
-            if resid not in rmap:
-                sys.exit(f"  ERROR: residue {resid} is not in the source PDB")
-            resid = rmap[resid]
-        i = next((k for k, a in enumerate(rec) if a["resid"] == resid
-                  and a["name"] == aname and a["resname"] == resname), None)
-        if i is None:
-            sys.exit(f"  ERROR: no {resname}{resid} {aname} in the receptor")
-        if nm == "auto":
+    for target, lname in zip(R, L):
+        i = receptor_atom(rec, target, c, rmap)
+        if _name(lname) == "auto":
             keep = keeper(c["atom_filter"])
             near = [(float(np.linalg.norm(rec[i]["xyz"] - b["xyz"])), k)
                     for k, b in enumerate(lig) if b["el"] != "H"
                     and keep(rec[i]["el"], b["el"])]
             if not near:
                 sys.exit(f"  ERROR: no {c['atom_filter']} ligand atom for "
-                         f"{resname}{resid} {aname}")
+                         f"{rec[i]['resname']}{rec[i]['resid']} {rec[i]['name']}")
             j = min(near)[1]
         else:
-            # ligand.pqr carries the names of the structure
-            js = [k for k, b in enumerate(lig) if b["name"] == nm]
-            if len(js) != 1:
-                sys.exit(f"  ERROR: {'no' if not js else 'more than one'} ligand atom "
-                         f"{nm} in ligand.pqr")
-            j = js[0]
+            j = ligand_atom(lig, _name(lname))
         d = float(np.linalg.norm(rec[i]["xyz"] - lig[j]["xyz"]))
         out.append((i, j, c["pair_cutoff"], d))
     return out
@@ -1069,10 +1089,21 @@ def write_rxns(path, pairs, n_needed):
         f"        </molecules>\n        <n_needed> {n_needed} </n_needed>\n{body}"
         "      </criterion>\n    </reaction>\n  </reactions>\n</top>\n")
 
-def site_pair(W, rec, lig, c, cfg, rec_out):
-    """Places the site ghost atom and returns the site pair. The closest approach
-    scan of a margin runs on the GPU when CuPy is present."""
-    if cfg["ligand_source"] == "rcsb_smiles":
+def site_pair(W, rec, lig, c, cfg, rec_out, rmap=None):
+    """Returns the site pair: the anchor atoms when the config names them, else
+    a ghost atom at the centroid of the bound ligand, placed here, and the
+    centroid of the ligand. The closest approach scan of a margin runs on the
+    GPU when CuPy is present."""
+    anchor = None
+    if c.get("receptor"):
+        i = receptor_atom(rec, _list(c["receptor"])[0], c, rmap)
+        anchor = ligand_atom(lig, _name(_list(c["ligand"])[0]))
+        p = rec[i]["xyz"]
+        rec_out["anchors"] = dict(receptor=[i + 1, rec[i]["resname"], rec[i]["resid"], rec[i]["name"]],
+                                  ligand=[anchor + 1, lig[anchor]["name"]])
+        rec_out["site_reference"] = (f"receptor atom {i + 1} ({rec[i]['resname']} {rec[i]['resid']} {rec[i]['name']}) "
+                                     f"and ligand atom {anchor + 1} ({lig[anchor]['name']})")
+    elif cfg["ligand_source"] == "rcsb_smiles":
         p, n = deposited_centroid(os.path.join(W, f"{cfg['pdb_id']}.pdb"), cfg.get("chain"),
                                   c["pocket_ligand"], c.get("pocket_ligand_resid"))
         rec_out["site_reference"] = f"{c['pocket_ligand']} {c.get('pocket_ligand_resid', '')} of {cfg['pdb_id']}, {n} atoms"
@@ -1083,13 +1114,16 @@ def site_pair(W, rec, lig, c, cfg, rec_out):
     if c.get("margin") not in (None, ""):
         from pystarc.analysis.closest_approach import closest_approach
         res = closest_approach([a["xyz"] for a in rec], [a["r"] for a in rec], [a["xyz"] for a in lig],
-                               [a["r"] for a in lig], p, bound=cfg["ligand_source"] != "rcsb_smiles")
+                               [a["r"] for a in lig], p, anchor=anchor, bound=cfg["ligand_source"] != "rcsb_smiles")
         if res["closest"] is None:
             sys.exit("  ERROR: The scan found no accessible pose of the ligand near the site.")
         cut = round_quarter(res["closest"] + c["margin"])
         rec_out.update(closest_approach=res["closest"], margin=c["margin"], scan=res)
         print(f"  The closest accessible approach is {res['closest']:.2f} A, so the cutoff is {cut} A "
               f"with a margin of {c['margin']} A.")
+    if anchor is not None:
+        print(f"  The site pair is {rec_out['site_reference']}.")
+        return (i, anchor, cut, float(np.linalg.norm(p - lig[anchor]["xyz"])))
     write_site_atom(W, rec, p)
     rec_out["site_atom"] = [round(float(x), 3) for x in p]
     print(f"  The site ghost atom {SITE_ATOM} sits at ({p[0]:.3f}, {p[1]:.3f}, {p[2]:.3f}) as receptor atom {len(rec) + 1}.")
@@ -1145,7 +1179,7 @@ def build(**cfg):
     elif mode == "centroid":
         pairs, n_needed = [centroid_pair(rec, lig, c)], 1
     else:
-        pairs, n_needed = [site_pair(W, rec, lig, c, cfg, record)], 1
+        pairs, n_needed = [site_pair(W, rec, lig, c, cfg, record, extra.get("rmap"))], 1
     write_rxns(os.path.join(W, "rxns.xml"), pairs, n_needed)
     write_input(os.path.join(W, "input.xml"), cfg)
     record.update(pairs=[[int(i) + 1, int(j) + 1, float(cut)] for i, j, cut, _d in pairs], n_needed=n_needed,
