@@ -19,8 +19,8 @@ The change of variables s = 1/r turns the semi-infinite integral over
 [b, ∞) into the finite interval [0, 1/b]. Here V(r) is the Yukawa monopole
 potential Q₁Q₂/(4πε r) × exp(-r/λ), and D_∥(r) is the distance-dependent
 parallel diffusion coefficient that includes Rotne-Prager-Yamakawa
-hydrodynamic interactions. The integral is evaluated by adaptive
-Gauss-Kronrod quadrature (QUADPACK) to roughly 10⁻⁶ relative accuracy.
+hydrodynamic interactions. The integral is evaluated by Romberg
+integration, the routine of the GPU path, to a tolerance of 10⁻⁸.
 
 When a trajectory diffuses out beyond the escape sphere at r_esc = 2b, we
 must decide whether it returns to the b-surface or escapes to infinity. The
@@ -52,8 +52,8 @@ from pystarc.simulation.step_near_surface import step_near_absorbing_surface
 from pystarc.simulation.diffusional_rotation import diffusional_rotation
 from pystarc.simulation.diffusional_rotation import quat_multiply
 from pystarc.simulation.diffusional_rotation import quat_rotate_vector
+from pystarc.lib.numerical import romberg_integrate
 from dataclasses import dataclass
-from scipy import integrate
 from typing import Tuple
 import numpy as np
 import math
@@ -166,7 +166,7 @@ class OuterPropagator:
             D = self._D_parallel(r)
             return math.exp(v) / D
 
-        result, _ = integrate.quad(integrand, 0.0, 1.0 / b, limit=100, epsrel=1e-6)
+        result = romberg_integrate(integrand, 0.0, 1.0 / b, tol=1e-8)
         return PI4 / result if result > 0 else 0.0
 
     def _ts_boundary(self, rad: float, is_inner: bool) -> float:

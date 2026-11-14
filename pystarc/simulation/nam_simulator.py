@@ -27,7 +27,7 @@ from pystarc.motion.do_bd_step import (
 from pystarc.transforms.quaternion import Quaternion, random_quaternion
 from pystarc.molsystem.system_state import Fate, TrajectoryResult
 from pystarc.motion.adaptive_time_step import AdaptiveTimeStep
-from pystarc.hydrodynamics.rotne_prager import MobilityTensor
+from pystarc.hydrodynamics.rotne_prager import MobilityTensor, radial_D_gradient
 from pystarc.pathways.reaction_interface import PathwaySet
 from pystarc.simulation.chain_simulator import (
     compute_pair_distances,
@@ -314,21 +314,7 @@ class NAMSimulator:
         limit that never binds on a physical configuration and exists only to
         contain the inverse quartic blow up at very small separations.
         """
-        r = float(np.linalg.norm(pos))
-        if r < 1.0e-8:
-            return np.zeros(3)
-        rhat = pos / r
-        h = 1.0e-3 * max(r, 1.0)
-        if r - h <= 1.0e-8:
-            return np.zeros(3)
-        dD_dr = (
-            self.mobility.relative_translational_diffusion((r + h) * rhat)
-            - self.mobility.relative_translational_diffusion((r - h) * rhat)
-        ) / (2.0 * h)
-        if dt > 0.0:
-            cap = 0.1 * math.sqrt(2.0 * D_here / dt)
-            dD_dr = max(-cap, min(cap, dD_dr))
-        return dD_dr * rhat
+        return radial_D_gradient(self.mobility, pos, D_here, dt)
 
     def run_one(self) -> TrajectoryResult:
         """Run a single trajectory. This is used by the serial path."""

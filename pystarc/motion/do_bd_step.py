@@ -301,11 +301,14 @@ def ermak_mccammon_translation_tensor(
     D_trans: np.ndarray,
     dt: float,
     dW_or_rng,
+    grad_D: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """Take one translational Brownian-dynamics step with an anisotropic D_trans.
 
     The update is r(t + Δt) = r(t) + (D_trans @ F) × Δt + L_t @ dW_t, where the
-    noise factor L_t satisfies L_t L_tᵀ = 2 × D_trans × Δt.
+    noise factor L_t satisfies L_t L_tᵀ = 2 × D_trans × Δt. When grad_D is
+    given, the divergence of a position dependent D_trans is added as
+    + grad_D × Δt, as in the scalar function. None leaves the update unchanged.
 
     Here position is the current (3,) position and force is the (3,) total force
     in kBT/Å. D_trans is the (3, 3) translational diffusion tensor in Å²/ps,
@@ -328,6 +331,8 @@ def ermak_mccammon_translation_tensor(
     # noise = √(2 D) × dW = √(2 D Δt) × (dW / √Δt). What we want here is
     # noise = L @ N(0, I), and since dW = √Δt × N(0, I) this becomes
     # noise = L @ (dW / √Δt).
+    if grad_D is not None:
+        drift = drift + np.asarray(grad_D, dtype=float) * dt
     return position + drift + noise
 
 

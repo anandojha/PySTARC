@@ -124,15 +124,22 @@ class ChainConfig:
         False  # If True, build RPY tensors from the geometry. If False, use a scalar diffusion coefficient.
     )
     D_trans: float = (
-        0.0  # Translational diffusion coefficient in Å²/ps. A value of 0 uses the default of 0.1.
+        0.0  # Translational diffusion coefficient in A^2/ps. Must be > 0 when auto_diffusion is off.
     )
     D_rot: float = (
-        0.0  # Rotational diffusion coefficient in rad²/ps. A value of 0 uses the default of 0.01.
+        0.0  # Rotational diffusion coefficient in rad^2/ps. Must be > 0 when auto_diffusion is off.
+    )
+    diffusion_update_interval: int = (
+        10  # Outer steps between rebuilds of the chain diffusion tensors. A value of 0 never rebuilds. Needs auto_diffusion.
     )
 
     # Soft repulsion using the WCA potential.
-    use_soft_repulsion: bool = False  # If True, add a WCA chain-target steering layer.
+    use_soft_repulsion: bool = False  # If True, add WCA repulsion between chain and target and between chain pairs without a COFFDROP table.
     soft_repulsion_eps: float = 1.0  # WCA epsilon in units of kBT.
+    use_hard_sphere: bool = True  # If True, reject steps that overlap a chain bead with a target atom.
+    # Elastic network that holds the fold of the chain JSON positions.
+    elastic_network_cutoff: float = 0.0  # CA pairs closer than this in angstrom get a spring. A value of 0 means no network.
+    elastic_network_k: float = 0.0  # Spring constant in kBT/A^2. Must be > 0 with a network.
 
     # Generalized Born self-Born terms.
     use_self_born: bool = False  # If True, add chain-internal generalized Born forces.
@@ -142,7 +149,7 @@ class ChainConfig:
     gb_obc_beta: float = 0.8  # OBC2 set-II coefficient.
     gb_obc_gamma: float = 4.85  # OBC2 set-II coefficient.
     coffdrop_active: bool = (
-        False  # If True, use diagonal-only generalized Born (Path B with COFFDROP).
+        False  # True requires COFFDROP tables in the chain JSON. The tables switch the diagonal-only generalized Born on.
     )
 
     # Parallelism.
@@ -318,6 +325,26 @@ class PySTARCConfig:
                 raise ValueError(
                     f"chain.n_equilibration_steps must be >= 0, got "
                     f"{cc.n_equilibration_steps}"
+                )
+            if cc.diffusion_update_interval < 0:
+                raise ValueError(
+                    f"chain.diffusion_update_interval must be >= 0, got "
+                    f"{cc.diffusion_update_interval}"
+                )
+            # The inner steps of an outer step must cover the outer step.
+            if abs(cc.chain_steps_per_outer * cc.dt_chain - self.dt) > 1e-9 * self.dt:
+                raise ValueError(
+                    f"chain.chain_steps_per_outer x chain.dt_chain must equal dt, got "
+                    f"{cc.chain_steps_per_outer} x {cc.dt_chain} and dt {self.dt}"
+                )
+            if cc.elastic_network_cutoff < 0 or cc.elastic_network_k < 0:
+                raise ValueError(
+                    "chain.elastic_network_cutoff and chain.elastic_network_k must be >= 0"
+                )
+            if (cc.elastic_network_cutoff > 0) != (cc.elastic_network_k > 0):
+                raise ValueError(
+                    "chain.elastic_network_cutoff and chain.elastic_network_k must "
+                    "both be > 0 for a network, or both 0 for none"
                 )
             if cc.D_trans < 0:
                 raise ValueError(f"chain.D_trans must be >= 0, got {cc.D_trans}")
@@ -646,8 +673,16 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
             auto_diffusion=cget("auto_diffusion", default=False, cast=bool),
             D_trans=cget("D_trans", default=0.0, cast=float),
             D_rot=cget("D_rot", default=0.0, cast=float),
+            diffusion_update_interval=cget(
+                "diffusion_update_interval", default=10, cast=int
+            ),
             use_soft_repulsion=cget("use_soft_repulsion", default=False, cast=bool),
             soft_repulsion_eps=cget("soft_repulsion_eps", default=1.0, cast=float),
+            use_hard_sphere=cget("use_hard_sphere", default=True, cast=bool),
+            elastic_network_cutoff=cget(
+                "elastic_network_cutoff", default=0.0, cast=float
+            ),
+            elastic_network_k=cget("elastic_network_k", default=0.0, cast=float),
             use_self_born=cget("use_self_born", default=False, cast=bool),
             gb_eps_in=cget("gb_eps_in", default=1.0, cast=float),
             gb_eps_out=cget("gb_eps_out", default=78.5, cast=float),

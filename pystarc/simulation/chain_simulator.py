@@ -5,26 +5,32 @@ This module is a Brownian-dynamics simulator for systems made of one flexible
 chain and one rigid target. It is the sister module to nam_simulator.py.
 
 In each trajectory the chain undergoes three coupled Brownian motions: a
-rigid-body translation of the chain center of mass, a rigid-body rotation of
-the chain, and a fluctuation of the internal coordinates under bonded and
+rigid-body translation of the chain centroid, a rigid-body rotation of the
+chain, and a fluctuation of the internal coordinates under bonded and
 non-bonded forces.
 
 The internal motion runs on a smaller timestep (dt_chain) than the overall
 translation and rotation (dt) because the bonded forces are stiff, so several
-internal steps are taken per outer step.
+internal steps cover each outer step.
 
-The target molecule is fixed at the origin. The chain starts on a b-sphere at
-distance r_start with a random orientation and propagates until it either
-reaches a reaction criterion or escapes past r_escape.
+The frame is fixed to the target, centered at the origin. With
+target_hydro_radius the target diffuses as well: its translation enters the
+relative diffusion and its rotation turns the chain about the origin. The
+chain starts on the b-sphere at r_start with a random orientation and
+propagates until it reacts, escapes or reaches max_steps.
 """
 
 from __future__ import annotations
 from pystarc.molsystem.system_state import Fate, TrajectoryResult
 from pystarc.motion.do_bd_step import (
     WATER_VISCOSITY,
+    apply_frame_rotation,
     backstep_due_to_force,
     bd_step_wiener,
     bd_step_wiener_tensor,
+    ermak_mccammon_rotation_tensor,
+    ermak_mccammon_translation_tensor,
+    receptor_rotation_vector,
 )
 from pystarc.simulation.coffdrop_chain import (
     ChainCommon,
@@ -35,7 +41,13 @@ from pystarc.simulation.coffdrop_chain import (
 )
 from pystarc.forces.chain_gb import chain_full_gb_force
 from pystarc.transforms.quaternion import Quaternion, random_quaternion
-from pystarc.hydrodynamics.rotne_prager import chain_diffusion_tensors
+from pystarc.hydrodynamics.rotne_prager import (
+    MobilityTensor,
+    chain_diffusion_tensors,
+    radial_D_gradient,
+    stokes_rotational_diffusion,
+    stokes_translational_diffusion,
+)
 from pystarc.forces.electrostatic.grid_force import DXGrid
 from pystarc.pathways.reaction_interface import PathwaySet
 from pystarc.structures.molecules import Atom, Molecule
@@ -45,13 +57,29 @@ import multiprocessing as mp
 import numpy as np
 import math
 import warnings
-from pystarc.global_defs.constants import KBT_KCAL
+from pystarc.global_defs.constants import KB_KCAL, KBT_KCAL, T_DEFAULT
 from pystarc.global_defs.defaults import (
     DESOLVATION_ALPHA,
     HYDRODYNAMIC_INTERACTIONS,
     SOLVENT_DIELECTRIC,
     VISCOSITY,
 )
+
+# Floor in A^2/ps for the eigenvalues of the relative translational diffusion
+# tensor. It is far below any physical value and keeps the Cholesky factor
+# finite when the tensor is not positive definite.
+RELATIVE_DIFFUSION_FLOOR = 1e-6
+
+
+def target_spheres(target) -> Tuple[np.ndarray, np.ndarray]:
+    """Return the positions and radii of the target atoms with a radius of at
+    least 1e-10 Å. Ghost atoms carry no excluded volume and are left out."""
+    if target is None:
+        return np.zeros((0, 3)), np.zeros(0)
+    xyz = np.array([[a.x, a.y, a.z] for a in target.atoms], dtype=float)
+    rad = np.array([a.radius for a in target.atoms], dtype=float)
+    live = rad >= 1e-10
+    return xyz.reshape(-1, 3)[live], rad[live]
 
 
 def chain_target_steric_forces(
@@ -66,78 +94,38 @@ def chain_target_steric_forces(
     For each bead-atom pair the σ parameter is the sum of the bead and atom
     radii, and the ε parameter is uniform. The WCA potential and force are the
     same as in chain_intra_nonbonded_forces. The force on chain bead i pushes
-    it away from target atom k whenever the two centers are closer than σ.
+    it away from target atom k whenever the two centers are closer than
+    2^(1/6) σ, the cutoff where the potential and force reach zero.
 
+    target is a Molecule or the (positions, radii) pair of target_spheres.
     Ghost atoms (radius < 1e-10) on either side are skipped.
-
-    The implementation is vectorized through numpy broadcasting, which makes it
-    roughly 50 to 100 times faster than the original pure-Python double loop.
-    For a 38-bead chain against a 4725-atom thrombin target this brings a single
-    force evaluation down from about 30 ms to about 0.3 ms, fast enough to run
-    inside the 5000-step trajectory loop in production.
-
-    The vectorized form is mathematically equivalent to the looped version. It
-    uses identical σ definitions, identical handling of r and the σ/r ratio, and
-    identical force accumulation by summation over the target index.
     """
     n_chain = len(chain_radii)
     F = np.zeros((n_chain, 3))
     if target is None:
         return F
-    # Build the target arrays, dropping ghost atoms (radius < 1e-10) once at the
-    # top rather than branching inside the inner loop.
-    target_pos_full = np.array(
-        [[a.x, a.y, a.z] for a in target.atoms],
-        dtype=float,
+    target_pos, target_rad = (
+        target if isinstance(target, tuple) else target_spheres(target)
     )
-    target_rad_full = np.array(
-        [a.radius for a in target.atoms],
-        dtype=float,
-    )
-    target_active = target_rad_full >= 1e-10
-    if not target_active.any():
-        return F
-    target_pos = target_pos_full[target_active]  # (n_t_act, 3)
-    target_rad = target_rad_full[target_active]  # (n_t_act,)
-    # Drop ghost beads on the chain side as well.
     chain_active = chain_radii >= 1e-10
-    if not chain_active.any():
+    if target_rad.size == 0 or not chain_active.any():
         return F
-    chain_pos_act = chain_world_positions[chain_active]  # (n_c_act, 3)
-    chain_rad_act = chain_radii[chain_active]  # (n_c_act,)
-    # Pairwise displacements and distances. The entry dr[i, k, :] is
-    # chain_pos_act[i] - target_pos[k], so the force on bead i from target atom k
-    # points along +dr, pushing the bead away from the atom.
-    dr = chain_pos_act[:, None, :] - target_pos[None, :, :]  # (n_c, n_t, 3)
-    r = np.linalg.norm(dr, axis=2)  # (n_c, n_t)
-    sig = chain_rad_act[:, None] + target_rad[None, :]  # (n_c, n_t)
-    # The WCA cutoff sits at r_min = 2^(1/6) σ, the Lennard-Jones minimum. Beyond
-    # r_min the WCA potential and force are both zero. The +ε shift in V makes the
-    # potential continuous at r_min, since V_WCA(r_min) = -ε + ε = 0.
-    WCA_CUTOFF_FACTOR = 2.0 ** (1.0 / 6.0)
-    sig_cutoff = WCA_CUTOFF_FACTOR * sig
-    # Active pairs satisfy 0 < r < r_min. Beyond r_min the WCA force is zero.
-    active = (r > 1e-10) & (r < sig_cutoff)
+    chain_pos_act = chain_world_positions[chain_active]
+    chain_rad_act = chain_radii[chain_active]
+    # dr[i, k] = chain bead i - target atom k, so the force points along +dr.
+    dr = chain_pos_act[:, None, :] - target_pos[None, :, :]
+    r = np.sqrt(np.einsum("ikd,ikd->ik", dr, dr))
+    sig = chain_rad_act[:, None] + target_rad[None, :]
+    active = (r > 1e-10) & (r < 2.0 ** (1.0 / 6.0) * sig)
     if not active.any():
         return F
-    # Compute the WCA force magnitude divided by r for the active pairs only. The
-    # np.where calls neutralize the inactive entries so that division by r is safe
-    # even where r is below 1e-10, since those positions are masked out and
-    # contribute nothing to the final sum.
-    r_safe = np.where(active, r, 1.0)
-    sr = np.where(active, sig / r_safe, 0.0)
-    sr6 = sr**6
-    sr12 = sr6 * sr6
-    fmag_over_r = np.where(
-        active,
-        4.0 * eps * (12.0 * sr12 - 6.0 * sr6) / (r_safe * r_safe),
-        0.0,
-    )  # (n_c, n_t)
-    # The per-bead force is the sum over k of fmag_over_r[i, k] * dr[i, k, :].
-    # This is the vectorized equivalent of the inner force-accumulation loop in
-    # the original implementation.
-    F_act = np.einsum("ik,ikd->id", fmag_over_r, dr)  # (n_c_act, 3)
-
+    ia, ka = np.nonzero(active)
+    sr6 = (sig[ia, ka] / r[ia, ka]) ** 6
+    fmag_over_r = 4.0 * eps * (12.0 * sr6 * sr6 - 6.0 * sr6) / r[ia, ka] ** 2
+    fvec = fmag_over_r[:, None] * dr[ia, ka]
+    F_act = np.zeros((chain_pos_act.shape[0], 3))
+    for c in range(3):
+        F_act[:, c] = np.bincount(ia, weights=fvec[:, c], minlength=len(F_act))
     F[chain_active] = F_act
     return F
 
@@ -146,90 +134,26 @@ def _check_chain_overlap(
     target,
     chain_world_positions: np.ndarray,
     chain_radii: np.ndarray,
-    bonded_pairs: set,
 ) -> bool:
-    """Return True if any chain-target or non-bonded chain-chain pair overlaps.
+    """Return True if a chain bead overlaps a target atom.
 
-    This mirrors NAM's _check_hard_sphere_overlap, adapted to the chain BD case
-    where the chain has several beads and the target is a separate Molecule. Two
-    categories of overlap are checked. The first is chain-target overlap, where
-    every chain bead is tested against every target atom and an overlap occurs
-    when the center separation is smaller than the sum of the two radii. The
-    second is chain-chain overlap, where every non-bonded bead pair within the
-    chain is tested. Bonded neighbors are allowed to be close because the bond
-    constraint sets their separation.
-
-    Ghost atoms (radius < 1e-10) are skipped. They are zero-radius reference
-    points, and although the radius-sum check would already exclude them
-    geometrically, the explicit skip avoids spurious comparisons.
-
-    Pass target as a Molecule with an .atoms attribute, or None to skip the
-    chain-target overlap checks. The argument chain_world_positions is the
-    (n_atoms, 3) array of world-frame bead positions, and chain_radii is the
-    (n_atoms,) array of bead radii. The argument bonded_pairs is a set holding
-    both (i, j) and (j, i) tuples for every bond in the chain, so that set
-    membership is independent of ordering.
-
-    The function returns True as soon as it finds the first overlap, and False if
-    none is found.
+    A bead and an atom overlap when their centers are closer than the sum of
+    their radii. target is a Molecule, the (positions, radii) pair of
+    target_spheres, or None. Ghost atoms and beads (radius < 1e-10) are
+    skipped. Pairs within the chain are not tested; the bonded terms, the
+    COFFDROP pair tables and the WCA repulsion hold their distances.
     """
-    n = len(chain_radii)
-    # First, the chain-target overlaps.
-    if target is not None:
-        # Stack all target atom positions and radii once, then compute the
-        # pairwise distances against the chain in a single numpy call.
-        target_pos = np.array(
-            [[a.x, a.y, a.z] for a in target.atoms if a.radius >= 1e-10]
-        )
-        target_rad = np.array([a.radius for a in target.atoms if a.radius >= 1e-10])
-        chain_mask = chain_radii >= 1e-10
-        if target_pos.shape[0] > 0 and chain_mask.any():
-            chain_pos_active = chain_world_positions[chain_mask]
-            chain_rad_active = chain_radii[chain_mask]
-            # (n_target, n_chain) distance matrix
-            diff = target_pos[:, None, :] - chain_pos_active[None, :, :]
-            dists = np.sqrt((diff * diff).sum(axis=2))
-            # (n_target, n_chain) sum-of-radii threshold
-            threshold = target_rad[:, None] + chain_rad_active[None, :]
-            if (dists < threshold).any():
-                return True
-    # Second, the intra-chain non-bonded overlaps.
-    for i in range(n):
-        if chain_radii[i] < 1e-10:
-            continue
-        for j in range(i + 1, n):
-            if chain_radii[j] < 1e-10:
-                continue
-            if (i, j) in bonded_pairs:
-                continue
-            d = float(
-                np.linalg.norm(chain_world_positions[i] - chain_world_positions[j])
-            )
-            if d < chain_radii[i] + chain_radii[j]:
-                return True
-    return False
-
-
-def _min_reaction_distance(pathway_set, default: float = 0.0) -> float:
-    """Return the smallest contact-cutoff distance across all reactions.
-
-    This value sets the boundary at which the BD step switches from params.dt to
-    the smaller params.dt_rxn. The threshold is 1.5 times this return value.
-
-    If the pathway set is None or empty, or no reaction has a contact-cutoff
-    pair, the function returns 0.0 by default. The threshold then becomes 0 and
-    dt_rxn never fires anywhere, which is the right behavior when there are no
-    reactions to resolve. NAM uses 5.0 as its default for the same reason, but at
-    b-sphere radii where it is never reached.
-    """
-    if pathway_set is None:
-        return default
-    cutoffs = [
-        pair.distance_cutoff
-        for rxn in pathway_set.reactions
-        for pair in rxn.criteria.pairs
-    ]
-    return min(cutoffs) if cutoffs else default
+    if target is None:
+        return False
+    target_pos, target_rad = (
+        target if isinstance(target, tuple) else target_spheres(target)
+    )
+    live = chain_radii >= 1e-10
+    if target_rad.size == 0 or not live.any():
+        return False
+    d = chain_world_positions[live][:, None, :] - target_pos[None, :, :]
+    r2 = np.einsum("ikd,ikd->ik", d, d)
+    return bool((r2 < (chain_radii[live][:, None] + target_rad[None, :]) ** 2).any())
 
 
 @dataclass
@@ -244,6 +168,8 @@ class ChainBDParameters:
     """
 
     n_trajectories: int = 1_000
+    # Outer step in ps, and the outer step near the reaction surface, used
+    # while any reaction pair is closer than 1.5 times its cutoff.
     dt: float = 0.2
     dt_rxn: float = 0.05
     minimum_core_dt: float = 0.0
@@ -273,7 +199,9 @@ class ChainBDParameters:
     seed: Optional[int] = None
     n_threads: int = 1
     verbose: bool = False
-    # Chain-specific.
+    # Chain-specific. The inner steps of an outer step of dt_rxn are scaled
+    # by dt_rxn / dt, so the internal and the rigid-body clocks agree when
+    # chain_steps_per_outer × dt_chain = dt.
     dt_chain: float = 0.05
     chain_steps_per_outer: int = 4
     # Number of internal-coordinate-only BD steps to run in bulk (with no
@@ -290,18 +218,14 @@ class ChainBDParameters:
     # systematic kinetic errors. In the worst case it costs one extra force
     # evaluation per outer step.
     force_change_backstep: bool = True
-    # Whether to apply hard-sphere overlap rejection. After the outer BD step the
-    # code scans for bead-target and bead-bead overlaps, and on an overlap it
-    # redraws the Wiener increments and re-steps. It is on by default because it
-    # is the only excluded-volume mechanism in the production chain BD path, since
-    # the COFFDROP non-bonded forces are not yet wired in here. Without it beads
-    # can pass through targets unphysically.
+    # Whether to reject steps that overlap a chain bead with a target atom.
+    # The outer move is redrawn up to three times, and when every draw
+    # overlaps, the whole step, inner steps included, is rejected and the
+    # chain stays where it was.
     use_hard_sphere: bool = True
-    # Whether to add WCA forces with uniform ε between non-bonded chain bead pairs
-    # and between chain beads and target atoms. σ is taken from the radius sums
-    # and ε is in kBT. It is off by default because ε = 1 is not physical for
-    # arbitrary chains, so it stays opt-in until the COFFDROP per-residue
-    # parameters are wired through.
+    # Whether to add WCA forces with uniform ε between chain beads and target
+    # atoms and between the chain bead pairs that have no bonded term and no
+    # COFFDROP table. σ is the radius sum and ε is in kBT.
     use_soft_repulsion: bool = False
     soft_repulsion_eps: float = 1.0
     # Whether to use the Brownian bridge for reaction detection. When True, in
@@ -338,6 +262,25 @@ class ChainBDParameters:
     # False matches current production, where there are no COFFDROP pair forces in
     # the rigid-body benchmark path.
     coffdrop_active: bool = False
+    # Whether to rotate the body frame diffusion tensors into the lab frame at
+    # the start of each rigid-body step, D_lab = R D_body Rᵀ, with R taken from
+    # the orientation at the start of the (sub)step. The default of False hands
+    # the body tensors to the step unrotated, the prior behavior.
+    rotate_body_tensors: bool = False
+    # Number of outer steps between rebuilds of the body frame diffusion
+    # tensors from the current internal configuration. A value of 0 never
+    # rebuilds. A positive value requires auto_diffusion.
+    diffusion_update_interval: int = 0
+    # Whether the internal steps remove the rigid-body rotation of the chain
+    # (constraint solver, then re-centering, then an unweighted Kabsch fit to
+    # the positions before the step). The default of False keeps the prior
+    # internal step.
+    remove_internal_rotation: bool = False
+    # Whether the inner steps feel the forces of the target, evaluated at the
+    # start of the outer step and turned into the body frame. Needs
+    # remove_internal_rotation, which leaves the rigid-body part of the forces
+    # to the outer step.
+    inner_field: bool = False
 
     def __post_init__(self):
         if self.r_escape == 0.0:
@@ -366,6 +309,28 @@ def place_chain(
     """
     R = orientation.to_rotation_matrix()
     return (R @ body_positions.T).T + com
+
+
+def rotate_tensor_to_lab(D_body, orientation: Quaternion):
+    """Rotate a body frame diffusion tensor into the lab frame.
+
+    The result is R D_body Rᵀ, where R is the rotation matrix of the
+    orientation. R is taken at the start of the (sub)step that the tensor
+    drives, the configuration at which force and torque are evaluated. A
+    scalar passes through unchanged because an isotropic D is frame
+    independent.
+    """
+    if np.ndim(D_body) == 0:
+        return D_body
+    R = orientation.to_rotation_matrix()
+    return R @ np.asarray(D_body, dtype=float) @ R.T
+
+
+def _isotropic_diffusion(D) -> float:
+    """Return a scalar D, or tr(D)/3 for a (3, 3) tensor."""
+    if np.ndim(D) == 0:
+        return float(D)
+    return float(np.trace(np.asarray(D, dtype=float)) / 3.0)
 
 
 def initialize_bsphere(
@@ -489,14 +454,12 @@ def compute_pair_distances(
         return []
     out = []
     for rxn in pathway_set.reactions:
-        n_pairs = len(rxn.criteria.pairs)
-        dists = np.zeros(n_pairs, dtype=float)
-        for k, pair in enumerate(rxn.criteria.pairs):
-            t_atom = target.atoms[pair.mol1_atom_index]
-            t_pos = np.array([t_atom.x, t_atom.y, t_atom.z])
-            c_pos = chain_world_positions[pair.mol2_atom_index]
-            dists[k] = float(np.linalg.norm(t_pos - c_pos))
-        out.append(dists)
+        pairs = rxn.criteria.pairs
+        atoms = [target.atoms[p.mol1_atom_index] for p in pairs]
+        t_pos = np.array([[a.x, a.y, a.z] for a in atoms], dtype=float).reshape(-1, 3)
+        c_idx = np.array([p.mol2_atom_index for p in pairs], dtype=np.int64)
+        d = t_pos - chain_world_positions[c_idx]
+        out.append(np.sqrt(np.einsum("ij,ij->i", d, d)))
     return out
 
 
@@ -538,10 +501,10 @@ def check_reaction_with_bridge(
     check_chain_reaction. The argument old_pair_dists_per_rxn holds the pre-step
     distances per reaction (from compute_chain_pair_distances), and
     new_pair_dists_per_rxn holds the post-step distances per reaction. D_eff is
-    the effective diffusion coefficient in Å²/ps for the bridge formula; use
-    trace(D)/3 for anisotropic chains. dt is the timestep in ps. rng is a numpy
-    random Generator for the reaction-probability gate, consumed only when
-    rxn.probability < 1.0.
+    the effective diffusion coefficient in Å²/ps for the bridge formula, one
+    value for all pairs or a list with one array of per-pair values for each
+    reaction. dt is the timestep in ps. rng is a numpy random Generator for the
+    reaction-probability gate, consumed only when rxn.probability < 1.0.
 
     The argument rng_bb is an optional independent Generator for the bridge
     samples, drawing one uniform per pair where both x0 and x1 are above zero.
@@ -562,8 +525,9 @@ def check_reaction_with_bridge(
     ):
         return check_chain_reaction(target, chain_scratch, pathway_set, rng)
 
-    Ddt = max(D_eff * dt, 1e-30)
     for rxn_idx, rxn in enumerate(pathway_set.reactions):
+        D = D_eff[rxn_idx] if isinstance(D_eff, (list, tuple)) else D_eff
+        Ddt = np.maximum(np.asarray(D, dtype=float) * dt, 1e-30)
         old_d = old_pair_dists_per_rxn[rxn_idx]
         new_d = new_pair_dists_per_rxn[rxn_idx]
         cutoffs = np.array(
@@ -714,6 +678,8 @@ def chain_internal_bd_step(
     constraint_max_iter: int = 200,
     soft_repulsion: bool = False,
     soft_repulsion_eps: float = 1.0,
+    remove_rigid_rotation: bool = False,
+    external_forces: Optional[np.ndarray] = None,
 ) -> None:
     """Take one Brownian-dynamics step on the chain's internal coordinates.
 
@@ -739,6 +705,18 @@ def chain_internal_bd_step(
     step; set it to False only for diagnostic tests of the integrator.
     constraint_tol is the convergence tolerance for the constraint solver, and
     constraint_max_iter is the hard cap on solver iterations.
+
+    With remove_rigid_rotation False the order is update, re-centering, and
+    constraint solver. With True the order is update, constraint solver,
+    re-centering, and a rotation of the new positions onto the old ones, the
+    unweighted Kabsch fit. The rotation leaves every distance, angle, and
+    dihedral unchanged, so the constraints stay satisfied and the internal
+    coordinate distribution is the same. The fit is skipped for fewer than
+    three atoms and for a collinear chain, where no rotation is defined.
+
+    external_forces is an optional (n_atoms, 3) array of forces in the body
+    frame, added to the internal forces. With remove_rigid_rotation the step
+    keeps only their effect on the shape of the chain.
     """
     # Compute the internal forces from the bonded interactions, optionally adding
     # the intra-chain WCA non-bonded forces.
@@ -748,9 +726,12 @@ def chain_internal_bd_step(
         soft_repulsion=soft_repulsion,
         soft_repulsion_eps=soft_repulsion_eps,
     )
+    if external_forces is not None:
+        state.forces += external_forces
     # Apply the per-atom Ermak-McCammon update.
     n_atoms = state.n_atoms
     pos = state.positions
+    old = pos.copy() if remove_rigid_rotation else None
     forces = state.forces
     radii = np.array([a.radius for a in state.common.atoms])
     mobilities = 1.0 / (6.0 * math.pi * viscosity * radii)
@@ -770,6 +751,32 @@ def chain_internal_bd_step(
         scale = MAX_INNER_DRIFT_A / drift_mags[overshoot]
         drifts[overshoot] = drifts[overshoot] * scale[:, None]
     pos += drifts + noise
+    if remove_rigid_rotation:
+        # Project back onto the constraint manifold first, then remove the rigid
+        # motion that the update and the projection left in the positions.
+        if apply_constraints and (
+            state.common.length_constraints or state.common.coplanar_constraints
+        ):
+            satisfy_constraints_hybrid(
+                state,
+                tol=constraint_tol,
+                shake_max_iter=constraint_max_iter,
+                newton_max_iter=50,
+            )
+        pos = state.positions
+        pos -= pos.mean(axis=0)
+        if n_atoms >= 3:
+            # The old positions are the centered body frame. The matrix H is
+            # the cross covariance of the new and old positions.
+            H = pos.T @ (old - old.mean(axis=0))
+            U, S, Vt = np.linalg.svd(H)
+            if S[0] > 0.0 and S[1] >= 1e-12 * S[0]:
+                sgn = np.sign(np.linalg.det(Vt.T @ U.T))
+                if sgn == 0.0:
+                    sgn = 1.0
+                Q = Vt.T @ np.diag([1.0, 1.0, sgn]) @ U.T
+                pos[:] = pos @ Q.T
+        return
     # Re-center at the origin to keep the body frame consistent with place_chain,
     # which assumes the body positions are centered on the center of mass.
     pos -= pos.mean(axis=0)
@@ -984,23 +991,33 @@ def chain_outer_bd_step_wiener(
     return new_pos, new_ori
 
 
-def _run_chain_trajectory_worker(args):
-    """Run one trajectory as a top-level worker for parallel chain BD execution.
+def trajectory_rngs(
+    seed: Optional[int], traj_idx: int
+) -> Tuple[np.random.Generator, np.random.Generator]:
+    """Return the main and the bridge generator of trajectory traj_idx.
 
-    Multiprocessing requires this function to live at module scope so that it can
-    be pickled and shipped to worker processes. Each worker derives its own RNG
-    from base_seed + trajectory_index, so the trajectories are independent and
-    reproducible.
+    Both are spawned from SeedSequence(seed, spawn_key=(traj_idx,)), so no
+    stream of one trajectory repeats a stream of another.
     """
-    sim, traj_idx = args
-    base_seed = sim.params.seed if sim.params.seed is not None else 0
-    rng = np.random.default_rng(base_seed + traj_idx)
-    # Use an independent rng_bb stream for the Brownian bridge sampling, for the
-    # same reason as in ChainBDSimulator.__init__. Keeping bridge sampling off the
-    # main rng makes trajectory comparisons under bridge_on and bridge_off clean.
-    # The offset 0xBB is arbitrary and just needs to be non-zero.
-    rng_bb = np.random.default_rng(base_seed + traj_idx + 0xBB)
-    return sim.run_one(rng=rng, rng_bb=rng_bb)
+    seq = np.random.SeedSequence(0 if seed is None else seed, spawn_key=(traj_idx,))
+    main, bridge = seq.spawn(2)
+    return np.random.default_rng(main), np.random.default_rng(bridge)
+
+
+# The simulator of a worker process. The pool initializer sets it once, so the
+# grids and the force field tables are not sent again with every trajectory.
+_WORKER_SIM = None
+
+
+def _chain_worker_init(sim) -> None:
+    global _WORKER_SIM
+    _WORKER_SIM = sim
+
+
+def _run_chain_trajectory_worker(traj_idx: int):
+    """Run trajectory traj_idx of the worker's simulator with its own streams."""
+    rng, rng_bb = trajectory_rngs(_WORKER_SIM.params.seed, traj_idx)
+    return _WORKER_SIM.run_one(rng=rng, rng_bb=rng_bb)
 
 
 def _build_chain_diagnostics(
@@ -1056,6 +1073,16 @@ class ChainBDSimulator:
     position, and it is summed into the per-atom external force alongside the
     electrostatic contribution. The desolvation prefactor α defaults to unity,
     the physically correct base for the present cavity self energy grids.
+
+    The target is fixed at the origin by default, and the chain alone diffuses
+    with the diffusion tensors D_trans and D_rot. Passing target_hydro_radius,
+    the hydrodynamic radius a_T of the target in Å, switches on the two-body
+    treatment. The target then rotates about the origin with the Stokes
+    D_r,T and translates with the Stokes D_t,T, the relative translation uses
+    D_rel = R D_t,chain Rᵀ + (D_t,T - Δ(r)) I with the two-sphere
+    Rotne-Prager-Yamakawa reduction Δ(r) when hydrodynamic_interactions is on,
+    and the outer propagator receives the two real diffusion groups. The
+    default of None keeps the fixed target.
     """
 
     def __init__(
@@ -1072,7 +1099,44 @@ class ChainBDSimulator:
         desolvation_alpha: float = DEFAULT_DESOLVATION_ALPHA,
         auto_diffusion: bool = False,
         outputs=None,
+        target_hydro_radius: Optional[float] = None,
     ):
+        if params.diffusion_update_interval < 0:
+            raise ValueError(
+                "diffusion_update_interval must be >= 0, got "
+                f"{params.diffusion_update_interval}"
+            )
+        if params.diffusion_update_interval > 0 and not auto_diffusion:
+            raise ValueError(
+                "diffusion_update_interval > 0 requires auto_diffusion=True, "
+                "because only tensors computed from the chain geometry can be "
+                "rebuilt. Explicit D_trans and D_rot are fixed."
+            )
+        if params.inner_field and not params.remove_internal_rotation:
+            raise ValueError(
+                "inner_field requires remove_internal_rotation, which keeps the "
+                "rigid-body part of the target forces out of the inner steps"
+            )
+        a_target = None
+        if target_hydro_radius is not None:
+            a_target = float(target_hydro_radius)
+            if not (math.isfinite(a_target) and a_target > 0.0):
+                raise ValueError(
+                    "target_hydro_radius must be a finite number > 0, got "
+                    f"{target_hydro_radius}"
+                )
+            if target is None:
+                raise ValueError("target_hydro_radius requires a target")
+            # The bead tensors and the target D use WATER_VISCOSITY and
+            # ETA_WATER at T_DEFAULT, the outer propagator uses the input kT.
+            # The two agree only at T_DEFAULT.
+            _T = params.temperature_kT / KB_KCAL
+            if abs(_T - T_DEFAULT) > 0.01:
+                raise ValueError(
+                    "target_hydro_radius requires the temperature "
+                    f"{T_DEFAULT} K, got {_T:.3f} K. The viscosity convention "
+                    "of the bead tensors is fixed at that temperature."
+                )
         if chain_init_body_positions.shape != (len(chain_template.atoms), 3):
             raise ValueError(
                 "chain_init_body_positions shape "
@@ -1107,10 +1171,20 @@ class ChainBDSimulator:
                 [a.radius for a in chain_template.atoms],
                 dtype=float,
             )
-            D_trans_auto, D_rot_auto, _ = chain_diffusion_tensors(
-                chain_init_body_positions,
-                radii,
-            )
+            # With rotate_body_tensors the tensors are taken about the unweighted
+            # centroid, which is the origin of the centered positions. This is
+            # the center of the periodic rebuilds and of the chain rotation.
+            if params.rotate_body_tensors:
+                D_trans_auto, D_rot_auto, _ = chain_diffusion_tensors(
+                    chain_init_body_positions,
+                    radii,
+                    center=np.zeros(3),
+                )
+            else:
+                D_trans_auto, D_rot_auto, _ = chain_diffusion_tensors(
+                    chain_init_body_positions,
+                    radii,
+                )
             D_trans = D_trans_auto
             D_rot = D_rot_auto
         else:
@@ -1131,6 +1205,38 @@ class ChainBDSimulator:
         self.born_grid = born_grid
         self.desolvation_alpha = float(desolvation_alpha)
         self.auto_diffusion = auto_diffusion
+        # Two-body hydrodynamics. These stay None for the fixed target.
+        self._a_target = a_target
+        self._D_t_target = None
+        self._D_r_target = None
+        self._a_chain = None
+        self._pair_mob = None
+        self._D0_pair = None
+        self._warned_regularized = False
+        self._warned_relative_clip = False
+        self._n_relative_clipped = 0
+        if a_target is not None:
+            D_c0 = _isotropic_diffusion(self.D_trans)
+            D_rc0 = _isotropic_diffusion(self.D_rot)
+            if not (D_c0 > 0.0 and D_rc0 > 0.0):
+                raise ValueError(
+                    "target_hydro_radius requires D_trans and D_rot of the "
+                    f"chain > 0, got tr(D_trans)/3={D_c0} and tr(D_rot)/3={D_rc0}"
+                )
+            self._D_t_target = stokes_translational_diffusion(a_target)
+            self._D_r_target = stokes_rotational_diffusion(a_target)
+            self._a_chain = 1.0 / (6.0 * math.pi * WATER_VISCOSITY * D_c0)
+            self._D0_pair = self._D_t_target + D_c0
+            if params.hydrodynamic_interactions:
+                self._pair_mob = MobilityTensor(
+                    D_trans1=self._D_t_target,
+                    D_rot1=self._D_r_target,
+                    D_trans2=D_c0,
+                    D_rot2=D_rc0,
+                    radius1=a_target,
+                    radius2=self._a_chain,
+                    use_rpy=True,
+                )
         # OutputConfig controls the diagnostic recording cadence (save_interval)
         # and the per-file flags. Default to a fresh OutputConfig() when the
         # caller did not supply one, which preserves backward compatibility with
@@ -1150,10 +1256,7 @@ class ChainBDSimulator:
             )
         else:
             self._target_pos_cached = None
-        # Cache the minimum reaction-cutoff distance so we can use the smaller
-        # dt_rxn timestep when the chain is close to a reaction surface. This is
-        # constant across the whole run because the pathway set is fixed.
-        self._rxn_min = _min_reaction_distance(pathway_set)
+        self._geometry_key = None
         # Set the effective hydrodynamic radius for the force-change backstep
         # criterion in motion/do_bd_step.py:backstep_due_to_force. The criterion
         # is dt > α |6 π μ dx² / (dF · dx / a)|, in which a appears as the inverse
@@ -1171,22 +1274,20 @@ class ChainBDSimulator:
             )
         else:
             self._effective_hydro_radius = max(a.radius for a in chain_template.atoms)
-        # Cache the bonded pairs and bead radii for fast hard-sphere checks. Both
-        # orderings are included in the set so that membership lookups are
-        # independent of ordering.
         self._chain_radii = np.array(
             [a.radius for a in chain_template.atoms],
             dtype=float,
         )
-        self._bonded_pairs = set()
-        for bond in chain_template.bonds:
-            i, j = bond.a.atom_idx, bond.b.atom_idx
-            self._bonded_pairs.add((i, j))
-            self._bonded_pairs.add((j, i))
         # Pre-build per-trajectory reusables.
         self._chain_scratch = make_chain_scratch_molecule(chain_template)
         self._chain_charges = np.array(
             [a.charge for a in chain_template.atoms], dtype=float
+        )
+        # One force evaluation builds the index arrays and the stacked COFFDROP
+        # tables of the chain here, so the workers of a parallel run share them.
+        compute_chain_forces(
+            ChainState.from_template(chain_template, self.body_positions.copy()),
+            soft_repulsion=params.use_soft_repulsion,
         )
         # RNG and accumulators.
         self.rng = np.random.default_rng(params.seed)
@@ -1250,27 +1351,38 @@ class ChainBDSimulator:
                 D_rot_eff = float(np.trace(np.asarray(D_rot)) / 3.0)
             # Total ligand charge, the sum of the chain bead charges.
             chain_q = float(sum(a.charge for a in chain_template.atoms))
-            # The OuterPropagator was designed for two diffusing bodies. It uses
-            # Stokes-Einstein to derive hydrodynamic radii from Dtrans (line 125,
-            # a0 = kT / (6 π μ Dtrans)), so D = 0 would cause a division by zero.
-            # As a workaround we split the chain's D evenly between g0 and g1. The
-            # propagator's math depends only on D_rel = D_g0 + D_g1, which still
-            # equals D_chain, and on the symmetric combination a2 = (a0² + a1²)/2,
-            # so the splitting is mathematically equivalent. Drot is only used for
-            # the rotational decoherence in new_state, so we split it the same way
-            # for symmetry.
-            half_Dtrans = 0.5 * D_trans_eff if D_trans_eff > 0 else 1e-6
-            half_Drot = 0.5 * D_rot_eff if D_rot_eff > 0 else 1e-6
-            g0 = OPGroupInfo(
-                q=target.total_charge() if target is not None else 0.0,
-                Dtrans=half_Dtrans,
-                Drot=half_Drot,
-            )
-            g1 = OPGroupInfo(
-                q=chain_q,
-                Dtrans=half_Dtrans,
-                Drot=half_Drot,
-            )
+            if self._a_target is not None:
+                # The target and the chain are the two diffusing bodies of the
+                # propagator, each with its own translational and rotational D.
+                g0 = OPGroupInfo(
+                    q=target.total_charge(),
+                    Dtrans=self._D_t_target,
+                    Drot=self._D_r_target,
+                )
+                g1 = OPGroupInfo(
+                    q=chain_q,
+                    Dtrans=D_trans_eff,
+                    Drot=D_rot_eff,
+                )
+            else:
+                # The target is fixed, so the chain carries all of the relative
+                # diffusion. The propagator takes two bodies and derives their
+                # Stokes radii from Dtrans, so the chain D is split evenly
+                # between the two groups. D_g0 + D_g1 is then the chain D, but
+                # with hydrodynamic interactions the two equal radii differ
+                # from the real pair, which only target_hydro_radius describes.
+                half_Dtrans = 0.5 * D_trans_eff if D_trans_eff > 0 else 1e-6
+                half_Drot = 0.5 * D_rot_eff if D_rot_eff > 0 else 1e-6
+                g0 = OPGroupInfo(
+                    q=target.total_charge() if target is not None else 0.0,
+                    Dtrans=half_Dtrans,
+                    Drot=half_Drot,
+                )
+                g1 = OPGroupInfo(
+                    q=chain_q,
+                    Dtrans=half_Dtrans,
+                    Drot=half_Drot,
+                )
             # Physical constants, the same as in NAM and in PySTARC units of Å,
             # ps, and kBT.
             kT = float(params.temperature_kT)
@@ -1350,11 +1462,15 @@ class ChainBDSimulator:
                 alpha=self.desolvation_alpha,
             )
             forces = forces + f_born
+        self._refresh_geometry()
+        spheres = None
         if self.params.use_soft_repulsion:
+            spheres = self._nearby_spheres(world_positions)
+        if spheres is not None:
             forces = forces + chain_target_steric_forces(
                 world_positions,
                 self._chain_radii,
-                self.target,
+                spheres,
                 eps=self.params.soft_repulsion_eps,
             )
         if self.params.use_self_born:
@@ -1376,6 +1492,259 @@ class ChainBDSimulator:
             forces = forces + f_gb
         return forces
 
+    def _refresh_geometry(self) -> None:
+        """Cache the target spheres and the reaction pair arrays.
+
+        The cache follows the target and the pathway set, which callers may
+        replace after construction. It holds the target spheres for the steric
+        force and the overlap test, the distance beyond the chain reach at
+        which no bead and atom interact, and per reaction the target atom positions, the chain bead indices, the
+        cutoffs and the squared distances of the target atoms from the origin,
+        the lever arms of the target rotation.
+        """
+        key = (id(self.target), id(self.pathway_set))
+        if key == self._geometry_key:
+            return
+        self._geometry_key = key
+        self._target_spheres = target_spheres(self.target)
+        t_rad = self._target_spheres[1]
+        self._contact_reach = 0.0
+        if t_rad.size:
+            self._contact_reach = 2.0 ** (1.0 / 6.0) * (
+                float(t_rad.max()) + float(self._chain_radii.max())
+            )
+        self._rxn_arrays = []
+        if self.target is not None and self.pathway_set is not None:
+            for rxn in self.pathway_set.reactions:
+                pairs = rxn.criteria.pairs
+                atoms = [self.target.atoms[p.mol1_atom_index] for p in pairs]
+                t_pos = np.array([[a.x, a.y, a.z] for a in atoms]).reshape(-1, 3)
+                self._rxn_arrays.append(
+                    (
+                        t_pos,
+                        np.array([p.mol2_atom_index for p in pairs], dtype=np.int64),
+                        np.array([p.distance_cutoff for p in pairs], dtype=float),
+                        np.einsum("ij,ij->i", t_pos, t_pos),
+                    )
+                )
+
+    def _outer_dt(self, pair_dists) -> float:
+        """Return dt_rxn while a reaction pair is closer than 1.5 times its
+        cutoff, the near zone, and dt otherwise."""
+        for d, arr in zip(pair_dists or [], self._rxn_arrays):
+            if (d < 1.5 * arr[2]).any():
+                return self.params.dt_rxn
+        return self.params.dt
+
+    def _nearby_spheres(self, world_positions: np.ndarray):
+        """Return the target spheres that a bead can touch, or None.
+
+        An atom farther from the chain centroid than the largest bead distance
+        plus the WCA cutoff of the largest bead and atom interacts with no
+        bead, so it is left out. The order of the atoms is kept.
+        """
+        t_xyz, t_rad = self._target_spheres
+        if t_rad.size == 0:
+            return None
+        c = world_positions.mean(axis=0)
+        w = world_positions - c
+        reach = math.sqrt(float(np.einsum("ij,ij->i", w, w).max()))
+        d = t_xyz - c
+        near = np.einsum("ij,ij->i", d, d) < (reach + self._contact_reach) ** 2
+        if not near.any():
+            return None
+        return t_xyz[near], t_rad[near]
+
+    def _rebuild_body_tensors(self, body_positions: np.ndarray):
+        """Rebuild the body frame diffusion tensors from the current positions.
+
+        The positions are the centered body frame positions, so the rotational
+        resistance is taken about the origin, the point that place_chain
+        rotates about. The function returns (D_trans, D_rot). A regularized
+        factorization warns once per simulator.
+        """
+        info: Dict[str, Any] = {}
+        D_t, D_r, _ = chain_diffusion_tensors(
+            body_positions,
+            self._chain_radii,
+            center=np.zeros(3),
+            warn_regularized=False,
+            info=info,
+        )
+        if info.get("regularized") and not self._warned_regularized:
+            self._warned_regularized = True
+            warnings.warn(
+                "the RPY mobility matrix of the chain needed regularization "
+                "during a periodic rebuild of the body tensors; the usual cause "
+                "is two beads at the same coordinate",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        return D_t, D_r
+
+    def _relative_translation(
+        self, pos: np.ndarray, ori: Quaternion, D_t_body, dt: float
+    ) -> Tuple[np.ndarray, "Optional[np.ndarray]"]:
+        """Return the relative diffusion tensor D_rel and the drift dD/dr r_hat.
+
+        With p the separation of the chain from the target and r = |p|,
+
+            D_rel = R D_t_body Rᵀ + (D_t,T - Δ(r)) I,
+            Δ(r)  = D_0 - D_∥(r),
+
+        where D_0 = D_t,T + tr(D_t_body)/3 at the start of the run and D_∥(r)
+        is the radial two-sphere Rotne-Prager-Yamakawa diffusion of the pair
+        mobility. Δ(r) is zero without hydrodynamic interactions, and the drift
+        is then None. Otherwise the drift is the central difference of D_∥ with
+        the bound of radial_D_gradient. A tensor with a smallest eigenvalue
+        <= 0 has its eigenvalues clipped at RELATIVE_DIFFUSION_FLOOR, and the
+        clipped step is counted in self._n_relative_clipped.
+        """
+        I3 = np.eye(3)
+        D_t_arr = np.asarray(D_t_body, dtype=float)
+        if D_t_arr.ndim == 0:
+            D_t_arr = float(D_t_arr) * I3
+        if self._pair_mob is not None:
+            delta = self._D0_pair - self._pair_mob.relative_translational_diffusion(pos)
+        else:
+            delta = 0.0
+        D_rel = rotate_tensor_to_lab(D_t_arr, ori) + (self._D_t_target - delta) * I3
+        eig, vec = np.linalg.eigh(D_rel)
+        if not eig[0] > 0.0:
+            # Unphysical overlap separations can make the tensor non positive
+            # definite. The eigenvalues are clipped, the step is counted, and
+            # one warning per trajectory is logged.
+            D_rel = (vec * np.maximum(eig, RELATIVE_DIFFUSION_FLOOR)) @ vec.T
+            self._n_relative_clipped += 1
+            if not self._warned_relative_clip:
+                self._warned_relative_clip = True
+                warnings.warn(
+                    "the relative diffusion tensor was not positive definite at "
+                    f"r={float(np.linalg.norm(pos)):.6g} A (a_T={self._a_target:.6g} A, "
+                    f"a_chain={self._a_chain:.6g} A, eigenvalues {eig}); its "
+                    f"eigenvalues are clipped at {RELATIVE_DIFFUSION_FLOOR:g} A^2/ps",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+        if self._pair_mob is not None:
+            grad_D = radial_D_gradient(
+                self._pair_mob, pos, float(np.trace(D_rel) / 3.0), dt
+            )
+        else:
+            grad_D = None
+        return D_rel, grad_D
+
+    def _rigid_step(
+        self,
+        pos: np.ndarray,
+        ori: Quaternion,
+        world_pos: np.ndarray,
+        per_atom_forces: np.ndarray,
+        D_t_body,
+        D_r_body,
+        dt: float,
+        dW_t: np.ndarray,
+        dW_r: np.ndarray,
+        dW_r1: "Optional[np.ndarray]" = None,
+    ) -> Tuple[np.ndarray, Quaternion]:
+        """Advance the rigid-body coordinates (pos, ori) by one (sub)step dt.
+
+        D_t_body and D_r_body are the body frame tensors, or scalars. Without
+        target_hydro_radius and without rotate_body_tensors the call is
+        chain_outer_bd_step_wiener on the tensors as given. With
+        rotate_body_tensors alone the same call receives the tensors rotated
+        into the lab frame by the orientation at the start of the step.
+
+        With target_hydro_radius the step is the two-body step. The force and
+        torque are aggregated at the start configuration. The chain translates
+        relative to the target with
+        D_rel = R D_t_body Rᵀ + (D_t,T - Δ(r)) I and the drift dD/dr r_hat when
+        Δ(r) is on, and it rotates with R D_r_body Rᵀ. The target rotation
+        ω_T, drawn from dW_r1, turns the position and the orientation about the
+        origin. A step that displaces the chain by more than 5 Å is rejected.
+        """
+        if self._a_target is None:
+            if not self.params.rotate_body_tensors:
+                return chain_outer_bd_step_wiener(
+                    pos,
+                    ori,
+                    world_pos,
+                    per_atom_forces,
+                    D_t_body,
+                    D_r_body,
+                    dt,
+                    dW_t,
+                    dW_r,
+                )
+            return chain_outer_bd_step_wiener(
+                pos,
+                ori,
+                world_pos,
+                per_atom_forces,
+                rotate_tensor_to_lab(D_t_body, ori),
+                rotate_tensor_to_lab(D_r_body, ori),
+                dt,
+                dW_t,
+                dW_r,
+            )
+        if dW_r1 is None:
+            raise ValueError("the two-body step needs the target increment dW_r1")
+        force_net, torque_net = aggregate_chain_external_force_and_torque(
+            world_pos,
+            per_atom_forces,
+            pos,
+        )
+        D_r_arr = np.asarray(D_r_body, dtype=float)
+        if D_r_arr.ndim == 0:
+            D_r_arr = float(D_r_arr) * np.eye(3)
+        D_rel, grad_D = self._relative_translation(pos, ori, D_t_body, dt)
+        new_pos = ermak_mccammon_translation_tensor(
+            pos, force_net, D_rel, dt, dW_t, grad_D=grad_D
+        )
+        new_ori = ermak_mccammon_rotation_tensor(
+            ori,
+            torque_net,
+            rotate_tensor_to_lab(D_r_arr, ori),
+            dt,
+            dW_r,
+        )
+        omega_T = receptor_rotation_vector(
+            pos, force_net, torque_net, self._D_r_target, dt, dW_r1
+        )
+        new_pos, new_ori = apply_frame_rotation(new_pos, new_ori, omega_T)
+        # The same displacement guard as chain_outer_bd_step_wiener.
+        MAX_OUTER_DISP_A = 5.0
+        if np.linalg.norm(new_pos - pos) > MAX_OUTER_DISP_A:
+            return pos, ori
+        return new_pos, new_ori
+
+    def _pair_distances(self, world_pos: np.ndarray) -> "list[np.ndarray]":
+        """Distances of the reaction pairs, one array per reaction."""
+        out = []
+        for t_pos, c_idx, _cut, _l1 in self._rxn_arrays:
+            d = t_pos - world_pos[c_idx]
+            out.append(np.sqrt(np.einsum("ij,ij->i", d, d)))
+        return out
+
+    def _bridge_diffusion(self, body_positions, D_t_body, D_r_body) -> list:
+        """Per-pair D_eff of the Brownian bridge, one array per reaction.
+
+        D_eff = D_t + D_r L_2^2 for the chain, with L_2 the distance of the
+        pair bead from the chain centroid, and with target_hydro_radius
+        + D_t,T + D_r,T L_1^2 for the target, with L_1 the distance of the pair
+        atom from the origin, as in SI Step 11.
+        """
+        D_t = _isotropic_diffusion(D_t_body)
+        D_r = _isotropic_diffusion(D_r_body)
+        out = []
+        for _t_pos, c_idx, _cut, l1_sq in self._rxn_arrays:
+            b = body_positions[c_idx]
+            D = D_t + D_r * np.einsum("ij,ij->i", b, b)
+            if self._a_target is not None:
+                D = D + self._D_t_target + self._D_r_target * l1_sq
+            out.append(D)
+        return out
+
     def run_one(
         self,
         rng: "Optional[np.random.Generator]" = None,
@@ -1383,31 +1752,32 @@ class ChainBDSimulator:
     ) -> TrajectoryResult:
         """Execute one trajectory and return its outcome.
 
-        The function returns a TrajectoryResult with Fate.REACTED or
-        Fate.ESCAPED. If the loop reaches max_steps without a reaction or escape,
-        it returns MAX_STEPS with the current radius, because a step-limited
-        trajectory committed to neither outcome and counting it as an escape
-        would put it in the P_rxn denominator and bias the rate low. If an rng
-        is provided, that
+        The function returns a TrajectoryResult with Fate.REACTED, Fate.ESCAPED
+        or Fate.MAX_STEPS. The pose after the last allowed step still gets the
+        reaction and escape tests, and a trajectory undecided by then counts as
+        MAX_STEPS, neither reacted nor escaped. If an rng is provided, that
         generator is used for this trajectory only, and otherwise self.rng is
         used. The optional argument exists so that parallel workers can supply
         their own seeded generators.
+
+        An outer step evaluates the target forces at its start configuration.
+        The inner steps then advance the internal coordinates over the same
+        time, feeling those forces in the body frame when params.inner_field is
+        set, and the rigid-body coordinates move with the same forces.
         """
         params = self.params
         if rng is None:
             rng = self.rng
         if rng_bb is None:
             rng_bb = self.rng_bb
+        self._refresh_geometry()
 
         # Per-trajectory diagnostic recording state. It is updated at the top of
-        # each outer BD iteration and finalized at the four return sites: a
-        # reaction, an escape through the q-sphere, the fallback escape, and the
-        # max-steps exit. The output writers consume the populated fields on
-        # TrajectoryResult.
+        # each outer BD iteration and finalized at the return sites. The output
+        # writers consume the populated fields on TrajectoryResult.
         save_interval = self.outputs.save_interval if self.outputs is not None else 0
         min_sep = float("inf")
         pos_at_min = None
-        q_at_min = None
         path_steps_buf: List[int] = []
         path_com_buf: List[np.ndarray] = []
         path_q_buf: List[List[float]] = []
@@ -1426,8 +1796,7 @@ class ChainBDSimulator:
         # Pre-equilibrate the chain by thermalizing its internal coordinates in
         # bulk, with no external forces, before placing it on the b-sphere. With
         # params.n_equilibration_steps == 0 (the default) the loop body runs zero
-        # times and no RNG state is consumed, so the behavior is bit-exact with
-        # the pre-equilibration code path.
+        # times and no RNG state is consumed.
         for _ in range(params.n_equilibration_steps):
             chain_internal_bd_step(
                 state,
@@ -1437,50 +1806,92 @@ class ChainBDSimulator:
                 soft_repulsion_eps=params.soft_repulsion_eps,
                 constraint_tol=params.constraint_tol,
                 constraint_max_iter=params.constraint_max_iter,
+                remove_rigid_rotation=params.remove_internal_rotation,
             )
+        # The body frame diffusion tensors of this trajectory. They start at the
+        # tensors of the simulator and change only through the periodic rebuild,
+        # so a rebuild never writes back to self (parallel workers share the
+        # simulator by copy). With the interval at 0 these are self.D_trans and
+        # self.D_rot for the whole trajectory.
+        self._n_relative_clipped = 0
+        self._warned_relative_clip = False
+        D_t_body, D_r_body = self.D_trans, self.D_rot
+        diff_interval = params.diffusion_update_interval
+        n_rebuilds = 0
+        n_rebuild_failures = 0
+        # Time weighted sums of tr(D)/3 for the diagnostics.
+        tr_t_cur = tr_r_cur = 0.0
+        Dt_weighted = Dr_weighted = 0.0
+
+        def _rebuild_tensors():
+            nonlocal D_t_body, D_r_body, n_rebuilds, n_rebuild_failures
+            nonlocal tr_t_cur, tr_r_cur
+            try:
+                D_t_body, D_r_body = self._rebuild_body_tensors(state.positions)
+                n_rebuilds += 1
+            except np.linalg.LinAlgError:
+                # A collinear chain has no rotational resistance about its own
+                # axis. Keep the previous tensors and count the event.
+                n_rebuild_failures += 1
+            tr_t_cur = _isotropic_diffusion(D_t_body)
+            tr_r_cur = _isotropic_diffusion(D_r_body)
+
+        if diff_interval > 0:
+            tr_t_cur = _isotropic_diffusion(D_t_body)
+            tr_r_cur = _isotropic_diffusion(D_r_body)
+            if params.n_equilibration_steps > 0:
+                _rebuild_tensors()
+
+        n_hs_redraws = 0
+        n_hs_rejections = 0
+
+        def _result(fate, n_steps, name=None, **extra) -> TrajectoryResult:
+            """Collect the diagnostics of the trajectory into its result."""
+            d = _build_chain_diagnostics(
+                path_steps_buf,
+                path_com_buf,
+                path_q_buf,
+                radial_buf,
+                energy_buf,
+                contact_count_buf,
+            )
+            d["n_relative_diffusion_clipped"] = self._n_relative_clipped
+            d["n_hard_sphere_redraws"] = n_hs_redraws
+            d["n_hard_sphere_rejections"] = n_hs_rejections
+            if diff_interval > 0:
+                if t_elapsed > 0.0:
+                    d["mean_D_trans"] = Dt_weighted / t_elapsed
+                    d["mean_D_rot"] = Dr_weighted / t_elapsed
+                else:
+                    d["mean_D_trans"] = tr_t_cur
+                    d["mean_D_rot"] = tr_r_cur
+                d["n_diffusion_rebuilds"] = n_rebuilds
+                d["n_diffusion_rebuild_failures"] = n_rebuild_failures
+            if fate != Fate.REACTED and pos_at_min is not None:
+                d["near_miss_pos"] = pos_at_min
+                d["near_miss_dist"] = min_sep
+            d.update(extra)
+            return TrajectoryResult(
+                fate, n_steps, t_elapsed, float(np.linalg.norm(pos)), name, **d
+            )
+
         # Random starting center of mass and orientation on the b-sphere.
         pos, ori = initialize_bsphere(rng, params.r_start)
-        # Cumulative simulated time in ps. It is accumulated each step because the
-        # timestep is no longer constant: trajectories that spend more time in the
-        # reaction zone advance more slowly in simulated time per step than those
-        # in the bulk.
+        # Cumulative simulated time in ps.
         t_elapsed = 0.0
-        # Brownian bridge state, holding the pair distances at the previous
-        # iteration's top (before the previous outer step) and the dt used in that
-        # step. These are None on iteration 0, since there is no previous step to
-        # bridge over.
-        prev_top_pair_dists = None
+        # Brownian bridge state: the pair distances, the per-pair D_eff and the
+        # outer step at the start of the previous step. None skips the bridge,
+        # on the first step and after a step that did not move.
+        has_rxn = bool(self._rxn_arrays)
+        prev_pair_dists = None
+        prev_D_eff = None
         prev_dt_outer = 0.0
-        # Effective D for the bridge formula, taken as trace(D_trans)/3 for an
-        # isotropic-equivalent value and constant across the trajectory. This
-        # handles both scalar D_trans (the legacy isotropic case) and tensor
-        # D_trans (the anisotropic auto_diffusion case). It is set only when the
-        # bridge is going to do real work, that is when the pathway set is
-        # non-empty.
-        D_eff_bb = 0.0
-        _has_reactions = (
-            self.pathway_set is not None and len(self.pathway_set.reactions) > 0
-        )
-        if params.use_brownian_bridge and _has_reactions:
-            _Dt = np.asarray(self.D_trans)
-            if _Dt.ndim == 0:
-                # Scalar D_trans, the legacy isotropic case.
-                D_eff_bb = float(_Dt)
-            elif _Dt.ndim == 2 and _Dt.shape == (3, 3):
-                # A 3x3 tensor, the auto_diffusion anisotropic case.
-                D_eff_bb = float(np.trace(_Dt) / 3.0)
-            else:
-                # An unexpected shape, so we disable the bridge to avoid a silent
-                # miscalculation. The bridge requires the rigid-body translational
-                # diffusion scalar.
-                D_eff_bb = 0.0
-        for step in range(params.max_steps):
+        for step in range(params.max_steps + 1):
             # Record the per-iteration diagnostics.
             r_curr = float(np.linalg.norm(pos))
             if r_curr < min_sep:
                 min_sep = r_curr
                 pos_at_min = pos.copy()
-                q_at_min = np.array([ori.w, ori.x, ori.y, ori.z])
             if save_interval > 0 and step % save_interval == 0:
                 path_steps_buf.append(step)
                 path_com_buf.append(pos.copy())
@@ -1514,38 +1925,24 @@ class ChainBDSimulator:
                     for _ci, _tj in zip(_close[0], _close[1]):
                         _key = (int(_tj), int(_ci))
                         contact_count_buf[_key] = contact_count_buf.get(_key, 0) + 1
-            # Place the chain in the world frame and update the reaction-check
-            # scratch molecule.
+            # Place the chain in the world frame and test for a reaction, with
+            # the Brownian bridge over the previous step when it applies.
             world_pos = place_chain(state.positions, pos, ori)
             update_chain_scratch_positions(self._chain_scratch, world_pos)
-            # Compute the current pair distances when the bridge is enabled and
-            # there are reactions to track. These serve as the "new" distances
-            # relative to the previous iteration's outer step.
-            if params.use_brownian_bridge and _has_reactions and D_eff_bb > 0:
-                cur_top_pair_dists = compute_pair_distances(
-                    self.target,
-                    world_pos,
-                    self.pathway_set,
-                )
-            else:
-                cur_top_pair_dists = None
-
-            # Check for a reaction. With the Brownian bridge, use the bridge-aware
-            # check together with the prior pair distances, which applies once
-            # step is greater than 0.
+            pair_dists = self._pair_distances(world_pos) if has_rxn else None
             if (
                 params.use_brownian_bridge
-                and prev_top_pair_dists is not None
-                and cur_top_pair_dists is not None
+                and prev_pair_dists is not None
+                and pair_dists is not None
                 and prev_dt_outer > 0.0
             ):
                 rxn = check_reaction_with_bridge(
                     self.target,
                     self._chain_scratch,
                     self.pathway_set,
-                    prev_top_pair_dists,
-                    cur_top_pair_dists,
-                    D_eff_bb,
+                    prev_pair_dists,
+                    pair_dists,
+                    prev_D_eff,
                     prev_dt_outer,
                     rng,
                     rng_bb=rng_bb,
@@ -1558,61 +1955,36 @@ class ChainBDSimulator:
                     rng,
                 )
             if rxn is not None:
-                _diag = _build_chain_diagnostics(
-                    path_steps_buf,
-                    path_com_buf,
-                    path_q_buf,
-                    radial_buf,
-                    energy_buf,
-                    contact_count_buf,
-                )
-                _diag["encounter_pos"] = pos.copy()
-                _diag["encounter_q"] = np.array([ori.w, ori.x, ori.y, ori.z])
-                # Interaction energy at the encounter, sampled here rather than
-                # taken from energy_buf, because that buffer is filled only every
-                # save_interval steps and a reaction rarely lands on one of them.
-                # The steric term is omitted for the same reason as in the buffer,
-                # namely that chain_target_steric_forces returns only the force.
-                _w_rxn = place_chain(state.positions, pos, ori)
+                # Interaction energy at the encounter, sampled here because
+                # energy_buf is filled only every save_interval steps.
                 _e_rxn = 0.0
                 if self.target_grid is not None:
-                    _f, _e = evaluate_target_grid_force_on_chain(
-                        _w_rxn, self._chain_charges, self.target_grid
-                    )
-                    _e_rxn += _e
+                    _e_rxn += evaluate_target_grid_force_on_chain(
+                        world_pos, self._chain_charges, self.target_grid
+                    )[1]
                 if self.born_grid is not None:
-                    _f, _e = evaluate_born_force_on_chain(
-                        _w_rxn,
+                    _e_rxn += evaluate_born_force_on_chain(
+                        world_pos,
                         self._chain_charges,
                         self.born_grid,
                         alpha=self.desolvation_alpha,
-                    )
-                    _e_rxn += _e
-                _diag["energy_at_reaction"] = _e_rxn
-                return TrajectoryResult(
+                    )[1]
+                return _result(
                     Fate.REACTED,
                     step,
-                    t_elapsed,
-                    float(np.linalg.norm(pos)),
                     rxn,
-                    **_diag,
+                    encounter_pos=pos.copy(),
+                    encounter_q=np.array([ori.w, ori.x, ori.y, ori.z]),
+                    energy_at_reaction=_e_rxn,
                 )
-            # LMZ outer propagator. When the chain has drifted far enough from the
-            # target (r >= 1.1 b), use the analytical propagator to advance
-            # through the b-to-q diffusion zone. The propagator does one of two
-            # things. It either returns the chain to the b-sphere (reached_b is
-            # True), in which case the BD trajectory continues from a fresh random
-            # point on b; this is the LMZ "return" branch, with probability about
-            # b/q. Or it terminates the trajectory as truly escaped (reached_b is
-            # False), with probability about 1 - b/q. Without this, all
-            # trajectories that drift past 1.1 b would be counted as escapes,
-            # biasing the reaction probability roughly ten times too low.
+            # LMZ outer propagator. Beyond 1.1 b the analytic propagator either
+            # returns the chain to the b-sphere, with probability about b/q,
+            # and the trajectory continues from there, or lets it escape.
             QB_FACTOR = 1.1
-            r_now = float(np.linalg.norm(pos))
             if (
                 self._outer_prop is not None
                 and params.use_lmz
-                and r_now >= QB_FACTOR * params.r_start
+                and float(np.linalg.norm(pos)) >= QB_FACTOR * params.r_start
             ):
                 reached_b, new_pos, new_ori_arr = self._outer_prop.new_state(
                     pos,
@@ -1628,65 +2000,40 @@ class ChainBDSimulator:
                 )
                 if not reached_b:
                     # The chain has truly escaped through the q-sphere.
-                    _r_curr = float(np.linalg.norm(pos))
-                    if _r_curr < min_sep:
-                        min_sep = _r_curr
-                        pos_at_min = pos.copy()
-                        q_at_min = np.array([ori.w, ori.x, ori.y, ori.z])
-                    _diag = _build_chain_diagnostics(
-                        path_steps_buf,
-                        path_com_buf,
-                        path_q_buf,
-                        radial_buf,
-                        energy_buf,
-                        contact_count_buf,
-                    )
-                    if pos_at_min is not None:
-                        _diag["near_miss_pos"] = pos_at_min
-                        _diag["near_miss_dist"] = min_sep
-                    return TrajectoryResult(
-                        Fate.ESCAPED,
-                        step,
-                        t_elapsed,
-                        float(np.linalg.norm(pos)),
-                        **_diag,
-                    )
-                # Otherwise we fall through. The trajectory continues from the new
-                # returned position on the b-sphere, and the next outer BD step
-                # starts from there.
-            # Fallback escape check. This is used when _outer_prop is None, for
-            # instance when its construction failed, or when use_lmz=False is
-            # explicitly requested. Without LMZ this fires whenever the chain
-            # drifts past r_escape and biases the reaction probability low.
+                    return _result(Fate.ESCAPED, step)
+                # The chain jumped to the b-sphere, so the step starts there
+                # and no bridge spans the jump.
+                world_pos = place_chain(state.positions, pos, ori)
+                pair_dists = self._pair_distances(world_pos) if has_rxn else None
+            # Fallback escape check, used when _outer_prop is None or when
+            # use_lmz=False. Without LMZ it biases the reaction probability low.
             _lmz_active = self._outer_prop is not None and params.use_lmz
             if not _lmz_active and check_escape(pos, params.r_escape):
-                _r_curr = float(np.linalg.norm(pos))
-                if _r_curr < min_sep:
-                    min_sep = _r_curr
-                    pos_at_min = pos.copy()
-                    q_at_min = np.array([ori.w, ori.x, ori.y, ori.z])
-                _diag = _build_chain_diagnostics(
-                    path_steps_buf,
-                    path_com_buf,
-                    path_q_buf,
-                    radial_buf,
-                    energy_buf,
-                    contact_count_buf,
-                )
-                if pos_at_min is not None:
-                    _diag["near_miss_pos"] = pos_at_min
-                    _diag["near_miss_dist"] = min_sep
-                return TrajectoryResult(
-                    Fate.ESCAPED,
-                    step,
-                    t_elapsed,
-                    float(np.linalg.norm(pos)),
-                    **_diag,
-                )
-            # Take the inner steps, which run internal-coordinate BD on the
-            # body-frame positions. The inner dt is independent of the outer
-            # adaptive scheme.
-            for _ in range(params.chain_steps_per_outer):
+                return _result(Fate.ESCAPED, step)
+            if step == params.max_steps:
+                break
+            # Periodic rebuild of the body frame diffusion tensors from the
+            # current internal configuration. The state positions are centered
+            # at the origin, the point the chain rotates about.
+            if diff_interval > 0 and step > 0 and step % diff_interval == 0:
+                _rebuild_tensors()
+            # The inner steps cover the outer step.
+            dt_outer = self._outer_dt(pair_dists)
+            n_inner = max(1, round(params.chain_steps_per_outer * dt_outer / params.dt))
+            # Bridge state of this step, taken at its start.
+            if params.use_brownian_bridge and has_rxn:
+                D_eff = self._bridge_diffusion(state.positions, D_t_body, D_r_body)
+            # The target forces at the start configuration.
+            per_atom_forces = self._compute_per_atom_external_forces(world_pos)
+            F_net_old = per_atom_forces.sum(axis=0)
+            body_old = state.positions.copy() if params.use_hard_sphere else None
+            # The inner steps, internal-coordinate BD on the body frame
+            # positions. With inner_field the forces turn into the body frame,
+            # F_body = R^T F.
+            f_body = None
+            if params.inner_field:
+                f_body = per_atom_forces @ ori.to_rotation_matrix()
+            for _ in range(n_inner):
                 chain_internal_bd_step(
                     state,
                     dt=params.dt_chain,
@@ -1695,185 +2042,128 @@ class ChainBDSimulator:
                     constraint_max_iter=params.constraint_max_iter,
                     soft_repulsion=params.use_soft_repulsion,
                     soft_repulsion_eps=params.soft_repulsion_eps,
+                    remove_rigid_rotation=params.remove_internal_rotation,
+                    external_forces=f_body,
                 )
-            # Take the outer step: refresh the world positions, get the external
-            # forces, and propagate the rigid-body coordinates.
-            world_pos = place_chain(state.positions, pos, ori)
-            per_atom_forces = self._compute_per_atom_external_forces(world_pos)
-            F_net_old = per_atom_forces.sum(axis=0)
-            # Two-zone adaptive timestep, using the smaller dt when close to a
-            # reaction surface and the larger dt in the bulk.
-            r = float(np.linalg.norm(pos))
-            dt_outer = params.dt_rxn if r < 1.5 * self._rxn_min else params.dt
-            # Pre-draw the Wiener increments so we can reuse them under
-            # subdivision.
-            dW_t = math.sqrt(dt_outer) * rng.standard_normal(3)
-            dW_r = math.sqrt(dt_outer) * rng.standard_normal(3)
-
             pos_old, ori_old = pos, ori
-            pos, ori = chain_outer_bd_step_wiener(
-                pos_old,
-                ori_old,
-                world_pos,
-                per_atom_forces,
-                self.D_trans,
-                self.D_rot,
-                dt_outer,
-                dW_t,
-                dW_r,
-            )
-            # Force-change backstep. If the external force changes too much across
-            # the step, subdivide it through the Brownian bridge midpoint
-            # construction. This is skipped in the dt_rxn floor zone, because
-            # subdividing below dt_rxn would step finer than the adaptive scheme
-            # intends, and it is skipped when the parameter flag is off as a
-            # backward-compatible opt-out.
-            if params.force_change_backstep and dt_outer > params.dt_rxn:
-                world_pos_trial = place_chain(state.positions, pos, ori)
-                per_atom_forces_trial = self._compute_per_atom_external_forces(
-                    world_pos_trial
-                )
-                F_net_new = per_atom_forces_trial.sum(axis=0)
 
-                if backstep_due_to_force(
+            def _move(dW_t, dW_r, dW_r1):
+                """One outer move from (pos_old, ori_old). When the force changes
+                too much across it, the move is split at the Brownian bridge
+                midpoint of the same increments, which keeps their sum."""
+                new_pos, new_ori = self._rigid_step(
+                    pos_old,
+                    ori_old,
+                    world_pos,
+                    per_atom_forces,
+                    D_t_body,
+                    D_r_body,
+                    dt_outer,
+                    dW_t,
+                    dW_r,
+                    dW_r1,
+                )
+                if not (params.force_change_backstep and dt_outer > params.dt_rxn):
+                    return new_pos, new_ori
+                F_net_new = self._compute_per_atom_external_forces(
+                    place_chain(state.positions, new_pos, new_ori)
+                ).sum(axis=0)
+                if not backstep_due_to_force(
                     F_net_new,
                     F_net_old,
-                    pos,
+                    new_pos,
                     pos_old,
                     dt_outer,
                     params.dt_rxn,
                     radius=self._effective_hydro_radius,
                 ):
-                    # Brownian bridge midpoint, constructed so that dW_mid + dW_2nd
-                    # = dW while preserving the half-step noise statistics.
-                    s = math.sqrt(dt_outer / 4.0)
-                    dW_mid_t = 0.5 * dW_t + s * rng.standard_normal(3)
-                    dW_mid_r = 0.5 * dW_r + s * rng.standard_normal(3)
-                    hdt = dt_outer / 2.0
-                    # First half-step, taken from pos_old and ori_old with the
-                    # original old-position forces.
-                    pos, ori = chain_outer_bd_step_wiener(
-                        pos_old,
-                        ori_old,
-                        world_pos,
-                        per_atom_forces,
-                        self.D_trans,
-                        self.D_rot,
-                        hdt,
-                        dW_mid_t,
-                        dW_mid_r,
-                    )
-                    # Recompute the forces at the midpoint configuration.
-                    world_pos_mid = place_chain(state.positions, pos, ori)
-                    per_atom_forces_mid = self._compute_per_atom_external_forces(
-                        world_pos_mid
-                    )
-                    # Second half-step, taken from the midpoint with the midpoint
-                    # forces.
-                    dW_2nd_t = dW_t - dW_mid_t
-                    dW_2nd_r = dW_r - dW_mid_r
-                    pos, ori = chain_outer_bd_step_wiener(
-                        pos,
-                        ori,
-                        world_pos_mid,
-                        per_atom_forces_mid,
-                        self.D_trans,
-                        self.D_rot,
-                        hdt,
-                        dW_2nd_t,
-                        dW_2nd_r,
-                    )
-            # Hard-sphere overlap rejection. If the trial position produced an
-            # overlap, either between any chain bead and any target atom or between
-            # any non-bonded chain bead pair, redraw the Wiener increments and
-            # re-step from the same starting point with the original forces. The
-            # number of attempts is capped at MAX_HS_ATTEMPTS to avoid an infinite
-            # loop when the chain is wedged near the target, and if all attempts
-            # overlap, the last one is accepted with a warning. The other forces,
-            # namely electrostatics, soft repulsion, and constraints, typically
-            # resolve transient overlaps over the next few BD steps.
+                    return new_pos, new_ori
+                s = math.sqrt(dt_outer / 4.0)
+                dW_mid_t = 0.5 * dW_t + s * rng.standard_normal(3)
+                dW_mid_r = 0.5 * dW_r + s * rng.standard_normal(3)
+                dW_mid_r1 = None
+                if dW_r1 is not None:
+                    dW_mid_r1 = 0.5 * dW_r1 + s * rng.standard_normal(3)
+                hdt = dt_outer / 2.0
+                mid_pos, mid_ori = self._rigid_step(
+                    pos_old,
+                    ori_old,
+                    world_pos,
+                    per_atom_forces,
+                    D_t_body,
+                    D_r_body,
+                    hdt,
+                    dW_mid_t,
+                    dW_mid_r,
+                    dW_mid_r1,
+                )
+                world_mid = place_chain(state.positions, mid_pos, mid_ori)
+                return self._rigid_step(
+                    mid_pos,
+                    mid_ori,
+                    world_mid,
+                    self._compute_per_atom_external_forces(world_mid),
+                    D_t_body,
+                    D_r_body,
+                    hdt,
+                    dW_t - dW_mid_t,
+                    dW_r - dW_mid_r,
+                    None if dW_r1 is None else dW_r1 - dW_mid_r1,
+                )
+
+            def _draw():
+                """The Wiener increments of one outer move. The target increment
+                is drawn only for the two-body step."""
+                dW_t = math.sqrt(dt_outer) * rng.standard_normal(3)
+                dW_r = math.sqrt(dt_outer) * rng.standard_normal(3)
+                dW_r1 = None
+                if self._a_target is not None:
+                    dW_r1 = math.sqrt(dt_outer) * rng.standard_normal(3)
+                return dW_t, dW_r, dW_r1
+
+            pos, ori = _move(*_draw())
+            moved = True
+            # Hard-sphere rejection on the bead and target atom pairs. An
+            # overlapping move is redrawn up to MAX_HS_ATTEMPTS times. When every
+            # draw overlaps, the whole step is rejected: the inner steps are
+            # undone and the chain stays where it was.
             if params.use_hard_sphere:
                 MAX_HS_ATTEMPTS = 3
-                world_pos_check = place_chain(state.positions, pos, ori)
-                _hs_attempts = 0
-                while _check_chain_overlap(
-                    self.target,
-                    world_pos_check,
-                    self._chain_radii,
-                    self._bonded_pairs,
-                ):
-                    _hs_attempts += 1
-                    if _hs_attempts > MAX_HS_ATTEMPTS:
-                        warnings.warn(
-                            f"hard-sphere overlap rejection exceeded "
-                            f"{MAX_HS_ATTEMPTS} attempts; accepting overlapped "
-                            f"step (chain may be wedged near target)",
-                            RuntimeWarning,
-                            stacklevel=2,
-                        )
+                for attempt in range(MAX_HS_ATTEMPTS + 1):
+                    world_new = place_chain(state.positions, pos, ori)
+                    spheres = self._nearby_spheres(world_new)
+                    if spheres is None or not _check_chain_overlap(
+                        spheres, world_new, self._chain_radii
+                    ):
                         break
-                    dW_t2 = math.sqrt(dt_outer) * rng.standard_normal(3)
-                    dW_r2 = math.sqrt(dt_outer) * rng.standard_normal(3)
-                    pos, ori = chain_outer_bd_step_wiener(
-                        pos_old,
-                        ori_old,
-                        world_pos,
-                        per_atom_forces,
-                        self.D_trans,
-                        self.D_rot,
-                        dt_outer,
-                        dW_t2,
-                        dW_r2,
-                    )
-                    world_pos_check = place_chain(state.positions, pos, ori)
+                    if attempt == MAX_HS_ATTEMPTS:
+                        state.positions[:] = body_old
+                        pos, ori = pos_old, ori_old
+                        n_hs_rejections += 1
+                        moved = False
+                        break
+                    n_hs_redraws += 1
+                    pos, ori = _move(*_draw())
             t_elapsed += dt_outer
-            # Save the state for the next iteration's Brownian bridge check. The
-            # value cur_top_pair_dists was captured before this outer step. At the
-            # top of the next iteration we will compute fresh distances and use
-            # those two snapshots together with prev_dt_outer = dt_outer.
-            if params.use_brownian_bridge:
-                prev_top_pair_dists = cur_top_pair_dists
+            if diff_interval > 0:
+                Dt_weighted += tr_t_cur * dt_outer
+                Dr_weighted += tr_r_cur * dt_outer
+            if params.use_brownian_bridge and has_rxn and moved:
+                prev_pair_dists = pair_dists
+                prev_D_eff = D_eff
                 prev_dt_outer = dt_outer
-        # max_steps was exhausted without a reaction or a formal escape, so record
-        # the trajectory as ESCAPED with the current radius and accumulated time.
-        _r_curr = float(np.linalg.norm(pos))
-        if _r_curr < min_sep:
-            min_sep = _r_curr
-            pos_at_min = pos.copy()
-            q_at_min = np.array([ori.w, ori.x, ori.y, ori.z])
-        _diag = _build_chain_diagnostics(
-            path_steps_buf,
-            path_com_buf,
-            path_q_buf,
-            radial_buf,
-            energy_buf,
-            contact_count_buf,
-        )
-        if pos_at_min is not None:
-            _diag["near_miss_pos"] = pos_at_min
-            _diag["near_miss_dist"] = min_sep
-        # Running out of steps is neither a reaction nor an escape. Calling it an
-        # escape puts it in the P_rxn denominator and biases the rate downward.
-        return TrajectoryResult(
-            Fate.MAX_STEPS,
-            params.max_steps,
-            t_elapsed,
-            float(np.linalg.norm(pos)),
-            **_diag,
-        )
+            else:
+                prev_pair_dists = None
+        return _result(Fate.MAX_STEPS, params.max_steps)
 
     def run(self) -> List[TrajectoryResult]:
         """Execute n_trajectories trajectories, either serially or in parallel.
 
         This dispatches to a parallel multiprocessing pool when both
         params.n_threads > 1 and params.n_trajectories > 1, and otherwise it runs
-        serially. It returns the accumulated self.results list.
-
-        In serial mode all trajectories share self.rng, which is one continuous
-        random stream. In parallel mode each trajectory gets its own RNG seeded
-        from base_seed + trajectory_index. The results are therefore
-        deterministic within each mode's own seeding scheme, but the two modes do
-        not produce the same trajectories.
+        serially. Trajectory i draws from the streams of trajectory_rngs(seed, i)
+        in both modes, so the results do not depend on the number of workers.
+        It returns the accumulated self.results list.
         """
         n = self.params.n_trajectories
         if self.params.n_threads > 1 and n > 1:
@@ -1893,29 +2183,29 @@ class ChainBDSimulator:
             self.n_max_steps += 1
 
     def _run_serial(self, n: int) -> None:
-        """Run n trajectories sequentially, sharing self.rng."""
+        """Run n trajectories one after the other."""
         for i in range(n):
             if self.params.verbose:
                 print(
                     f"  Trajectory {i + 1}/{n}  "
                     f"(reacted={self.n_reacted}, escaped={self.n_escaped})"
                 )
-            self._record(self.run_one())
+            rng, rng_bb = trajectory_rngs(self.params.seed, i)
+            self._record(self.run_one(rng=rng, rng_bb=rng_bb))
 
     def _run_parallel(self, n: int) -> None:
-        """Run n trajectories across a multiprocessing pool."""
+        """Run n trajectories across a multiprocessing pool.
+
+        The initializer hands each worker the simulator once, and the tasks are
+        trajectory indices. imap returns the results in submission order.
+        """
         n_workers = min(self.params.n_threads, n, mp.cpu_count())
         if self.params.verbose:
             print(f"  Parallel: {n_workers} workers, {n} trajectories")
-        args = [(self, i) for i in range(n)]
-        # Use imap rather than map so that results come back as they complete,
-        # which enables incremental progress reporting. imap preserves the
-        # submission order, so self._record() sees the results in the same order
-        # as pool.map() would deliver them.
         report_every = max(1, n // 20)  # report progress every 5 percent
-        with mp.Pool(n_workers) as pool:
+        with mp.Pool(n_workers, initializer=_chain_worker_init, initargs=(self,)) as pool:
             for i, result in enumerate(
-                pool.imap(_run_chain_trajectory_worker, args), 1
+                pool.imap(_run_chain_trajectory_worker, range(n)), 1
             ):
                 self._record(result)
                 if self.params.verbose and (i % report_every == 0 or i == n):

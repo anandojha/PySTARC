@@ -111,6 +111,20 @@ class TrajectoryResult:
         None  # Separation magnitudes (n_snap,) along the path.
     )
     contact_counts: Optional[Dict[Tuple[int, int], int]] = None
+    # Time weighted means of tr(D_trans)/3 and tr(D_rot)/3 of the chain body
+    # tensors over the trajectory, and the rebuild counts of the periodic
+    # recomputation. These stay None, and 0, when the recomputation is off.
+    mean_D_trans: Optional[float] = None
+    mean_D_rot: Optional[float] = None
+    n_diffusion_rebuilds: int = 0
+    n_diffusion_rebuild_failures: int = 0
+    # Steps of the trajectory whose relative diffusion tensor was not positive
+    # definite and had its eigenvalues clipped at a small positive floor.
+    n_relative_diffusion_clipped: int = 0
+    # Outer moves of a chain redrawn after a bead overlapped a target atom,
+    # and steps rejected as a whole after every draw overlapped.
+    n_hard_sphere_redraws: int = 0
+    n_hard_sphere_rejections: int = 0
 
     @property
     def reacted(self) -> bool:

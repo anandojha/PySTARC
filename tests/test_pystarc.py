@@ -44,7 +44,7 @@ from pystarc.simulation.chain_simulator import (
     ChainBDSimulator,
     DEFAULT_DESOLVATION_ALPHA,
     _check_chain_overlap,
-    _min_reaction_distance,
+    _chain_worker_init,
     _run_chain_trajectory_worker,
     aggregate_chain_external_force_and_torque,
     chain_internal_bd_step,
@@ -10802,12 +10802,12 @@ class TestChainTargetStericVectorizedEquivalence:
 
 
 class TestComputeChainForcesEquivalence:
-    """compute_chain_forces (operating on ChainState) must agree bit-for-bit
-    with the legacy ChainForceEvaluator (operating on FlexibleChain).
+    """compute_chain_forces (operating on ChainState) must agree with the
+    legacy ChainForceEvaluator (operating on FlexibleChain) to rounding.
 
-    Both code paths share the same physics kernels, so the new path should
-    produce identical forces. Any discrepancy here means an indexing or
-    accumulation bug crept into the port.
+    The new path evaluates all terms of a kind at once, so only the order of
+    the floating point sums differs. Any larger discrepancy means an indexing
+    or accumulation bug crept into the port.
     """
 
     @staticmethod
@@ -10845,7 +10845,7 @@ class TestComputeChainForcesEquivalence:
         )
         compute_chain_forces(state)
         F_legacy = ChainForceEvaluator().compute_forces(fc)
-        np.testing.assert_array_equal(state.forces, F_legacy)
+        np.testing.assert_allclose(state.forces, F_legacy, rtol=1e-12, atol=1e-12)
 
     def test_angles_only_match_legacy(self):
         """compute_chain_forces reproduces the legacy evaluator forces for an angles-only bent chain."""
@@ -10866,7 +10866,7 @@ class TestComputeChainForcesEquivalence:
         )
         compute_chain_forces(state)
         F_legacy = ChainForceEvaluator().compute_forces(fc)
-        np.testing.assert_array_equal(state.forces, F_legacy)
+        np.testing.assert_allclose(state.forces, F_legacy, rtol=1e-12, atol=1e-12)
 
     def test_torsions_only_match_legacy(self):
         """compute_chain_forces reproduces the legacy evaluator forces for a torsions-only chain."""
@@ -10889,7 +10889,7 @@ class TestComputeChainForcesEquivalence:
         )
         compute_chain_forces(state)
         F_legacy = ChainForceEvaluator().compute_forces(fc)
-        np.testing.assert_array_equal(state.forces, F_legacy)
+        np.testing.assert_allclose(state.forces, F_legacy, rtol=1e-12, atol=1e-12)
 
     def test_full_chain_match_legacy(self):
         """compute_chain_forces reproduces the legacy evaluator forces with bonds, angles, and torsions all active."""
@@ -10932,7 +10932,7 @@ class TestComputeChainForcesEquivalence:
         )
         compute_chain_forces(state)
         F_legacy = ChainForceEvaluator().compute_forces(fc)
-        np.testing.assert_array_equal(state.forces, F_legacy)
+        np.testing.assert_allclose(state.forces, F_legacy, rtol=1e-12, atol=1e-12)
 
 
 class TestComputeChainForcesProperties:
@@ -11911,7 +11911,8 @@ class TestChainBDParallelMode:
         """The top-level worker function returns a valid TrajectoryResult with a reacted, escaped, or step-limited fate."""
 
         sim = self._make_sim(n_trajectories=1, n_threads=1)
-        result = _run_chain_trajectory_worker((sim, 0))
+        _chain_worker_init(sim)
+        result = _run_chain_trajectory_worker(0)
         assert isinstance(result, TrajectoryResult)
         assert result.fate in (Fate.ESCAPED, Fate.REACTED, Fate.MAX_STEPS)
 
@@ -13439,61 +13440,21 @@ class TestAdaptiveDtZone:
         )
         return PathwaySet(reactions=[rxn])
 
-    def test_min_reaction_distance_with_no_reactions(self):
-        """_min_reaction_distance returns 0.0 for an empty PathwaySet."""
-
-        empty = PathwaySet(reactions=[])
-        assert _min_reaction_distance(empty) == 0.0
-
-    def test_min_reaction_distance_with_none(self):
-        """_min_reaction_distance returns 0.0 when pathway_set is None."""
-
-        assert _min_reaction_distance(None) == 0.0
-
-    def test_min_reaction_distance_picks_smallest(self):
-        """_min_reaction_distance returns the smallest distance_cutoff across all reactions and pairs."""
-
-        rxns = [
-            ReactionInterface(
-                name="r1",
-                probability=1.0,
-                criteria=ReactionCriteria(
-                    pairs=[
-                        ContactPair(0, 0, distance_cutoff=8.0),
-                        ContactPair(1, 1, distance_cutoff=4.0),  # smallest in r1
-                    ]
-                ),
-            ),
-            ReactionInterface(
-                name="r2",
-                probability=1.0,
-                criteria=ReactionCriteria(
-                    pairs=[
-                        ContactPair(0, 0, distance_cutoff=3.0),  # smallest overall
-                        ContactPair(2, 2, distance_cutoff=10.0),
-                    ]
-                ),
-            ),
-        ]
-        ps = PathwaySet(reactions=rxns)
-        assert _min_reaction_distance(ps) == 3.0
-
-    def test_simulator_caches_rxn_min(self):
-        """ChainBDSimulator caches _rxn_min in __init__ as the minimum reaction distance, or 0.0 when empty."""
+    def test_near_zone_follows_the_pair_distances(self):
+        """The outer step is dt_rxn while a reaction pair is closer than 1.5 times its cutoff, whatever the center distance."""
 
         atoms = [ChainAtom(radius=1.5, charge=0.0) for _ in range(3)]
         template = ChainCommon(name="t", atoms=atoms)
-        body_pos = np.array(
-            [
-                [-2.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0],
-                [2.0, 0.0, 0.0],
-            ]
-        )
+        body_pos = np.array([[-2.0, 0.0, 0.0], [0.0, 1.0, 0.0], [2.0, 0.0, 0.0]])
         body_pos -= body_pos.mean(axis=0)
+        target = Molecule(
+            name="t",
+            atoms=[Atom(index=1, name="X", x=0.0, y=0.0, z=0.0, radius=1.0)],
+        )
         params = ChainBDParameters(
             n_trajectories=1,
             dt=0.5,
+            dt_rxn=0.1,
             dt_chain=0.05,
             chain_steps_per_outer=4,
             max_steps=10,
@@ -13501,10 +13462,21 @@ class TestAdaptiveDtZone:
             r_escape=30.0,
             seed=42,
         )
-
-        # Empty pathway set -> _rxn_min = 0.0
+        sim = ChainBDSimulator(
+            target=target,
+            chain_template=template,
+            chain_init_body_positions=body_pos,
+            params=params,
+            pathway_set=self._build_pathway_with_distance(5.0),
+            D_trans=0.05,
+            D_rot=0.005,
+        )
+        sim._refresh_geometry()
+        assert sim._outer_dt([np.array([7.4])]) == 0.1
+        assert sim._outer_dt([np.array([7.6])]) == 0.5
+        assert sim._outer_dt(None) == 0.5
         sim_empty = ChainBDSimulator(
-            target=None,
+            target=target,
             chain_template=template,
             chain_init_body_positions=body_pos,
             params=params,
@@ -13512,20 +13484,8 @@ class TestAdaptiveDtZone:
             D_trans=0.05,
             D_rot=0.005,
         )
-        assert sim_empty._rxn_min == 0.0
-
-        # Pathway with cutoff 5.0 -> _rxn_min = 5.0
-        ps = self._build_pathway_with_distance(5.0)
-        sim = ChainBDSimulator(
-            target=None,
-            chain_template=template,
-            chain_init_body_positions=body_pos,
-            params=params,
-            pathway_set=ps,
-            D_trans=0.05,
-            D_rot=0.005,
-        )
-        assert sim._rxn_min == 5.0
+        sim_empty._refresh_geometry()
+        assert sim_empty._outer_dt(None) == 0.5
 
     def test_dt_zone_activates_near_reaction_surface(self):
         """Inside 1.5 times rxn_min the simulator uses params.dt_rxn so mean time per step equals dt_rxn."""
@@ -14074,7 +14034,7 @@ class TestHardSphereRejection:
         target = self._build_target([(0.0, 0.0, 0.0, 2.0)])
         chain_pos = np.array([[3.0, 0.0, 0.0]])
         chain_r = np.array([1.5])
-        assert _check_chain_overlap(target, chain_pos, chain_r, set())
+        assert _check_chain_overlap(target, chain_pos, chain_r)
 
     def test_overlap_helper_no_overlap_when_separated(self):
         """_check_chain_overlap returns False when a bead is well separated from the target atom."""
@@ -14083,10 +14043,10 @@ class TestHardSphereRejection:
         # Chain bead at (10.0, 0, 0) with radius 1.5 -> well separated.
         chain_pos = np.array([[10.0, 0.0, 0.0]])
         chain_r = np.array([1.5])
-        assert not _check_chain_overlap(target, chain_pos, chain_r, set())
+        assert not _check_chain_overlap(target, chain_pos, chain_r)
 
     def test_overlap_helper_intra_chain_bead_pair(self):
-        """_check_chain_overlap returns True when two non-bonded chain beads overlap."""
+        """_check_chain_overlap tests only the chain against the target, so two overlapping chain beads are not flagged."""
 
         # Two beads with radius 1.5 at distance 2.0 -> overlap.
         chain_pos = np.array(
@@ -14096,8 +14056,7 @@ class TestHardSphereRejection:
             ]
         )
         chain_r = np.array([1.5, 1.5])
-        # No bonded pair -> overlap detected.
-        assert _check_chain_overlap(None, chain_pos, chain_r, set())
+        assert not _check_chain_overlap(None, chain_pos, chain_r)
 
     def test_overlap_helper_bonded_pair_is_skipped(self):
         """_check_chain_overlap does not flag overlap between close bonded neighbors."""
@@ -14109,9 +14068,7 @@ class TestHardSphereRejection:
             ]
         )
         chain_r = np.array([1.5, 1.5])
-        # Same close geometry, but now (0, 1) is a bonded pair.
-        bonded = {(0, 1), (1, 0)}
-        assert not _check_chain_overlap(None, chain_pos, chain_r, bonded)
+        assert not _check_chain_overlap(None, chain_pos, chain_r)
 
     def test_overlap_helper_ghost_atoms_skipped(self):
         """_check_chain_overlap skips ghost atoms with radius below 1e-10 so they never trigger overlap."""
@@ -14119,10 +14076,10 @@ class TestHardSphereRejection:
         target = self._build_target([(0.0, 0.0, 0.0, 0.0)])  # ghost
         chain_pos = np.array([[0.5, 0.0, 0.0]])
         chain_r = np.array([1.5])
-        assert not _check_chain_overlap(target, chain_pos, chain_r, set())
+        assert not _check_chain_overlap(target, chain_pos, chain_r)
 
     def test_simulator_caches_bonded_pairs_and_radii(self):
-        """ChainBDSimulator caches bead radii and bonded pairs in both orderings from the chain template."""
+        """ChainBDSimulator caches the bead radii of the chain template."""
 
         atoms = [
             ChainAtom(radius=1.0, charge=0.0),
@@ -14157,10 +14114,6 @@ class TestHardSphereRejection:
             D_rot=0.005,
         )
         np.testing.assert_array_equal(sim._chain_radii, [1.0, 2.0, 3.0])
-        assert (0, 1) in sim._bonded_pairs
-        assert (1, 0) in sim._bonded_pairs  # both orderings
-        assert (0, 2) not in sim._bonded_pairs
-        assert (1, 2) not in sim._bonded_pairs
 
     def test_rejection_fires_with_overlap_prone_geometry(self):
         """Hard-sphere rejection on versus off yields meaningfully different mean times for overlap-prone geometry."""
@@ -14233,7 +14186,7 @@ class TestHardSphereRejection:
         )
 
     def test_rejection_off_matches_pre_adt3(self):
-        """With use_hard_sphere=False the run reproduces the pre-ADT3 smoke value of about 1675 ps."""
+        """With use_hard_sphere=False the chain diffuses freely, and the mean escape time from r_start to r_escape agrees with (r_escape^2 - r_start^2) / (6 D) within three standard errors."""
 
         atoms = [ChainAtom(radius=1.5, charge=0.0) for _ in range(4)]
         template = ChainCommon(name="t", atoms=atoms)
@@ -14284,10 +14237,11 @@ class TestHardSphereRejection:
             auto_diffusion=True,
         )
         results = sim.run()
-        mean_t = sum(r.time_ps for r in results) / len(results)
-        assert 1050 < mean_t < 1350, (
-            f"with hard-sphere off, expected ~1181 ps post viscosity fix; "
-            f"got {mean_t:.1f} ps"
+        t = np.array([r.time_ps for r in results])
+        expected = (30.0**2 - 10.0**2) / (6.0 * np.trace(sim.D_trans) / 3.0)
+        assert abs(t.mean() - expected) < 3.0 * t.std() / np.sqrt(len(t)), (
+            f"with hard-sphere off, expected {expected:.1f} ps for free "
+            f"diffusion; got {t.mean():.1f} ps"
         )
 
 
@@ -18072,10 +18026,10 @@ class TestRunChainSmoke:
         chain_json_path = tmp_path / "chain.json"
         chain_json_path.write_text(json.dumps(chain_json_data))
 
-        # Two-atom receptor at ~10 A separation
+        # Two-atom receptor at ~10 A separation, centered at the origin
         pqr_text = (
-            "ATOM      1  CA  GLY     1       0.000   0.000   0.000  0.000  3.000\n"
-            "ATOM      2  CB  GLY     1       5.000   0.000   0.000  0.000  3.000\n"
+            "ATOM      1  CA  GLY     1      -2.500   0.000   0.000  0.000  3.000\n"
+            "ATOM      2  CB  GLY     1       2.500   0.000   0.000  0.000  3.000\n"
         )
         receptor_pqr = tmp_path / "receptor.pqr"
         receptor_pqr.write_text(pqr_text)
@@ -18486,16 +18440,14 @@ class TestInputParserChainBlockNegative:
 
 class TestBoundedHardSphereSafeguardPresent:
     """Regression: the bounded hard-sphere rejection safeguard must remain
-    in chain_simulator.py. The dynamic firing is exercised by the existing
-    TestChainBDSimulator* tests (which produce ~30 RuntimeWarnings in any
-    normal suite run from naturally-wedging trajectories); this test guards
-    against the safeguard CODE being silently refactored away. If this test
-    fails, the safeguard has been removed or renamed and behavioural review
-    is required before the change is merged.
+    in chain_simulator.py. Its behavior is tested in tests/test_chain_model.py;
+    this test guards against the safeguard code being silently refactored
+    away. If this test fails, the safeguard has been removed or renamed and
+    behavioural review is required before the change is merged.
     """
 
     def test_safeguard_code_present_in_chain_simulator(self):
-        """chain_simulator source retains the MAX_HS_ATTEMPTS constant, overlap diagnostic string, and RuntimeWarning emission of the hard-sphere safeguard."""
+        """chain_simulator source retains the MAX_HS_ATTEMPTS constant and the rejection count of the hard-sphere safeguard."""
 
         src = inspect.getsource(chain_simulator)
         # The three signatures of a working safeguard:
@@ -18503,12 +18455,8 @@ class TestBoundedHardSphereSafeguardPresent:
             "MAX_HS_ATTEMPTS constant missing; bounded retry may have been "
             "removed from chain_simulator"
         )
-        assert "hard-sphere overlap rejection exceeded" in src, (
-            "diagnostic warning string missing; safeguard may have been "
-            "silenced silently rather than at filterwarnings level"
-        )
-        assert "RuntimeWarning" in src, (
-            "RuntimeWarning emission missing; safeguard may have been "
+        assert "n_hs_rejections += 1" in src, (
+            "rejection count missing; an exhausted retry may have been "
             "downgraded to a silent accept"
         )
 
@@ -20287,6 +20235,8 @@ class _FakeChain:
         self.bonds = []
         self.angles = []
         self.torsions = []
+        self.coffdrop_params = None
+        self.pair_lookups = {}
 
 
 def _make_config(tmp_path, chain_overrides=None, output_overrides=None):
@@ -20333,7 +20283,14 @@ def _patch_pipeline_seams(monkeypatch, captured):
     monkeypatch.setattr(
         chain_pipeline,
         "parse_pqr",
-        lambda path: types.SimpleNamespace(name="target"),
+        lambda path: types.SimpleNamespace(
+            name="target", atoms=[types.SimpleNamespace(x=0.0, y=0.0, z=0.0)]
+        ),
+    )
+    monkeypatch.setattr(
+        chain_pipeline,
+        "analyse_molecule",
+        lambda path, **kwargs: types.SimpleNamespace(hydrodynamic_r=13.5),
     )
     monkeypatch.setattr(
         chain_pipeline,
@@ -20362,8 +20319,8 @@ def _patch_pipeline_seams(monkeypatch, captured):
     monkeypatch.setattr(chain_pipeline, "write_chain_results", _fake_write)
 
 
-def test_default_config_resolves_diffusion_defaults(tmp_path, monkeypatch):
-    """A default chain config with D=0 forwards the scalar defaults D_trans=0.1 and D_rot=0.01 with auto_diffusion off."""
+def test_default_config_zero_diffusion_is_an_error(tmp_path, monkeypatch):
+    """A default chain config with D=0 and auto_diffusion off raises, since the 0.1 and 0.01 placeholders are gone."""
     captured = {}
     _patch_pipeline_seams(monkeypatch, captured)
 
@@ -20373,12 +20330,8 @@ def test_default_config_resolves_diffusion_defaults(tmp_path, monkeypatch):
     assert cfg.chain.D_trans == 0.0
     assert cfg.chain.D_rot == 0.0
 
-    chain_pipeline.run_chain(cfg)
-
-    sim_kwargs = captured["sim_kwargs"]
-    assert sim_kwargs.get("auto_diffusion") is not True
-    assert sim_kwargs["D_trans"] == 0.1
-    assert sim_kwargs["D_rot"] == 0.01
+    with pytest.raises(ValueError, match="D_trans"):
+        chain_pipeline.run_chain(cfg)
 
 
 def test_explicit_diffusion_is_preserved(tmp_path, monkeypatch):
@@ -20418,6 +20371,7 @@ def test_run_chain_forwards_outputs(tmp_path, monkeypatch):
 
     cfg = _make_config(
         tmp_path,
+        chain_overrides=dict(D_trans=0.1, D_rot=0.01),
         output_overrides=dict(encounters_csv=False, full_paths=False),
     )
     chain_pipeline.run_chain(cfg)

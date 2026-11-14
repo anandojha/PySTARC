@@ -9,7 +9,11 @@ The JSON schema is intentionally minimal. It is a top-level object with a
 "name" (a string), an "atoms" list of atom dictionaries, and optional lists
 for "bonds", "angles", and "torsions". Each atom carries a radius, a charge,
 a residue name, a residue identifier, and a three-component position. Bonded
-interactions reference atoms by their integer index into the atoms list.
+interactions reference atoms by their integer index into the atoms list, and
+type_idx selects their COFFDROP table (-1 for none). A chain built with the
+COFFDROP tables also carries a "coffdrop" object with the four source files,
+their SHA-256 and the pair table of every non-bonded pair, so a load restores
+the same force field.
 
 Positions on disk may be expressed in any frame. This module centers them at
 the origin on load by subtracting the mean, so that the resulting body-frame
@@ -28,7 +32,39 @@ from pystarc.simulation.coffdrop_chain import (
 from typing import Tuple, Optional, List, Dict
 from pathlib import Path
 import numpy as np
+import hashlib
 import json
+
+# The bundled COFFDROP data, searched when a recorded file has moved.
+COFFDROP_DATA = Path(__file__).resolve().parent.parent / "coffdrop_data"
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _load_coffdrop(block: dict, path: Path):
+    """Load the COFFDROP parameters named in a chain JSON block.
+
+    Each file is taken from its recorded path or, when that is gone, from the
+    bundled data folder, and its SHA-256 must match the recorded one.
+    """
+    from pystarc.simulation.coffdrop_params import COFFDROPParams
+
+    files = {}
+    for key, rec in block["files"].items():
+        found = None
+        for cand in (Path(rec["path"]), COFFDROP_DATA / Path(rec["path"]).name):
+            if cand.is_file() and _sha256(cand) == rec["sha256"]:
+                found = cand
+                break
+        if found is None:
+            raise ValueError(
+                f"chain JSON {path}: no COFFDROP file with SHA-256 "
+                f"{rec['sha256']} at {rec['path']} or in {COFFDROP_DATA}"
+            )
+        files[key] = str(found)
+    return COFFDROPParams.load(**files)
 
 
 def load_chain_from_json(path: str | Path) -> Tuple[ChainCommon, np.ndarray]:
@@ -76,6 +112,7 @@ def load_chain_from_json(path: str | Path) -> Tuple[ChainCommon, np.ndarray]:
                 b=ChainAtomRef(int(bd["b"])),
                 r0=float(bd["r0"]),
                 k_spring=float(bd["k_spring"]),
+                type_idx=int(bd.get("type_idx", -1)),
             )
         )
     angles = []
@@ -87,6 +124,7 @@ def load_chain_from_json(path: str | Path) -> Tuple[ChainCommon, np.ndarray]:
                 c=ChainAtomRef(int(ad["c"])),
                 theta0=float(ad["theta0"]),
                 k_angle=float(ad["k_angle"]),
+                type_idx=int(ad.get("type_idx", -1)),
             )
         )
     torsions = []
@@ -100,6 +138,7 @@ def load_chain_from_json(path: str | Path) -> Tuple[ChainCommon, np.ndarray]:
                 phi0=float(td["phi0"]),
                 k_tor=float(td["k_tor"]),
                 n=int(td["n"]),
+                type_idx=int(td.get("type_idx", -1)),
             )
         )
     common = ChainCommon(
@@ -109,6 +148,12 @@ def load_chain_from_json(path: str | Path) -> Tuple[ChainCommon, np.ndarray]:
         angles=angles,
         torsions=torsions,
     )
+    block = data.get("coffdrop")
+    if block is not None:
+        common.coffdrop_params = _load_coffdrop(block, path)
+        common.pair_lookups = {
+            (int(i), int(j)): int(t) for i, j, t in block.get("pairs", [])
+        }
     return common, body_positions
 
 
@@ -187,6 +232,7 @@ def save_chain_to_json(
             "b": _atom_ref_to_int(bd.b),
             "r0": float(bd.r0),
             "k_spring": float(bd.k_spring),
+            "type_idx": int(bd.type_idx),
         }
         for bd in common.bonds
     ]
@@ -197,6 +243,7 @@ def save_chain_to_json(
             "c": _atom_ref_to_int(ag.c),
             "theta0": float(ag.theta0),
             "k_angle": float(ag.k_angle),
+            "type_idx": int(ag.type_idx),
         }
         for ag in common.angles
     ]
@@ -209,6 +256,7 @@ def save_chain_to_json(
             "phi0": float(tr.phi0),
             "k_tor": float(tr.k_tor),
             "n": int(tr.n),
+            "type_idx": int(tr.type_idx),
         }
         for tr in common.torsions
     ]
@@ -219,6 +267,21 @@ def save_chain_to_json(
         "angles": angles_out,
         "torsions": torsions_out,
     }
+    params = common.coffdrop_params
+    if params is not None:
+        files = getattr(params, "files", {})
+        if not files:
+            raise ValueError(
+                "the chain carries COFFDROP tables without their source files; "
+                "load the parameters with COFFDROPParams.load"
+            )
+        data["coffdrop"] = {
+            "files": {
+                k: {"path": str(Path(v).resolve()), "sha256": _sha256(v)}
+                for k, v in files.items()
+            },
+            "pairs": [[int(i), int(j), int(t)] for (i, j), t in common.pair_lookups.items()],
+        }
     with open(path, "w") as fh:
         json.dump(data, fh, indent=indent)
     return path

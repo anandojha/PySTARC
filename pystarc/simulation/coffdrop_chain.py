@@ -156,6 +156,9 @@ class ChainCommon:
     # force. They fall back to WCA when soft_repulsion is on, or are skipped
     # entirely otherwise.
     pair_lookups: Dict[Tuple[int, int], int] = field(default_factory=dict)
+    # Harmonic springs of the elastic network that holds the reference fold,
+    # built by elastic_network. They act like bonds but enter no exclusion.
+    network: List["ChainBond"] = field(default_factory=list)
 
     @property
     def n_atoms(self) -> int:
@@ -758,6 +761,203 @@ def compute_target_grid_forces(
             state.forces[i] += forces[k]
 
 
+def _scatter(F: np.ndarray, idx: np.ndarray, vec: np.ndarray) -> None:
+    """Add the rows of vec into F at the atom indices idx."""
+    n = F.shape[0]
+    for c in range(3):
+        F[:, c] += np.bincount(idx, weights=vec[:, c], minlength=n)
+
+
+def _spline_table(pots) -> dict:
+    """Stack the piecewise cubic coefficients of a list of tabulated potentials.
+
+    Interval m of potential t holds coef[:, start[t] + m], the coefficients of
+    c0 s^3 + c1 s^2 + c2 s + c3 with s the distance from the interval start. A
+    table of fewer than four points is linear, as in TabulatedPotential.
+    """
+    coefs, start, x_min, x_max, dx, n_int = [], [], [], [], [], []
+    offset = 0
+    for pot in pots:
+        if pot._spline is not None:
+            c = np.asarray(pot._spline.c, dtype=float)
+        else:
+            v = np.asarray(pot.values, dtype=float)
+            c = np.zeros((4, max(len(v) - 1, 1)))
+            if len(v) > 1:
+                c[2] = np.diff(v) / pot._dx
+                c[3] = v[:-1]
+        coefs.append(c)
+        start.append(offset)
+        offset += c.shape[1]
+        x_min.append(pot.x_min)
+        x_max.append(pot.x_max)
+        dx.append(pot._dx)
+        n_int.append(c.shape[1])
+    return dict(
+        coef=np.concatenate(coefs, axis=1) if coefs else np.zeros((4, 0)),
+        start=np.array(start, dtype=np.int64),
+        x_min=np.array(x_min, dtype=float),
+        x_max=np.array(x_max, dtype=float),
+        dx=np.array(dx, dtype=float),
+        n_int=np.array(n_int, dtype=np.int64),
+    )
+
+
+def _table_derivative(params, kind: str, types: np.ndarray, x: np.ndarray):
+    """First derivative of the tabulated potentials types at x, zero outside.
+
+    kind is "pair", "angle" or "dihedral". The stacked coefficients are built
+    once per parameter set and kept on it.
+    """
+    cache = params.__dict__.setdefault("_tables", {})
+    if kind not in cache:
+        cache[kind] = _spline_table(getattr(params, kind + "_pots"))
+    tab = cache[kind]
+    x0 = tab["x_min"][types]
+    h = tab["dx"][types]
+    inside = (x > x0) & (x < tab["x_max"][types])
+    m = np.clip(np.floor((x - x0) / h).astype(np.int64), 0, tab["n_int"][types] - 1)
+    s = x - (x0 + h * m)
+    c = tab["coef"][:, tab["start"][types] + m]
+    return np.where(inside, (3.0 * c[0] * s + 2.0 * c[1]) * s + c[2], 0.0)
+
+
+def _term_arrays(common: "ChainCommon") -> dict:
+    """Index and parameter arrays of the bonded terms, kept on the chain.
+
+    ChainCommon is immutable by design, so the arrays are rebuilt only when a
+    term list is replaced or changes length.
+    """
+    key = tuple(
+        (id(x), len(x))
+        for x in (common.bonds, common.angles, common.torsions, common.network)
+    )
+    cache = common.__dict__.get("_term_cache")
+    if cache is not None and cache[0] == key:
+        return cache[1]
+
+    def ids(terms, names):
+        return [
+            np.array([_chain_idx(getattr(t, s)) for t in terms], dtype=np.int64)
+            for s in names
+        ]
+
+    def vals(terms, name, dtype=float):
+        return np.array([getattr(t, name) for t in terms], dtype=dtype)
+
+    arrays = {}
+    for name, terms in (("bond", common.bonds), ("network", common.network)):
+        arrays[name] = (*ids(terms, "ab"), vals(terms, "r0"), vals(terms, "k_spring"))
+    a = common.angles
+    arrays["angle"] = (
+        *ids(a, "abc"),
+        vals(a, "theta0"),
+        vals(a, "k_angle"),
+        vals(a, "type_idx", np.int64),
+    )
+    t = common.torsions
+    arrays["torsion"] = (
+        *ids(t, "abcd"),
+        vals(t, "phi0"),
+        vals(t, "k_tor"),
+        vals(t, "n"),
+        vals(t, "type_idx", np.int64),
+    )
+    common.__dict__["_term_cache"] = (key, arrays)
+    return arrays
+
+
+def _harmonic_bond_forces(F, pos, ok, terms) -> None:
+    """Harmonic bonds V = k/2 (r - r0)^2, as _bond_force_state."""
+    ia, ib, r0, k = terms
+    if ia.size == 0:
+        return
+    d = pos[ib] - pos[ia]
+    r = np.sqrt(np.einsum("ij,ij->i", d, d))
+    use = ok[ia] & ok[ib] & (r >= 1e-8)
+    if not use.all():
+        ia, ib, r0, k, d, r = ia[use], ib[use], r0[use], k[use], d[use], r[use]
+    f = (-k * (r - r0) / r)[:, None] * d
+    _scatter(F, ia, -f)
+    _scatter(F, ib, f)
+
+
+def _angle_forces(F, pos, ok, terms, params) -> None:
+    """Angle forces, tabulated for type_idx >= 0 and harmonic otherwise.
+
+    The tabulated derivative is in kBT per degree, as in _angle_force_state.
+    """
+    ia, ib, ic, theta0, k, typ = terms
+    if ia.size == 0:
+        return
+    u = pos[ia] - pos[ib]
+    v = pos[ic] - pos[ib]
+    nu = np.sqrt(np.einsum("ij,ij->i", u, u))
+    nv = np.sqrt(np.einsum("ij,ij->i", v, v))
+    use = ok[ia] & ok[ib] & ok[ic] & (nu >= 1e-8) & (nv >= 1e-8)
+    u = u / np.where(use, nu, 1.0)[:, None]
+    v = v / np.where(use, nv, 1.0)[:, None]
+    cos_t = np.clip(np.einsum("ij,ij->i", u, v), -1.0, 1.0)
+    theta = np.arccos(cos_t)
+    sin_t = np.sin(theta)
+    use &= np.abs(sin_t) >= 1e-8
+    dV = k * (theta - theta0)
+    tab = (typ >= 0) & use if params is not None else np.zeros_like(use)
+    if tab.any():
+        dV[tab] = _table_derivative(
+            params, "angle", typ[tab], np.degrees(theta[tab])
+        ) * (180.0 / math.pi)
+    coeff = np.where(use, dV / np.where(use, sin_t, 1.0), 0.0)
+    fi = (coeff / np.where(use, nu, 1.0))[:, None] * (v - cos_t[:, None] * u)
+    fk = (coeff / np.where(use, nv, 1.0))[:, None] * (u - cos_t[:, None] * v)
+    _scatter(F, ia, fi)
+    _scatter(F, ic, fk)
+    _scatter(F, ib, -(fi + fk))
+
+
+def _torsion_forces(F, pos, ok, terms, params) -> None:
+    """Torsion forces, tabulated for type_idx >= 0 and V = k (1 - cos(n phi -
+    phi0)) otherwise.
+
+    The dihedral phi and its gradient follow Blondel and Karplus (1996), with
+    the sign convention of ChainForceEvaluator._torsion_force. The tabulated
+    derivative is in kBT per degree on [0, 360).
+    """
+    ia, ib, ic, il, phi0, k, n, typ = terms
+    if ia.size == 0:
+        return
+    f = pos[ia] - pos[ib]
+    g = pos[ib] - pos[ic]
+    h = pos[il] - pos[ic]
+    a = np.cross(f, g)
+    b = np.cross(h, g)
+    a2 = np.einsum("ij,ij->i", a, a)
+    b2 = np.einsum("ij,ij->i", b, b)
+    use = ok[ia] & ok[ib] & ok[ic] & ok[il] & (a2 >= 1e-24) & (b2 >= 1e-24)
+    a2 = np.where(use, a2, 1.0)
+    b2 = np.where(use, b2, 1.0)
+    gn = np.sqrt(np.einsum("ij,ij->i", g, g))
+    gn = np.where(use, gn, 1.0)
+    phi = np.arctan2(-gn * np.einsum("ij,ij->i", f, b), np.einsum("ij,ij->i", a, b))
+    dV = k * n * np.sin(n * phi - phi0)
+    tab = (typ >= 0) & use if params is not None else np.zeros_like(use)
+    if tab.any():
+        dV[tab] = _table_derivative(
+            params, "dihedral", typ[tab], np.mod(np.degrees(phi[tab]), 360.0)
+        ) * (180.0 / math.pi)
+    dV = np.where(use, dV, 0.0)
+    fg = np.einsum("ij,ij->i", f, g) / gn
+    hg = np.einsum("ij,ij->i", h, g) / gn
+    grad_i = -(gn / a2)[:, None] * a
+    grad_l = (gn / b2)[:, None] * b
+    grad_j = ((gn + fg) / a2)[:, None] * a - (hg / b2)[:, None] * b
+    grad_k = -grad_i - grad_j - grad_l
+    _scatter(F, ia, -dV[:, None] * grad_i)
+    _scatter(F, ib, -dV[:, None] * grad_j)
+    _scatter(F, ic, -dV[:, None] * grad_k)
+    _scatter(F, il, -dV[:, None] * grad_l)
+
+
 def compute_chain_forces(
     state: "ChainState",
     kT: float = 1.0,
@@ -765,50 +965,48 @@ def compute_chain_forces(
     soft_repulsion_eps: float = 1.0,
     target_grids: Optional[list] = None,
 ) -> None:
-    """Fill state.forces from the bonded interactions on state.positions.
+    """Fill state.forces from the interactions within the chain.
 
-    state.forces is zeroed first, then the bond, angle, and torsion
-    contributions are accumulated. If soft_repulsion is True, the function
-    also adds intra-chain WCA forces between non-bonded bead pairs. This is
-    not full COFFDROP, since it uses radius sums for sigma and a uniform
-    epsilon.
-
-    state is the chain ChainState holding positions, forces, and common
-    topology. kT is the thermal energy unit, which is currently unused inside
-    the bonded force functions and kept for API compatibility. When
-    soft_repulsion is True, chain_intra_nonbonded_forces is accumulated on top
-    of the bonded forces. It defaults to False because eps = 1 is not physical
-    for arbitrary chains. soft_repulsion_eps is the WCA epsilon in kBT units
-    and is only used when soft_repulsion is True.
+    state.forces is zeroed first. Then the bonds, the elastic network springs,
+    the angles and the torsions are added, with the COFFDROP tables where the
+    chain carries them, and the COFFDROP pair forces when the chain has pair
+    tables. With soft_repulsion the WCA repulsion of
+    chain_intra_nonbonded_forces is added on the pairs that have no table.
+    target_grids adds the field of APBS grids on the bead charges. kT is kept
+    for the API; the forces are in kBT/A.
     """
     state.zero_forces()
     common = state.common
-    for bond in common.bonds:
-        _bond_force_state(state, bond)
-    for angle in common.angles:
-        _angle_force_state(state, angle)
-    for torsion in common.torsions:
-        _torsion_force_state(state, torsion)
-    # COFFDROP tabulated pair forces: applied automatically when the
-    # chain has been built with both coffdrop_params and a non-empty
-    # pair_lookups dict. This is the production non-bonded path for
-    # COFFDROP-aware chains. Backward compatible: chains without
-    # pair_lookups skip this branch.
-    if common.coffdrop_params is not None and common.pair_lookups:
-        F_pair = chain_intra_coffdrop_pair_forces(state, common)
-        state.forces += F_pair
-    # Target electrostatic forces from APBS DX grids.
-    # Reads atom charges from common.atoms[i].charge (set during chain build).
+    pos = state.positions
+    F = state.forces
+    ok = np.all(np.isfinite(pos), axis=1) & (np.max(np.abs(pos), axis=1) <= 1e6)
+    terms = _term_arrays(common)
+    params = common.coffdrop_params
+    _harmonic_bond_forces(F, pos, ok, terms["bond"])
+    _harmonic_bond_forces(F, pos, ok, terms["network"])
+    _angle_forces(F, pos, ok, terms["angle"], params)
+    _torsion_forces(F, pos, ok, terms["torsion"], params)
+    if params is not None and common.pair_lookups:
+        F += chain_intra_coffdrop_pair_forces(state, common)
     if target_grids:
         atom_charges = np.array([a.charge for a in common.atoms])
         compute_target_grid_forces(state, target_grids, atom_charges)
     if soft_repulsion:
-        F_wca = chain_intra_nonbonded_forces(
-            state,
-            common,
-            eps=soft_repulsion_eps,
-        )
-        state.forces += F_wca
+        F += chain_intra_nonbonded_forces(state, common, eps=soft_repulsion_eps)
+
+
+def bonded_exclusions(common: "ChainCommon") -> np.ndarray:
+    """Return the (n, n) mask of the pairs joined by a bond or sharing a bonded
+    neighbor, the 1-2 and 1-3 pairs that the bond and angle terms describe."""
+    n = common.n_atoms
+    bonded = np.zeros((n, n), dtype=bool)
+    for bond in common.bonds:
+        i, j = _chain_idx(bond.a), _chain_idx(bond.b)
+        bonded[i, j] = bonded[j, i] = True
+    one_three = (bonded.astype(np.int64) @ bonded.astype(np.int64)) > 0
+    excluded = bonded | one_three
+    np.fill_diagonal(excluded, True)
+    return excluded
 
 
 def chain_intra_nonbonded_forces(
@@ -834,13 +1032,11 @@ def chain_intra_nonbonded_forces(
     away from bead j, which is the correct repulsion. Bead j receives the
     opposite force by Newton's third law.
 
-    Pairs (i, j) with j < i+2 are skipped, so only j >= i+2 are considered.
-    This matches the legacy excluded-volume convention. It excludes both
-    bonded neighbors and any 1-3 pairs that share a bonded neighbor, which for
-    a non-branched chain amounts to skipping the bond and angle
-    nearest-neighbor pairs. Bonded pairs that are not consecutive (for example
-    ring closures, if any) are also skipped via the explicit bonded set. Ghost
-    beads with radius < 1e-10 are skipped to avoid divide-by-zero forces.
+    The pairs joined by a bond or sharing a bonded neighbor are excluded, as
+    their distance is set by the bond and angle terms. When the chain carries
+    COFFDROP pair tables, the pairs with a table are excluded as well, since
+    the table holds their repulsion. Ghost beads with radius < 1e-10 are
+    skipped to avoid divide-by-zero forces.
 
     Here state is the ChainState providing positions and atom radii via
     common, common is the ChainCommon holding the chain topology (bonds,
@@ -849,60 +1045,41 @@ def chain_intra_nonbonded_forces(
     """
     n = common.n_atoms
     F = np.zeros((n, 3))
-    if n < 3:
+    if n < 2:
         return F
-
-    radii = np.array([a.radius for a in common.atoms], dtype=float)
-    pos = np.asarray(state.positions, dtype=float)
-
-    # WCA cutoff at r_min = 2^(1/6) * sigma (the LJ minimum)
-    WCA_CUTOFF_FACTOR = 2.0 ** (1.0 / 6.0)
-
-    # The upper triangle offset by two is exactly the range of the legacy
-    # nested loops, so it drops the i, i+1 and 1-3 pairs in one stroke.
-    iu, ju = np.triu_indices(n, k=2)
-
-    # Explicit bonds that survive the offset, for example a ring closure.
-    if common.bonds:
-        bonded = np.zeros((n, n), dtype=bool)
-        for bond in common.bonds:
-            a, b = bond.a.atom_idx, bond.b.atom_idx
-            bonded[a, b] = True
-            bonded[b, a] = True
-        m = ~bonded[iu, ju]
+    tables = common.coffdrop_params is not None and bool(common.pair_lookups)
+    key = (id(common.bonds), len(common.bonds), tables, len(common.pair_lookups))
+    cache = common.__dict__.get("_wca_cache")
+    if cache is None or cache[0] != key:
+        radii = np.array([a.radius for a in common.atoms], dtype=float)
+        skip = bonded_exclusions(common)
+        if tables:
+            ij = np.array(list(common.pair_lookups), dtype=np.int64).reshape(-1, 2)
+            skip[ij[:, 0], ij[:, 1]] = True
+            skip[ij[:, 1], ij[:, 0]] = True
+        iu, ju = np.triu_indices(n, k=1)
+        live = radii >= 1e-10  # ghost beads carry no excluded volume
+        m = ~skip[iu, ju] & live[iu] & live[ju]
         iu, ju = iu[m], ju[m]
-
-    live = radii >= 1e-10  # ghost beads carry no excluded volume
-    m = live[iu] & live[ju]
-    iu, ju = iu[m], ju[m]
+        cache = (key, iu, ju, radii[iu] + radii[ju])
+        common.__dict__["_wca_cache"] = cache
+    _, iu, ju, sig = cache
     if iu.size == 0:
         return F
-
+    pos = np.asarray(state.positions, dtype=float)
     dr = pos[iu] - pos[ju]  # vector FROM j TO i
     r = np.sqrt(np.einsum("ij,ij->i", dr, dr))
-    sig = radii[iu] + radii[ju]
-    m = (r >= 1e-10) & (r < WCA_CUTOFF_FACTOR * sig)
+    # WCA cutoff at r_min = 2^(1/6) * sigma (the LJ minimum)
+    m = (r >= 1e-10) & (r < 2.0 ** (1.0 / 6.0) * sig)
     if not np.any(m):
         return F
-    iu, ju, dr, r, sig = iu[m], ju[m], dr[m], r[m], sig[m]
-
-    sr = sig / r
-    sr6 = sr**6
+    iu, ju, dr, r, s = iu[m], ju[m], dr[m], r[m], sig[m]
+    sr6 = (s / r) ** 6
     sr12 = sr6 * sr6
-    # |dV/dr| = 4 eps [12 sig^12/r^13 - 6 sig^6/r^7]
-    #        = (4 eps / r) * [12 sr12 - 6 sr6]
-    # Force on i = -(dV/dr) * r_hat_ij where r_hat_ij = dr / r
-    #            = (4 eps / r^2) * [12 sr12 - 6 sr6] * dr
+    # Force on i = -(dV/dr) r_hat = (4 eps / r^2) [12 sr12 - 6 sr6] dr.
     fvec = (4.0 * eps * (12.0 * sr12 - 6.0 * sr6) / (r * r))[:, None] * dr
-
-    # Scatter both halves of Newton's third law. bincount is used rather than
-    # np.add.at because the latter falls back to an unbuffered element loop and
-    # would give back most of what the vectorisation just bought.
-    for c in range(3):
-        F[:, c] = np.bincount(iu, weights=fvec[:, c], minlength=n) - np.bincount(
-            ju, weights=fvec[:, c], minlength=n
-        )
-
+    _scatter(F, iu, fvec)
+    _scatter(F, ju, -fvec)
     return F
 
 
@@ -912,73 +1089,80 @@ def chain_intra_coffdrop_pair_forces(
 ) -> np.ndarray:
     """Intra-chain non-bonded pair forces from COFFDROP tabulated potentials.
 
-    Returns an (n_atoms, 3) array of per-bead forces in kBT/Å units.
-
-    For each non-bonded chain pair (i, j) with i < j and j >= i + 2 (the
-    legacy excluded-volume convention, which skips bonded and 1-3 neighbors),
-    if the pair has a type_idx in common.pair_lookups, the spline derivative
-    dV/dr is looked up at the current pair separation r. The force on i is
-    -dV/dr × (r_i - r_j) / r, and the force on j is the opposite by Newton's
-    third law.
-
-    Pairs not in pair_lookups contribute zero force here. The caller should
-    fall back to WCA via chain_intra_nonbonded_forces if a soft-repulsion
-    floor is desired for unmapped pairs.
+    Returns an (n_atoms, 3) array of per-bead forces in kBT/Å units. For each
+    pair (i, j) in common.pair_lookups, the spline derivative dV/dr of its
+    table is evaluated at the pair separation r. The force on i is
+    -dV/dr (r_i - r_j)/r and the force on j is the opposite. The chain
+    builders leave the bonded and 1-3 pairs out of pair_lookups. Pairs not in
+    pair_lookups contribute zero force here.
 
     This requires common.coffdrop_params to be set. It is not checked in this
     function, since compute_chain_forces is the gate.
-
-    Here state is the ChainState providing positions and common is the
-    ChainCommon holding the pair_lookups dict and coffdrop_params. The return
-    value F is the (n_atoms, 3) per-bead force array.
     """
     n = common.n_atoms
     F = np.zeros((n, 3))
     pair_lookups = common.pair_lookups
     if not pair_lookups:
         return F  # no tabulated pairs configured
-    pair_pots = common.coffdrop_params.pair_pots
+    key = (id(pair_lookups), len(pair_lookups))
+    cache = common.__dict__.get("_pair_cache")
+    if cache is None or cache[0] != key:
+        ijt = np.array(
+            [(i, j, t) for (i, j), t in pair_lookups.items()], dtype=np.int64
+        ).reshape(-1, 3)
+        cache = (key, ijt[:, 0].copy(), ijt[:, 1].copy(), ijt[:, 2].copy())
+        common.__dict__["_pair_cache"] = cache
+    _, i_arr, j_arr, t_arr = cache
     pos = state.positions
-
-    # Vectorized path: build numpy arrays once per call (cheap),
-    # then do all distance math in numpy and group spline calls
-    # by type_idx so each spline is invoked once per type.
-    keys = list(pair_lookups.keys())
-    n_pairs = len(keys)
-    i_arr = np.empty(n_pairs, dtype=np.int64)
-    j_arr = np.empty(n_pairs, dtype=np.int64)
-    t_arr = np.empty(n_pairs, dtype=np.int64)
-    for k, (i, j) in enumerate(keys):
-        i_arr[k] = i
-        j_arr[k] = j
-        t_arr[k] = pair_lookups[(i, j)]
-
-    # All dr vectors and distances in two numpy ops.
-    dr_arr = pos[i_arr] - pos[j_arr]  # (n_pairs, 3)
-    r_arr = np.linalg.norm(dr_arr, axis=1)  # (n_pairs,)
-
-    # Group pairs by type_idx so each spline gets a vectorized
-    # batch evaluation via deriv_array (handles bounds internally).
-    unique_types = np.unique(t_arr)
-    dV_dr_arr = np.zeros(n_pairs)
-    for t in unique_types:
-        mask = t_arr == t
-        rs = r_arr[mask]
-        dV_dr_arr[mask] = pair_pots[int(t)].deriv_array(rs)
-
-    # Compute the force vectors. Mask out r near zero (a degenerate case) to
-    # avoid divide-by-zero. deriv_array would have returned 0 there anyway
-    # since x_min > 0.
-    safe_r = np.where(r_arr > 1e-10, r_arr, 1.0)  # avoid div-by-zero
-    f_mag_over_r = np.where(r_arr > 1e-10, -dV_dr_arr / safe_r, 0.0)
-    fvecs = f_mag_over_r[:, None] * dr_arr  # (n_pairs, 3)
-
-    # Scatter forces into F. np.add.at is the safe scatter for repeated
-    # indices (atoms appearing in multiple pairs).
-    np.add.at(F, i_arr, fvecs)
-    np.add.at(F, j_arr, -fvecs)
-
+    dr = pos[i_arr] - pos[j_arr]
+    r = np.sqrt(np.einsum("ij,ij->i", dr, dr))
+    dV_dr = _table_derivative(common.coffdrop_params, "pair", t_arr, r)
+    # The table derivative is zero below x_min > 0, which covers r near zero.
+    f = np.where(r > 1e-10, -dV_dr / np.where(r > 1e-10, r, 1.0), 0.0)
+    fvec = f[:, None] * dr
+    _scatter(F, i_arr, fvec)
+    _scatter(F, j_arr, -fvec)
     return F
+
+
+def elastic_network(
+    common: "ChainCommon",
+    positions: np.ndarray,
+    cutoff: float,
+    k_spring: float,
+) -> List["ChainBond"]:
+    """Springs of an elastic network that holds the fold of the reference
+    positions.
+
+    Every pair of backbone beads (bead name CA) closer than cutoff in the
+    reference positions gets a harmonic spring V = k_spring/2 (r - r0)^2,
+    where r0 is the reference distance, unless the pair is joined by a bond
+    or shares a bonded neighbor. cutoff is in Å and k_spring in kBT/Å^2. The
+    bead name is the part of ChainAtom.resname after the colon.
+    """
+    if not (cutoff > 0.0 and k_spring > 0.0):
+        raise ValueError(
+            f"elastic network needs cutoff > 0 and k_spring > 0, got {cutoff} "
+            f"and {k_spring}"
+        )
+    pos = np.asarray(positions, dtype=float)
+    backbone = np.array(
+        [a.resname.split(":")[-1].strip().upper() == "CA" for a in common.atoms]
+    )
+    if backbone.sum() < 2:
+        raise ValueError("elastic network needs at least two beads named CA")
+    skip = bonded_exclusions(common)
+    idx = np.flatnonzero(backbone)
+    iu, ju = np.triu_indices(idx.size, k=1)
+    i, j = idx[iu], idx[ju]
+    r0 = np.linalg.norm(pos[i] - pos[j], axis=1)
+    m = (r0 < cutoff) & ~skip[i, j]
+    return [
+        ChainBond(
+            a=ChainAtomRef(int(a)), b=ChainAtomRef(int(b)), r0=float(d), k_spring=k_spring
+        )
+        for a, b, d in zip(i[m], j[m], r0[m])
+    ]
 
 
 # Bead data structure

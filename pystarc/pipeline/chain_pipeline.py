@@ -19,14 +19,22 @@ import json
 import shutil
 import time
 
+from pystarc.global_defs.defaults import GHOST_NAMES
+from pystarc.pipeline.geometry import analyse_molecule
 from pystarc.pipeline.input_parser import PySTARCConfig
 from pystarc.simulation.chain_simulator import ChainBDParameters, ChainBDSimulator
+from pystarc.simulation.coffdrop_chain import elastic_network
 from pystarc.pipeline.chain_output_writer import write_chain_results
 from pystarc.structures.chain_io import load_chain_from_json
 from pystarc.structures.pqr_io import parse_pqr
 from pystarc.structures.molecules import ContactPair, ReactionCriteria
 from pystarc.pathways.reaction_interface import ReactionInterface, PathwaySet
 from pystarc.forces.electrostatic.grid_force import DXGrid
+from pystarc.hydrodynamics.rotne_prager import (
+    stokes_rotational_diffusion,
+    stokes_translational_diffusion,
+)
+import numpy as np
 
 
 def _load_reaction_pairs_json(path: str) -> List[Tuple[int, int, float]]:
@@ -215,6 +223,37 @@ def run_chain(
         f"{len(chain_template.angles)} angles, "
         f"{len(chain_template.torsions)} torsions)"
     )
+    # The COFFDROP tables come with the chain JSON. Without them the angles
+    # and torsions are harmonic and there are no pair potentials.
+    tables = chain_template.coffdrop_params is not None and bool(
+        chain_template.pair_lookups
+    )
+    if cc.coffdrop_active and not tables:
+        raise ValueError(
+            f"<chain><coffdrop_active> is true but {cc.chain_json} carries no "
+            "COFFDROP tables; rebuild the chain JSON"
+        )
+    if tables:
+        n_ang = sum(a.type_idx >= 0 for a in chain_template.angles)
+        n_tor = sum(t.type_idx >= 0 for t in chain_template.torsions)
+        print(
+            f"  COFFDROP tables: {n_ang} of {len(chain_template.angles)} angles, "
+            f"{n_tor} of {len(chain_template.torsions)} torsions, "
+            f"{len(chain_template.pair_lookups)} pairs"
+        )
+    else:
+        print("  COFFDROP tables: none (harmonic angles and cosine torsions)")
+    if cc.elastic_network_cutoff > 0.0:
+        chain_template.network = elastic_network(
+            chain_template,
+            body_positions,
+            cc.elastic_network_cutoff,
+            cc.elastic_network_k,
+        )
+        print(
+            f"  elastic network: {len(chain_template.network)} springs, cutoff "
+            f"{cc.elastic_network_cutoff} A, k {cc.elastic_network_k} kBT/A^2"
+        )
 
     # Load the target structure as a Molecule.
     print(f"Loading target from {config.receptor_pqr} ...")
@@ -257,6 +296,50 @@ def run_chain(
             "Either enable auto_diffusion (compute D from chain geometry) or "
             "set D_trans and D_rot explicitly."
         )
+    if not cc.auto_diffusion and (cc.D_trans <= 0.0 or cc.D_rot <= 0.0):
+        raise ValueError(
+            "<chain><D_trans> and <chain><D_rot> must both be > 0 when "
+            "auto_diffusion is off, got D_trans="
+            f"{cc.D_trans} and D_rot={cc.D_rot}. Set both, or enable "
+            "auto_diffusion to compute D from the chain geometry."
+        )
+
+    # The target rotates about the frame origin, so its atom centroid must sit
+    # there. The setup scripts center the PQR, and an uncentered PQR would turn
+    # the target about the wrong point.
+    target_xyz = np.array(
+        [
+            [a.x, a.y, a.z]
+            for a in target_mol.atoms
+            if str(getattr(a, "name", "")).strip().upper() not in GHOST_NAMES
+        ],
+        dtype=float,
+    ).reshape(-1, 3)
+    target_offset = float(np.linalg.norm(target_xyz.mean(axis=0)))
+    if target_offset > 0.01:
+        raise ValueError(
+            f"the target atom centroid is {target_offset:.4f} A from the origin "
+            f"in {config.receptor_pqr}; center the target at the origin first "
+            "(the limit is 0.01 A)"
+        )
+
+    # The hydrodynamic radius of the target, from the input or from the Hansen
+    # Monte Carlo radius with its cache, as in the rigid-body pipeline.
+    if config.r_hydro_rec > 0.0:
+        a_target = float(config.r_hydro_rec)
+    else:
+        a_target = float(
+            analyse_molecule(
+                Path(config.receptor_pqr), srad=getattr(config, "srad", 0.0)
+            ).hydrodynamic_r
+        )
+    if not a_target > 0.0:
+        raise ValueError(f"the target hydrodynamic radius must be > 0, got {a_target}")
+    print(
+        f"  target hydrodynamic radius a_T = {a_target:.3f} A, "
+        f"D_t,T = {stokes_translational_diffusion(a_target):.6g} A^2/ps, "
+        f"D_r,T = {stokes_rotational_diffusion(a_target):.6g} rad^2/ps"
+    )
 
     # Build the ChainBDParameters.
     params = ChainBDParameters(
@@ -279,18 +362,26 @@ def run_chain(
         gb_obc_alpha=cc.gb_obc_alpha,
         gb_obc_beta=cc.gb_obc_beta,
         gb_obc_gamma=cc.gb_obc_gamma,
-        coffdrop_active=cc.coffdrop_active,
+        coffdrop_active=tables,
         debye_length=config.debye_length,
         temperature_kT=0.0019872041 * config.temperature,
         dielectric=config.sdie,
         hydrodynamic_interactions=config.hydrodynamic_interactions,
+        use_brownian_bridge=config.brownian_bridge,
+        use_hard_sphere=cc.use_hard_sphere,
+        rotate_body_tensors=True,
+        remove_internal_rotation=True,
+        inner_field=True,
+        # Only tensors computed from the chain geometry can be rebuilt.
+        diffusion_update_interval=(
+            cc.diffusion_update_interval if cc.auto_diffusion else 0
+        ),
     )
 
-    # Resolve the scalar diffusion coefficients when auto_diffusion is off. A
-    # value of 0 means use the default, 0.1 Å²/ps for D_trans and 0.01 rad²/ps
-    # for D_rot.
-    d_trans = cc.D_trans if cc.D_trans > 0.0 else 0.1
-    d_rot = cc.D_rot if cc.D_rot > 0.0 else 0.01
+    # The scalar diffusion coefficients, used when auto_diffusion is off. Both
+    # are > 0 by the check above.
+    d_trans = cc.D_trans
+    d_rot = cc.D_rot
 
     # Construct the simulator. Automatic diffusion and explicit D are mutually
     # exclusive.
@@ -304,6 +395,7 @@ def run_chain(
         target_grid=target_grid,
         born_grid=born_grid,
         desolvation_alpha=config.desolvation_alpha,
+        target_hydro_radius=a_target,
     )
     if cc.auto_diffusion:
         sim_kwargs["auto_diffusion"] = True

@@ -31,6 +31,7 @@ diffusion.
 
 from __future__ import annotations
 from pystarc.global_defs.constants import ETA_WATER, KB_SI, T_DEFAULT, ANG_TO_M, PS_TO_S
+from scipy.linalg import solve_triangular
 import numpy as np
 import math
 import warnings
@@ -248,6 +249,40 @@ class MobilityTensor:
             f"Dt2={self.D_trans2:.3e}, Dr2={self.D_rot2:.3e}, "
             f"r1={self.radius1:.1f}A, r2={self.radius2:.1f}A, RPY={self.use_rpy})"
         )
+
+
+def radial_D_gradient(mobility, pos, D_here: float, dt: float) -> np.ndarray:
+    """Return the divergence of the scalar relative diffusion, dD/dr r_hat.
+
+    The scalar D(r) of a two-body step is not a divergence free tensor the way
+    the full RPY pair mobility is, so the Ermak-McCammon step owes this term.
+    The derivative is central differenced on the same mobility function that
+    supplies D, which keeps the three Rotne-Prager-Yamakawa regimes consistent
+    rather than hardcoding a far field formula that is wrong in the partial
+    overlap and engulfed branches. The step is h = 1e-3 max(r, 1). The
+    displacement is bounded at a tenth of the random step, 0.1 sqrt(2 D_here /
+    dt), a limit that never binds on a physical configuration and exists only
+    to contain the inverse quartic blow up at very small separations.
+
+    The argument mobility is a MobilityTensor, pos is the (3,) separation, and
+    D_here is the scalar diffusion at pos that sets the bound. A separation
+    below 1e-8 returns zeros.
+    """
+    r = float(np.linalg.norm(pos))
+    if r < 1.0e-8:
+        return np.zeros(3)
+    rhat = pos / r
+    h = 1.0e-3 * max(r, 1.0)
+    if r - h <= 1.0e-8:
+        return np.zeros(3)
+    dD_dr = (
+        mobility.relative_translational_diffusion((r + h) * rhat)
+        - mobility.relative_translational_diffusion((r - h) * rhat)
+    ) / (2.0 * h)
+    if dt > 0.0:
+        cap = 0.1 * math.sqrt(2.0 * D_here / dt)
+        dD_dr = max(-cap, min(cap, dD_dr))
+    return dD_dr * rhat
 
 
 # The full RPY pair tensor, including translation, rotation, and the
@@ -538,17 +573,75 @@ def _hydrodynamic_center(positions, radii):
 
 
 def _translation_only_mobility(positions, radii):
-    """Extract the 3N x 3N translation-translation block of the full RPY
-    mobility matrix. Each 3x3 block (i, j) is mtt(a_i, a_j, r_ij).
+    """Assemble the 3N x 3N translation-translation block of the RPY mobility
+    matrix. Each 3x3 block (i, j) is mtt(a_i, a_j, r_ij).
+
+    The assembly is vectorized over all pairs and evaluates the same three
+    regimes as rpy_full_components. The diagonal blocks are I/(6 pi a_i). A
+    coincident pair, r < 1e-12, takes I/(6 pi max(a_i, a_j)) with no
+    directional part, as rpy_pair_blocks does.
     """
-    M_full = rpy_full_mobility_matrix(positions, radii)
-    n = len(positions)
+    positions = np.asarray(positions, dtype=float)
+    radii = np.asarray(radii, dtype=float)
+    if not np.all(np.isfinite(radii)):
+        bad = np.flatnonzero(~np.isfinite(radii))
+        raise ValueError(
+            "bead hydrodynamic radii must all be finite; non-finite at "
+            f"indices {bad[:10].tolist()} (of {bad.size} total), values "
+            f"{radii[bad[:10]].tolist()}"
+        )
+    if not np.all(radii > 0.0):
+        bad = np.flatnonzero(~(radii > 0.0))
+        raise ValueError(
+            "bead hydrodynamic radii must all be strictly positive; "
+            f"non-positive at indices {bad[:10].tolist()} (of {bad.size} "
+            f"total), values {radii[bad[:10]].tolist()}"
+        )
+    n = positions.shape[0]
+    pi = math.pi
     M_tt = np.zeros((3 * n, 3 * n), dtype=float)
-    for i in range(n):
-        for j in range(n):
-            M_tt[3 * i : 3 * i + 3, 3 * j : 3 * j + 3] = M_full[
-                6 * i : 6 * i + 3, 6 * j : 6 * j + 3
-            ]
+    blocks = M_tt.reshape(n, 3, n, 3)
+    idx = np.arange(n)
+    blocks[idx, :, idx, :] = np.eye(3)[None, :, :] / (6.0 * pi * radii)[:, None, None]
+    if n < 2:
+        return M_tt
+    ii, jj = np.triu_indices(n, k=1)
+    ai = radii[ii]
+    aj = radii[jj]
+    d = positions[jj] - positions[ii]
+    r = np.linalg.norm(d, axis=1)
+    coincident = r < 1e-12
+    # Evaluate the formulas on a safe separation, then overwrite the coincident
+    # pairs.
+    r = np.where(coincident, 1.0, r)
+    u = d / r[:, None]
+    r2 = r * r
+    r3 = r2 * r
+    far = r > ai + aj
+    mid = (~far) & (r > np.abs(ai - aj))
+    # Far field, the spheres do not overlap.
+    den_far = 8.0 * pi * r
+    a2or2 = (ai * ai + aj * aj) / r2
+    tt_I_far = (1.0 + a2or2 / 3.0) / den_far
+    tt_uu_far = (1.0 - a2or2) / den_far
+    # The spheres partially overlap.
+    aij = ai * aj
+    am2 = (ai - aj) ** 2
+    den_mid = 6.0 * 32.0 * pi * aij * r3
+    tt_I_mid = (16.0 * r3 * (ai + aj) - (am2 + 3.0 * r2) ** 2) / den_mid
+    tt_uu_mid = 3.0 * (am2 - r2) ** 2 / den_mid
+    # One sphere lies inside the other.
+    tt_I_eng = 1.0 / (6.0 * pi * np.maximum(ai, aj))
+    tt_I = np.where(far, tt_I_far, np.where(mid, tt_I_mid, tt_I_eng))
+    tt_uu = np.where(far, tt_uu_far, np.where(mid, tt_uu_mid, 0.0))
+    tt_I = np.where(coincident, 1.0 / (6.0 * pi * np.maximum(ai, aj)), tt_I)
+    tt_uu = np.where(coincident, 0.0, tt_uu)
+    u = np.where(coincident[:, None], 0.0, u)
+    pair_blocks = tt_I[:, None, None] * np.eye(3)[None, :, :] + tt_uu[:, None, None] * (
+        u[:, :, None] * u[:, None, :]
+    )
+    blocks[ii, :, jj, :] = pair_blocks
+    blocks[jj, :, ii, :] = pair_blocks
     return M_tt
 
 
@@ -592,7 +685,8 @@ def _build_robust_solver(M):
     Returns
     -------
     (solver, was_regularized, info)
-        solver : callable(v) returning an approximate M^{-1}·v
+        solver : callable(v) returning an approximate M^{-1}·v, where v has
+                 shape (n,) or (n, k)
         was_regularized : bool, True if any fallback strategy was used
         info : str describing the strategy actually applied
     """
@@ -604,8 +698,8 @@ def _build_robust_solver(M):
         L = np.linalg.cholesky(M)
 
         def solver_chol(v, L=L):
-            y = np.linalg.solve(L, v)
-            return np.linalg.solve(L.T, y)
+            y = solve_triangular(L, v, lower=True)
+            return solve_triangular(L, y, lower=True, trans="T")
 
         return solver_chol, False, "cholesky"
     except np.linalg.LinAlgError:
@@ -619,8 +713,8 @@ def _build_robust_solver(M):
             L_jit = np.linalg.cholesky(M + eps * np.eye(n))
 
             def solver_jit(v, L=L_jit):
-                y = np.linalg.solve(L, v)
-                return np.linalg.solve(L.T, y)
+                y = solve_triangular(L, v, lower=True)
+                return solve_triangular(L, y, lower=True, trans="T")
 
             return solver_jit, True, f"cholesky+jitter(eps={eps:.3e})"
         except np.linalg.LinAlgError:
@@ -646,7 +740,9 @@ def _build_robust_solver(M):
     )
 
 
-def chain_rigid_body_resistance(positions, radii):
+def chain_rigid_body_resistance(
+    positions, radii, center=None, warn_regularized=True, info=None
+):
     """Compute the chain's rigid-body resistance matrices and
     hydrodynamic center, given the bead positions and radii.
 
@@ -655,23 +751,31 @@ def chain_rigid_body_resistance(positions, radii):
     F_net = η·A @ v_chain, where v_chain is the uniform translational
     velocity of the rigid chain. The matrix C is the (3, 3) rotational
     resistance, the torque per unit angular velocity taken about the
-    hydrodynamic center, acting as T_net = η·C @ omega_chain. The vector
-    hc is the (3,) hydrodynamic center, the radius-weighted centroid.
+    point center, acting as T_net = η·C @ omega_chain. The vector hc is
+    the (3,) hydrodynamic center, the radius-weighted centroid.
 
     By convention the viscosity is not included. Multiply A by η for the
     physical resistance. The corresponding rigid-body translational
     diffusion is D_trans = kT·inv(η·A), and similarly for D_rot.
 
-    The algorithm works as follows. For each Cartesian direction k it
-    prescribes the rigid-body velocity field, solves M_tt·F = v for the
-    per-bead forces required to maintain that motion against the fluid,
-    and reads off the column of A or C from the appropriate sum or moment
-    of those forces. This avoids ever forming M_tt^{-1} explicitly.
+    The algorithm works as follows. The six rigid-body velocity fields, three
+    translations and three rotations about center, are stacked into one
+    (3N, 6) right hand side. A single factorization of M_tt solves
+    M_tt·F = V for the per-bead forces required to maintain each motion
+    against the fluid, and the columns of A and C are read off from the sums
+    and moments of those forces. This avoids ever forming M_tt^{-1}
+    explicitly.
 
     Parameters
     ----------
     positions : (N, 3) bead centers.
     radii     : (N,)   bead hydrodynamic radii.
+    center    : (3,) point about which the rotation is taken. None selects the
+                hydrodynamic center hc, the default behavior.
+    warn_regularized : if False, a regularized factorization of M_tt raises no
+                RuntimeWarning. The caller can read info instead.
+    info      : optional dict. The key "regularized" is set to True when the
+                factorization needed a jitter or a clipped spectrum.
 
     Notes
     -----
@@ -693,9 +797,10 @@ def chain_rigid_body_resistance(positions, radii):
 
     n = positions.shape[0]
     hc = _hydrodynamic_center(positions, radii)
+    c = hc if center is None else np.asarray(center, dtype=float)
     M_tt = _translation_only_mobility(positions, radii)
 
-    # Solve M_tt @ F = v. The RPY mobility is symmetric positive definite
+    # Solve M_tt @ F = V. The RPY mobility is symmetric positive definite
     # for non-overlapping beads, but coarse-grained chains derived from
     # PDB files can have near-coincident beads (for example the
     # CA fallback for disordered sidechains), which makes M_tt
@@ -703,7 +808,9 @@ def chain_rigid_body_resistance(positions, radii):
     # from a regularized Cholesky factorization to a symmetric
     # eigendecomposition rather than raising a LinAlgError on the user.
     solve, _was_regularized, _solver_info = _build_robust_solver(M_tt)
-    if _was_regularized:
+    if info is not None:
+        info["regularized"] = bool(_was_regularized)
+    if _was_regularized and warn_regularized:
         warnings.warn(
             f"chain_rigid_body_resistance: RPY mobility matrix M_tt was not "
             f"strictly positive definite and needed regularization "
@@ -718,40 +825,35 @@ def chain_rigid_body_resistance(positions, radii):
             stacklevel=2,
         )
 
-    # Build the A matrix by prescribing a uniform translation v_i = e_k
-    # for every bead.
-    A = np.zeros((3, 3))
+    # The columns 0 to 2 prescribe a uniform translation v_i = e_k for every
+    # bead. The columns 3 to 5 prescribe a rigid-body rotation omega = e_k
+    # about center, so bead i moves with velocity v_i = omega × (r_i - center).
+    d = positions - c
+    V = np.zeros((3 * n, 6))
     for k in range(3):
-        v = np.zeros(3 * n)
-        for i in range(n):
-            v[3 * i + k] = 1.0
-        F = solve(v)
-        F_per_bead = F.reshape(n, 3)
-        A[:, k] = F_per_bead.sum(axis=0)
-
-    # Build the C matrix by prescribing a rigid-body rotation
-    # omega = e_k about hc, so bead i moves with velocity
-    # v_i = omega × (r_i - hc).
-    C = np.zeros((3, 3))
-    for k in range(3):
+        V[k::3, k] = 1.0
         omega = np.zeros(3)
         omega[k] = 1.0
-        v = np.zeros(3 * n)
-        for i in range(n):
-            d = positions[i] - hc
-            v[3 * i : 3 * i + 3] = np.cross(omega, d)
-        F = solve(v)
-        F_per_bead = F.reshape(n, 3)
-        T_total = np.zeros(3)
-        for i in range(n):
-            d = positions[i] - hc
-            T_total += np.cross(d, F_per_bead[i])
-        C[:, k] = T_total
+        V[:, 3 + k] = np.cross(omega, d).reshape(-1)
+    F = solve(V).reshape(n, 3, 6)
+
+    A = F[:, :, :3].sum(axis=0)
+    C = np.zeros((3, 3))
+    for k in range(3):
+        C[:, k] = np.cross(d, F[:, :, 3 + k]).sum(axis=0)
 
     return A, C, hc
 
 
-def chain_diffusion_tensors(positions, radii, kT=1.0, viscosity=None):
+def chain_diffusion_tensors(
+    positions,
+    radii,
+    kT=1.0,
+    viscosity=None,
+    center=None,
+    warn_regularized=True,
+    info=None,
+):
     """Compute the chain's rigid-body diffusion tensors and hydrodynamic
     center, ready for use in a Brownian-dynamics integrator.
 
@@ -775,6 +877,9 @@ def chain_diffusion_tensors(positions, radii, kT=1.0, viscosity=None):
     viscosity : solvent viscosity. If None, the package default
                 WATER_VISCOSITY from motion/do_bd_step is used, which
                 derives from ETA_WATER at T_DEFAULT and is 0.2162 kBT·ps/Å³.
+    center    : (3,) point about which the rotational resistance is taken.
+                None selects the hydrodynamic center hc.
+    warn_regularized, info : passed to chain_rigid_body_resistance.
 
     Notes
     -----
@@ -797,7 +902,13 @@ def chain_diffusion_tensors(positions, radii, kT=1.0, viscosity=None):
     if n < 1:
         raise ValueError("at least one bead required")
 
-    A, C, hc = chain_rigid_body_resistance(positions, radii)
+    A, C, hc = chain_rigid_body_resistance(
+        positions,
+        radii,
+        center=center,
+        warn_regularized=warn_regularized,
+        info=info,
+    )
 
     scale = kT / viscosity
     D_trans = scale * np.linalg.inv(A)

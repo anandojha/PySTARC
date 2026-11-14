@@ -48,14 +48,57 @@ import numpy as np
 import json
 
 
-def _diffusion_block(sim) -> Dict[str, Any]:
+def _diffusion_block(sim, results=None) -> Dict[str, Any]:
     """Serialize the simulator's diffusion configuration.
+
+    With params.diffusion_update_interval > 0 the block also holds the start
+    values of tr(D)/3, their means pooled over the trajectories with the
+    trajectory time as weight, the interval, and the rebuild counts. The pooled
+    means are None when no trajectory is given.
 
     In auto_diffusion mode this includes the full 3×3 diffusion tensors along
     with the isotropic equivalent (the trace divided by 3) and the rigid-body
     hydrodynamic center. In scalar mode it emits only the scalar D_trans and
     D_rot.
     """
+    block = _diffusion_block_base(sim)
+    block["n_relative_diffusion_clipped"] = int(
+        sum(getattr(r, "n_relative_diffusion_clipped", 0) for r in (results or []))
+    )
+    interval = getattr(sim.params, "diffusion_update_interval", 0)
+    if isinstance(interval, (int, np.integer)) and interval > 0:
+        D_t0 = np.asarray(sim.D_trans)
+        D_r0 = np.asarray(sim.D_rot)
+        block["update_interval"] = int(interval)
+        block["D_trans_start"] = float(np.trace(D_t0) / 3.0)
+        block["D_rot_start"] = float(np.trace(D_r0) / 3.0)
+        timed = [
+            r
+            for r in (results or [])
+            if getattr(r, "mean_D_trans", None) is not None and r.time_ps > 0.0
+        ]
+        w = np.array([r.time_ps for r in timed], dtype=float)
+        if len(timed) > 0:
+            block["D_trans_mean"] = float(
+                np.sum(w * np.array([r.mean_D_trans for r in timed])) / np.sum(w)
+            )
+            block["D_rot_mean"] = float(
+                np.sum(w * np.array([r.mean_D_rot for r in timed])) / np.sum(w)
+            )
+        else:
+            block["D_trans_mean"] = None
+            block["D_rot_mean"] = None
+        block["n_rebuilds"] = int(
+            sum(getattr(r, "n_diffusion_rebuilds", 0) for r in (results or []))
+        )
+        block["n_rebuild_failures"] = int(
+            sum(getattr(r, "n_diffusion_rebuild_failures", 0) for r in (results or []))
+        )
+    return block
+
+
+def _diffusion_block_base(sim) -> Dict[str, Any]:
+    """The diffusion configuration of the simulator, without the rebuild log."""
     if sim.auto_diffusion:
         D_t = np.asarray(sim.D_trans)
         D_r = np.asarray(sim.D_rot)
@@ -107,6 +150,10 @@ def _chain_block(sim) -> Dict[str, Any]:
         "n_angles": len(template.angles),
         "n_torsions": len(template.torsions),
         "n_length_constraints": len(template.length_constraints),
+        "n_network_springs": len(getattr(template, "network", [])),
+        "n_pair_tables": len(getattr(template, "pair_lookups", {}))
+        if getattr(template, "coffdrop_params", None) is not None
+        else 0,
     }
 
 
@@ -176,6 +223,12 @@ def _summary_stats(
         "mean_final_separation": float(np.mean(seps)),
         "min_time_ps": float(np.min(times)),
         "max_time_ps": float(np.max(times)),
+        "n_hard_sphere_redraws": int(
+            sum(getattr(r, "n_hard_sphere_redraws", 0) for r in results)
+        ),
+        "n_hard_sphere_rejections": int(
+            sum(getattr(r, "n_hard_sphere_rejections", 0) for r in results)
+        ),
     }
     # Tally how often each named reaction fired.
     reaction_counts = Counter(r.reaction_name for r in results if r.reaction_name)
@@ -285,7 +338,7 @@ def write_results_json(
     data = {
         "summary": summary,
         "rate": _rate_block(sim, results),
-        "diffusion": _diffusion_block(sim),
+        "diffusion": _diffusion_block(sim, results),
         "chain": _chain_block(sim),
         "params": _params_block(sim),
     }

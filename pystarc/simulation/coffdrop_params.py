@@ -437,6 +437,7 @@ class COFFDROPParams:
         # Pre-build the name to index lookups.
         self._at_idx = type_map["atoms"]
         self._res_idx = type_map["residues"]
+        self.files: Dict[str, str] = {}
 
     @classmethod
     def load(
@@ -456,9 +457,17 @@ class COFFDROPParams:
         bonds = _parse_connectivity(connectivity_xml)
         charges = _parse_charges(charges_xml)
         type_map, pair_pots, angle_pots, dihedral_pots = _parse_ff(ff_xml)
-        return cls(
+        params = cls(
             mapping, bonds, charges, type_map, pair_pots, angle_pots, dihedral_pots
         )
+        # The source files, which chain_io writes into the chain JSON.
+        params.files = dict(
+            ff_xml=str(ff_xml),
+            mapping_xml=str(mapping_xml),
+            connectivity_xml=str(connectivity_xml),
+            charges_xml=str(charges_xml),
+        )
+        return params
 
     # Public evaluation API
     def _ri(self, resname: str) -> int:
