@@ -1,11 +1,11 @@
 #!/bin/bash
 #  PySTARC - Clean install
-#  Usage:  bash install_PySTARC.sh
+#  Usage:  bash install_PySTARC.sh   (Linux host with an NVIDIA GPU, stops otherwise)
 #  This script:
 #    1. Deactivates any active conda env
 #    2. Removes existing PySTARC env (if any)
 #    3. Creates a fresh PySTARC env
-#    4. Installs all dependencies (conda + pip; CuPy auto-detected for GPU)
+#    4. Installs all dependencies (conda + pip; CuPy with the CUDA toolkit from PyPI)
 #    5. Installs PySTARC from wheel
 #    6. Runs tests to verify
 set -e
@@ -14,29 +14,30 @@ PYTHON_VERSION="3.11"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WHEEL="$SCRIPT_DIR/dist/pystarc-1.1.0-py3-none-any.whl"
 
-# --- Platform and accelerator autodetection ---
-# OS_KIND is Darwin (macOS) or Linux. GPU_MODE becomes "cuda" only when an
-# NVIDIA GPU is actually visible on Linux; otherwise it stays "cpu". macOS never
-# has a CUDA GPU and CuPy ships no macOS wheel, so macOS is always CPU. On a CUDA
-# machine the matching CuPy wheel (11x or 12x) is picked from the driver's
-# reported CUDA major version, defaulting to 12x when it cannot be read.
+# --- GPU check ---
+# PySTARC runs on NVIDIA GPUs, so the install stops here, before anything is
+# removed or installed, when no NVIDIA GPU is visible (macOS, a login node, a job
+# without a GPU) or when the driver is older than CUDA 12. cupy-cuda12x[ctk]
+# brings the CUDA 12 runtime and NVRTC from PyPI, so no CUDA module has to be loaded.
 OS_KIND="$(uname -s)"
-GPU_MODE="cpu"
-CUPY_PKG=""
-if [ "$OS_KIND" = "Linux" ] && command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
-    GPU_MODE="cuda"
-    CUDA_MAJOR="$(nvidia-smi 2>/dev/null | sed -n 's/.*CUDA Version: *\([0-9][0-9]*\).*/\1/p' | head -1)"
-    if [ "$CUDA_MAJOR" = "11" ]; then
-        CUPY_PKG="cupy-cuda11x[ctk]"
-    else
-        CUPY_PKG="cupy-cuda12x[ctk]"   # CUDA 12+ (or unreadable) -> 12x wheel
-    fi
+if [ "$OS_KIND" != "Linux" ] || ! command -v nvidia-smi >/dev/null 2>&1 || ! nvidia-smi -L >/dev/null 2>&1; then
+    echo "ERROR: no NVIDIA GPU visible on $(uname -n) ($OS_KIND). PySTARC needs an NVIDIA GPU with CUDA."
+    echo "  Run this script on a GPU node. Nothing was removed or installed."
+    exit 1
 fi
+GPU_NAME="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
+CUDA_MAJOR="$(nvidia-smi 2>/dev/null | sed -n 's/.*CUDA Version: *\([0-9][0-9]*\).*/\1/p' | head -1)"
+if [ -n "$CUDA_MAJOR" ] && [ "$CUDA_MAJOR" -lt 12 ]; then
+    echo "ERROR: the NVIDIA driver on $(uname -n) supports CUDA $CUDA_MAJOR. PySTARC needs a driver for CUDA 12 or newer."
+    echo "  Nothing was removed or installed."
+    exit 1
+fi
+CUPY_PKG="cupy-cuda12x[ctk]>=14"   # the ctk extra exists from CuPy 14 on
 
 echo ""
 echo "  PySTARC - Clean install"
 echo "  Date: $(date)"
-echo "  Platform: $OS_KIND    Accelerator: $GPU_MODE${CUPY_PKG:+ ($CUPY_PKG)}"
+echo "  GPU: $GPU_NAME    CuPy: $CUPY_PKG"
 # 1. Deactivate current env
 echo ""
 echo "[1/7] Deactivating current conda environment."
@@ -69,16 +70,10 @@ echo "[4/7] Installing conda dependencies (ambertools 24.8, apbs)"
 # bundles 'proprep', whose metadata pins numpy<2, biopython<1.86 and pyyaml (pip conflicts).
 conda install -c conda-forge "numpy>=2.0,<2.6" "ambertools=24.8" apbs rdkit openbabel -y
 echo "ambertools and apbs installed"
-# 5. GPU + pip dependencies (CuPy only when a GPU was detected)
+# 5. GPU + pip dependencies
 echo ""
-echo "[5/7] Installing pip dependencies (matplotlib, pytest; CuPy if GPU)."
-if [ "$GPU_MODE" = "cuda" ]; then
-    echo "  NVIDIA GPU detected -> installing $CUPY_PKG for GPU acceleration."
-    "$ENV_PY" -m pip install "$CUPY_PKG" matplotlib pytest-cov pytest-sugar
-else
-    echo "  No NVIDIA GPU detected ($OS_KIND) -> CPU install; GPU code paths use the NumPy fallback."
-    "$ENV_PY" -m pip install matplotlib pytest-cov pytest-sugar
-fi
+echo "[5/7] Installing pip dependencies ($CUPY_PKG, matplotlib, pytest)."
+"$ENV_PY" -m pip install "$CUPY_PKG" matplotlib pytest-cov pytest-sugar
 echo "pip dependencies installed"
 # 6. Install PySTARC
 echo ""
@@ -93,18 +88,14 @@ echo ""
 "$ENV_PY" -c "import numpy; print(f'NumPy {numpy.__version__}')"
 "$ENV_PY" -c "import scipy; print(f'SciPy {scipy.__version__}')"
 "$ENV_PY" -c "import matplotlib; print(f'Matplotlib {matplotlib.__version__}')"
-# On a GPU install, confirm CuPy can actually compile a kernel (it imports fine
-# even when the CUDA toolkit headers are missing). On CPU/macOS CuPy is absent
-# by design and the GPU code paths take the NumPy fallback.
-if [ "$GPU_MODE" = "cuda" ]; then
-    if "$ENV_PY" -c "import cupy as cp; cp.arange(3).sum(); print(f'CuPy {cp.__version__} (GPU ready)')" 2>/dev/null; then
-        :
-    else
-        echo "CuPy present but the GPU is not usable yet (CUDA toolkit headers not found)."
-        echo "  -> load CUDA (e.g. 'module load cuda') or set CUDA_PATH before the tests so the GPU tests compile and pass."
-    fi
-else
-    echo "CPU mode (no NVIDIA GPU) -> GPU tests run through the NumPy fallback."
+# CuPy imports even when CUDA does not work, so compile and run one kernel. If
+# that fails PySTARC cannot run, so the environment is removed.
+if ! "$ENV_PY" -c "import cupy as cp; cp.arange(3).sum(); print(f'CuPy {cp.__version__} (GPU ready)')"; then
+    echo "ERROR: CuPy ($CUPY_PKG) cannot run a kernel on the GPU (error above). The driver reports CUDA ${CUDA_MAJOR:-unknown}."
+    echo "  Removing the $ENV_NAME environment."
+    conda deactivate 2>/dev/null || true
+    conda env remove -n "$ENV_NAME" -y || true
+    exit 1
 fi
 which cpptraj  >/dev/null 2>&1 && echo "cpptraj"  || echo "cpptraj not found"
 which ambpdb   >/dev/null 2>&1 && echo "ambpdb"   || echo "ambpdb not found"
@@ -122,9 +113,6 @@ echo "  Installation complete!"
 echo ""
 echo "  To use PySTARC:"
 echo "    conda activate $ENV_NAME"
-if [ "$GPU_MODE" = "cuda" ]; then
-echo "    module load cuda                  # GPU node: load CUDA so kernels compile"
-fi
 echo "    cd examples/two_charged_spheres"
 echo "    python ../../run_pystarc.py input.xml"
 echo ""

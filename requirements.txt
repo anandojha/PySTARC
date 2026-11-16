@@ -4,7 +4,7 @@ click
 numba
 matplotlib
 rdkit
-cupy-cuda12x
+cupy-cuda12x[ctk]>=14
 pytest
 pytest-cov
 pytest-sugar

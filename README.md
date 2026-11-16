@@ -41,7 +41,7 @@ GPU-accelerated rigid body and flexible chain Brownian dynamics simulations for 
 
 ## Overview
 
-PySTARC computes the bimolecular association rate constants by implementing rigid-body Brownian dynamics within the Northrup-Allison-McCammon formalism. Trajectories run in parallel on the GPU with a NumPy CPU fallback. 
+PySTARC computes the bimolecular association rate constants by implementing rigid-body Brownian dynamics within the Northrup-Allison-McCammon formalism. Trajectories of rigid solutes run in parallel on an NVIDIA GPU with CUDA 12 or newer. The flexible chain model runs on CPUs.
 
 ## Installation
 
@@ -53,7 +53,7 @@ cd PySTARC
 bash install_PySTARC.sh
 ```
 
-**Mac / CPU:**
+**CPU (flexible chain BD only):**
 
 ```bash
 git clone https://github.com/anandojha/PySTARC.git
@@ -76,7 +76,6 @@ python -m pytest tests/ -v
 
 ```bash
 conda activate PySTARC
-module load cuda                # HPC only
 cd examples/two_charged_spheres
 bash run.sh
 ```

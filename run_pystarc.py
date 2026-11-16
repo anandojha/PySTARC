@@ -13,7 +13,7 @@ Requirements
     conda activate PySTARC
     conda install -c conda-forge ambertools apbs -y
     pip install dist/pystarc-1.1.0-py3-none-any.whl
-    pip install cupy-cuda12x    # GPU (NVIDIA only, optional)
+    pip install 'cupy-cuda12x[ctk]>=14'    # NVIDIA GPU with CUDA 12 or newer, required
 """
 
 from pystarc.analysis.convergence import (

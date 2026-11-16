@@ -690,11 +690,11 @@ class PySTARCEngine:
         if self.backend == "numpy":
             lines.append("  [!] Install numba for ~9x speedup: pip install numba")
             lines.append(
-                "  [!] Install cupy for GPU:          pip install cupy-cuda12x"
+                "  [!] Install cupy for GPU:          pip install 'cupy-cuda12x[ctk]>=14'"
             )
         elif self.backend == "numba":
             lines.append(
-                "  [!] Install cupy for GPU:          pip install cupy-cuda12x"
+                "  [!] Install cupy for GPU:          pip install 'cupy-cuda12x[ctk]>=14'"
             )
         return "\n".join(lines)
 

@@ -65,6 +65,21 @@ except ImportError:
     cp = None
 
 
+def _require_gpu():
+    """Stop a <gpu>true</gpu> run before the setup steps when CuPy cannot run a kernel."""
+    if cp is None:
+        raise RuntimeError(
+            "<gpu>true</gpu> but CuPy is not installed. "
+            "Install PySTARC with install_PySTARC.sh on a GPU node."
+        )
+    try:
+        cp.arange(3).sum()
+    except Exception as exc:
+        raise RuntimeError(
+            f"<gpu>true</gpu> but CuPy cannot run a kernel on this host ({exc}). "
+            "Run on a GPU node."
+        ) from exc
+
 
 def _run_key(cfg, W: Path) -> str:
     """Fingerprint a checkpoint must carry to be resumed: SHA-256 of the parsed
@@ -183,6 +198,8 @@ def run(cfg: PySTARCConfig):
     print(f"  Threads       : {cfg.n_threads}")
     print(f"  GPU           : {cfg.gpu}")
     print()
+    if cfg.gpu:
+        _require_gpu()
     # Steps 1 through 3 extract the molecules and build the PQR files. As a
     # shortcut, if receptor_pqr and ligand_pqr are both provided in the input
     # XML, we skip PDB extraction and AmberTools/tleap entirely and use the
@@ -459,7 +476,7 @@ def run(cfg: PySTARCConfig):
     # never hits an unbound name. The GPU simulator is only constructed when both
     # cfg.gpu is set and the engine actually selected the cupy backend. If the
     # user requested cfg.gpu but cupy was unavailable and the engine fell back to
-    # a CPU backend, this branch is skipped and gpu_sim remains None.
+    # a CPU backend, the run stops in the else branch instead of using the CPU.
     gpu_sim = None
     batch_engine = None
     if cfg.gpu and engine.backend == "cupy":
@@ -513,6 +530,10 @@ def run(cfg: PySTARCConfig):
         result = gpu_sim.run()
         total_steps = result.total_steps
     else:
+        if cfg.gpu:
+            raise RuntimeError(
+                "<gpu>true</gpu> but the force engine fell back to the CPU. Run on a GPU node."
+            )
         if getattr(cfg, "soft_repulsion", False):
             raise ValueError(
                 "soft_repulsion runs on the GPU path only. Set <gpu>true</gpu> "

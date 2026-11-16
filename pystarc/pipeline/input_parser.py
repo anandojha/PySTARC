@@ -780,7 +780,7 @@ def write_template(path: str | Path = "pystarc_input.xml"):
     <!-- Number of CPU threads (set to number of cores for HPC) -->
     <n_threads>24</n_threads>
 
-    <!-- Use GPU if available (requires: pip install cupy-cuda12x) -->
+    <!-- true needs an NVIDIA GPU with CUDA 12 or newer and stops without one -->
     <gpu>true</gpu>
 
     <!-- Random seed for reproducibility -->

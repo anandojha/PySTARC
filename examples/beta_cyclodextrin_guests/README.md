@@ -29,7 +29,6 @@ submit_SLURM_multi_GPUs.sh  Script to run PySTARC simulations on the cluster wit
 ```
 cd ~/PySTARC/examples/beta_cyclodextrin_guests  # Navigate to the example directory within PySTARC
 conda activate PySTARC                          # Activate the PySTARC environment
-module load cuda                                # Load CUDA
 bash BCD_aspirin/run.sh                         # Run one complex
 ```
 
@@ -37,7 +36,6 @@ bash BCD_aspirin/run.sh                         # Run one complex
 ```
 cd ~/PySTARC/examples/beta_cyclodextrin_guests       # Navigate to the example directory within PySTARC
 conda activate PySTARC                               # Activate the PySTARC environment
-module load cuda                                     # Load CUDA
 cd BCD_aspirin && sbatch submit_SLURM_single_GPU.sh  # Submit one complex on 1 GPU
 ```
 
@@ -45,7 +43,6 @@ cd BCD_aspirin && sbatch submit_SLURM_single_GPU.sh  # Submit one complex on 1 G
 ```
 cd ~/PySTARC/examples/beta_cyclodextrin_guests       # Navigate to the example directory within PySTARC
 conda activate PySTARC                               # Activate the PySTARC environment
-module load cuda                                     # Load CUDA
 cd BCD_aspirin && sbatch submit_SLURM_multi_GPUs.sh  # Submit one complex on multiple GPUs
 ```
 

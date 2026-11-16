@@ -385,7 +385,7 @@ class GPUBatchForceEngine:
     ):
         if not _CUPY:
             raise RuntimeError(
-                "CuPy not installed. Install with: pip install cupy-cuda12x"
+                "CuPy not installed. Install with: pip install 'cupy-cuda12x[ctk]>=14'"
             )
         self.alpha = alpha
         self._kernel = cp.RawKernel(_BATCH_KERNEL_CODE, "batch_force_kernel")
