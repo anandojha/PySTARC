@@ -100,3 +100,125 @@ A PDB file of the bound complex is sufficient with `ligand_source` `complex_pdb`
 | `work_dir` | every source | folder for the files written by `setup.py`, default the folder of `config.xml` |
 
 `setup.py` stops with an error for a blank or unknown `ligand_source` and for a key of another source.
+
+## 4. Names (`names`)
+
+```xml
+<names>
+  <ligand_formula>C7 H9 N2</ligand_formula>
+  <receptor_resname>TRP</receptor_resname>
+  <ligand_resname>BEN</ligand_resname>
+</names>
+```
+
+C7 H9 N2 is benzamidinium, the protonated form of benzamidine with net charge +1. `setup.py` compares the formula with `ligand.pqr` and stops on a mismatch. A wrong protonation state of the ligand therefore stops the build. For the example `setup.py` prints `ligand.pqr: 18 atoms, Q=+1.0 e` and `composition verified: C7 H9 N2`.
+
+| key | meaning |
+|---|---|
+| `ligand_formula` | element symbols with counts and every hydrogen, as `C7 H9 N2` or `C7H9N2` (two letter elements as `Cl` and `Br`) |
+| `receptor_resname` | label of the receptor in `input.xml`, no effect on the simulation |
+| `ligand_resname` | residue name of the ligand, 3 characters at most |
+
+`ligand_resname` acts per `ligand_source`. With `prmtop` the residues named `ligand_resname` in the topology form the ligand (case sensitive). With `complex_pdb` the name picks the ligand among several HETATM groups and names the ligand residue in `ligand.pqr`. With `rcsb` and `rcsb_smiles` the residue name comes from `ligand_resid`. With `pqr` the name is a label.
+
+## 5. Reaction criterion (`criterion`)
+
+The reaction criterion defines the bound state. `setup.py` writes the criterion into `rxns.xml` as receptor and ligand atom pairs with a reaction distance. A trajectory reacts when at least `n_needed` pairs are closer than the reaction distance at one time. `mode` selects the pairs.
+
+| `mode` | pairs | former mode |
+|---|---|---|
+| `contacts` | receptor and ligand atoms picked from the contacts of the bound pose, or named in `config.xml` | `auto` (picked), `explicit` (named) |
+| `centroid` | receptor centroid with ligand centroid | `center` |
+| `site` | a point of the binding site with the ligand centroid, or one named receptor atom with one named ligand atom | none |
+
+`setup.py` stops with an error for the former mode names.
+
+### Pairs picked from the bound pose (former `auto`)
+
+The trypsin benzamidine example picks six pairs.
+
+```xml
+<criterion>
+  <mode>contacts</mode>
+  <search_cutoff>6.0</search_cutoff>
+  <n_pairs>6</n_pairs>
+  <atom_filter>polar</atom_filter>
+  <pair_cutoff>7.0</pair_cutoff>
+  <n_needed>3</n_needed>
+</criterion>
+```
+
+`setup.py` lists every pair of a receptor heavy atom and a ligand heavy atom closer than `search_cutoff` in the bound pose. `atom_filter` `polar` keeps the pairs with N, O or S on both sides. The `n_pairs` closest pairs enter `rxns.xml`, with at most one pair per receptor residue. A trajectory reacts when `n_needed` of the six pairs are closer than `pair_cutoff` at one time, here 3 pairs within 7.0 Å.
+
+| receptor atom in `receptor.pqr` | ligand atom | distance in the bound pose (Å) |
+|---|---|---|
+| TRP 193 O | N2 | 2.82 |
+| SER 192 O | N2 | 2.86 |
+| CYX 173 O | N1 | 3.17 |
+| VAL 205 O | N2 | 3.34 |
+| GLN 174 N | N1 | 4.24 |
+| GLY 194 N | N2 | 4.31 |
+
+### Pairs named in `config.xml` (former `explicit`)
+
+```xml
+<criterion>
+  <mode>contacts</mode>
+  <receptor>
+    <target resid="193" atom="O" resname="TRP"/>
+    <target resid="173" atom="O" resname="CYX"/>
+  </receptor>
+  <ligand>
+    <atom name="N2"/>
+    <atom name="N1"/>
+  </ligand>
+  <pair_cutoff>7.0</pair_cutoff>
+  <n_needed>1</n_needed>
+</criterion>
+```
+
+Each `<target>` names one receptor atom by residue number, atom name and residue name in `receptor.pqr`. The ligand atoms follow in the order of the targets. `<ligand>auto</ligand>` with an `atom_filter` pairs each target with the closest allowed heavy ligand atom of the bound pose. The residue numbers of `receptor.pqr` start at 1 (`receptor_numbering` `internal`). With `ligand_source` `rcsb` the residue numbers of the RCSB entry are accepted with `receptor_numbering` `pdb`. A first run of `setup.py` with mode `centroid` writes `receptor.pqr` for a look at the numbering.
+
+Picked and named pairs never mix in one `config.xml`. One pair needs `n_needed` 1. An even number of pairs 2k needs `n_needed` k.
+
+### Distance of the centroids (`centroid`)
+
+```xml
+<criterion>
+  <mode>centroid</mode>
+  <pair_cutoff>8.0</pair_cutoff>
+</criterion>
+```
+
+The simulation places a ghost atom GHO without charge or radius at the centroid of each molecule. A trajectory reacts when the two centroids are closer than `pair_cutoff`. The beta cyclodextrin examples use mode `centroid`.
+
+### Distance to the binding site (`site`)
+
+```xml
+<criterion>
+  <mode>site</mode>
+  <margin>3.0</margin>
+</criterion>
+```
+
+`setup.py` adds a ghost atom PKT without charge or radius to `receptor.pqr` at the centroid of the bound ligand. A trajectory reacts when the ligand centroid is closer to PKT than the cutoff. The cutoff is `pair_cutoff`, or the closest accessible approach plus `margin` rounded to 0.25 Å. The closest accessible approach is the smallest distance of the ligand centroid from PKT among rigid ligand poses with a soft wall energy of at most 2 kT against the receptor. `setup.py` finds the closest accessible approach by a scan of ligand poses and writes the cutoff into `build_record.json`. The HSP90, carbonic anhydrase, p38 and TTK examples use mode `site` with `margin` 3.0.
+
+One `<target>` in `receptor` and one `<atom>` in `ligand` replace PKT and the ligand centroid by two named atoms. With `rcsb_smiles` the ligand has no bound pose, and PKT sits at the centroid of the deposited ligand `pocket_ligand`.
+
+### Keys of `criterion`
+
+| key | mode | meaning |
+|---|---|---|
+| `mode` | every mode | `contacts`, `centroid` or `site` |
+| `search_cutoff` | `contacts`, picked | search distance in the bound pose (Å) |
+| `n_pairs` | `contacts`, picked | pairs kept, closest first, one per receptor residue |
+| `atom_filter` | `contacts`, picked or `auto` | `all` (any heavy atoms), `polar` (N, O or S on both sides), `nonpolar` (C on both sides), `any_polar` (N, O or S on at least one side), `receptor_polar` (N, O or S on the receptor side) |
+| `excluded` | `contacts`, picked | atom names left out of the search, as `<item>NAME</item>` children |
+| `receptor` | `contacts`, named, and `site` | receptor atoms as `<target resid="..." atom="..." resname="..."/>` |
+| `ligand` | `contacts`, named, and `site` | ligand atoms as `<atom name="..."/>` in the order of the targets, or `auto` in `contacts` |
+| `receptor_numbering` | named atoms | `internal` (default, numbers of `receptor.pqr`) or `pdb` (numbers of the RCSB entry with `rcsb`) |
+| `pair_cutoff` | every mode | reaction distance of every pair (Å), in `site` either `pair_cutoff` or `margin` |
+| `n_needed` | `contacts` | pairs closer than `pair_cutoff` at one time |
+| `margin` | `site` | distance added to the closest accessible approach (Å) |
+| `pocket_ligand` | `site` with `rcsb_smiles` | residue name of the deposited ligand at the site |
+| `pocket_ligand_resid` | `site` with `rcsb_smiles` | residue number of `pocket_ligand` for a chain with several copies |
