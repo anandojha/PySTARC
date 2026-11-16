@@ -80,10 +80,6 @@ cd examples/two_charged_spheres
 bash run.sh
 ```
 
-## Configuration
-
-[`CONFIG.md`](CONFIG.md), every config.xml setting (accepted values, default, effect) and the setup of a new complex from a PDB of the bound complex
-
 ## Tutorials
 
 See [`examples/`](examples/) for the tutorials. Each complex has its own README listing the inputs, run commands, and outputs. Start with `two_charged_spheres` to validate the installation against the analytical rate. The `barnase_barstar` tutorial demonstrates the flexible chain workflow.
