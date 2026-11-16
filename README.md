@@ -50,7 +50,7 @@ PySTARC computes the bimolecular association rate constants by implementing rigi
 ```bash
 git clone https://github.com/anandojha/PySTARC.git
 cd PySTARC
-bash install_PySTARC.sh
+bash install.sh
 ```
 
 **CPU (flexible chain BD only):**

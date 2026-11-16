@@ -9,11 +9,11 @@ PySTARC runs on a Linux node with an NVIDIA GPU and a driver for CUDA 12 or newe
 ```bash
 git clone https://github.com/anandojha/PySTARC.git
 cd PySTARC
-bash install_PySTARC.sh
+bash install.sh
 conda activate PySTARC
 ```
 
-`install_PySTARC.sh` creates the conda environment PySTARC with AmberTools 24.8, APBS, RDKit, OpenBabel and CuPy. An existing environment named PySTARC is replaced. On a host without an NVIDIA GPU or with an older driver the script stops before any change.
+`install.sh` creates the conda environment PySTARC with AmberTools 24.8, APBS, RDKit, OpenBabel and CuPy. An existing environment named PySTARC is replaced. On a host without an NVIDIA GPU or with an older driver the script stops before any change.
 
 ## 2. Make a run folder
 

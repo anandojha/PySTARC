@@ -70,7 +70,7 @@ def _require_gpu():
     if cp is None:
         raise RuntimeError(
             "<gpu>true</gpu> but CuPy is not installed. "
-            "Install PySTARC with install_PySTARC.sh on a GPU node."
+            "Install PySTARC with install.sh on a GPU node."
         )
     try:
         cp.arange(3).sum()

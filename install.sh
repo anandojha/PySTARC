@@ -1,18 +1,17 @@
 #!/bin/bash
 #  PySTARC - Clean install
-#  Usage:  bash install_PySTARC.sh   (Linux host with an NVIDIA GPU, stops otherwise)
+#  Usage:  bash install.sh   (Linux host with an NVIDIA GPU, stops otherwise)
 #  This script:
 #    1. Deactivates any active conda env
 #    2. Removes existing PySTARC env (if any)
 #    3. Creates a fresh PySTARC env
 #    4. Installs all dependencies (conda + pip; CuPy with the CUDA toolkit from PyPI)
-#    5. Installs PySTARC from wheel
+#    5. Installs PySTARC from the source folder (editable)
 #    6. Runs tests to verify
 set -e
 ENV_NAME="PySTARC"
 PYTHON_VERSION="3.11"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WHEEL="$SCRIPT_DIR/dist/pystarc-1.1.0-py3-none-any.whl"
 
 # --- GPU check ---
 # PySTARC runs on NVIDIA GPUs, so the install stops here, before anything is
