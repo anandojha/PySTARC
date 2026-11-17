@@ -519,3 +519,79 @@ python /path/to/PySTARC/run_pystarc.py input.xml
 ```
 
 The run resumes from `bd_sims/checkpoint.npz` when present (step 9). For an edited `input.xml` run `python setup.py` first and edit `input.xml` before the run. The run reuses the grids and hydrodynamic radii of `bd_sims` for unchanged settings and PQR files. A four GPU run resumes with the same command in each `bd_sims/bd_i`. `python /path/to/PySTARC/pystarc/multi_GPU/combine_data.py` in the run folder then pools the four runs.
+
+## 14. Results and output files
+
+`run_pystarc.py` writes every output into `bd_sims`. Each start writes a log `bd_sims/pystarc_<date>_<time>.log` with the printout of the run. The log ends with the run summary and, with `convergence_check` `true`, the convergence analysis. An error during the run ends the log with the error message. An invalid entry of `input.xml` stops the run before the log starts. A four GPU run keeps the logs in `bd_sims/bd_1` to `bd_sims/bd_4`. The expected results of the trypsin benzamidine example are in `examples/trypsin_benzamidine/README.md`.
+
+### results.json
+
+`bd_sims/results.json` holds k<sub>on</sub> and the counts of the run. After a four GPU run `bd_sims/results.json` holds the pool of the four runs.
+
+| field | content |
+|---|---|
+| `k_on` | association rate constant 6.022×10<sup>8</sup> k<sub>b</sub> P<sub>rxn</sub> (M⁻¹ s⁻¹) |
+| `k_on_low`, `k_on_high` | Wilson interval of k<sub>on</sub> at `confidence_level` (M⁻¹ s⁻¹) |
+| `P_rxn` | reaction probability, `n_reacted` over `n_trajectories` |
+| `P_rxn_low`, `P_rxn_high` | Wilson interval of P<sub>rxn</sub> at `confidence_level` |
+| `P_rxn_bound_low`, `P_rxn_bound_high` | P<sub>rxn</sub> with the trajectories at `max_steps` counted as not reacted and as reacted |
+| `k_on_bound_low`, `k_on_bound_high` | k<sub>on</sub> with the trajectories at `max_steps` counted as not reacted and as reacted (M⁻¹ s⁻¹) |
+| `k_b` | rate constant of diffusion from infinite separation to the start sphere (Å³/ps) |
+| `D_rel` | relative translational diffusion coefficient D<sub>rec</sub> + D<sub>lig</sub> at infinite separation (Å²/ps) |
+| `n_trajectories` | trajectories of the run |
+| `n_reacted`, `n_escaped`, `n_max_steps` | trajectories ended by reaction, by escape and at `max_steps` |
+| `confidence_level` | `confidence_interval` of `input.xml`, default 0.95 (section Keys of input.xml only) |
+| `r_start`, `r_escape` | radius b of the start sphere and radius of the escape sphere (Å) |
+| `log10_k_on` | base 10 logarithm of `k_on`, written for `k_on` above 0 |
+| `convergence_tol` | `convergence_tol` of step 9 |
+| `wall_time_sec`, `steps_per_sec`, `total_steps` | wall time of the BD simulation (s), BD steps per second and BD steps of all trajectories |
+| `contact_total_steps` | steps counted for `contact_frequency.csv` |
+| `k_on_units`, `k_b_units`, `D_rel_units` | unit labels |
+| `completed_reactions` | firing count of each reaction with `state_machine_reactions` `true` |
+
+The factor 6.022×10<sup>8</sup> converts Å³/ps into M⁻¹ s⁻¹. A trajectory at `max_steps` counts as not reacted in P<sub>rxn</sub>. The low bounds therefore repeat P<sub>rxn</sub> and k<sub>on</sub>. The high bounds count every trajectory at `max_steps` as reacted (step 9). The Wilson intervals use z = 1.96 at the confidence level 0.95. The pooled file of a four GPU run has no `total_steps` and no `contact_total_steps`. The pooled file gives `wall_time_sec` of the slowest run and `aggregate_gpu_sec`, the summed wall time of the pooled runs (s).
+
+### convergence.json
+
+`run_pystarc.py` writes `bd_sims/convergence.json` with `convergence_check` `true` (step 9). `combine_data.py` writes the pooled `convergence.json` of a four GPU run.
+
+| field | content |
+|---|---|
+| `N`, `n_reacted`, `n_escaped`, `n_max_steps` | trajectory counts, no `n_max_steps` in the pooled file |
+| `P_rxn`, `SE` | reaction probability and standard error √(P<sub>rxn</sub>(1 − P<sub>rxn</sub>)/N) |
+| `relative_SE`, `relative_SE_pct` | SE/P<sub>rxn</sub> as a fraction and in percent |
+| `k_on`, `SE_kon` | k<sub>on</sub> and standard error of k<sub>on</sub> (M⁻¹ s⁻¹) |
+| `wilson_CI`, `wilson_CI_P` | Wilson interval of k<sub>on</sub> (M⁻¹ s⁻¹) and of P<sub>rxn</sub> |
+| `converged` | `true` for 0 < P<sub>rxn</sub> < 1 and `relative_SE` below `convergence_tol` |
+| `confidence_level`, `tol`, `tol_pct` | confidence level and `convergence_tol` as a fraction and in percent |
+| `N_needed` | trajectories (1 − P<sub>rxn</sub>)/(P<sub>rxn</sub> r²) for a relative SE r of 10%, 5% and 1% |
+
+### Files in bd_sims
+
+| file | content |
+|---|---|
+| `pystarc_<date>_<time>.log` | printout of one start of `run_pystarc.py` |
+| `receptor.pqr`, `ligand.pqr` | copies centered on the atom centroid, with a GHO atom at the centroid |
+| `receptor0.dx`, `receptor1.dx` | coarse and fine electrostatic grids of the receptor (step 7) |
+| `receptor0_born.dx`, `receptor1_born.dx` | coarse and fine desolvation grids of the receptor |
+| `ligand0.dx`, `ligand1.dx`, `ligand0_born.dx`, `ligand1_born.dx` | electrostatic and desolvation grids of the ligand |
+| `receptor_grids.key`, `ligand_grids.key` | fingerprints of the PQR file and the grid settings for the reuse of the grids |
+| `receptor.pqr.r_hydro_*.cache`, `ligand.pqr.r_hydro_*.cache` | Monte Carlo hydrodynamic radius of each molecule (step 6) |
+| `results.json` | rate constant and counts |
+| `convergence.json` | statistics of P<sub>rxn</sub> |
+| `trajectories.csv` | outcome, step count, start pose and closest approach of each trajectory |
+| `encounters.csv` | ligand position and orientation at each reaction |
+| `near_misses.csv` | ligand position and orientation at the closest approach of each escaped trajectory |
+| `bd_time_to_reaction.csv` | BD time inside the escape sphere of each reacted trajectory |
+| `contact_frequency.csv` | steps and time of each reaction pair inside the pair cutoff |
+| `pose_clusters.csv` | rotation angle of each reaction pose in up to 8 bins, written for more than 5 reactions |
+| `radial_density.csv` | steps and time per radial shell |
+| `angular_map.npz` | steps and time per angular bin |
+| `milestone_flux.csv` | outward and inward crossings of 11 shells from b to the escape sphere |
+| `transition_matrix.npz` | moves between 50 radial bins |
+| `paths.npz`, `energetics.npz` | records every `save_interval` steps (step 11) |
+| `checkpoint.npz` | state of a run with `checkpoint_interval` above 0, deleted at the end |
+| `split.json`, `bd_1` to `bd_4` | split of a four GPU run |
+
+A four GPU run writes each run into `bd_sims/bd_1` to `bd_sims/bd_4` with a separate `input.xml`, log, `results.json` and output files. `bd_sims` holds the grids, `split.json` and the pooled `results.json`, `convergence.json` and output files.
+
