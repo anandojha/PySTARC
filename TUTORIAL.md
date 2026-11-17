@@ -334,3 +334,65 @@ The Born desolvation energy of a charge q in the Born field φ<sub>Born</sub> of
 With `multipole_fallback` true the receptor field outside every electrostatic grid comes from a screened expansion of the receptor charges with monopole, dipole and quadrupole terms. The k<sub>b</sub> integral then also holds the orientation average of the squared dipole and quadrupole terms for a charged ligand. With `false` the field outside the grids comes from the net receptor charge alone. A neutral receptor then has no field outside the grids.
 
 The trypsin example uses the soft wall, hydrodynamic interactions, the base desolvation in both directions and the multipole field. `overlap_check` false has no effect with the soft wall on.
+
+## 9. Trajectories, time step and convergence (`simulation`)
+
+```xml
+<simulation>
+  <n_trajectories>10000000</n_trajectories>
+  <max_steps>1000000</max_steps>
+  <dt>0.2</dt>
+  <minimum_core_dt>0.2</minimum_core_dt>
+  <minimum_core_reaction_dt>0.05</minimum_core_reaction_dt>
+  <max_dt>0</max_dt>
+  <temperature>298.15</temperature>
+  <seed>20261107</seed>
+  <convergence_check>true</convergence_check>
+  <convergence_interval>10</convergence_interval>
+  <convergence_tol>0.05</convergence_tol>
+  <checkpoint_interval>0</checkpoint_interval>
+</simulation>
+```
+
+| key | entries | effect |
+|---|---|---|
+| `n_trajectories` | integer ≥ 1 | trajectories started on the b sphere |
+| `max_steps` | integer ≥ 1 | step limit of each trajectory |
+| `dt` | number (ps) | outer step of the flexible chain model only |
+| `minimum_core_dt` | number ≥ 0 (ps), 0 for none | floor of the time step |
+| `minimum_core_reaction_dt` | number ≥ 0 (ps), default 0 | floor of the time step near a reaction surface in state machine runs |
+| `max_dt` | number ≥ 0 (ps), 0 for none | ceiling of the time step |
+| `temperature` | number (K) | kT of APBS, the diffusion coefficients and the forces |
+| `seed` | integer ≥ 0 | seed of the random numbers |
+| `convergence_check` | `true` or `false` | `bd_sims/convergence.json` after the run |
+| `convergence_interval` | integer (percent), 0 for none | log lines with the running P<sub>rxn</sub> and k<sub>on</sub> |
+| `convergence_tol` | number between 0 and 1 | relative standard error for the converged flag |
+| `checkpoint_interval` | integer, 0 for none | finished trajectories between checkpoints |
+
+The trypsin run starts 10,000,000 trajectories with a step limit of 1,000,000. `submit_SLURM_multi_GPUs.sh` splits the run into four runs of 2,500,000 trajectories with the seeds `seed` + 11111111 i for i = 1 to 4.
+
+### Time step
+
+Rigid body runs use an adaptive time step and ignore `dt`. At every step the GPU engine sets the step of each trajectory from the center distance and the net charges. Beyond 1.1b the distance to the start and escape spheres also limits the step. The soft wall or the overlap check shortens the step near the receptor surface. `max_dt` then caps the step. `minimum_core_dt` comes last and raises the step to the floor over every other rule. The trypsin run has the floor 0.2 ps and no ceiling. No trypsin step is shorter than 0.2 ps, even at the receptor surface.
+
+`minimum_core_reaction_dt` acts only in state machine runs, with `state_machine_reactions` true in `input.xml` (default false). In a state machine run the step shrinks near a reachable reaction surface but not below `minimum_core_reaction_dt`. The trypsin run keeps `state_machine_reactions` false. The trypsin value 0.05 then has no effect.
+
+### Step limit
+
+Each trajectory runs to a reaction, an escape or `max_steps` steps. A trajectory at the step limit counts as not reacted. `results.json` gives the count `n_max_steps` and the bounds `k_on_bound_low` and `k_on_bound_high`. `k_on_bound_low` counts every trajectory at the limit as not reacted and `k_on_bound_high` as reacted. `python -m pystarc.analysis.step_limit bd_sims/trajectories.csv` reads a pilot run and proposes a `max_steps` with a change of k<sub>on</sub> of at most 1% from the trajectories at the limit.
+
+### Convergence
+
+After N trajectories the relative standard error of P<sub>rxn</sub> is √((1 − P<sub>rxn</sub>)/(N P<sub>rxn</sub>)). With `convergence_check` true the run writes `bd_sims/convergence.json` with P<sub>rxn</sub>, k<sub>on</sub>, the standard errors, the 95% Wilson intervals, the converged flag and the N for a relative error of 10, 5 and 1%. The flag is true for a relative standard error below `convergence_tol`. The trypsin value 0.05 flags convergence below a relative standard error of 5%.
+
+`convergence_interval` prints the running P<sub>rxn</sub> and k<sub>on</sub> each time the count of finished trajectories passes a multiple of `convergence_interval` percent of `n_trajectories`. A progress line also appears every 10 s once trajectories finish. None of the convergence keys stops a run. The run always takes every trajectory to a reaction, an escape or the step limit.
+
+### Checkpoints
+
+With `checkpoint_interval` above 0 the run writes `bd_sims/checkpoint.npz` each time `checkpoint_interval` more trajectories have finished. A stopped run resumes with `python /path/to/PySTARC/run_pystarc.py input.xml` in the run folder. `run.sh` and the SLURM scripts delete `bd_sims` and start over. The resumed run needs the same input files and the same keys. Of the `config.xml` keys only `gpu_force_batch`, `n_threads`, `convergence_interval`, the `outputs` keys and a positive `checkpoint_interval` may change. A checkpoint of another run stops the run with an error. With `save_interval` above 0 the files `paths.npz` and `energetics.npz` of a resumed run hold the records after the resume only. A finished run deletes the checkpoint. The trypsin run writes no checkpoint.
+
+### Temperature and seed
+
+`temperature` sets kT in APBS, the desolvation grids, the diffusion coefficients and the forces. The viscosity stays at 0.890 mPa s of water at 25 °C. The run prints a warning for a temperature other than 298.15 K. A new `temperature` needs a matching `debye_length` (step 7).
+
+The random numbers of a trajectory depend only on `seed`, the trajectory number and the step count. `gpu_force_batch` and a resume leave the random numbers unchanged. With `rcsb_smiles` the seed also fixes the ligand conformer of `setup.py` (step 3).
