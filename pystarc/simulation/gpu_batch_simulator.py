@@ -2326,8 +2326,9 @@ class GPUBatchSimulator:
             # downward. Choose max_steps from a pilot run with
             # pystarc.analysis.step_limit so that the trajectories at the limit
             # cannot move k_on by more than the tolerance.
-            # Live convergence report.
-            if done in _conv_milestones and done > _last_conv_done:
+            # Live convergence report, once the finished count passes a
+            # milestone. One step can finish many trajectories at once.
+            if any(_last_conv_done < m <= done for m in _conv_milestones):
                 _last_conv_done = done
                 _n_comp = n_reacted + n_escaped
                 if _n_comp > 0:
