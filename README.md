@@ -82,6 +82,8 @@ bash run.sh
 
 ## Tutorials
 
+[`TUTORIAL.md`](TUTORIAL.md) works through the trypsin benzamidine example step by step and explains every key of `config.xml` and `input.xml`.
+
 See [`examples/`](examples/) for the tutorials. Each complex has its own README listing the inputs, run commands, and outputs. Start with `two_charged_spheres` to validate the installation against the analytical rate. The `barnase_barstar` tutorial demonstrates the flexible chain workflow.
 
 ```
