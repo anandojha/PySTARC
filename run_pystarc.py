@@ -115,29 +115,70 @@ def main():
         _wall_t0 = time.time()
         try:
             if cfg.chain is not None:
-                # Chain BD mode: invoke chain BD orchestrator and print
-                # a minimal summary. Stage 2 will expand the chain output
-                # writer to produce convergence/k_on metrics matching the
-                # rigid-body footer below.
                 from pystarc.pipeline.chain_pipeline import run_chain
 
-                run_chain(cfg, input_xml_path=xml_path)
+                cfg.work_dir = work_dir
+                out_dir = run_chain(cfg, input_xml_path=xml_path)
                 _wall_elapsed = time.time() - _wall_t0
+                rj_path = Path(out_dir) / "results.json"
+                rj = json.loads(rj_path.read_text()) if rj_path.exists() else {}
+                _sum = rj.get("summary", {})
+                _rate = rj.get("rate", {})
+                _nr = int(_sum.get("n_reacted", 0))
+                _ne = int(_sum.get("n_escaped", 0))
+                _nm = int(_sum.get("n_max_steps", 0))
+                _ntot = max(_nr + _ne + _nm, 1)
+                _prxn = float(_rate.get("P_rxn", _nr / _ntot))
                 _footer = [
                     "",
                     "=" * 64,
                     "  Chain BD run summary",
                     "=" * 64,
                     f"  Host           : {os.uname().nodename}",
-                    f"  GPU            : {_gpu_name}",
+                    f"  GPU            : {_gpu_name if cfg.gpu else 'disabled (<gpu>false</gpu>)'}",
+                    f"  Flexible role  : {cfg.chain.flexible_partner}",
                     f"  Trajectories   : {cfg.n_trajectories:,}",
+                    f"  Reacted        : {_nr:,}",
+                    f"  Escaped        : {_ne:,}",
+                    f"  Max-steps      : {_nm:,}  (counted as not reacted)",
+                    f"  P_rxn          : {_prxn:.6f}",
+                ]
+                if _rate.get("k_on") is not None:
+                    _kon = float(_rate["k_on"])
+                    _klo = float(_rate["k_on_low"])
+                    _khi = float(_rate["k_on_high"])
+                    _ci_lvl = float(_rate.get("confidence_level", cfg.confidence_interval))
+                    _ci_lbl = f"{100.0 * _ci_lvl:g}% CI"
+                    _footer.append(f"  k_on           : {_kon:.4e} M-1 s-1")
+                    _footer.append(f"  {_ci_lbl:<15s}: [{_klo:.4e}, {_khi:.4e}]")
+                    if _kon > 0.0:
+                        _exp = int(math.floor(math.log10(_kon)))
+                        _man = _kon / 10**_exp
+                        _man_err = ((_khi - _klo) / 2.0) / 10**_exp
+                        _footer.append(
+                            f"  k_on (± error) : ({_man:.1f} ± {_man_err:.1f}) x 10^{_exp} M-1 s-1"
+                        )
+                    _footer.append(f"  k_b            : {float(_rate['k_b']):.4f} A3/ps")
+                _footer += [
                     f"  Total wall time: {_wall_elapsed:.1f} s",
-                    f"  Output dir     : {(Path(cfg.work_dir) / 'bd_1').resolve()}",
+                    f"  Output dir     : {Path(out_dir).resolve()}",
                     f"  Finished       : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                     "=" * 64,
                 ]
                 for line in _footer:
                     print(line)
+                if cfg.convergence_check and _rate.get("k_b") is not None:
+                    _conv = analyse_convergence(
+                        n_reacted=_nr,
+                        n_escaped=_ne,
+                        n_max_steps=_nm,
+                        k_b=float(_rate["k_b"]),
+                        tol=cfg.convergence_tol,
+                        work_dir=str(out_dir),
+                        confidence=cfg.confidence_interval,
+                    )
+                    print_convergence(_conv)
+                    save_convergence(_conv, work_dir=str(out_dir))
             else:
                 # Rigid-body mode (the original PySTARC pipeline).
                 result = run(cfg)

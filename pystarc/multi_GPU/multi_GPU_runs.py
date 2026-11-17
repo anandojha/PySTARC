@@ -61,7 +61,10 @@ def main():
     base_dir = os.path.dirname(os.path.abspath(args.xml))
     bd_sims = os.path.join(base_dir, text("work_dir") or str(defaults["work_dir"]))
     for d in [bd_sims] + [os.path.join(bd_sims, f"bd_{i}") for i in range(1, args.n_splits + 1)]:
-        if any(os.path.exists(os.path.join(d, f)) for f in ("results.json", "checkpoint.npz")):
+        if any(
+            os.path.exists(os.path.join(d, f))
+            for f in ("results.json", "checkpoint.npz", "chain_checkpoint.npz")
+        ):
             print(f"  Error: {d} holds an earlier run. Remove it or use another work_dir.")
             return 1
     # One trajectory in <work_dir> builds the grids, or reuses them by their key.
@@ -114,6 +117,23 @@ def main():
             el = root.find(tag)
             if el is not None and el.text and el.text.strip() and not os.path.isabs(el.text.strip()):
                 el.text = os.path.join(base_dir, el.text.strip())
+        chain_el = root.find("chain")
+        if chain_el is not None:
+            for ctag in [
+                "chain_json",
+                "reaction_pairs_json",
+                "target_grid_dx",
+                "coarse_grid_dx",
+                "born_grid_dx",
+            ]:
+                cel = chain_el.find(ctag)
+                if (
+                    cel is not None
+                    and cel.text
+                    and cel.text.strip()
+                    and not os.path.isabs(cel.text.strip())
+                ):
+                    cel.text = os.path.join(base_dir, cel.text.strip())
         tree.write(os.path.join(run_dir, "input.xml"), xml_declaration=True, encoding="UTF-8")
         shards.append({"dir": f"bd_{i}", "seed": seed_i, "n_trajectories": n_i})
         print(f"  {run_dir}: {n_i:,} trajectories, seed={seed_i}")

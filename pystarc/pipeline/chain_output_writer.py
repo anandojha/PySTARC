@@ -38,6 +38,7 @@ chain BD data, so we keep the two writers separate.
 """
 
 from __future__ import annotations
+import statistics
 import math
 from pystarc.global_defs.constants import MOLAR_RATE_CONV
 from pystarc.global_defs.defaults import QB_FACTOR
@@ -145,6 +146,7 @@ def _chain_block(sim) -> Dict[str, Any]:
     template = sim.chain_template
     return {
         "name": template.name,
+        "flexible_partner": str(getattr(sim, "flexible_partner", "ligand")),
         "n_atoms": template.n_atoms,
         "atom_radii": [float(a.radius) for a in template.atoms],
         "atom_charges": [float(a.charge) for a in template.atoms],
@@ -283,8 +285,15 @@ def _rate_block(sim, results) -> dict:
         out["k_on"] = None
         out["reason"] = "no trajectory was run"
         return out
+    conf = float(getattr(sim, "confidence_interval", 0.95))
+    conv_tol = float(getattr(sim, "convergence_tol", 0.05))
+    z = (
+        1.96
+        if abs(conf - 0.95) < 1.0e-9
+        else statistics.NormalDist().inv_cdf(0.5 + 0.5 * conf)
+    )
     p = n_r / n
-    lo, hi = _wilson(n_r, n)
+    lo, hi = _wilson(n_r, n, z=z)
     conv = MOLAR_RATE_CONV  # A^3/ps to M^-1 s^-1
     out.update(
         {
@@ -304,6 +313,8 @@ def _rate_block(sim, results) -> dict:
             "P_rxn_bound_high": float((n_r + n_c) / n),
             "k_on_bound_low": float(conv * k_b * p),
             "k_on_bound_high": float(conv * k_b * (n_r + n_c) / n),
+            "confidence_level": conf,
+            "convergence_tol": conv_tol,
         }
     )
     return out

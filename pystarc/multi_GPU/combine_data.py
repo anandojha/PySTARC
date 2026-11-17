@@ -82,21 +82,28 @@ def main():
         with open(rj) as f:
             runs.append(json.load(f))
         dirs_valid.append(d)
+        _cur = runs[-1]
+        _csum = _cur.get("summary", {}) if isinstance(_cur.get("summary"), dict) else {}
+        _nt = _cur["n_trajectories"] if "n_trajectories" in _cur else _csum["n_trajectories"]
+        _nr_s = _cur["n_reacted"] if "n_reacted" in _cur else _csum["n_reacted"]
+        _ne_s = _cur["n_escaped"] if "n_escaped" in _cur else _csum["n_escaped"]
         want = split[os.path.basename(d)]["n_trajectories"] if split else None
-        if want is not None and runs[-1]["n_trajectories"] != want:
+        if want is not None and _nt != want:
             print(
-                f"  Error: {os.path.basename(d)} ran {runs[-1]['n_trajectories']:,} "
+                f"  Error: {os.path.basename(d)} ran {_nt:,} "
                 f"trajectories, split.json gives {want:,}."
             )
             return 1
         print(
-            f"  {os.path.basename(d)}: {runs[-1]['n_reacted']:,} reacted, {runs[-1]['n_escaped']:,} escaped"
+            f"  {os.path.basename(d)}: {_nr_s:,} reacted, {_ne_s:,} escaped"
         )
     if dirs_missing:
         print(f"  Skipped (not finished): {', '.join(dirs_missing)}")
     if not runs:
         print("  Error: no completed runs found")
         return 1
+    if "chain" in runs[0] and isinstance(runs[0].get("summary"), dict):
+        return _combine_chain_runs(runs, dirs_valid, subdirs, bd_sims)
     # Pool the trajectory counts across all completed shards. The reaction
     # probability P is the fraction of trajectories that reacted, and the
     # association rate constant follows from
@@ -692,6 +699,265 @@ def _sum_npz(dirs, filename, out_dir, sum_key, copy_keys=None):
     out_path = os.path.join(out_dir, filename)
     np.savez(out_path, **totals, **copies)
     print(f"    {filename} ({', '.join(f'{k}: {v.shape}' for k, v in totals.items())})")
+
+
+def _combine_chain_runs(runs, dirs_valid, subdirs, bd_sims):
+    """Pool shard outputs from flexible-chain BD runs into bd_sims."""
+    sums = [r["summary"] for r in runs]
+    rates = [r.get("rate", {}) for r in runs]
+    nr = sum(int(s.get("n_reacted", 0)) for s in sums)
+    ne = sum(int(s.get("n_escaped", 0)) for s in sums)
+    n_max = sum(int(s.get("n_max_steps", 0)) for s in sums)
+    n_timeouts = sum(int(s.get("n_escaped_via_timeout", 0)) for s in sums)
+    N_p = sum(int(s.get("n_trajectories", 0)) for s in sums)
+    P = nr / N_p if N_p > 0 else 0.0
+
+    ref_rate = rates[0]
+    k_b = ref_rate.get("k_b")
+    conf = float(ref_rate.get("confidence_level", 0.95))
+    conv_tol = float(ref_rate.get("convergence_tol", 0.05))
+    CONV = 6.02214076e23 * 1.0e-27 * 1.0e12
+
+    z = (
+        1.96
+        if abs(conf - 0.95) < 1.0e-9
+        else statistics.NormalDist().inv_cdf(0.5 + 0.5 * conf)
+    )
+    if N_p == 0:
+        P_lo, P_hi = 0.0, 0.0
+    else:
+        denom = 1.0 + z * z / N_p
+        centre = (P + z * z / (2.0 * N_p)) / denom
+        spread = (
+            z * math.sqrt(max(P * (1.0 - P) / N_p + z * z / (4.0 * N_p * N_p), 0.0))
+            / denom
+        )
+        P_lo = max(0.0, centre - spread)
+        P_hi = min(1.0, centre + spread)
+
+    SE = math.sqrt(P * (1.0 - P) / N_p) if 0.0 < P < 1.0 and N_p > 0 else 0.0
+    RSE = SE / P if P > 0.0 else float("inf")
+    P_b_lo, P_b_hi = _p_rxn_bounds(nr, ne, n_max)
+
+    shard_walls = [float(s.get("wall_time_sec", 0.0)) for s in sums]
+    wall_time = max(shard_walls) if shard_walls else 0.0
+    agg_wall = sum(shard_walls)
+    tot_steps = sum(
+        float(s.get("mean_steps", 0.0)) * int(s.get("n_trajectories", 0)) for s in sums
+    )
+
+    pooled_rxn_counts = {}
+    for s in sums:
+        for rname, cnt in (s.get("reaction_counts") or {}).items():
+            pooled_rxn_counts[rname] = pooled_rxn_counts.get(rname, 0) + int(cnt)
+
+    w_n = [int(s.get("n_trajectories", 0)) for s in sums]
+    summary_out = {
+        "n_trajectories": N_p,
+        "n_reacted": nr,
+        "n_escaped": ne,
+        "n_max_steps": n_max,
+        "n_escaped_via_timeout": n_timeouts,
+        "fraction_reacted": P,
+        "fraction_escaped": (ne / N_p) if N_p > 0 else 0.0,
+        "mean_time_ps": (
+            sum(float(s.get("mean_time_ps", 0.0)) * n for s, n in zip(sums, w_n)) / N_p
+            if N_p > 0
+            else 0.0
+        ),
+        "mean_steps": (tot_steps / N_p) if N_p > 0 else 0.0,
+        "mean_final_separation": (
+            sum(
+                float(s.get("mean_final_separation", 0.0)) * n
+                for s, n in zip(sums, w_n)
+            )
+            / N_p
+            if N_p > 0
+            else 0.0
+        ),
+        "min_time_ps": min(
+            (float(s.get("min_time_ps", 0.0)) for s in sums if s.get("n_trajectories", 0) > 0),
+            default=0.0,
+        ),
+        "max_time_ps": max(
+            (float(s.get("max_time_ps", 0.0)) for s in sums if s.get("n_trajectories", 0) > 0),
+            default=0.0,
+        ),
+        "n_hard_sphere_redraws": sum(
+            int(s.get("n_hard_sphere_redraws", 0)) for s in sums
+        ),
+        "n_hard_sphere_rejections": sum(
+            int(s.get("n_hard_sphere_rejections", 0)) for s in sums
+        ),
+        "wall_time_sec": wall_time,
+        "aggregate_gpu_sec": agg_wall,
+        "steps_per_sec": (tot_steps / wall_time) if wall_time > 0.0 else 0.0,
+    }
+    if pooled_rxn_counts:
+        summary_out["reaction_counts"] = pooled_rxn_counts
+
+    rate_out = {
+        "n_reacted": nr,
+        "n_escaped": ne,
+        "n_censored": n_max,
+        "censored_fraction": (n_max / N_p) if N_p > 0 else 0.0,
+        "use_lmz": bool(ref_rate.get("use_lmz", True)),
+        "outer_propagator": bool(ref_rate.get("outer_propagator", k_b is not None)),
+    }
+    if k_b is not None:
+        kb_f = float(k_b)
+        k_on = CONV * kb_f * P
+        k_lo = CONV * kb_f * P_lo
+        k_hi = CONV * kb_f * P_hi
+        rate_out.update(
+            {
+                "k_b": kb_f,
+                "k_b_units": "A^3/ps",
+                "b_radius": float(ref_rate.get("b_radius", 0.0)),
+                "q_radius": float(ref_rate.get("q_radius", 0.0)),
+                "return_prob": float(ref_rate.get("return_prob", 0.0)),
+                "P_rxn": P,
+                "P_rxn_low": P_lo,
+                "P_rxn_high": P_hi,
+                "k_on": k_on,
+                "k_on_low": k_lo,
+                "k_on_high": k_hi,
+                "k_on_units": "M-1 s-1",
+                "P_rxn_bound_low": P_b_lo,
+                "P_rxn_bound_high": P_b_hi,
+                "k_on_bound_low": CONV * kb_f * P_b_lo,
+                "k_on_bound_high": CONV * kb_f * P_b_hi,
+                "confidence_level": conf,
+                "convergence_tol": conv_tol,
+            }
+        )
+    else:
+        k_on = k_lo = k_hi = 0.0
+        rate_out["k_on"] = None
+        rate_out["reason"] = ref_rate.get(
+            "reason", "no outer propagator, so k_b is undefined"
+        )
+
+    diff_out = dict(runs[0].get("diffusion", {}))
+    diff_out["n_relative_diffusion_clipped"] = sum(
+        int(r.get("diffusion", {}).get("n_relative_diffusion_clipped", 0))
+        for r in runs
+    )
+    if "n_rebuilds" in diff_out:
+        diff_out["n_rebuilds"] = sum(
+            int(r.get("diffusion", {}).get("n_rebuilds", 0)) for r in runs
+        )
+        diff_out["n_rebuild_failures"] = sum(
+            int(r.get("diffusion", {}).get("n_rebuild_failures", 0)) for r in runs
+        )
+
+    print(f"\n  Combined chain BD results ({len(runs)}/{len(subdirs)} runs)")
+    print(f"  Trajectories     = {N_p:,}")
+    print(f"  Reacted          = {nr:,}")
+    print(f"  Escaped          = {ne:,}")
+    print(f"  Max-steps        = {n_max:,}")
+    print(f"  P_rxn            = {P:.6f} ± {SE:.6f}")
+    if k_b is not None:
+        print(f"  k_b              = {float(k_b):.4f} A3/ps")
+        print(f"  k_on             = {k_on:.4e} M-1 s-1")
+        print(
+            f"  Wilson {100 * conf:g}% CI   = [{k_lo:.4e}, {k_hi:.4e}] M-1 s-1"
+        )
+
+    pooled_doc = {
+        "summary": summary_out,
+        "rate": rate_out,
+        "diffusion": diff_out,
+        "chain": runs[0].get("chain", {}),
+        "params": dict(runs[0].get("params", {}), n_trajectories=N_p),
+    }
+    _save_json(pooled_doc, os.path.join(bd_sims, "results.json"))
+
+    traj_offsets = []
+    running = 0
+    for n_s in w_n:
+        traj_offsets.append(running)
+        running += n_s
+
+    _concat_csv(
+        dirs_valid, "trajectories.csv", bd_sims, reindex="traj_id", offsets=traj_offsets
+    )
+    _concat_csv(
+        dirs_valid, "encounters.csv", bd_sims, reindex="traj_id", offsets=traj_offsets
+    )
+    _concat_csv(
+        dirs_valid, "near_misses.csv", bd_sims, reindex="traj_id", offsets=traj_offsets
+    )
+    _sum_csv(
+        dirs_valid,
+        "contact_frequency.csv",
+        bd_sims,
+        sum_cols=["total_contacts", "n_trajectories"],
+    )
+    _sum_npz(
+        dirs_valid,
+        "angular_map.npz",
+        bd_sims,
+        sum_key=["counts", "total_snapshots"],
+        copy_keys=["theta_edges", "phi_edges"],
+    )
+    _concat_chain_flat_npz(dirs_valid, "paths.npz", bd_sims, traj_offsets)
+    _concat_chain_flat_npz(dirs_valid, "energetics.npz", bd_sims, traj_offsets)
+
+    targets = {}
+    if 0.0 < P < 1.0:
+        for t in (0.10, 0.05, 0.01):
+            targets[f"{int(t * 100)}%"] = int(math.ceil((1.0 - P) / (P * t * t)))
+    conv = {
+        "N": N_p,
+        "n_reacted": nr,
+        "n_escaped": ne,
+        "P_rxn": P,
+        "SE": SE,
+        "relative_SE": RSE,
+        "relative_SE_pct": RSE * 100.0 if P > 0.0 else float("inf"),
+        "k_on": k_on,
+        "SE_kon": CONV * float(k_b) * SE if k_b is not None else 0.0,
+        "wilson_CI": [k_lo, k_hi],
+        "wilson_CI_P": [P_lo, P_hi],
+        "converged": (RSE < conv_tol) if P > 0.0 else False,
+        "confidence_level": conf,
+        "tol": conv_tol,
+        "tol_pct": conv_tol * 100.0,
+        "N_needed": targets,
+    }
+    _save_json(conv, os.path.join(bd_sims, "convergence.json"))
+    print(f"\n  All files saved -> {bd_sims}/")
+    return 0
+
+
+def _concat_chain_flat_npz(dirs, filename, out_dir, offsets):
+    """Concatenate flat-schema chain NPZ archives (paths.npz or energetics.npz)."""
+    merged = {}
+    cols = None
+    for i, d in enumerate(dirs):
+        fpath = os.path.join(d, filename)
+        if not os.path.exists(fpath):
+            continue
+        npz = np.load(fpath, allow_pickle=False)
+        for k in npz.files:
+            if k == "columns":
+                if cols is None:
+                    cols = np.array(npz[k])
+                continue
+            arr = np.array(npz[k])
+            if k == "traj_id":
+                arr = arr + int(offsets[i])
+            merged.setdefault(k, []).append(arr)
+    if not merged:
+        return
+    save_dict = {k: np.concatenate(v, axis=0) for k, v in merged.items()}
+    if cols is not None:
+        save_dict["columns"] = cols
+    out_path = os.path.join(out_dir, filename)
+    np.savez(out_path, **save_dict)
+    n_rows = len(save_dict.get("traj_id", next(iter(save_dict.values()))))
+    print(f"    {filename} ({n_rows:,} rows)")
 
 
 if __name__ == "__main__":

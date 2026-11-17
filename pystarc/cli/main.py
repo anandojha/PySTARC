@@ -269,6 +269,25 @@ def main():
     "Rotne-Prager hydrodynamics. When set, --d-trans and "
     "--d-rot must NOT be supplied.",
 )
+@click.option(
+    "--gpu/--no-gpu",
+    default=False,
+    show_default=True,
+    help="Run trajectories in parallel on a CUDA GPU with GPUChainBDSimulator.",
+)
+@click.option(
+    "--born-dx",
+    "born_dx",
+    multiple=True,
+    help="APBS Born desolvation .dx grid file(s) for the target.",
+)
+@click.option(
+    "--target-hydro-radius",
+    "target_hydro_radius",
+    default=None,
+    type=float,
+    help="Hydrodynamic radius of the rigid target in Angstroms for two-body RPY.",
+)
 def chain_simulation(
     chain_file,
     target,
@@ -288,6 +307,9 @@ def chain_simulation(
     verbose,
     output_dir,
     auto_diffusion,
+    gpu,
+    born_dx,
+    target_hydro_radius,
 ):
     """Run a chain Brownian dynamics simulation against a rigid target.
 
@@ -334,9 +356,16 @@ def chain_simulation(
         g = DXGrid.from_file(dx_file)
         grids.append(g)
         click.echo(f"  loaded grid: {g}")
-    if len(grids) > 1:
-        click.echo("  warning: chain_simulation currently uses only the first DX grid")
+    if len(grids) > 1 and not gpu:
+        click.echo("  warning: CPU chain_simulation uses only the first DX grid")
     target_grid = grids[0] if grids else None
+
+    born_grids = []
+    for bdx_file in born_dx:
+        bg = DXGrid.from_file(bdx_file)
+        born_grids.append(bg)
+        click.echo(f"  loaded Born grid: {bg}")
+    born_grid = born_grids[0] if born_grids else None
 
     params = ChainBDParameters(
         n_trajectories=n,
@@ -350,19 +379,30 @@ def chain_simulation(
         n_threads=n_threads,
         verbose=verbose,
     )
+    sim_cls = ChainBDSimulator
+    extra_kw = {}
+    if gpu:
+        from pystarc.simulation.gpu_chain_simulator import GPUChainBDSimulator
+
+        sim_cls = GPUChainBDSimulator
+        extra_kw = {"elec_grids": grids, "born_grids": born_grids}
+
     if auto_diffusion:
         click.echo(
             "  hydrodynamics: full Rotne-Prager (auto-computing D from "
             "chain geometry)"
         )
-        sim = ChainBDSimulator(
+        sim = sim_cls(
             target=target_mol,
             chain_template=chain_template,
             chain_init_body_positions=body_positions,
             params=params,
             pathway_set=pathways,
             target_grid=target_grid,
+            born_grid=born_grid,
             auto_diffusion=True,
+            target_hydro_radius=target_hydro_radius,
+            **extra_kw,
         )
         click.echo(f"  D_trans diag (A^2/ps): {np.diag(sim.D_trans)}")
         click.echo(f"  D_rot   diag (rad^2/ps): {np.diag(sim.D_rot)}")
@@ -370,7 +410,7 @@ def chain_simulation(
         click.echo(
             f"  hydrodynamics: scalar isotropic " f"(D_trans={d_trans}, D_rot={d_rot})"
         )
-        sim = ChainBDSimulator(
+        sim = sim_cls(
             target=target_mol,
             chain_template=chain_template,
             chain_init_body_positions=body_positions,
@@ -379,6 +419,9 @@ def chain_simulation(
             D_trans=d_trans,
             D_rot=d_rot,
             target_grid=target_grid,
+            born_grid=born_grid,
+            target_hydro_radius=target_hydro_radius,
+            **extra_kw,
         )
 
     click.echo(f"\nRunning {n} trajectories ...")

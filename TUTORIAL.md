@@ -741,7 +741,10 @@ Each trajectory starts with the chain centroid on the sphere of radius b = `bd_m
 | `r_escape` | 0 for 2b or a radius (Å) | escape radius only when the outer propagator fails to build |
 | `temperature` | 298.15 (K) | an entry more than 0.01 K away stops the chain run |
 | `seed` | integer ≥ 0 | written to `input.xml`, replaced by 11111111 i + 1 in shard i |
-| `gpu`, `convergence_check`, `convergence_interval`, `convergence_tol` | as in steps 9 and 10 | ignored by the chain run |
+| `gpu` | `true` or `false` | `true` runs the active-slot GPU chain simulator (`GPUChainBDSimulator`), `false` runs the CPU worker simulator (`ChainBDSimulator`) |
+| `convergence_check`, `convergence_interval`, `convergence_tol` | as in steps 9 and 10 | live progress milestones on GPU and post-run `convergence.json` report |
+| `flexible_partner` | `ligand` (default) or `receptor` | inside `<chain>`, selects which binding partner is modeled as the flexible COFFDROP chain while the other is the centered rigid PQR target (`receptor_pqr` or `ligand_pqr`) |
+| `coarse_grid_dx`, `far_field` | optional DX path, `true` or `false` | inside `<chain>`, adds a coarse outer APBS grid and screened Yukawa/multipole far-field continuation on the GPU |
 | `save_interval` | integer ≥ 0 | outer steps between saved positions, energies and contacts, 0 for none |
 | `auto_diffusion` | `true` or `false` | `true` for chain diffusion tensors from the beads rebuilt every 10 outer steps, `false` for `d_trans` and `d_rot` |
 | `d_trans`, `d_rot` | > 0 (Å<sup>2</sup>/ps), > 0 (rad<sup>2</sup>/ps) | chain diffusion coefficients with `auto_diffusion` `false`, ignored with `true` |

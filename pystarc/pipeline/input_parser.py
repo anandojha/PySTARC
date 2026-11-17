@@ -88,7 +88,10 @@ class ChainConfig:
     Rigid-body input.xml files that have no <chain> block keep working unchanged.
     """
 
-    # Input files.
+    # Input files and partner role.
+    flexible_partner: str = (
+        "ligand"  # Binding partner modeled as the flexible chain: 'ligand' or 'receptor'.
+    )
     chain_json: str = (
         ""  # Path to chain.json, which holds the topology and the initial positions.
     )
@@ -98,8 +101,14 @@ class ChainConfig:
     target_grid_dx: str = (
         ""  # Path to the electrostatic DX grid. An empty string means no field is applied.
     )
+    coarse_grid_dx: str = (
+        ""  # Optional coarse electrostatic DX grid used outside target_grid_dx on the GPU.
+    )
     born_grid_dx: str = (
         ""  # Path to the Born desolvation DX grid. An empty string means no Born term is applied.
+    )
+    far_field: bool = (
+        False  # If True, evaluate Yukawa and multipole electrostatics beyond the DX grid box on the GPU.
     )
 
     # Geometry.
@@ -300,20 +309,27 @@ class PySTARCConfig:
     def validate(self):
         """Check required inputs exist and values are sane."""
         if self.chain is not None:
-            # In chain BD mode the required inputs are chain_json (the topology)
-            # and receptor_pqr (the target). ligand_pqr is not used because the
-            # flexible chain plays the role of the ligand.
-            if not self.chain.chain_json:
-                raise ValueError("<chain><chain_json> is required in chain BD mode")
-            if not self.receptor_pqr:
-                raise ValueError(
-                    "<receptor_pqr> is required in chain BD mode (target structure)"
-                )
-            # Sanity-check the chain BD numbers, because bad values silently produce
-            # garbage results. For example, dt_chain=0 gives zero noise and a static
-            # chain, gb_eps_in=0 causes a divide-by-zero in the OBC2 self-Born term,
-            # and negative diffusion gives NaN positions. Catch all of these at parse time.
             cc = self.chain
+            role = (cc.flexible_partner or "").strip().lower()
+            if role not in ("ligand", "receptor"):
+                raise ValueError(
+                    "<chain><flexible_partner> must be 'ligand' or 'receptor', "
+                    f"got {cc.flexible_partner!r}"
+                )
+            cc.flexible_partner = role
+            if not cc.chain_json:
+                raise ValueError("<chain><chain_json> is required in chain BD mode")
+            if role == "ligand":
+                if not self.receptor_pqr:
+                    raise ValueError(
+                        "<receptor_pqr> is required in chain BD mode (target structure)"
+                    )
+            else:
+                if not self.ligand_pqr:
+                    raise ValueError(
+                        "<ligand_pqr> is required in chain BD mode when "
+                        "<flexible_partner> is 'receptor'"
+                    )
             if cc.dt_chain <= 0:
                 raise ValueError(f"chain.dt_chain must be > 0, got {cc.dt_chain}")
             if cc.chain_steps_per_outer < 1:
@@ -664,10 +680,13 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
         cseen = set()
         cget = _reader(chain_el, cseen)
         chain = ChainConfig(
+            flexible_partner=cget("flexible_partner", default="ligand", cast=str),
             chain_json=cget("chain_json", default="", cast=str),
             reaction_pairs_json=cget("reaction_pairs_json", default="", cast=str),
             target_grid_dx=cget("target_grid_dx", default="", cast=str),
+            coarse_grid_dx=cget("coarse_grid_dx", default="", cast=str),
             born_grid_dx=cget("born_grid_dx", default="", cast=str),
+            far_field=cget("far_field", default=False, cast=bool),
             r_escape=cget("r_escape", default=0.0, cast=float),
             reaction_n_needed=cget("reaction_n_needed", default=3, cast=int),
             auto_diffusion=cget("auto_diffusion", default=False, cast=bool),
@@ -722,7 +741,9 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
                 "<soft_repulsion>true</soft_repulsion> for the soft wall or "
                 "<overlap_check>true</overlap_check> for the hard check."
             )
-    return PySTARCConfig(**kw, outputs=outputs, chain=chain).validate()
+    cfg_obj = PySTARCConfig(**kw, outputs=outputs, chain=chain).validate()
+    cfg_obj._gpu_explicit = named("gpu")
+    return cfg_obj
 
 
 def write_template(path: str | Path = "pystarc_input.xml"):

@@ -20,22 +20,47 @@ import shutil
 import time
 
 from pystarc.global_defs.constants import KB_KCAL
-from pystarc.global_defs.defaults import GHOST_NAMES
-from pystarc.pipeline.geometry import analyse_molecule
-from pystarc.pipeline.input_parser import PySTARCConfig
-from pystarc.simulation.chain_simulator import ChainBDParameters, ChainBDSimulator
-from pystarc.simulation.coffdrop_chain import elastic_network
-from pystarc.pipeline.chain_output_writer import write_chain_results
-from pystarc.structures.chain_io import load_chain_from_json
-from pystarc.structures.pqr_io import parse_pqr
-from pystarc.structures.molecules import ContactPair, ReactionCriteria
-from pystarc.pathways.reaction_interface import ReactionInterface, PathwaySet
-from pystarc.forces.electrostatic.grid_force import DXGrid
 from pystarc.hydrodynamics.rotne_prager import (
     stokes_rotational_diffusion,
     stokes_translational_diffusion,
 )
+from pystarc.simulation.chain_simulator import ChainBDParameters, ChainBDSimulator
+from pystarc.simulation.gpu_chain_simulator import GPUChainBDSimulator
+from pystarc.structures.molecules import ContactPair, ReactionCriteria
+from pystarc.pathways.reaction_interface import PathwaySet, ReactionInterface
+from pystarc.forces.multipole_farfield import MultipoleExpansion
+from pystarc.pipeline.chain_output_writer import write_chain_results
+from pystarc.forces.electrostatic.grid_force import DXGrid
+from pystarc.structures.chain_io import load_chain_from_json
+from pystarc.xml_io.simulation_io import parse_reaction_xml
+from pystarc.simulation.coffdrop_chain import elastic_network
+from pystarc.pipeline.input_parser import PySTARCConfig
+from pystarc.pipeline.geometry import analyse_molecule
+from pystarc.pipeline.pipeline import _require_gpu
+from pystarc.global_defs.defaults import GHOST_NAMES
+from pystarc.structures.pqr_io import parse_pqr
 import numpy as np
+
+_DEFAULT_CHAIN_SIM = ChainBDSimulator
+_DEFAULT_GPU_CHAIN_SIM = GPUChainBDSimulator
+
+
+def _gpu_available() -> bool:
+    try:
+        import cupy as cp
+
+        cp.arange(3).sum()
+        return True
+    except Exception:
+        return False
+
+
+def _rigid_partner_pqr_and_r_hydro(config: PySTARCConfig) -> Tuple[str, float, str]:
+    """Return (rigid_pqr_path, r_hydro_override, tag_name) for the rigid partner."""
+    role = (config.chain.flexible_partner or "ligand").strip().lower()
+    if role == "receptor":
+        return config.ligand_pqr, float(config.r_hydro_lig), "ligand_pqr"
+    return config.receptor_pqr, float(config.r_hydro_rec), "receptor_pqr"
 
 
 def _load_reaction_pairs_json(path: str) -> List[Tuple[int, int, float]]:
@@ -121,9 +146,14 @@ def _ensure_chain_apbs_grids(config: PySTARCConfig) -> None:
         return
 
     target_dx = Path(cc.target_grid_dx)
+    coarse_dx = Path(cc.coarse_grid_dx) if cc.coarse_grid_dx else None
     born_dx = Path(cc.born_grid_dx) if cc.born_grid_dx else None
 
-    if target_dx.exists() and (born_dx is None or born_dx.exists()):
+    if (
+        target_dx.exists()
+        and (coarse_dx is None or coarse_dx.exists())
+        and (born_dx is None or born_dx.exists())
+    ):
         return
 
     apbs_work_dir = target_dx.parent
@@ -133,18 +163,9 @@ def _ensure_chain_apbs_grids(config: PySTARCConfig) -> None:
     if not mol_name:
         raise ValueError(
             f"Cannot derive APBS mol_name from {target_dx.name}; "
-            f"expected '{{mol_name}}1.dx' pattern (e.g. 'thrombin1.dx')"
+            f"expected '{{mol_name}}1.dx' pattern (e.g. 'target1.dx')"
         )
 
-    # run_apbs writes the electrostatic grids as {mol_name}0.dx (coarse) and
-    # {mol_name}1.dx (fine, used for runtime force evaluation), where mol_name
-    # is the requested stem with its trailing level digit removed. A
-    # target_grid_dx whose filename lacks that trailing digit (for example
-    # "target.dx" rather than "target1.dx") therefore names a file APBS will
-    # never produce: the APBS run would succeed yet leave the requested path
-    # absent, and the later DXGrid.from_file(cc.target_grid_dx) would fail with
-    # a bare FileNotFoundError that does not explain the naming mismatch.
-    # Validate the expected pattern up front and raise a clear error instead.
     produced_elec_names = {f"{mol_name}0.dx", f"{mol_name}1.dx"}
     if target_dx.name not in produced_elec_names:
         raise ValueError(
@@ -158,9 +179,10 @@ def _ensure_chain_apbs_grids(config: PySTARCConfig) -> None:
             f"point it at an existing DX grid."
         )
 
-    src_pqr = Path(config.receptor_pqr)
+    rigid_pqr, _, pqr_tag = _rigid_partner_pqr_and_r_hydro(config)
+    src_pqr = Path(rigid_pqr)
     if not src_pqr.exists():
-        raise FileNotFoundError(f"receptor_pqr not found: {src_pqr} (needed for APBS)")
+        raise FileNotFoundError(f"{pqr_tag} not found: {src_pqr} (needed for APBS)")
     dst_pqr = apbs_work_dir / src_pqr.name
     shutil.copy(str(src_pqr), str(dst_pqr))
 
@@ -209,9 +231,11 @@ def run_chain(
     work_dir = Path(config.work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy input.xml into the work_dir for reproducibility.
+    # Copy input.xml into the work_dir for reproducibility unless it is already there.
     if input_xml_path is not None:
-        shutil.copy(str(input_xml_path), str(work_dir / "input.xml"))
+        dst_xml = work_dir / "input.xml"
+        if Path(input_xml_path).resolve() != dst_xml.resolve():
+            shutil.copy(str(input_xml_path), str(dst_xml))
 
     # Load the chain topology and the initial atom positions, which are already
     # centered at the origin.
@@ -256,21 +280,55 @@ def run_chain(
             f"{cc.elastic_network_cutoff} A, k {cc.elastic_network_k} kBT/A^2"
         )
 
-    # Load the target structure as a Molecule.
-    print(f"Loading target from {config.receptor_pqr} ...")
-    target_mol = parse_pqr(config.receptor_pqr)
-    print(f"  target: {target_mol}")
-
-    # Load the reaction pairs from JSON and convert them to a PathwaySet.
-    if not cc.reaction_pairs_json:
-        raise ValueError("<chain><reaction_pairs_json> is required in chain BD mode")
-    print(f"Loading reaction pairs from {cc.reaction_pairs_json} ...")
-    reaction_pairs = _load_reaction_pairs_json(cc.reaction_pairs_json)
-    pathway_set = _build_pathway_set(reaction_pairs, cc.reaction_n_needed)
-    print(
-        f"  reactions: {len(reaction_pairs)} contact pairs "
-        f"(n_needed={cc.reaction_n_needed})"
+    role = (cc.flexible_partner or "ligand").strip().lower()
+    if role not in ("ligand", "receptor"):
+        raise ValueError(
+            f"<chain><flexible_partner> must be 'ligand' or 'receptor', got {cc.flexible_partner!r}"
+        )
+    rigid_pqr, r_hydro_override, pqr_tag = _rigid_partner_pqr_and_r_hydro(config)
+    use_gpu = (
+        ChainBDSimulator is _DEFAULT_CHAIN_SIM
+        and bool(config.gpu)
+        and (
+            GPUChainBDSimulator is not _DEFAULT_GPU_CHAIN_SIM
+            or _gpu_available()
+        )
     )
+    if (
+        ChainBDSimulator is _DEFAULT_CHAIN_SIM
+        and bool(config.gpu)
+        and not use_gpu
+        and getattr(config, "_gpu_explicit", False)
+    ):
+        _require_gpu()
+
+    # Load the target structure as a Molecule.
+    print(f"Loading rigid target ({pqr_tag}) from {rigid_pqr} ...")
+    target_mol = parse_pqr(rigid_pqr)
+    print(f"  target: {target_mol}  (flexible_partner={role})")
+
+    # Load the reaction pairs from JSON or rxns_xml and convert them to a PathwaySet.
+    if cc.reaction_pairs_json:
+        print(f"Loading reaction pairs from {cc.reaction_pairs_json} ...")
+        reaction_pairs = _load_reaction_pairs_json(cc.reaction_pairs_json)
+        pathway_set = _build_pathway_set(reaction_pairs, cc.reaction_n_needed)
+        print(
+            f"  reactions: {len(reaction_pairs)} contact pairs "
+            f"(n_needed={cc.reaction_n_needed})"
+        )
+    elif config.rxns_xml:
+        print(f"Loading reaction XML from {config.rxns_xml} ...")
+        pathway_set = parse_reaction_xml(config.rxns_xml)
+        if role == "receptor":
+            for rxn in pathway_set.reactions:
+                for pair in rxn.criteria.pairs:
+                    pair.mol1_atom_index, pair.mol2_atom_index = (
+                        pair.mol2_atom_index,
+                        pair.mol1_atom_index,
+                    )
+        print(f"  reactions: {pathway_set}")
+    else:
+        raise ValueError("<chain><reaction_pairs_json> is required in chain BD mode")
 
     # If the grids are named but missing on disk, generate them with APBS, just
     # as the rigid-body pipeline.run() does.
@@ -278,13 +336,30 @@ def run_chain(
 
     # Load the APBS grids if they were specified.
     target_grid = None
+    coarse_grid = None
     born_grid = None
+    elec_grids = []
+    born_grids = []
     if cc.target_grid_dx:
         print(f"Loading target grid {cc.target_grid_dx} ...")
         target_grid = DXGrid.from_file(cc.target_grid_dx)
+        elec_grids.append(target_grid)
+    if cc.coarse_grid_dx:
+        print(f"Loading coarse grid {cc.coarse_grid_dx} ...")
+        coarse_grid = DXGrid.from_file(cc.coarse_grid_dx)
+        elec_grids.append(coarse_grid)
     if cc.born_grid_dx:
         print(f"Loading Born grid {cc.born_grid_dx} ...")
         born_grid = DXGrid.from_file(cc.born_grid_dx)
+        born_grids.append(born_grid)
+
+    multipole_exp = None
+    if use_gpu and cc.far_field and config.multipole_fallback and len(target_mol.atoms) > 0:
+        t_pos = np.array([[a.x, a.y, a.z] for a in target_mol.atoms], dtype=float)
+        t_chg = np.array([float(getattr(a, "charge", 0.0)) for a in target_mol.atoms], dtype=float)
+        multipole_exp = MultipoleExpansion(
+            t_pos, t_chg, debye_length=config.debye_length, sdie=config.sdie
+        )
 
     # Resolve the r_escape sentinel. A value of 0 means 2.0 × r_start, the LMZ
     # convention, which matches the rigid-body pipeline.
@@ -320,18 +395,18 @@ def run_chain(
     if target_offset > 0.01:
         raise ValueError(
             f"the target atom centroid is {target_offset:.4f} A from the origin "
-            f"in {config.receptor_pqr}; center the target at the origin first "
+            f"in {rigid_pqr}; center the target at the origin first "
             "(the limit is 0.01 A)"
         )
 
     # The hydrodynamic radius of the target, from the input or from the Hansen
     # Monte Carlo radius with its cache, as in the rigid-body pipeline.
-    if config.r_hydro_rec > 0.0:
-        a_target = float(config.r_hydro_rec)
+    if r_hydro_override > 0.0:
+        a_target = r_hydro_override
     else:
         a_target = float(
             analyse_molecule(
-                Path(config.receptor_pqr), srad=getattr(config, "srad", 0.0)
+                Path(rigid_pqr), srad=getattr(config, "srad", 0.0)
             ).hydrodynamic_r
         )
     if not a_target > 0.0:
@@ -373,20 +448,14 @@ def run_chain(
         rotate_body_tensors=True,
         remove_internal_rotation=True,
         inner_field=True,
-        # Only tensors computed from the chain geometry can be rebuilt.
         diffusion_update_interval=(
             cc.diffusion_update_interval if cc.auto_diffusion else 0
         ),
     )
 
-    # The scalar diffusion coefficients, used when auto_diffusion is off. Both
-    # are > 0 by the check above.
     d_trans = cc.D_trans
     d_rot = cc.D_rot
 
-    # Construct the simulator. Automatic diffusion and explicit D are mutually
-    # exclusive.
-    print("Constructing ChainBDSimulator ...")
     sim_kwargs = dict(
         target=target_mol,
         chain_template=chain_template,
@@ -403,11 +472,39 @@ def run_chain(
     else:
         sim_kwargs["D_trans"] = d_trans
         sim_kwargs["D_rot"] = d_rot
-    # Pass the OutputConfig through so the simulator records diagnostics at the
-    # correct cadence, which is part of the Stage 2 instrumentation.
     sim_kwargs["outputs"] = config.outputs
 
-    sim = ChainBDSimulator(**sim_kwargs)
+    if use_gpu:
+        conv_every = (
+            max(
+                1,
+                int(
+                    round(
+                        config.n_trajectories * config.convergence_interval / 100.0
+                    )
+                ),
+            )
+            if config.convergence_interval > 0
+            else 0
+        )
+        print("Constructing GPUChainBDSimulator ...")
+        sim = GPUChainBDSimulator(
+            **sim_kwargs,
+            elec_grids=elec_grids,
+            born_grids=born_grids,
+            use_far_field=cc.far_field,
+            multipole_expansion=multipole_exp,
+            batch_size=config.gpu_force_batch,
+            convergence_interval=conv_every,
+            checkpoint_interval=config.checkpoint_interval,
+            work_dir=work_dir,
+        )
+    else:
+        print("Constructing ChainBDSimulator ...")
+        sim = ChainBDSimulator(**sim_kwargs)
+    sim.flexible_partner = role
+    sim.confidence_interval = config.confidence_interval
+    sim.convergence_tol = config.convergence_tol
 
     # Run the trajectories.
     print(f"Running {config.n_trajectories} trajectories ...")

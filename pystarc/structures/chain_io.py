@@ -577,3 +577,139 @@ def pdb_to_bead_positions(
         positions[i] = fb_pos
 
     return positions
+
+
+def prepare_chain_partner(
+    pdb_path: str | Path,
+    flexible_chain_id: str,
+    chain_name: str = "",
+    sidechains: bool = True,
+    coffdrop_dir: Optional[str] = None,
+    fallback: str = "auto",
+) -> Tuple[ChainCommon, np.ndarray]:
+    """Build a COFFDROP chain topology and centered body-frame positions for one PDB chain.
+
+    Either protein partner of a complex PDB can be chosen through flexible_chain_id.
+    The returned body positions have zero centroid and are ready for save_chain_to_json
+    or direct simulator construction.
+    """
+    from pystarc.simulation.coffdrop_chain import chain_from_pdb
+
+    label = chain_name or str(flexible_chain_id)
+    common = chain_from_pdb(
+        str(pdb_path),
+        chain_id=flexible_chain_id,
+        name=label,
+        sidechains=sidechains,
+        coffdrop_dir=coffdrop_dir,
+    )
+    body_positions = pdb_to_bead_positions(
+        common,
+        pdb_path,
+        chain_id=flexible_chain_id,
+        coffdrop_dir=coffdrop_dir,
+        fallback=fallback,
+    )
+    body_positions = body_positions - body_positions.mean(axis=0)
+    return common, body_positions
+
+
+def interface_reaction_pairs(
+    pdb_path: str | Path,
+    rigid_chain_id: str,
+    flexible_chain_id: str,
+    rigid_pqr_path: str | Path,
+    chain_common: ChainCommon,
+    interface_cutoff: float = 6.0,
+    reaction_distance: float = 8.0,
+    coffdrop_dir: Optional[str] = None,
+) -> List[Tuple[int, int, float]]:
+    """Map heavy-atom interface contacts of a complex PDB to (rigid_pqr_idx, chain_bead_idx, cutoff) pairs.
+
+    Contacts closer than interface_cutoff angstrom between rigid_chain_id and
+    flexible_chain_id in pdb_path are mapped onto the atom indices of rigid_pqr_path
+    and the COFFDROP bead indices of chain_common. Calling this function with the
+    two chain identifiers swapped prepares reaction pairs for the opposite partner
+    role.
+    """
+    from pystarc.structures.pqr_io import parse_pqr
+
+    if coffdrop_dir is None:
+        coffdrop_dir = str(COFFDROP_DATA)
+    map_xml_path = Path(coffdrop_dir) / "map.xml"
+    if not map_xml_path.exists():
+        raise FileNotFoundError(f"COFFDROP map.xml not found at {map_xml_path}")
+    bead_mapping = _parse_coffdrop_map_simple(str(map_xml_path))
+
+    rigid_res = _parse_pdb_chain_for_beads(pdb_path, chain_id=rigid_chain_id)
+    flex_res = _parse_pdb_chain_for_beads(pdb_path, chain_id=flexible_chain_id)
+    rigid_mol = parse_pqr(str(rigid_pqr_path))
+
+    pqr_residues: List[dict] = []
+    last_resid = None
+    for idx, atom in enumerate(rigid_mol.atoms):
+        if atom.residue_index != last_resid:
+            last_resid = atom.residue_index
+            pqr_residues.append({"resname": atom.residue_name, "atoms": {}})
+        aname = atom.name.strip()
+        if aname not in pqr_residues[-1]["atoms"]:
+            pqr_residues[-1]["atoms"][aname] = idx
+
+    if len(pqr_residues) != len(rigid_res):
+        raise ValueError(
+            f"Rigid PQR {rigid_pqr_path} has {len(pqr_residues)} residues, "
+            f"whereas PDB chain {rigid_chain_id!r} has {len(rigid_res)} residues."
+        )
+    for k, (rp, rmol) in enumerate(zip(rigid_res, pqr_residues)):
+        if not _resname_match_tleap(rp["resname"], rmol["resname"]):
+            raise ValueError(
+                f"Residue mismatch at position {k}: PDB {rp['resname']} vs "
+                f"PQR {rmol['resname']}"
+            )
+
+    unique_resids: List[int] = []
+    for bead in chain_common.atoms:
+        if not unique_resids or unique_resids[-1] != bead.resid:
+            unique_resids.append(bead.resid)
+    resid_to_seq = {r: k for k, r in enumerate(unique_resids)}
+    if len(unique_resids) != len(flex_res):
+        raise ValueError(
+            f"Chain topology has {len(unique_resids)} residues, whereas PDB chain "
+            f"{flexible_chain_id!r} has {len(flex_res)} residues."
+        )
+
+    atom_to_bead: Dict[Tuple[int, str], int] = {}
+    ca_bead_of_seq: Dict[int, int] = {}
+    for b_idx, bead in enumerate(chain_common.atoms):
+        parts = bead.resname.split(":")
+        if len(parts) != 2:
+            continue
+        b_res, b_name = parts
+        seq_k = resid_to_seq[bead.resid]
+        if b_name == "CA":
+            ca_bead_of_seq[seq_k] = b_idx
+        m_res = _resolve_resname(b_res, bead_mapping)
+        if m_res is not None and b_name in bead_mapping[m_res]:
+            for an in bead_mapping[m_res][b_name]:
+                atom_to_bead[(seq_k, an)] = b_idx
+
+    cut2 = float(interface_cutoff) ** 2
+    seen_pairs = set()
+    pairs_out: List[Tuple[int, int, float]] = []
+    for r_seq, r_pdb in enumerate(rigid_res):
+        pqr_atoms = pqr_residues[r_seq]["atoms"]
+        for r_aname, r_xyz in r_pdb["atoms"].items():
+            if r_aname not in pqr_atoms:
+                continue
+            t_idx = pqr_atoms[r_aname]
+            for f_seq, f_pdb in enumerate(flex_res):
+                for f_aname, f_xyz in f_pdb["atoms"].items():
+                    d = r_xyz - f_xyz
+                    if float(d @ d) < cut2:
+                        b_idx = atom_to_bead.get(
+                            (f_seq, f_aname), ca_bead_of_seq.get(f_seq)
+                        )
+                        if b_idx is not None and (t_idx, b_idx) not in seen_pairs:
+                            seen_pairs.add((t_idx, b_idx))
+                            pairs_out.append((int(t_idx), int(b_idx), float(reaction_distance)))
+    return pairs_out
