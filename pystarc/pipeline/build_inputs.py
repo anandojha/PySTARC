@@ -1218,6 +1218,10 @@ def geometry_check(rec, lig, cfg):
     lmax = float(np.max(np.linalg.norm(L - L.mean(0), axis=1)))
     b = float(cfg["bd_milestone_radius"])
     fg = float(cfg["apbs_fglen"])
+    if fg <= 0:
+        # The fine edge the run derives for apbs_fglen 0 (run_apbs._compute_grid_params).
+        pad = max(a["r"] for a in rec) + float(cfg["srad"])
+        fg = max((float(np.max(R.max(0) - R.min(0))) + 2 * pad) * 1.05, 4 * pad * 1.025)
     ok = b + lmax < fg / 2
     print(f"  rmax={rmax:.1f} lmax={lmax:.1f} b={b:.0f} fglen={fg:.0f}  "
           f"{'OK' if ok else 'WARNING, b-surface outside the grid'}")
