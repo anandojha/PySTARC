@@ -222,3 +222,66 @@ One `<target>` in `receptor` and one `<atom>` in `ligand` replace PKT and the li
 | `margin` | `site` | distance added to the closest accessible approach (Å) |
 | `pocket_ligand` | `site` with `rcsb_smiles` | residue name of the deposited ligand at the site |
 | `pocket_ligand_resid` | `site` with `rcsb_smiles` | residue number of `pocket_ligand` for a chain with several copies |
+
+## 6. Start sphere and hydrodynamic radii (`geometry`)
+
+Every key of steps 6 to 11 is required in `config.xml`, except `soft_repulsion` (default `false`), `minimum_core_reaction_dt` (default 0), `full_paths` (default `true`) and `energetics` (default `true`). `setup.py` stops with an error for a missing key.
+
+```xml
+<geometry>
+  <bd_milestone_radius>45.0</bd_milestone_radius>
+  <r_hydro_rec>22.3728</r_hydro_rec>
+  <r_hydro_lig>4.9867</r_hydro_lig>
+</geometry>
+```
+
+Each trajectory starts at a random position on the sphere of radius b = `bd_milestone_radius` (Å) around the receptor centroid, with a random orientation of the ligand. A trajectory that reaches the radius 2b goes back to the start sphere with the computed probability of a return from 2b to b. The remaining trajectories at 2b escape.
+
+`r_hydro_rec` and `r_hydro_lig` set the hydrodynamic radii a of the receptor and the ligand (Å). The radii fix the diffusion coefficients D<sub>t</sub> = k<sub>B</sub>T/(6πηa) and D<sub>r</sub> = k<sub>B</sub>T/(8πηa³) with the viscosity η = 0.890 mPa s of water at 25 °C. An entry of 0 lets PySTARC compute a by the Monte Carlo method of Hansen (J. Chem. Phys. 121, 9111, 2004) from the PQR file, with every atom radius enlarged by `srad`. The calculation runs inside PySTARC (`pystarc/hydrodynamics/mc_hydro_radius.py`) and needs no other software. The run log prints both radii, and a cache file next to each PQR file in `bd_sims` stores the radius. A positive entry fixes the radius. The trypsin benzamidine example fixes the radii at 22.3728 Å and 4.9867 Å, computed with BrownDye 2 for a comparison of PySTARC with BrownDye 2. An entry of 0 gives 22.30 Å and 4.90 Å for the same PQR files. Hydrodynamic interactions stay on in both cases. `hydrodynamic_interactions` (step 8) alone switches the hydrodynamic interactions on and off.
+
+## 7. Salt, dielectrics and electrostatic grids (`electrostatics`)
+
+```xml
+<electrostatics>
+  <debye_length>7.85751</debye_length>
+  <ion_concentration>0.15</ion_concentration>
+  <ion_radius_pos>0.95</ion_radius_pos>
+  <ion_radius_neg>1.81</ion_radius_neg>
+  <pdie>4.0</pdie>
+  <sdie>78.0</sdie>
+  <srad>1.4</srad>
+  <apbs_fglen>96</apbs_fglen>
+  <apbs_dime>257</apbs_dime>
+  <apbs_cglen>0</apbs_cglen>
+  <apbs_coarse_dime>0</apbs_coarse_dime>
+  <apbs_fine_dime>0</apbs_fine_dime>
+</electrostatics>
+```
+
+| key | meaning |
+|---|---|
+| `ion_concentration` | concentration of a monovalent salt in every APBS calculation (M), 0 for no salt |
+| `ion_radius_pos`, `ion_radius_neg` | radii of the cation and the anion in APBS (Å) |
+| `debye_length` | Debye length λ (Å) of the screened field outside the grids, of the k<sub>b</sub> integral and of the desolvation grids, `inf` for no salt |
+| `pdie` | dielectric constant of the solute |
+| `sdie` | dielectric constant of the solvent |
+| `srad` | solvent probe radius of the APBS surface and of the hydrodynamic radius (Å) |
+
+The run stops when `debye_length` differs by more than 1% from the Debye length of `ion_concentration`, `sdie` and `temperature`, for example 7.83 Å at 0.15 M, 78 and 298.15 K.
+
+### Two grids for the receptor potential
+
+APBS solves the linearized Poisson Boltzmann equation of the receptor on two nested cubic grids centered on the receptor.
+
+| grid | file in `bd_sims` | edge (Å) | points per axis | boundary condition |
+|---|---|---|---|---|
+| coarse | `receptor0.dx` | `apbs_cglen`, 0 for twice the fine edge | `apbs_coarse_dime`, 0 for `apbs_dime` | Debye Hückel potential of one sphere with the charge, dipole and quadrupole of the receptor (APBS `bcfl sdh`) |
+| fine | `receptor1.dx` | `apbs_fglen`, 0 for the derived edge | `apbs_fine_dime`, 0 for `apbs_dime` | potential of the coarse grid (APBS `bcfl map`) |
+
+The derived fine edge is max[(L + 2(r<sub>max</sub> + srad)) × 1.05, 4(r<sub>max</sub> + srad) × 1.025], with L the longest extent of the atom centers and r<sub>max</sub> the largest atom radius. `apbs_cglen` must exceed `apbs_fglen`. `apbs_dime` also sets the points per axis of the receptor desolvation grids.
+
+During the simulation the force on each ligand atom comes from the finest grid that holds the atom at least three grid spacings inside the faces. Outside both grids the receptor field is a screened multipole expansion (`multipole_fallback`, step 8). For trypsin the fine grid spans 96 Å with 257 points (spacing 0.375 Å), and the coarse grid spans 192 Å (spacing 0.75 Å). `setup.py` prints a warning when b plus the ligand radius reaches past the fine grid (b + ligand radius ≥ `apbs_fglen`/2). Trypsin gives the warning (45 Å + 3.7 Å > 48 Å), and the ligand atoms outside the fine grid read the coarse grid.
+
+### Grid points per axis
+
+The multigrid solver of APBS needs d = c·2<sup>l+1</sup> + 1 points per axis, with integers c ≥ 1 and l ≥ 1 for l multigrid levels. APBS keeps every d = 4k + 1 up to 65, for example 5, 9, 13, 33 and 65. Above 65 APBS keeps only d = 32c + 1, for example 97, 129, 161, 193, 225 and 257. APBS lowers any other d above 65 to the next smaller 32c + 1, for example 101 to 97. PySTARC checks `apbs_dime`, `apbs_coarse_dime` and `apbs_fine_dime` before APBS runs and stops for any other number, without rounding.
