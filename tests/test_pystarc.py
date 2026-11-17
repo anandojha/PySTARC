@@ -8799,6 +8799,14 @@ def test_is_valid_apbs_dime_rejects_non_canonical_values():
         assert not _is_valid_apbs_dime(d), f"dime={d} should be rejected"
 
 
+def test_is_valid_apbs_dime_rejects_values_apbs_lowers():
+    """Above 65 APBS keeps only 32c + 1 and lowers any other dime, 101 to 97."""
+    for d in [69, 101, 169, 253]:
+        assert not _is_valid_apbs_dime(d), f"dime={d} should be rejected"
+    for d in [37, 61, 65, 97, 225]:
+        assert _is_valid_apbs_dime(d), f"dime={d} should be valid"
+
+
 def test_compute_grid_params_rejects_invalid_dime(tmp_path):
     """_compute_grid_params raises a ValueError naming an invalid APBS dime."""
     pqr = _make_pqr(tmp_path)

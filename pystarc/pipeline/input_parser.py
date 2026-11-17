@@ -419,8 +419,8 @@ class PySTARCConfig:
 
         if not _is_valid_apbs_dime(self.apbs_ligand_dime):
             raise ValueError(
-                f"apbs_ligand_dime must be odd, at least 5 and 1 above a multiple "
-                f"of 4, got {self.apbs_ligand_dime}"
+                f"apbs_ligand_dime must be 4k + 1 from 5 to 65 or 32c + 1 above 65, "
+                f"got {self.apbs_ligand_dime}"
             )
         if self.temperature != TEMPERATURE:
             warnings.warn(

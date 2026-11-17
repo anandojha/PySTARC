@@ -79,25 +79,28 @@ def _run(cmd: str, cwd: Path, step: str):
 
 def _is_valid_apbs_dime(d: int) -> bool:
     """
-    Check whether d is a valid APBS multigrid dimension.
+    Check whether APBS mg-manual keeps d grid points per axis.
 
     APBS multigrid solvers require dime - 1 to be expressible as
     c * 2**(l+1), where c >= 1 is any positive integer and l >= 1 is the
     number of multigrid levels (see apbs/src/generic/mgparm.c, function
-    MGparm_check, line 267). This reduces to the requirement that dime be
-    odd, be at least 5, and have (dime - 1) divisible by 4.
+    MGparm_check, line 267). Up to 65 APBS keeps every such dime, that is
+    every odd dime >= 5 with (dime - 1) divisible by 4.
 
-    APBS recommends, but does not require, c * 2**5 + 1 when dime > 65 for
-    best multigrid efficiency. When that is not satisfied APBS auto-adjusts
-    rather than failing, so this validator only enforces the hard rule.
+    Above 65 APBS keeps only c * 2**5 + 1 and lowers any other dime to the
+    next smaller c * 2**5 + 1 without an error (101 to 97, 169 to 161, seen
+    with APBS 3.4.1). The grid would then hold fewer points than the config
+    sets, so this validator refuses those values.
 
     Valid examples are 5, 9, 13, 17, 33, 65, 97, 129, 161, 193, 257, 289,
-    321, 385, 449, 513, and 577. Invalid examples are 4, 100, 200, 256,
-    300, 400, and 500.
+    321, 385, 449, 513, and 577. Invalid examples are 4, 100, 101, 169,
+    200, 256, 300, 400, and 500.
     """
     if d < 5:
         return False
-    return (d - 1) % 4 == 0
+    if d <= 65:
+        return (d - 1) % 4 == 0
+    return (d - 1) % 32 == 0
 
 
 def _check_tool(name: str):
@@ -165,17 +168,16 @@ def _compute_grid_params(
 
     Returns the pair (coarse_params, fine_params).
     """
-    # Validate the requested dime values. APBS multigrid requires dime to
-    # be of the form c * 2**(n+1) + 1. Passing other values causes silent
-    # solver failures.
+    # Validate the requested dime values. APBS lowers a dime it cannot use
+    # without an error, so the grid would differ from the config.
     for d in (dime, coarse_dime, fine_dime):
         if d > 0 and not _is_valid_apbs_dime(d):
             raise ValueError(
-                f"Invalid APBS dime={d}. APBS multigrid requires dime to be "
-                f"odd, >= 5, with (dime - 1) divisible by 4 (i.e., of the form "
-                f"c * 2**(l+1) + 1 with c >= 1 a positive integer and l >= 1). "
+                f"Invalid APBS dime={d}. Up to 65 the dime must be odd, >= 5, "
+                f"with (dime - 1) divisible by 4. Above 65 APBS keeps only "
+                f"32c + 1 and lowers any other dime (101 to 97). "
                 f"Valid values: 5, 9, 13, 17, 33, 65, 97, 129, 161, 193, "
-                f"257, 289, 321, 385, 449, 513, 577."
+                f"225, 257, 289, 321, 385, 449, 513, 577."
             )
     atoms = _read_pqr_atoms(pqr_path)
     if not atoms:
