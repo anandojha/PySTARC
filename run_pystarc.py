@@ -176,10 +176,13 @@ def main():
                             f"  k_on (± error) : ({_man:.1f} ± {_man_err:.1f}) x 10^{_exp} M-1 s-1"
                         )
                     _footer.append(f"  k_b            : {rj['k_b']:.4f} A3/ps")
+                # The CPU model result has no timing fields.
+                if hasattr(result, "elapsed_sec"):
+                    _footer.append(f"  BD wall time   : {result.elapsed_sec:.1f} s")
+                _footer.append(f"  Total wall time: {_wall_elapsed:.1f} s")
+                if hasattr(result, "steps_per_sec"):
+                    _footer.append(f"  BD steps/sec   : {result.steps_per_sec:,.0f}")
                 _footer += [
-                    f"  BD wall time   : {result.elapsed_sec:.1f} s",
-                    f"  Total wall time: {_wall_elapsed:.1f} s",
-                    f"  BD steps/sec   : {result.steps_per_sec:,.0f}",
                     f"  Finished       : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                     "=" * 64,
                 ]
