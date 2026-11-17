@@ -190,7 +190,7 @@ def main():
                     print(line)
                 # Convergence analysis
                 if cfg.convergence_check:
-                    _k_b = rj.get("k_b", 0.0) if rj_path.exists() else 0.0
+                    _k_b = rj.get("k_b", 0.0) if rj_path.exists() else getattr(result, "k_db", 0.0)
                     _conv = analyse_convergence(
                         n_reacted=result.n_reacted,
                         n_escaped=result.n_escaped,
