@@ -23,7 +23,7 @@ import hashlib
 SOURCES = {
     "pqr":         dict(need=("receptor_pqr_file", "ligand_pqr_file"), opt=(), note="Uses receptor and ligand PQR files that already exist"),
     "prmtop":      dict(need=("prmtop", "complex_pdb"), opt=(), note="Uses a topology and PDB that already exist"),
-    "complex_pdb": dict(need=("complex_pdb",), opt=("chain", "ligand_net_charge", "ligand_ccd", "ligand_protonate", "ligand_deprotonate"), note="Takes one PDB holding the receptor and the ligand"),
+    "complex_pdb": dict(need=("complex_pdb",), opt=("ligand_net_charge", "ligand_ccd", "ligand_protonate", "ligand_deprotonate"), note="Takes one PDB holding the receptor and the ligand"),
     "rcsb":        dict(need=("pdb_id", "ligand_resid"), opt=("chain", "rec_resid_min", "ligand_net_charge", "ligand_ccd", "ligand_protonate", "ligand_deprotonate"), note="Downloads the entry and takes the ligand as deposited"),
     "rcsb_smiles": dict(need=("pdb_id", "ligand_resid", "smiles"), opt=("chain", "keep_hetatm", "ligand_net_charge"), note="Takes the receptor from the entry and builds the ligand from SMILES"),
 }
