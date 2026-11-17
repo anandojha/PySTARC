@@ -94,7 +94,7 @@ KEYS = {
     "sdie":                "Dielectric constant of the solvent.",
     "srad":                "Solvent probe radius (in angstroms).",
     "desolvation_alpha":   "Scaling applied to the desolvation penalty.",
-    "enable_born2_torque": "Include the reciprocal desolvation torque on the receptor.",
+    "enable_born2_torque": "Add the desolvation of the receptor charges in the ligand Born field, a force and a torque on the ligand.",
     "hydrodynamic_interactions": "Include hydrodynamic coupling between the two molecules.",
     "multipole_fallback":  "Extend the electrostatics beyond the grid by multipole expansion.",
     "lj_forces":           "Apply repulsive forces at close contact.",
@@ -102,9 +102,9 @@ KEYS = {
     "soft_repulsion":      "Soft excluded volume of BrownDye 2 between receptor and ligand atoms in place of the overlap check.",
     "gpu_force_batch":     "Trajectories per GPU force evaluation. 0 selects automatically.",
     "max_steps":           "Step limit per trajectory.",
-    "dt":                  "Largest permitted time step (in picoseconds).",
+    "dt":                  "Outer time step of the flexible chain model (in picoseconds). No effect on rigid body runs.",
     "minimum_core_dt":     "Smallest permitted time step. 0 imposes no floor.",
-    "minimum_core_reaction_dt": "Smallest time step near the reaction surface. 0 imposes no floor.",
+    "minimum_core_reaction_dt": "Smallest time step near the reaction surface (in picoseconds). 0 imposes no floor on the GPU, the CPU model uses 0.05.",
     "max_dt":              "Ceiling on the time step. 0 imposes no ceiling.",
     "r_hydro_rec":         "Receptor hydrodynamic radius. 0 derives it from the PQR.",
     "r_hydro_lig":         "Ligand hydrodynamic radius. 0 derives it from the PQR file.",
@@ -118,7 +118,7 @@ KEYS = {
     "checkpoint_interval": "Trajectories between checkpoints. 0 disables checkpointing.",
     "save_interval":       "Steps between saved positions. 0 saves endpoints only.",
     "full_paths":          "Save positions and orientations every save_interval steps.",
-    "energetics":          "Save forces and energies every save_interval steps.",
+    "energetics":          "Save the force on the ligand and the time step every save_interval steps.",
 }
 
 # Run parameters written into input.xml grouped by section of config.xml
