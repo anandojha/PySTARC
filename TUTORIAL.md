@@ -396,3 +396,68 @@ With `checkpoint_interval` above 0 the run writes `bd_sims/checkpoint.npz` each 
 `temperature` sets kT in APBS, the desolvation grids, the diffusion coefficients and the forces. The viscosity stays at 0.890 mPa s of water at 25 °C. The run prints a warning for a temperature other than 298.15 K. A new `temperature` needs a matching `debye_length` (step 7).
 
 The random numbers of a trajectory depend only on `seed`, the trajectory number and the step count. `gpu_force_batch` and a resume leave the random numbers unchanged. With `rcsb_smiles` the seed also fixes the ligand conformer of `setup.py` (step 3).
+
+## 10. Hardware (`compute`)
+
+```xml
+<compute>
+  <gpu>true</gpu>
+  <gpu_force_batch>0</gpu_force_batch>
+  <n_threads>32</n_threads>
+</compute>
+```
+
+| key | entries | effect |
+|---|---|---|
+| `gpu` | `true` or `false` | GPU engine for `true`, CPU model for `false` |
+| `gpu_force_batch` | integer ≥ 0, 0 for automatic | trajectories per GPU force evaluation |
+| `n_threads` | integer | worker processes of the CPU model |
+
+With `gpu` true the GPU engine runs every trajectory at once on one GPU through CuPy. The run stops before the first setup step when CuPy cannot run a kernel.
+
+`gpu_force_batch` splits the force evaluation of the running trajectories into batches and bounds the GPU memory. The value 0 picks max(1000, 4 × 1024<sup>3</sup>/(150 × ligand atoms)) trajectories per batch, capped at the count of running trajectories. The 18 ligand atoms and GHO in `bd_sims/ligand.pqr` give 1,507,006 trajectories per batch. The batch size has no effect on the random numbers.
+
+### CPU model
+
+With `gpu` false the CPU model runs the trajectories in `n_threads` worker processes, at most one per CPU core and one per trajectory. A value of 1 or less runs one process. The CPU model differs from the GPU engine of steps 8 and 9 in the keys below.
+
+| key | CPU model |
+|---|---|
+| `soft_repulsion` | `true` stops the run before the first step |
+| `overlap_check`, `lj_forces` | no effect, a move with a ligand atom closer than r<sub>i</sub> + r<sub>j</sub> to a receptor atom is drawn again up to five times and the old pose stays after five failures |
+| `enable_born2_torque` | no effect, both desolvation directions in every run |
+| `multipole_fallback` | no effect, no receptor field outside the grids |
+| `minimum_core_dt`, `max_dt` | no effect |
+| `minimum_core_reaction_dt` | floor of the time step (0.05 ps for 0), a quarter of the floor at a center distance below 1.5 times the smallest reaction distance |
+| `seed` | seed `seed` + i for trajectory i |
+| `convergence_interval`, `checkpoint_interval` | no effect |
+| `save_interval`, `full_paths`, `energetics` | no effect |
+
+The CPU model prints P<sub>rxn</sub> and k<sub>on</sub> in the log and writes `bd_sims/convergence.json`. The CPU model writes no `results.json`, `trajectories.csv`, `paths.npz` or `energetics.npz`.
+
+The trypsin example runs on the GPU. `n_threads` 32 has no effect on the trypsin run.
+
+## 11. Saved paths (`outputs`)
+
+```xml
+<outputs>
+  <save_interval>100</save_interval>
+  <full_paths>true</full_paths>
+  <energetics>true</energetics>
+</outputs>
+```
+
+| key | entries | effect |
+|---|---|---|
+| `save_interval` | integer ≥ 0 | steps between records of every running trajectory |
+| `full_paths` | `true` or `false`, default `true` | `bd_sims/paths.npz` |
+| `energetics` | `true` or `false`, default `true` | `bd_sims/energetics.npz` |
+
+Every `save_interval` steps the GPU run adds one record per running trajectory to `paths.npz` and `energetics.npz`.
+
+| file | columns |
+|---|---|
+| `paths.npz` | traj_id, step, x, y, z, q0, q1, q2, q3, with the ligand center (Å) and the orientation quaternion |
+| `energetics.npz` | traj_id, step, fx, fy, fz, dt, with the force on the ligand (kT/Å) and the time step (ps) |
+
+`energetics.npz` holds no energies. With `save_interval` 0 the file `paths.npz` holds the start pose and the last pose of every trajectory. The run then writes no `energetics.npz`. The trypsin run records every 100 steps.
