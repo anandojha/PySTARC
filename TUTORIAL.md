@@ -595,3 +595,45 @@ The factor 6.022×10<sup>8</sup> converts Å³/ps into M⁻¹ s⁻¹. A trajecto
 
 A four GPU run writes each run into `bd_sims/bd_1` to `bd_sims/bd_4` with a separate `input.xml`, log, `results.json` and output files. `bd_sims` holds the grids, `split.json` and the pooled `results.json`, `convergence.json` and output files.
 
+
+## Keys of input.xml only
+
+`config.xml` refuses the keys below, and `setup.py` stops with an error naming the key. Set the keys in `input.xml` after `setup.py` and start `run_pystarc.py` directly (step 13). `run.sh` and the SLURM scripts run `setup.py` again and overwrite `input.xml`. Top level keys go into `<pystarc>` and the file switches into `<outputs>`. The lines below set an escape sphere of 100 Å, a confidence level of 0.99 and no `near_misses.csv`.
+
+```xml
+  <r_escape>100.0</r_escape>
+  <confidence_interval>0.99</confidence_interval>
+  <outputs>
+    <save_interval>100</save_interval>
+    <full_paths>true</full_paths>
+    <energetics>true</energetics>
+    <near_misses_csv>false</near_misses_csv>
+  </outputs>
+```
+
+| key | entries | effect |
+|---|---|---|
+| `r_escape` | `0` for 2b, or a radius above 1.1 b (Å), default `0` | radius of the escape sphere, where a trajectory returns to the start sphere or escapes |
+| `apbs_ligand_dime` | 4k + 1 with k ≥ 1, default 129 | grid points per axis of the ligand grids |
+| `brownian_bridge` | `true` or `false`, default `true` | `true` also detects reactions between two steps, `false` tests the end of each step only |
+| `confidence_interval` | number between 0 and 1, default 0.95 | confidence level of the Wilson intervals |
+| `state_machine_reactions` | `true` or `false`, default `false` | `true` fires each one pair reaction of `rxns.xml` from `state_before` to `state_after`, `false` reads one reaction with every pair |
+| `relative_viscosity` | `1` only, default `1` | viscosity relative to water at 25 °C |
+| `trajectories_csv`, `encounters_csv`, `near_misses_csv`, `radial_density`, `angular_map`, `bd_time_to_reaction`, `contact_frequency`, `milestone_flux`, `transition_matrix`, `pose_clusters` | `true` or `false`, default `true` | `false` skips the file of the same name in `bd_sims` |
+| `results_json` | `true` or `false`, default `true` | `false` skips `results.json`, sets k<sub>on</sub> to 0 in `convergence.json` and stops the pooling of a four GPU run |
+| `receptor_pqr`, `ligand_pqr` | PQR file, default blank | receptor and ligand of the run, blank for the PDB route |
+| `rxns_xml` | reaction file, default blank | reaction criterion, blank for `ghost_atoms` |
+| `ghost_atoms` | `auto` or lines `i,j,d`, default `auto` | reaction criterion for a blank `rxns_xml` |
+| `bd_milestone_radius_inner` | distance between 0 and b (Å), default 0 | reaction distance of the GHO pair for `ghost_atoms` `auto` |
+| `pdb` | PDB file, default blank | complex of the PDB route |
+| `ligand_charge` | integer, default 0 | net charge of the ligand in the PDB route |
+| `protein_ff` | `leaprc.protein` suffix of AmberTools, default `ff14SB` | protein force field of the PDB route |
+| `ligand_ff` | `gaff` or `gaff2`, default `gaff` | ligand force field of the PDB route |
+
+`setup.py` writes `receptor.pqr`, `ligand.pqr`, `rxns.xml` and `bd_sims` into `receptor_pqr`, `ligand_pqr`, `rxns_xml` and `work_dir`. The `work_dir` of `input.xml` is the output folder of the run, default `bd_sims`, and differs from the `work_dir` of `config.xml` (step 3). `fpt_distribution` is an alias of `bd_time_to_reaction`.
+
+`ghost_atoms` lines name receptor atom i and ligand atom j, numbered from 0 in the PQR files of `bd_sims`, and the reaction distance d (Å). A trajectory reacts when every pair is closer than the pair distance d at one time. `ghost_atoms` `auto` pairs the two GHO atoms at the distance `bd_milestone_radius_inner`.
+
+The PDB route builds `receptor.pqr` and `ligand.pqr` in `bd_sims` from `pdb` when `receptor_pqr` or `ligand_pqr` is blank. antechamber assigns AM1 BCC charges to the residue `ligand_resname` with the net charge `ligand_charge`, and tleap builds the complex with `protein_ff` and `ligand_ff`. The `input.xml` of `setup.py` names both PQR files and `rxns.xml`. `pdb`, `ligand_charge`, `protein_ff`, `ligand_ff`, `ghost_atoms` and `bd_milestone_radius_inner` therefore have no effect with the `input.xml` of `setup.py`. A named `pdb` file must exist.
+
+The `rxns.xml` of `setup.py` holds one reaction with every pair. A GPU run with `state_machine_reactions` `true` needs one pair per reaction, for example from mode `centroid` or `site`. A `<chain>` block selects the flexible chain model of `examples/barnase_barstar`. An unknown tag stops the run with an error naming the tag. Retired tags and tags read only by `prepare_bd_surface`, for example `stall_check` and `parm7`, give a warning and have no effect.
