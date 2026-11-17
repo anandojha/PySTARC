@@ -637,3 +637,117 @@ A four GPU run writes each run into `bd_sims/bd_1` to `bd_sims/bd_4` with a sepa
 The PDB route builds `receptor.pqr` and `ligand.pqr` in `bd_sims` from `pdb` when `receptor_pqr` or `ligand_pqr` is blank. antechamber assigns AM1 BCC charges to the residue `ligand_resname` with the net charge `ligand_charge`, and tleap builds the complex with `protein_ff` and `ligand_ff`. The `input.xml` of `setup.py` names both PQR files and `rxns.xml`. `pdb`, `ligand_charge`, `protein_ff`, `ligand_ff`, `ghost_atoms` and `bd_milestone_radius_inner` therefore have no effect with the `input.xml` of `setup.py`. A named `pdb` file must exist.
 
 The `rxns.xml` of `setup.py` holds one reaction with every pair. A GPU run with `state_machine_reactions` `true` needs one pair per reaction, for example from mode `centroid` or `site`. A `<chain>` block selects the flexible chain model of `examples/barnase_barstar`. An unknown tag stops the run with an error naming the tag. Retired tags and tags read only by `prepare_bd_surface`, for example `stall_check` and `parm7`, give a warning and have no effect.
+
+## 15. Flexible chain model (barnase and barstar)
+
+The flexible chain model treats the ligand as a chain of coarse grained COFFDROP beads with internal motion and the receptor as a rigid body. The chain model runs on CPUs and needs no GPU. The example `examples/barnase_barstar` has a separate `config.xml` with the four sections structure, names, criterion and run.
+
+```xml
+<config>
+  <structure>
+    <source_pdb>1BRS.pdb</source_pdb>
+    <receptor_chain_id>A</receptor_chain_id>
+    <ligand_chain_id>D</ligand_chain_id>
+    <receptor_pqr>barnase.pqr</receptor_pqr>
+    <target_grid_dx>apbs_output/barnase1.dx</target_grid_dx>
+    <born_grid_dx>apbs_output/barnase0_born.dx</born_grid_dx>
+  </structure>
+  <names>
+    <chain_name>barstar</chain_name>
+    <chain_json>chain.json</chain_json>
+    <reaction_pairs_json>reaction_pairs.json</reaction_pairs_json>
+    <input_xml>input.xml</input_xml>
+    <work_dir>bd_sims</work_dir>
+  </names>
+  <criterion>
+    <interface_cutoff_a>6.0</interface_cutoff_a>
+    <reaction_distance_a>8.0</reaction_distance_a>
+    <min_reaction_pairs>5</min_reaction_pairs>
+    <reaction_n_needed>3</reaction_n_needed>
+  </criterion>
+  <run>
+    <bd_milestone_radius>60.0</bd_milestone_radius>
+    <n_trajectories>200</n_trajectories>
+    <max_steps>500000</max_steps>
+    <dt>0.2</dt>
+    <dt_chain>0.025</dt_chain>
+    <chain_steps_per_outer>8</chain_steps_per_outer>
+    <n_equilibration_steps>0</n_equilibration_steps>
+    <r_escape>160.0</r_escape>
+    <temperature>298.15</temperature>
+    <seed>1</seed>
+    <gpu>false</gpu>
+    <desolvation_alpha>1.0</desolvation_alpha>
+    <save_interval>10</save_interval>
+    <convergence_check>false</convergence_check>
+    <convergence_interval>10</convergence_interval>
+    <convergence_tol>0.05</convergence_tol>
+    <auto_diffusion>true</auto_diffusion>
+    <d_trans>0.015</d_trans>
+    <d_rot>0.00005</d_rot>
+    <use_soft_repulsion>true</use_soft_repulsion>
+    <soft_repulsion_eps>1.0</soft_repulsion_eps>
+    <n_workers>96</n_workers>
+    <n_shards>25</n_shards>
+    <apbs_fglen>140.0</apbs_fglen>
+    <apbs_dime>449</apbs_dime>
+  </run>
+</config>
+```
+
+Four commands run the example in order.
+
+```bash
+cd examples/barnase_barstar
+python setup.py
+python make_grids.py
+./submit_shards.sh
+python combine_shards.py
+```
+
+`setup.py` moves the centroid of `barnase.pqr` to the origin in place. `setup.py` builds barstar, chain D of `1BRS.pdb`, as 230 COFFDROP beads for 87 residues. `chain.json` holds the beads, the bonded terms and the bead pairs of the COFFDROP pair tables. `chain.json` names the four COFFDROP data files in `pystarc/coffdrop_data` by path and checksum. The heavy atom contacts of chains A and D closer than `interface_cutoff_a` turn into the 568 receptor atom and bead pairs of `reaction_pairs.json`. `setup.py` then writes `input.xml` with a `<chain>` block.
+
+`make_grids.py` runs APBS on `barnase.pqr` and writes the potential grids `barnase0.dx` (coarse) and `barnase1.dx` (fine) into `apbs_output`. `make_grids.py` also writes the Born desolvation grids `barnase0_born.dx` and `barnase1_born.dx`. `README.md` submits `make_grids.py` as a SLURM job with 128 GB of memory.
+
+`submit_shards.sh` makes the `n_shards` folders `shards/shard_01` to `shards/shard_25` with links to `chain.json`, `reaction_pairs.json`, `barnase.pqr` and `apbs_output`. Each shard folder gets a copy of `input.xml` with the seed 11111111 i + 1 for shard i. One SLURM job per shard runs `run_pystarc.py input.xml` in the shard folder on 96 CPUs. The run writes `results.json`, `trajectories.csv`, the saved paths and a log into `bd_sims` of the shard. The partition, CPUs, memory and time limit of the jobs are set in `submit_shards.sh`.
+
+`combine_shards.py` reads the `results.json` of every finished shard and prints the counts per shard. `combine_shards.py` then prints the pooled k<sub>on</sub> = k<sub>b</sub> P<sub>rxn</sub> with a Wilson 95% interval. P<sub>rxn</sub> = n<sub>reacted</sub>/(n<sub>reacted</sub> + n<sub>escaped</sub>) with the counts summed over the shards. The trajectories at `max_steps` count as not reacted in each `results.json` and stay out of the pooled P<sub>rxn</sub>.
+
+Each trajectory starts with the chain centroid on the sphere of radius b = `bd_milestone_radius` around the receptor centroid in a random orientation. Each outer step of `dt` moves the chain as a rigid body. `chain_steps_per_outer` internal steps of `dt_chain` move the beads within the chain during the outer step. Beyond 1.1 b an outer propagator returns the chain to the b sphere or ends the trajectory as escaped.
+
+`setup.py` requires every key except `n_shards` and ignores any other key. `setup.py` writes no salt, dielectric or hydrodynamic key into `input.xml`. `make_grids.py` and the chain run take the parser values `ion_concentration` 0.15 M, `ion_radius_pos` 0.95 Å, `ion_radius_neg` 1.81 Å, `debye_length` 7.858 Å, `pdie` 4, `sdie` 78, `srad` 1.5 Å and `r_hydro_rec` 0 (steps 6 and 7). `apbs_cglen`, `apbs_coarse_dime` and `apbs_fine_dime` stay at 0 (step 7). `hydrodynamic_interactions`, `brownian_bridge` and `use_hard_sphere` (rejection of bead and receptor atom overlaps) are `true`.
+
+| key | entries | effect |
+|---|---|---|
+| `source_pdb` | PDB file of the bound complex | chain sequence, bead positions and interface contacts |
+| `receptor_chain_id` | one chain identifier of `source_pdb` | receptor chain, checked residue by residue against `receptor_pqr` |
+| `ligand_chain_id` | one chain identifier of `source_pdb` | chain built as the bead model |
+| `receptor_pqr` | PQR file of the receptor chain without chain identifiers | charges and radii of the rigid receptor, moved to the origin in place by `setup.py` |
+| `target_grid_dx` | `apbs_output/<name>1.dx`, blank for no field | APBS potential on the bead charges, no field outside the grid |
+| `born_grid_dx` | `apbs_output/<name>0_born.dx` with `target_grid_dx` set, blank for none | Born desolvation energy of the bead charges, scaled by `desolvation_alpha` |
+| `chain_name` | any text | label in `chain.json` and `results.json`, no effect on the simulation |
+| `chain_json`, `reaction_pairs_json`, `input_xml` | file names | bead model, reaction pairs and run input written by `setup.py` |
+| `work_dir` | folder name | output folder of the run in each shard |
+| `interface_cutoff_a` | distance (Å) | heavy atom contacts of the two chains in `source_pdb` turned into reaction pairs |
+| `reaction_distance_a` | distance (Å) | reaction distance of every pair |
+| `min_reaction_pairs` | integer | `setup.py` stops with fewer pairs |
+| `reaction_n_needed` | integer from 1 to the number of pairs | pairs closer than `reaction_distance_a` at one time for a reaction |
+| `bd_milestone_radius` | radius b (Å) | start sphere of the chain centroid, outer propagator beyond 1.1 b |
+| `n_trajectories`, `max_steps`, `desolvation_alpha`, `apbs_fglen`, `apbs_dime` | as in steps 7 to 9 | same as in steps 7 to 9, `max_steps` counts outer steps |
+| `dt` | `chain_steps_per_outer` × `dt_chain` (ps) | outer step, 0.05 ps while a pair is closer than 1.5 × `reaction_distance_a` |
+| `dt_chain` | time > 0 (ps) | internal step of the beads |
+| `chain_steps_per_outer` | integer ≥ 1 | internal steps per outer step of `dt` |
+| `n_equilibration_steps` | integer ≥ 0 | internal steps without receptor forces before each trajectory, 0 for none |
+| `r_escape` | 0 for 2b or a radius (Å) | escape radius only when the outer propagator fails to build |
+| `temperature` | 298.15 (K) | an entry more than 0.01 K away stops the chain run |
+| `seed` | integer ≥ 0 | written to `input.xml`, replaced by 11111111 i + 1 in shard i |
+| `gpu`, `convergence_check`, `convergence_interval`, `convergence_tol` | as in steps 9 and 10 | ignored by the chain run |
+| `save_interval` | integer ≥ 0 | outer steps between saved positions, energies and contacts, 0 for none |
+| `auto_diffusion` | `true` or `false` | `true` for chain diffusion tensors from the beads rebuilt every 10 outer steps, `false` for `d_trans` and `d_rot` |
+| `d_trans`, `d_rot` | > 0 (Å<sup>2</sup>/ps), > 0 (rad<sup>2</sup>/ps) | chain diffusion coefficients with `auto_diffusion` `false`, ignored with `true` |
+| `use_soft_repulsion` | `true` or `false` | repulsion between beads and receptor atoms and between bead pairs with no bond, angle or COFFDROP table |
+| `soft_repulsion_eps` | energy ≥ 0 (kT) | ε of 4ε[(σ/r)<sup>12</sup> − (σ/r)<sup>6</sup>] + ε for r < 2<sup>1/6</sup>σ, σ the sum of the radii |
+| `n_workers` | integer ≥ 1 | worker processes per shard, same results for any count |
+| `n_shards` | integer ≥ 1 | SLURM jobs of `n_trajectories` each, read by `submit_shards.sh` only |
+
+`setup.py` and `submit_shards.sh` find PySTARC in a parent folder of the example folder. `make_grids.py`, `submit_shards.sh` and `combine_shards.py` use the example names `input.xml`, `chain.json`, `reaction_pairs.json`, `barnase.pqr`, `apbs_output` and `bd_sims`.
