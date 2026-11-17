@@ -285,3 +285,52 @@ During the simulation the force on each ligand atom comes from the finest grid t
 ### Grid points per axis
 
 The multigrid solver of APBS needs d = c·2<sup>l+1</sup> + 1 points per axis, with integers c ≥ 1 and l ≥ 1 for l multigrid levels. APBS keeps every d = 4k + 1 up to 65, for example 5, 9, 13, 33 and 65. Above 65 APBS keeps only d = 32c + 1, for example 97, 129, 161, 193, 225 and 257. APBS lowers any other d above 65 to the next smaller 32c + 1, for example 101 to 97. PySTARC checks `apbs_dime`, `apbs_coarse_dime` and `apbs_fine_dime` before APBS runs and stops for any other number, without rounding.
+
+## 8. Forces and excluded volume (`physics`)
+
+```xml
+<physics>
+  <soft_repulsion>true</soft_repulsion>
+  <overlap_check>false</overlap_check>
+  <lj_forces>false</lj_forces>
+  <hydrodynamic_interactions>true</hydrodynamic_interactions>
+  <desolvation_alpha>1.0</desolvation_alpha>
+  <enable_born2_torque>true</enable_born2_torque>
+  <multipole_fallback>true</multipole_fallback>
+</physics>
+```
+
+Every flag accepts `true`, `false`, `yes`, `no`, `1` and `0` with any capitalization. Steps 8 and 9 describe the GPU engine. The CPU model of step 10 differs in several keys.
+
+| key | entries | effect |
+|---|---|---|
+| `soft_repulsion` | `true` or `false`, default `false` | soft wall in place of the overlap check |
+| `overlap_check` | `true` or `false` | rejection of moves into the receptor |
+| `lj_forces` | `true` or `false` | Weeks Chandler Andersen (WCA) repulsion |
+| `hydrodynamic_interactions` | `true` or `false` | Rotne Prager Yamakawa D(r) or constant D |
+| `desolvation_alpha` | number ≥ 0 | factor on the Born desolvation energy |
+| `enable_born2_torque` | `true` or `false` | desolvation of the receptor charges in the ligand Born field |
+| `multipole_fallback` | `true` or `false` | receptor multipole field outside the grids |
+
+### Excluded volume
+
+The soft wall adds the energy V = kT (a/r)<sup>12</sup> with a = 0.9345 (r<sub>i</sub> + r<sub>j</sub>) for every receptor atom i and ligand atom j closer than 2a. The radii come from the PQR files. Atoms of radius 0 take no part. The overlap check rejects a move bringing a ligand atom closer than 0.5 (r<sub>i</sub> + r<sub>j</sub>) to a receptor atom. The trajectory keeps the old pose and the clock still advances. The WCA repulsion is the force of the potential 4ε[(σ/r)<sup>12</sup> − (σ/r)<sup>6</sup>] below r = 2<sup>1/6</sup>σ, with σ = r<sub>i</sub> + r<sub>j</sub> and ε = 0.1 kcal/mol. The soft wall and the overlap check also shorten the time step near the receptor (step 9).
+
+| `soft_repulsion` | `overlap_check` | `lj_forces` | excluded volume |
+|---|---|---|---|
+| `true` | `true` or `false` | `false` | soft wall |
+| `true` | `true` or `false` | `true` | error before the first step |
+| `false` | `true` | `false` | overlap check |
+| `false` | `true` | `true` | overlap check and WCA repulsion |
+| `false` | `false` | `false` | none |
+| `false` | `false` | `true` | error before the first step |
+
+### Diffusion, desolvation and the far field
+
+With `hydrodynamic_interactions` true the relative diffusion coefficient D(r) of two spheres with the radii of step 6 follows the Rotne Prager Yamakawa tensor. D(r) falls as the molecules approach. Each step adds the drift (dD/dr)Δt and the k<sub>b</sub> integral also uses D(r). With `false` the relative diffusion coefficient stays at D<sub>rec</sub> + D<sub>lig</sub>.
+
+The Born desolvation energy of a charge q in the Born field φ<sub>Born</sub> of the other molecule is α q<sup>2</sup> φ<sub>Born</sub> with α = `desolvation_alpha`. The value 1.0 is the base model. The value 0 switches desolvation off. A negative value stops the run at start. With α above 0 the desolvation acts on the ligand charges in the receptor Born field. `enable_born2_torque` true also adds the receptor charges in the ligand Born field as a force and a torque on the ligand.
+
+With `multipole_fallback` true the receptor field outside every electrostatic grid comes from a screened expansion of the receptor charges with monopole, dipole and quadrupole terms. The k<sub>b</sub> integral then also holds the orientation average of the squared dipole and quadrupole terms for a charged ligand. With `false` the field outside the grids comes from the net receptor charge alone. A neutral receptor then has no field outside the grids.
+
+The trypsin example uses the soft wall, hydrodynamic interactions, the base desolvation in both directions and the multipole field. `overlap_check` false has no effect with the soft wall on.
