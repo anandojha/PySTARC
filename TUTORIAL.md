@@ -461,3 +461,61 @@ Every `save_interval` steps the GPU run adds one record per running trajectory t
 | `energetics.npz` | traj_id, step, fx, fy, fz, dt, with the force on the ligand (kT/Å) and the time step (ps) |
 
 `energetics.npz` holds no energies. With `save_interval` 0 the file `paths.npz` holds the start pose and the last pose of every trajectory. The run then writes no `energetics.npz`. The trypsin run records every 100 steps.
+
+## 12. Build the simulation inputs
+
+```bash
+python setup.py
+```
+
+`setup.py` reads `config.xml` and writes five files into the run folder, or into `work_dir` (step 3). A blank key of steps 3 to 5, a key of another source or mode and an unknown key stop the build before any file is written. `setup.py` then builds `receptor.pqr` and `ligand.pqr` (step 3), compares `ligand.pqr` with `ligand_formula` (step 4) and picks the reaction pairs (step 5). A missing key of steps 6 to 11 stops the build before `input.xml`. For the trypsin benzamidine example `setup.py` prints five lines.
+
+```
+  receptor.pqr: 3220 atoms, Q=+6.0 e
+  ligand.pqr: 18 atoms, Q=+1.0 e
+  composition verified: C7 H9 N2
+  6 pairs, n_needed 3
+  rmax=28.4 lmax=3.7 b=45 fglen=96  WARNING, b-surface outside the grid
+```
+
+| line | content |
+|---|---|
+| `receptor.pqr`, `ligand.pqr` | atom count and net charge Q (e) of each PQR file |
+| `composition verified` | `ligand.pqr` matches `ligand_formula` |
+| `6 pairs, n_needed 3` | pairs in `rxns.xml` and `n_needed` |
+| `rmax`, `lmax` | largest distance of a receptor atom and of a ligand atom from the centroid of the molecule (Å) |
+| `b`, `fglen` | `bd_milestone_radius` and the edge of the fine grid (Å) |
+
+The last line ends with OK for b + lmax < fglen/2 and with WARNING for b + lmax ≥ fglen/2 (step 7). The warning does not stop the build. For `apbs_fglen` 0 `setup.py` derives the fine edge as the run does (step 7). Other structure sources and mode `site` print other lines.
+
+| file | content |
+|---|---|
+| `receptor.pqr` | coordinates, charges and radii of the receptor atoms |
+| `ligand.pqr` | coordinates, charges and radii of the ligand atoms |
+| `rxns.xml` | one reaction with the atom pairs, the reaction distances and `n_needed` |
+| `input.xml` | settings of the run with the keys of steps 6 to 11 and the three file names above |
+| `build_record.json` | criterion, pairs and MD5 checksums of the four files above |
+
+A complete build deletes the intermediate files of the structure step, for example `protein.pdb`, `protein.prmtop`, `ligand.mol2` and `leap.log`. User files with the same names are deleted too. A rerun of `setup.py` repeats the whole build and overwrites the five files. An edit of `input.xml` is then lost. `setup.py` never changes `bd_sims`.
+
+## 13. Run the simulation
+
+| command | GPUs | actions |
+|---|---|---|
+| `bash run.sh` | one GPU of the current node | deletes `bd_sims`, runs `setup.py` and `run_pystarc.py input.xml` |
+| `sbatch submit_SLURM_single_GPU.sh` | one GPU of a SLURM node | deletes `bd_sims` and files of the last build, runs `setup.py` and `run_pystarc.py input.xml` |
+| `sbatch submit_SLURM_multi_GPUs.sh` | four GPUs of a SLURM node | deletes `bd_sims` and files of the last build, runs `setup.py`, splits the trajectories over four GPUs and pools the results |
+
+Submit the SLURM scripts from the run folder. The `#SBATCH` lines need the partition, memory and time limit of the local cluster. Every script deletes `bd_sims` with every earlier result and checkpoint. The SLURM scripts also delete intermediate files such as `protein.prmtop` from the run folder, user files with the same names included.
+
+The four GPU script builds the grids once in `bd_sims` and starts four runs in `bd_sims/bd_1` to `bd_sims/bd_4`. Each run takes a quarter of `n_trajectories` with a seed of its own (step 9). `pystarc/multi_GPU/combine_data.py` then pools the counts of the finished runs into `bd_sims/results.json` and `bd_sims/convergence.json`. A run without `results.json` stays out of the pool.
+
+### Start without the scripts
+
+A run from a checkpoint or with an edited `input.xml` starts `run_pystarc.py` directly in the run folder and keeps `bd_sims`.
+
+```bash
+python /path/to/PySTARC/run_pystarc.py input.xml
+```
+
+The run resumes from `bd_sims/checkpoint.npz` when present (step 9). For an edited `input.xml` run `python setup.py` first and edit `input.xml` before the run. The run reuses the grids and hydrodynamic radii of `bd_sims` for unchanged settings and PQR files. A four GPU run resumes with the same command in each `bd_sims/bd_i`. `python /path/to/PySTARC/pystarc/multi_GPU/combine_data.py` in the run folder then pools the four runs.
