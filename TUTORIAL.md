@@ -31,7 +31,7 @@ The last command writes a blank `config.xml` with the nine sections structure, n
 | `complex.pdb` | trypsin and benzamidine in the bound pose with water and ions |
 | `complex.prmtop` | AMBER topology of the atoms in `complex.pdb` |
 | `config.xml` | settings of the simulation |
-| `setup.py` | builds the simulation inputs from `config.xml` (same file in every rigid body example) |
+| `setup.py` | builds the simulation inputs from `config.xml` (same file in every rigid body example with a `config.xml`) |
 | `run.sh` | runs `setup.py` and the simulation on one GPU |
 | `submit_SLURM_single_GPU.sh` | the same on one GPU of a SLURM cluster |
 | `submit_SLURM_multi_GPUs.sh` | the same on four GPUs of a SLURM cluster |
@@ -77,7 +77,7 @@ A PDB file of the bound complex is sufficient with `ligand_source` `complex_pdb`
 | records in the PDB file | requirement |
 |---|---|
 | protein | ATOM records with AMBER residue names, HID, HIE or HIP for histidine and CYX for a disulfide (plain HIS is read as HIE) |
-| ligand with a CCD entry | one HETATM residue with the CCD atom names and every heavy atom of the CCD entry, named with the CCD code or with the code in `ligand_ccd` |
+| ligand with a CCD entry | one HETATM residue with the CCD atom names and every heavy atom of the CCD entry except the leaving atoms, named with the CCD code or with the code in `ligand_ccd` |
 | ligand without a CCD entry | one HETATM residue named UNK, UNL, LIG, DRG, INH or MOL with every hydrogen, `ligand_ccd` blank and `ligand_net_charge` set |
 | everything else | water, ions, cofactors and other HETATM groups dropped, protein hydrogens rebuilt by tleap |
 
@@ -85,11 +85,11 @@ A PDB file of the bound complex is sufficient with `ligand_source` `complex_pdb`
 
 | key | used with | meaning |
 |---|---|---|
-| `receptor_pqr_file`, `ligand_pqr_file` | `pqr` | PQR files of the receptor and the ligand in the bound pose, named other than `receptor.pqr` and `ligand.pqr` |
+| `receptor_pqr_file`, `ligand_pqr_file` | `pqr` | PQR files of the receptor and the ligand in the bound pose, other than the `receptor.pqr` and `ligand.pqr` of the run folder |
 | `prmtop` | `prmtop` | AMBER topology (.prmtop or .parm7) |
 | `complex_pdb` | `prmtop`, `complex_pdb` | PDB file of the complex |
 | `pdb_id` | `rcsb`, `rcsb_smiles` | RCSB entry code, read from `<pdb_id>.pdb` in the run folder or downloaded |
-| `ligand_resid` | `rcsb`, `rcsb_smiles` | residue name of the ligand in the entry, not a residue number |
+| `ligand_resid` | `rcsb`, `rcsb_smiles` | residue name of the ligand, read from the entry with `rcsb` and given to the ligand built from the SMILES with `rcsb_smiles`, not a residue number |
 | `smiles` | `rcsb_smiles` | SMILES of the ligand in the protonation state of the simulation |
 | `chain` | `rcsb`, `rcsb_smiles` | one chain identifier, blank for every chain |
 | `rec_resid_min` | `rcsb` | lowest receptor residue number kept |
@@ -177,7 +177,7 @@ The trypsin benzamidine example picks six pairs.
 </criterion>
 ```
 
-Each `<target>` names one receptor atom by residue number, atom name and residue name in `receptor.pqr`. The ligand atoms follow in the order of the targets. `<ligand>auto</ligand>` with an `atom_filter` pairs each target with the closest allowed heavy ligand atom of the bound pose. The residue numbers of `receptor.pqr` start at 1 (`receptor_numbering` `internal`). With `ligand_source` `rcsb` the residue numbers of the RCSB entry are accepted with `receptor_numbering` `pdb`. A first run of `setup.py` with mode `centroid` writes `receptor.pqr` for a look at the numbering.
+Each `<target>` names one receptor atom by residue number, atom name and residue name in `receptor.pqr`. The ligand atoms follow in the order of the targets. `<ligand>auto</ligand>` with an `atom_filter` pairs each target with the closest allowed heavy ligand atom of the bound pose. `receptor_numbering` `internal` (default) takes the residue numbers of `receptor.pqr`. With `prmtop`, `complex_pdb`, `rcsb` and `rcsb_smiles` the residues are numbered from 1 in topology order. With `pqr` the numbers of the given file stay. With `ligand_source` `rcsb` the residue numbers of the RCSB entry are accepted with `receptor_numbering` `pdb`. A first run of `setup.py` with mode `centroid` writes `receptor.pqr` for a look at the numbering.
 
 Picked and named pairs never mix in one `config.xml`. One pair needs `n_needed` 1. An even number of pairs 2k needs `n_needed` k.
 
