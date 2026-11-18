@@ -250,11 +250,12 @@ __device__ int born2_locate(const double* R, const double* par, int n_grids,
     return -1;
 }
 
-// Force -alpha q^2 grad phi at p, as in batch_force_kernel.
+// Force -alpha q^2 grad phi and energy alpha q^2 phi at p, as in
+// batch_force_kernel.
 __device__ void born2_force(const double* grid_data, const double* origin,
                             const double* inv_sp, const double* sp,
                             int nx, int ny, int nz, double alpha, double q,
-                            const double* p, double* f)
+                            const double* p, double* f, double* e)
 {
     double px = p[0], py = p[1], pz = p[2];
     auto interp = [&](double x, double y, double z) -> double {
@@ -281,6 +282,7 @@ __device__ void born2_force(const double* grid_data, const double* origin,
     f[0] = coeff * gx;
     f[1] = coeff * gy;
     f[2] = coeff * gz;
+    *e = alpha*q*q * interp(px, py, pz);
 }
 
 extern "C" __global__
@@ -296,7 +298,8 @@ void born2_kernel(
     int n_grids, int n_rec,
     double alpha, double rec_r, double reach,
     double* __restrict__ force,
-    double* __restrict__ torque)
+    double* __restrict__ torque,
+    double* __restrict__ energy)
 {
     extern __shared__ double red[];
     int t = blockIdx.x, tid = threadIdx.x, nt = blockDim.x;
@@ -304,21 +307,22 @@ void born2_kernel(
     // |x - c| >= |c| - rec_r for every receptor atom x.
     if (sqrt(cx*cx + cy*cy + cz*cz) - rec_r > reach) {
         if (tid < 3) force[3*t+tid] = torque[3*t+tid] = 0.0;
+        if (tid == 0) energy[t] = 0.0;
         return;
     }
     const double* R = rot + 9*t;
-    double s[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    double s[7] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     for (int a = tid; a < n_rec; a += nt) {
         double q = chg[a];
         if (fabs(q) < 1e-9) continue;
         double dx = rec[3*a] - cx, dy = rec[3*a+1] - cy, dz = rec[3*a+2] - cz;
         if (dx*dx + dy*dy + dz*dz >= reach*reach) continue;
-        double p[3], f[3];
+        double p[3], f[3], e;
         int g = born2_locate(R, par, n_grids, dx, dy, dz, p);
         if (g < 0) continue;
         const double* o = par + 15*g;
         born2_force(data + start[g], o, o + 3, o + 6,
-                    dims[3*g], dims[3*g+1], dims[3*g+2], alpha, q, p, f);
+                    dims[3*g], dims[3*g+1], dims[3*g+2], alpha, q, p, f, &e);
         s[0] += f[0];
         s[1] += f[1];
         s[2] += f[2];
@@ -326,13 +330,14 @@ void born2_kernel(
         s[3] += p[1]*f[2] - p[2]*f[1];
         s[4] += p[2]*f[0] - p[0]*f[2];
         s[5] += p[0]*f[1] - p[1]*f[0];
+        s[6] += e;
     }
     // Sum over the threads in a fixed order.
-    for (int k = 0; k < 6; k++) red[k*nt + tid] = s[k];
+    for (int k = 0; k < 7; k++) red[k*nt + tid] = s[k];
     __syncthreads();
     for (int w = nt/2; w > 0; w /= 2) {
         if (tid < w)
-            for (int k = 0; k < 6; k++) red[k*nt + tid] += red[k*nt + tid + w];
+            for (int k = 0; k < 7; k++) red[k*nt + tid] += red[k*nt + tid + w];
         __syncthreads();
     }
     // Ligand frame to lab frame, then minus for the reaction on the ligand.
@@ -341,6 +346,8 @@ void born2_kernel(
         force[3*t+tid] = -(Ri[0]*red[0] + Ri[1]*red[nt] + Ri[2]*red[2*nt]);
         torque[3*t+tid] = -(Ri[0]*red[3*nt] + Ri[1]*red[4*nt] + Ri[2]*red[5*nt]);
     }
+    // The desolvation energy of the pair, the same for both partners.
+    if (tid == 0) energy[t] = red[6*nt];
 }
 """
 
@@ -875,7 +882,9 @@ class GPUBatchForceEngine:
         r < 2^(1/6) × σ_ij. The work is processed in chunks to limit GPU
         memory.
 
-        Returns a (force, torque) pair, each of shape (N_traj, 3).
+        Returns force and torque, each of shape (N_traj, 3), and the energy
+        4 eps [(σ/r)¹² - (σ/r)⁶] + eps summed over the pairs, of shape
+        (N_traj,).
         """
         N_traj = lig_positions.shape[0]
         lig = lig_positions[:, self._wca_lig]
@@ -887,8 +896,9 @@ class GPUBatchForceEngine:
         n_active = int(active.sum())
         lj_forces = cp.zeros((N_traj, 3), dtype=cp.float64)
         lj_torques = cp.zeros((N_traj, 3), dtype=cp.float64)
+        lj_energies = cp.zeros((N_traj,), dtype=cp.float64)
         if n_active == 0:
-            return lj_forces, lj_torques
+            return lj_forces, lj_torques, lj_energies
         active_idx = cp.where(active)[0]
         # Process in chunks to limit the memory of the (chunk × N_lig × N_rec ×
         # 3) array.
@@ -919,6 +929,8 @@ class GPUBatchForceEngine:
                 4.0 * eps * (12.0 * sr12 - 6.0 * sr6) / r2
             )  # shape (nc, N_lig, N_rec)
             f_mag = cp.where(in_range, f_mag, 0.0)
+            e_pair = cp.where(in_range, 4.0 * eps * (sr12 - sr6) + eps, 0.0)
+            lj_energies[idx] = e_pair.sum(axis=(1, 2))
             # Force on each ligand atom from each receptor atom. f_mag already
             # carries the 1/r^2 factor (|F|/r), so the vector force is
             # f_mag * (lig - rec) with no further division by r.
@@ -932,7 +944,7 @@ class GPUBatchForceEngine:
             lever = lp - centroids[idx][:, None, :]  # shape (nc, N_lig, 3)
             atom_torques = cp.cross(lever, f_per_lig, axis=2)  # shape (nc, N_lig, 3)
             lj_torques[idx] = atom_torques.sum(axis=1)
-        return lj_forces, lj_torques
+        return lj_forces, lj_torques, lj_energies
 
     def __call__(self, lig_positions, lig_charges, R_matrices=None, centroids=None):
         """
@@ -1029,7 +1041,7 @@ class GPUBatchForceEngine:
             and centroids is not None
             and self.alpha > 1e-12
         ):
-            f2, t2 = self._eval_born_reverse(R_matrices, centroids, N_traj)
+            f2, t2, e2 = self._eval_born_reverse(R_matrices, centroids, N_traj)
             # For parity with BD2 we add both the direction 1 Born force (added
             # above) and the Newton's-third-law reciprocal of the direction 2
             # Born force into the ligand net force. This matches add_core_forces
@@ -1041,6 +1053,7 @@ class GPUBatchForceEngine:
             # construction (see the diagnostic near lines 209 to 223).
             forces += f2
             torques += t2
+            energies += e2
             if self._call_count < 3:
                 fm = float(cp.linalg.norm(f2, axis=1).mean())
                 tm = float(cp.linalg.norm(t2, axis=1).mean())
@@ -1052,9 +1065,10 @@ class GPUBatchForceEngine:
         # Lennard-Jones (WCA repulsive) forces, computed only when atoms are
         # very close.
         if self._use_lj:
-            lj_f, lj_t = self._wca_forces_gpu(lig_positions, centroids)
+            lj_f, lj_t, lj_e = self._wca_forces_gpu(lig_positions, centroids)
             forces += lj_f
             torques += lj_t
+            energies += lj_e
             if self._call_count < 3:
                 fm = float(cp.linalg.norm(lj_f, axis=1).mean())
                 tm = float(cp.linalg.norm(lj_t, axis=1).mean())
@@ -1108,11 +1122,13 @@ class GPUBatchForceEngine:
         for any receptor atom to reach a box, and atoms beyond the reach.
 
         Returns result_f of shape (N_traj, 3), the net force on the ligand from
-        direction 2, and result_t of shape (N_traj, 3), the corresponding net
-        torque on the ligand.
+        direction 2, result_t of shape (N_traj, 3), the corresponding net
+        torque on the ligand, and result_e of shape (N_traj,), the energy
+        alpha q_i² phi_born(r_i) summed over the receptor atoms.
         """
         result_f = cp.empty((N_traj, 3), dtype=cp.float64)
         result_t = cp.empty((N_traj, 3), dtype=cp.float64)
+        result_e = cp.empty((N_traj,), dtype=cp.float64)
         threads = 128
         self._b2_kernel(
             (N_traj,),
@@ -1133,7 +1149,8 @@ class GPUBatchForceEngine:
                 np.float64(self._b2_reach),
                 result_f,
                 result_t,
+                result_e,
             ),
-            shared_mem=6 * threads * 8,
+            shared_mem=7 * threads * 8,
         )
-        return result_f, result_t
+        return result_f, result_t, result_e

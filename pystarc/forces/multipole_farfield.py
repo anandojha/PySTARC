@@ -188,53 +188,84 @@ class MultipoleExpansion:
 
 
 def compute_multipole_gpu(
-    positions_gpu, charges_gpu, r_vecs_gpu, Q, dipole, quadrupole, debye, four_pi_eps
+    positions_gpu,
+    charges_gpu,
+    r_vecs_gpu,
+    Q,
+    dipole,
+    quadrupole,
+    debye,
+    four_pi_eps,
+    trace_moment=0.0,
 ):
     """
-    Evaluate the multipole force for a batch of trajectories on the GPU.
+    Evaluate the multipole force F = -∇V on a unit charge for a batch of
+    trajectories, with V the potential of MultipoleExpansion.potential.
 
-    The argument r_vecs_gpu is an (N_traj, 3) cupy array of
-    centroid-to-centroid vectors. The function returns an (N_traj, 3) force
-    array in kBT/Å.
+    The argument r_vecs_gpu is an (N_traj, 3) array of centroid-to-centroid
+    vectors, cupy or numpy. The moments come from Q, dipole, quadrupole and
+    trace_moment (tr(M) = Σ q_i |r_i|²); positions_gpu and charges_gpu are not
+    read. The function returns an (N_traj, 3) force array in kBT/Å.
     """
-    r_mag = cp.linalg.norm(r_vecs_gpu, axis=1, keepdims=True)  # shape (N, 1)
-    r_mag = cp.maximum(r_mag, 1e-10)
+    xp = cp.get_array_module(r_vecs_gpu) if cp is not None else np
+    r_mag = xp.linalg.norm(r_vecs_gpu, axis=1, keepdims=True)  # shape (N, 1)
+    r_mag = xp.maximum(r_mag, 1e-10)
     r_hat = r_vecs_gpu / r_mag  # unit vectors, shape (N, 3)
     r_s = r_mag[:, 0]  # distances, shape (N,)
     lam = debye
-    exp_r = cp.exp(-r_s / lam)
+    exp_r = xp.exp(-r_s / lam)
     # Monopole force F = -dV/dr × r̂. Differentiating V₀ = Q/(4πε r) exp(-r/λ)
-    # gives F₀ = Q/(4πε) × (1/r² + 1/(rλ)) × exp(-r/λ) × r̂.
-    F_mono = (Q / four_pi_eps) * (1.0 / r_s**2 + 1.0 / (r_s * lam)) * exp_r
-    # Dipole force: project the dipole onto r̂, then take the radial gradient.
-    dipole_gpu = cp.asarray(dipole, dtype=cp.float64)
-    p_dot_r = cp.sum(r_hat * dipole_gpu[None, :], axis=1)  # shape (N,)
-    # The dipole force is F_dip ≈ -∇[p·r̂/(4πε r²) × (1+r/λ) × exp(-r/λ)], whose
-    # leading radial term is approximately
-    # 2 p·r̂/(4πε r³) × (1+r/λ) × exp(-r/λ) × r̂.
-    dip_mag = float(cp.linalg.norm(dipole_gpu))
-    if dip_mag > 1e-9:
-        factor_dip = (
+    # gives F₀ = Q/(4πε) × (1/r² + 1/(rλ)) × exp(-r/λ) × r̂. The screened trace
+    # term is the same form with Q replaced by tr(M)/(6λ²).
+    q_eff = Q + trace_moment / (6.0 * lam**2)
+    F_mono = (q_eff / four_pi_eps) * (1.0 / r_s**2 + 1.0 / (r_s * lam)) * exp_r
+    F_total = F_mono[:, None] * r_hat
+    # Dipole, V₁ = (p·r̂) f₁(r) with f₁ = (1 + r/λ) exp(-r/λ)/(4πε r²). The
+    # gradient has the radial part f₁'(r) (p·r̂) r̂ and the transverse part
+    # f₁(r)/r (p - (p·r̂) r̂).
+    dipole_gpu = xp.asarray(dipole, dtype=xp.float64)
+    if float(xp.linalg.norm(dipole_gpu)) > 1e-9:
+        p_dot_r = r_hat @ dipole_gpu  # shape (N,)
+        F_rad = (
             p_dot_r
             / (four_pi_eps * r_s**3)
             * (2.0 + 2.0 * r_s / lam + r_s**2 / lam**2)
             * exp_r
         )
-    else:
-        factor_dip = cp.zeros_like(r_s)
-    # Quadrupole force, keeping the leading radial term.
-    Q_gpu = cp.asarray(quadrupole, dtype=cp.float64)
-    quad_mag = float(cp.linalg.norm(Q_gpu))
-    if quad_mag > 1e-9:
-        rQr = cp.sum(r_hat * (r_hat @ Q_gpu), axis=1)  # the scalar r̂ᵀ Q r̂, shape (N,)
-        factor_quad = (
+        g1 = (1.0 + r_s / lam) * exp_r / (four_pi_eps * r_s**3)
+        F_total = (
+            F_total
+            + F_rad[:, None] * r_hat
+            - g1[:, None] * (dipole_gpu[None, :] - p_dot_r[:, None] * r_hat)
+        )
+    # Quadrupole, V₂ = (r̂ᵀ Q r̂) f₂(r) with
+    # f₂ = (1 + r/λ + r²/(3λ²)) exp(-r/λ)/(4πε r³). For a symmetric Q the
+    # gradient of r̂ᵀ Q r̂ is (2/r) (Q r̂ - (r̂ᵀ Q r̂) r̂), and
+    # -f₂'(r) = (3 + 3r/λ + 4r²/(3λ²) + r³/(3λ³)) exp(-r/λ)/(4πε r⁴).
+    Q_gpu = xp.asarray(quadrupole, dtype=xp.float64)
+    if float(xp.linalg.norm(Q_gpu)) > 1e-9:
+        Qh = r_hat @ Q_gpu  # Q r̂, shape (N, 3)
+        rQr = xp.sum(r_hat * Qh, axis=1)  # the scalar r̂ᵀ Q r̂, shape (N,)
+        F_rad = (
             rQr
             / (four_pi_eps * r_s**4)
-            * (3.0 + 3.0 * r_s / lam + r_s**2 / lam**2 + r_s**3 / (3.0 * lam**3))
+            * (
+                3.0
+                + 3.0 * r_s / lam
+                + 4.0 * r_s**2 / (3.0 * lam**2)
+                + r_s**3 / (3.0 * lam**3)
+            )
             * exp_r
         )
-    else:
-        factor_quad = cp.zeros_like(r_s)
-    # Combine the radial magnitudes and project back onto r̂.
-    F_total = (F_mono + factor_dip + factor_quad)[:, None] * r_hat
+        g2 = (
+            2.0
+            * (1.0 + r_s / lam + r_s**2 / (3.0 * lam**2))
+            * exp_r
+            / (four_pi_eps * r_s**4)
+        )
+        F_total = (
+            F_total
+            + F_rad[:, None] * r_hat
+            - g2[:, None] * (Qh - rQr[:, None] * r_hat)
+        )
     return F_total

@@ -533,7 +533,10 @@ class PySTARCEngine:
     ligand). born_mol1 and born_mol2 are the corresponding Born desolvation
     grids. debye_length is the Debye screening length in Å, taken from the
     solvent file. desolvation_alpha is the Born desolvation parameter, also taken
-    from the solvent file.
+    from the solvent file. lj_type_ids is the pair (type index of each mol1 atom,
+    type index of each mol2 atom) into lj_params, with every atom of type 0 when
+    it is None. sasa is the pair of per-atom solvent accessible areas in Å² that
+    the hydrophobic term reads, with the radii taken from the molecules.
     """
 
     _numba_warmed: bool = False  # compile the Numba kernels once per process
@@ -549,6 +552,8 @@ class PySTARCEngine:
         desolvation_alpha: float = DESOLVATION_ALPHA,
         lj_params: "Optional[LJParams]" = None,
         hydrophobic_params: "Optional[HydrophobicParams]" = None,
+        lj_type_ids=None,
+        sasa=None,
     ):
         self.alpha = desolvation_alpha
         self.backend = _detect_backend()
@@ -566,6 +571,8 @@ class PySTARCEngine:
         self._lj_engine = None
         if lj_params is not None or hydrophobic_params is not None:
             self._lj_engine = LJForceEngine(lj_params, hydrophobic_params)
+        self._lj_type_ids = lj_type_ids
+        self._sasa = sasa
         # Build the CuPy kernel when running on the GPU.
         if self.backend == "cupy":
             _build_cupy_kernel()
@@ -662,17 +669,27 @@ class PySTARCEngine:
             energy += e
         # Optional Lennard-Jones and hydrophobic term.
         if self._lj_engine is not None:
-            n1 = len(pos1)
-            n2 = len(pos2)
-            # Every atom shares a single Lennard-Jones type, so the type index
-            # for each atom is 0.
-            type_ids1 = [0] * n1
-            type_ids2 = [0] * n2
-            f1, f2, e_lj = self._lj_engine.compute(pos1, pos2, type_ids1, type_ids2)
-            # The Lennard-Jones force and energy come out in kcal/mol and
-            # kcal/mol/Angstrom, so they are converted to kBT before being added
-            # to the accumulators.
+            if self._lj_type_ids is not None:
+                type_ids1, type_ids2 = self._lj_type_ids
+            else:
+                type_ids1, type_ids2 = [0] * len(pos1), [0] * len(pos2)
+            sasa1, sasa2 = self._sasa if self._sasa is not None else (None, None)
+            f1, f2, t2, e_lj = self._lj_engine.compute_with_torque(
+                pos1,
+                pos2,
+                type_ids1,
+                type_ids2,
+                mol1.radii_array(),
+                mol2.radii_array(),
+                sasa1,
+                sasa2,
+                ref2=c2,
+            )
+            # The Lennard-Jones force, torque and energy come out in kcal/mol
+            # units, so they are converted to kBT before being added to the
+            # accumulators.
             force += f2 * KCAL_PER_MOL_TO_KBT  # force on mol2 from mol1
+            torque += t2 * KCAL_PER_MOL_TO_KBT
             energy += e_lj * KCAL_PER_MOL_TO_KBT
         return force, torque, energy
 

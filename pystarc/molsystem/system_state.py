@@ -110,6 +110,9 @@ class TrajectoryResult:
     radial_trace: Optional[np.ndarray] = (
         None  # Separation magnitudes (n_snap,) along the path.
     )
+    radial_returns: Optional[np.ndarray] = (
+        None  # Returns to the b-sphere (n_snap,) since the previous snapshot.
+    )
     contact_counts: Optional[Dict[Tuple[int, int], int]] = None
     # Time weighted means of tr(D_trans)/3 and tr(D_rot)/3 of the chain body
     # tensors over the trajectory, and the rebuild counts of the periodic

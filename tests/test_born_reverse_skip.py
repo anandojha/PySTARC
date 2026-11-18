@@ -112,7 +112,7 @@ def _poses(rng, radii):
 
 
 def _run(eng, R, cen):
-    F, T = eng._eval_born_reverse(cp.asarray(R), cp.asarray(cen), len(cen))
+    F, T, _ = eng._eval_born_reverse(cp.asarray(R), cp.asarray(cen), len(cen))
     return cp.asnumpy(F), cp.asnumpy(T)
 
 

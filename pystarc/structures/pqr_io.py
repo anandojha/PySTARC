@@ -61,9 +61,11 @@ def parse_pqr_records(path: str | Path) -> List[PQRRecord]:
     """Parse a PQR file into a list of PQRRecord objects.
 
     This reads the file line by line, skips blank lines and REMARK or END
-    records, and keeps only ATOM and HETATM records. Each kept line is parsed
-    first by the strict column parser and then, if that fails, by the
-    whitespace fallback. Lines that both parsers reject are skipped.
+    records, and keeps only ATOM and HETATM records, named by the start of the
+    line so that a record written with single spaces (ATOM 1 N ...) is kept.
+    Each kept line is parsed first by the strict column parser and then, if
+    that fails, by the whitespace fallback. Lines that both parsers reject are
+    skipped.
     """
     path = Path(path)
     records: List[PQRRecord] = []
@@ -75,8 +77,11 @@ def parse_pqr_records(path: str | Path) -> List[PQRRecord]:
                 continue
             if stripped.startswith("REMARK") or stripped.startswith("END"):
                 continue
-            record_type = line[:6].strip()
-            if record_type not in ("ATOM", "HETATM"):
+            if line.startswith("HETATM"):
+                record_type = "HETATM"
+            elif line.startswith("ATOM"):
+                record_type = "ATOM"
+            else:
                 continue
             rec = _parse_strict(line, record_type)
             if rec is None:
@@ -91,10 +96,12 @@ def _parse_strict(line: str, record_type: str) -> Optional[PQRRecord]:
     """Parse one PQR line using the fixed PDB column positions.
 
     This reads each field from its standard PDB column range and returns None if
-    the line is too short or any numeric field fails to convert, which lets the
-    caller fall back to the whitespace parser.
+    the line is too short, if a coordinate field runs past its columns (a
+    character in column 30 or 55, as in files written with free spacing), or
+    if any numeric field fails to convert, which lets the caller fall back to
+    the whitespace parser.
     """
-    if len(line) < 54:
+    if len(line) < 54 or line[29:30].strip() or line[54:55].strip():
         return None
     try:
         serial = int(line[6:11])

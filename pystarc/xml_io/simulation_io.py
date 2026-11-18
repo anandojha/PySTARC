@@ -191,9 +191,9 @@ def parse_simulation_xml(path: str | Path) -> Dict:
         "max_steps": geti("max_steps", 1_000_000),
         "r_start": getf("r_start", 100.0),
         "r_escape": getf("r_escape", 0.0),
-        "seed": geti("seed", 0) or None,
-        "mol1_pqr": get("molecule1_pqr", "mol1.pqr"),
-        "mol2_pqr": get("molecule2_pqr", "mol2.pqr"),
+        "seed": geti("seed", None),
+        "mol1_pqr": get("molecule1_pqr") or get("mol1_pqr", "mol1.pqr"),
+        "mol2_pqr": get("molecule2_pqr") or get("mol2_pqr", "mol2.pqr"),
         "reaction_file": get("reaction_file", "reactions.xml"),
         "dx_files": [],
     }
@@ -204,14 +204,20 @@ def parse_simulation_xml(path: str | Path) -> Dict:
 
 
 def write_simulation_xml(config: Dict, path: str | Path) -> None:
-    """Write a simulation configuration dictionary to a simulation input XML file."""
+    """Write a simulation configuration dictionary to a simulation input XML file.
+
+    The keys mol1_pqr and mol2_pqr are written as the tags molecule1_pqr and
+    molecule2_pqr that parse_simulation_xml reads, and a value of None is left
+    out, so the file reads back to the same dictionary.
+    """
+    tags = {"mol1_pqr": "molecule1_pqr", "mol2_pqr": "molecule2_pqr"}
     root = ET.Element("simulation")
     for key, val in config.items():
         if key == "dx_files":
             for f in val:
                 ET.SubElement(root, "dx_file").text = str(f)
-        else:
-            ET.SubElement(root, key).text = str(val)
+        elif val is not None:
+            ET.SubElement(root, tags.get(key, key)).text = str(val)
     tree = ET.ElementTree(root)
     ET.indent(tree, space="  ")
     tree.write(str(path), encoding="unicode", xml_declaration=True)

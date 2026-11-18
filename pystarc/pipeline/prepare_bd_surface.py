@@ -43,6 +43,7 @@ from pystarc.global_defs.defaults import (
     REFERENCE_LOCAL_TAGS,
 )
 from pystarc.global_defs.defaults import GHOST_NAMES
+from pystarc.pipeline.input_parser import debye_from_ions
 
 # Residue names that count as solvent or ions and are stripped before the
 # calculation. The set is deliberately broad and covers the water and ion
@@ -94,9 +95,9 @@ SOLVENT_RESIDUES = {
 # Here ε0 is the vacuum permittivity, ε_r the relative permittivity of the
 # solvent, kB the Boltzmann constant, T the temperature, Na Avogadro's number,
 # e the elementary charge, and I the ionic strength. For water at 298.15 K with
-# a 1:1 salt this collapses to λ_D (in Å) = 3.04 / sqrt(c), where c is the molar
-# salt concentration. The prefactor below carries units of Å × sqrt(mol/L).
-DEBYE_PREFACTOR_ANGSTROM = 3.04  # Å × sqrt(mol/L) at 298 K, water, 1:1 electrolyte
+# a 1:1 salt this is about λ_D (in Å) = 3.04 / sqrt(c), where c is the molar
+# salt concentration. It is evaluated by debye_from_ions with the sdie and
+# temperature of the run, as in the main pipeline.
 
 
 @dataclass
@@ -165,10 +166,9 @@ class BDSurfaceConfig:
             return (
                 1.79769e308  # effectively infinite, meaning no electrostatic screening
             )
-        # For a 1:1 electrolyte such as NaCl or KCl, λ_D = 3.04 / sqrt(c) Å at 298 K.
-        # The factor sqrt(T / 298.15) corrects for temperatures away from 298.15 K.
-        t_factor = math.sqrt(self.temperature / 298.15)
-        return DEBYE_PREFACTOR_ANGSTROM * t_factor / math.sqrt(self.ion_concentration)
+        # For a 1:1 electrolyte such as NaCl or KCl, λ_D grows as
+        # sqrt(sdie T / c).
+        return debye_from_ions(self.ion_concentration, self.sdie, self.temperature)
 
     @property
     def kT(self) -> float:

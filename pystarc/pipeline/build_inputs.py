@@ -19,6 +19,7 @@ import re
 import json
 import math
 import hashlib
+from pystarc.structures.pqr_io import parse_pqr_records
 
 SOURCES = {
     "pqr":         dict(need=("receptor_pqr_file", "ligand_pqr_file"), opt=(), note="Uses receptor and ligand PQR files that already exist"),
@@ -842,27 +843,9 @@ def _element(name, column=""):
     return nm[:2].upper() if nm[:2].upper() in ("CL", "BR") else nm[:1].upper()
 
 def read_pqr(path):
-    at = []
-    for line in open(path):
-        if not line.startswith(("ATOM", "HETATM")):
-            continue
-        t = line.split()
-        tail = []
-        while t and not _isnum(t[-1]):
-            tail.append(t.pop())
-        name = line[12:16].strip()
-        at.append(dict(name=name, el=_element(name, tail[0] if tail else ""),
-                       resname=line[17:20].strip(), resid=int(line[22:26]),
-                       xyz=np.array([float(v) for v in t[-5:-2]]),
-                       q=float(t[-2]), r=float(t[-1])))
-    return at
-
-def _isnum(t):
-    try:
-        float(t)
-        return True
-    except ValueError:
-        return False
+    return [dict(name=a.name, el=_element(a.name, a.element), resname=a.resname,
+                 resid=a.resid, xyz=np.array([a.x, a.y, a.z]), q=a.charge, r=a.radius)
+            for a in parse_pqr_records(path)]
 
 def check_formula(lig, formula):
     want = collections.Counter()

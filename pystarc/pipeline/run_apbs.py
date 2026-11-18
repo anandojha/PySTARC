@@ -50,6 +50,7 @@ from typing import List, Tuple
 from pathlib import Path
 import numpy as np
 import subprocess
+import shlex
 from pystarc.global_defs.defaults import GHOST_NAMES
 import hashlib
 import shutil
@@ -65,9 +66,12 @@ def _grid_key(pqr_path: Path, settings: dict) -> str:
     return h.hexdigest()
 
 
-def _run(cmd: str, cwd: Path, step: str):
-    print(f"    $ {cmd}")
-    result = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
+def _run(cmd, cwd: Path, step: str):
+    """Run cmd, a list of arguments or a string split as a shell would, without
+    a shell, so a path with spaces or shell characters is passed unchanged."""
+    args = shlex.split(cmd) if isinstance(cmd, str) else [str(c) for c in cmd]
+    print(f"    $ {shlex.join(args)}")
+    result = subprocess.run(args, shell=False, cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(
             f"APBS step '{step}' failed (exit {result.returncode}):\n"
@@ -535,7 +539,7 @@ def run_apbs(
             ion_radius_neg=ion_radius_neg,
         )
         _run(
-            f"apbs {inp0.name}",
+            ["apbs", inp0.name],
             cwd=work_dir,
             step=f"apbs-{mol_name}-{'born' if is_born else 'elec'}-coarse",
         )
@@ -564,7 +568,7 @@ def run_apbs(
             ion_radius_neg=ion_radius_neg,
         )
         _run(
-            f"apbs {inp1.name}",
+            ["apbs", inp1.name],
             cwd=work_dir,
             step=f"apbs-{mol_name}-{'born' if is_born else 'elec'}-fine",
         )

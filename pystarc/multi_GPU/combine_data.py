@@ -7,6 +7,7 @@ that a single-GPU run would produce. It exits with code 1 on errors.
 """
 
 import numpy as np
+from pystarc.global_defs.constants import MOLAR_RATE_CONV
 import statistics
 import argparse
 import json
@@ -141,7 +142,7 @@ def main():
     _warn_run_mismatch(runs)
     conf = runs[0].get("confidence_level", 0.95)
     conv_tol = runs[0].get("convergence_tol", 0.05)
-    CONV = 6.022e8
+    CONV = MOLAR_RATE_CONV
     k_on = CONV * k_b * P
     SE = math.sqrt(P * (1 - P) / N_p) if 0 < P < 1 else 0
     RSE = SE / P if P > 0 else float("inf")

@@ -29,7 +29,7 @@ from pystarc.forces.soft_repulsion import A_FACTOR as SOFT_A_FACTOR, SoftRepulsi
 from pystarc.molsystem.system_state import Fate, TrajectoryResult
 from pystarc.lib.numerical import romberg_integrate
 from pystarc.structures.molecules import needed_pairs
-from pystarc.global_defs.constants import VACUUM_PERMITTIVITY_KBT
+from pystarc.global_defs.constants import MOLAR_RATE_CONV, VACUUM_PERMITTIVITY_KBT
 from typing import List, Optional, Tuple, Dict
 from scipy.special import erf as scipy_erf
 from dataclasses import dataclass
@@ -656,7 +656,7 @@ class GPUBatchResult:
         Å³/ps to M⁻¹ s⁻¹."""
         if not (math.isfinite(k_b) and k_b > 0):
             raise ValueError(f"k_b must be finite and positive, got {k_b}")
-        return 6.022e23 * 1e-30 / 1e-12 / 1e-3 * k_b * P
+        return MOLAR_RATE_CONV * k_b * P
 
     def rate_constant(self, D_rel: float, k_b: float) -> float:
         return self._rate_from_p(self.reaction_probability, k_b)
@@ -1005,18 +1005,27 @@ class GPUBatchSimulator:
         self._kb_multipole_active = bool(_has_multipole_force)
         self._kb_mp_p_sq = _p_sq
         self._kb_mp_Tr_Q_sq = _Tr_Q_sq
+        # The screened trace term of the multipole field is spherically
+        # symmetric, an effective monopole tr(M)/(6λ²) that the force engine
+        # adds to q_rec beyond the grids, so it enters U(r) at first order.
+        _mp_trace = (
+            float(getattr(self.engine, "_mp_trace", 0.0))
+            if getattr(self.engine, "_multipole", None) is not None
+            else 0.0
+        )
+        q_rec_eff = q_rec + _mp_trace / (6.0 * debye * debye)
         # A neutral ligand feels no steering, so U(r) vanishes, but solvent is
         # still squeezed from between the surfaces as they approach. The ordinary
         # path below reduces to k_b = 4 pi D b when hydrodynamics is off, so it
         # also covers the neutral case.
         self._kb_pure_diffusion = bool(
-            abs(q_rec * q_lig) < 1e-9 and not _has_multipole_force
+            abs(q_rec_eff * q_lig) < 1e-9 and not _has_multipole_force
         )
 
         def U(r):
             # Monopole-monopole Yukawa term, always present though possibly
             # zero.
-            V0 = q_rec * q_lig * math.exp(-r / debye) / (fpe * r)
+            V0 = q_rec_eff * q_lig * math.exp(-r / debye) / (fpe * r)
             if not _has_multipole_force:
                 return V0
             # Second-cumulant correction to the potential of mean force, in
@@ -1527,7 +1536,7 @@ class GPUBatchSimulator:
             )
         else:
             _conv_milestones = set()
-        _conv_CONV = 6.022e23 * 1e-30 / 1e-12 / 1e-3
+        _conv_CONV = MOLAR_RATE_CONV
         _last_conv_done = 0
         _progress_interval_sec = 10.0  # Print progress every this many seconds.
         _last_progress_time = time.time()

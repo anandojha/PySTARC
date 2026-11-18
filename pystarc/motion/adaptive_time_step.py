@@ -146,6 +146,7 @@ class AdaptiveTimeStep:
         dt_min: float = 0.001,
         dt_rxn_min: float = 1e-6,
         D_rot_frame: float = 0.0,
+        min_pair_dist: Optional[float] = None,
     ) -> float:
         """
         Compute the time step for the current Brownian-dynamics step.
@@ -157,15 +158,26 @@ class AdaptiveTimeStep:
         dt_min is the hard minimum step in ps taken from the time_step_parameters,
         and dt_rxn_min is the hard minimum step in ps used near the reaction
         boundary. D_rot_frame is the receptor's rotational diffusion, passed
-        through to max_time_step. The function returns the step to use in ps.
+        through to max_time_step. min_pair_dist is the smallest distance of a
+        reaction atom pair in Å. The reaction distances are atom pair distances,
+        so the step is tightened when min_pair_dist is below 1.5 times the
+        smallest of them, or, without min_pair_dist, when the surface
+        clearance r - r_hydro1 - r_hydro2 is. The function returns the step to
+        use in ps.
         """
         # Geometric maximum allowed by the current configuration.
         dt_geo = max_time_step(r, D_rel, D_rot, r_hydro1, r_hydro2, D_rot_frame)
         # Tighten the step near the reaction boundary.
+        near_rxn = False
         if rxn_distances:
             rho_min = min(rxn_distances)
-            # Apply the reaction step once within 1.5 times the smallest criterion distance.
-            if r < 1.5 * rho_min:
+            gap = (
+                min_pair_dist
+                if min_pair_dist is not None
+                else max(r - r_hydro1 - r_hydro2, 0.0)
+            )
+            near_rxn = gap < 1.5 * rho_min
+            if near_rxn:
                 dt_rxn = reaction_time_step(rho_min, D_rel)
                 dt_geo = min(dt_geo, dt_rxn)
         # Grow the step from the previous one, but never beyond the geometric maximum.
@@ -174,7 +186,7 @@ class AdaptiveTimeStep:
         else:
             dt = min(self._last_dt * _GROWTH, dt_geo)
         # Enforce the hard minimum step.
-        if rxn_distances and r < 1.5 * min(rxn_distances):
+        if near_rxn:
             dt = max(dt, dt_rxn_min)
         else:
             dt = max(dt, dt_min)

@@ -116,6 +116,7 @@ from pystarc.global_defs.constants import (
     KB_KCAL,
     KB_SI,
     KCAL_PER_MOL_TO_KBT,
+    MOLAR_RATE_CONV,
     PI,
     PS_TO_S,
     TWO_PI,
@@ -10858,8 +10859,8 @@ class TestComputeChainForcesEquivalence:
     def test_angles_only_match_legacy(self):
         """compute_chain_forces reproduces the legacy evaluator forces for an angles-only bent chain."""
         positions = np.array(
-            [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [8.0, 1.5, 0.0]]
-        )  # bent angle
+            [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [10.0, 1.5, 0.0]]
+        )  # bent angle, beads beyond the WCA reach
         angles = [
             ChainAngle(
                 ChainAtomRef(0),
@@ -10879,7 +10880,7 @@ class TestComputeChainForcesEquivalence:
     def test_torsions_only_match_legacy(self):
         """compute_chain_forces reproduces the legacy evaluator forces for a torsions-only chain."""
         positions = np.array(
-            [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [8.0, 0.0, 0.0], [12.0, 1.0, 0.5]]
+            [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [10.0, 0.0, 0.0], [15.0, 1.0, 0.5]]
         )
         torsions = [
             ChainTorsion(
@@ -15283,7 +15284,8 @@ class TestCOFFDROPTabulatedForces:
     """
 
     @pytest.fixture(scope="class")
-    def params(self):
+    @classmethod
+    def params(cls):
         """Load COFFDROPParams once per class (expensive)."""
 
         ff_dir = Path(__file__).parent.parent / "pystarc" / "coffdrop_data"
@@ -19881,7 +19883,7 @@ class _OverlapSpy:
         self._verdict = verdict
         self.queries = []  # List of (position, overlaps) tuples.
 
-    def __call__(self, mol1, mol2):
+    def __call__(self, mol1, mol2, scale=1.0):
         pos = np.array([mol2.atoms[0].x, mol2.atoms[0].y, mol2.atoms[0].z])
         overlaps = bool(self._verdict(pos))
         self.queries.append((pos.copy(), overlaps))
@@ -20635,7 +20637,7 @@ def test_rate_constant_uses_stored_k_db_for_lmz():
     D_rel = 0.05  # Å²/ps.
 
     P = res.reaction_probability
-    CONV_A3ps = 6.022e23 * 1e-30 / 1e-12 / 1e-3
+    CONV_A3ps = MOLAR_RATE_CONV
     expected_lmz = CONV_A3ps * k_db * P
 
     k = res.rate_constant(D_rel)
@@ -20660,7 +20662,7 @@ def test_lmz_differs_from_smoluchowski_fallback():
     D_rel = 0.05
 
     P = res.reaction_probability
-    CONV_A3ps = 6.022e23 * 1e-30 / 1e-12 / 1e-3
+    CONV_A3ps = MOLAR_RATE_CONV
     k_D = 4.0 * math.pi * D_rel * res.r_start
     beta = res.r_start / res.r_escape
     smoluchowski = CONV_A3ps * k_D * P / (1.0 - P * (1.0 - beta))
@@ -20676,7 +20678,7 @@ def test_zero_stored_k_db_falls_back_to_smoluchowski():
     D_rel = 0.05
 
     P = res.reaction_probability
-    CONV_A3ps = 6.022e23 * 1e-30 / 1e-12 / 1e-3
+    CONV_A3ps = MOLAR_RATE_CONV
     k_D = 4.0 * math.pi * D_rel * res.r_start
     beta = res.r_start / res.r_escape
     # Corrected NAM truncated-escape denominator 1 - (1 - P) * beta.
@@ -20693,7 +20695,7 @@ def test_explicit_k_db_argument_overrides_stored():
     D_rel = 0.05
 
     P = res.reaction_probability
-    CONV_A3ps = 6.022e23 * 1e-30 / 1e-12 / 1e-3
+    CONV_A3ps = MOLAR_RATE_CONV
     arg_k_db = 7.5
     expected = CONV_A3ps * arg_k_db * P
 
@@ -21335,7 +21337,7 @@ def test_rate_constant_is_conv_k_b_p():
     res = _make_result_test_lowsev_gpu_sim_guards(
         n_reacted=30, n_escaped=70, r_start=10.0, r_escape=50.0
     )
-    CONV = 6.022e23 * 1e-30 / 1e-12 / 1e-3
+    CONV = MOLAR_RATE_CONV
     assert res.rate_constant(D_rel=0.25, k_b=3.0) == CONV * 3.0 * 0.3
 
 
@@ -21345,7 +21347,7 @@ def test_rate_constant_steering_path_unchanged():
     )
     k_b = 2.5
     P = res.reaction_probability
-    CONV = 6.022e23 * 1e-30 / 1e-12 / 1e-3
+    CONV = MOLAR_RATE_CONV
     expected = CONV * k_b * P
     # Should not raise even though the Smoluchowski denominator would be zero.
     assert res.rate_constant(D_rel=1.0, k_b=k_b) == expected
@@ -21464,21 +21466,20 @@ def _install_stubs(monkeypatch, pqr_content):
     """Patch _check_tool and _run so make_combined_pqr runs with no binaries.
 
     The _run stand in inspects the command string. For the ambpdb command it
-    writes pqr_content (or nothing when pqr_content is None) to complex.pqr in
-    the working directory, reproducing what the real shell redirection would do.
+    writes pqr_content (or nothing when pqr_content is None) to output_path,
+    reproducing what _run does with the captured standard output.
     The cpptraj command is treated as a no op that creates the expected rst file.
     """
     monkeypatch.setattr(make_pqr, "_check_tool", lambda name: None)
 
-    def fake_run(cmd, cwd, step):
+    def fake_run(cmd, cwd, step, output_path=None):
         cwd = Path(cwd)
         if step == "cpptraj":
             # cpptraj would normally write complex.rst from the pdb.
             (cwd / "complex.rst").write_text("dummy restart\n")
         elif step == "ambpdb":
             if pqr_content is not None:
-                # Mimic the shell redirection target ambpdb -pqr > complex.pqr.
-                (cwd / "complex.pqr").write_text(pqr_content)
+                Path(output_path).write_text(pqr_content)
             # When pqr_content is None we leave the file absent on purpose.
         return None
 
@@ -21766,7 +21767,7 @@ def test_run_source_initializes_gpu_sim_and_guards_access():
     src = inspect.getsource(pipeline.run)
     # The defensive initialization must be present before any branch uses it.
     assert "gpu_sim = None" in src
-    assert "gpu_sim._k_b if gpu_sim is not None else 0.0" in src
+    assert "gpu_sim._k_b if gpu_sim is not None else" in src
     ast.parse(src.strip())
 
 

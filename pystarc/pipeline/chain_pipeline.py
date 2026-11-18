@@ -19,6 +19,7 @@ import json
 import shutil
 import time
 
+from pystarc.global_defs.constants import KB_KCAL
 from pystarc.global_defs.defaults import GHOST_NAMES
 from pystarc.pipeline.geometry import analyse_molecule
 from pystarc.pipeline.input_parser import PySTARCConfig
@@ -364,7 +365,7 @@ def run_chain(
         gb_obc_gamma=cc.gb_obc_gamma,
         coffdrop_active=tables,
         debye_length=config.debye_length,
-        temperature_kT=0.0019872041 * config.temperature,
+        temperature_kT=KB_KCAL * config.temperature,
         dielectric=config.sdie,
         hydrodynamic_interactions=config.hydrodynamic_interactions,
         use_brownian_bridge=config.brownian_bridge,

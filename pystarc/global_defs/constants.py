@@ -19,25 +19,35 @@ typically D ≈ 0.01 to 1 Å²/ps.
 
 To convert a computed rate to SI units, use
 
-    k_on [M⁻¹s⁻¹] = 6.022 × 10⁸ × k_b [ų/ps] × P_rxn
+    k_on [M⁻¹s⁻¹] = MOLAR_RATE_CONV × k_b [ų/ps] × P_rxn
 
-where the prefactor 6.022 × 10⁸ is N_A × (10⁻¹⁰)³ / (10⁻¹² × 10⁻³). Here k_b is
-the rate in internal units of ų/ps and P_rxn is the reaction probability.
+where MOLAR_RATE_CONV = 6.02214076 × 10⁸ is N_A × (10⁻¹⁰)³ / (10⁻¹² × 10⁻³).
+Here k_b is the rate in internal units of ų/ps and P_rxn is the reaction
+probability.
 """
 
 import math
 
 # Temperature
 T_DEFAULT: float = 298.15  # K
-# Boltzmann constant
+# Avogadro's number
+AVOGADRO: float = 6.02214076e23
+KCAL_TO_J: float = (
+    4184.0  # kcal/mol to J/mol (divide by AVOGADRO for a single molecule)
+)
+# Boltzmann constant, and its molar value kB N_A = 1.987204259e-3 kcal/(mol·K)
 KB_SI: float = 1.380649e-23  # J / K
-KB_KCAL: float = 1.987204e-3  # kcal / (mol·K)
+KB_KCAL: float = KB_SI * AVOGADRO / KCAL_TO_J  # kcal / (mol·K)
 # kBT at default temperature (in kcal/mol)
-KBT_KCAL: float = KB_KCAL * T_DEFAULT  # ~ 0.5922 kcal/mol
+KBT_KCAL: float = KB_KCAL * T_DEFAULT  # ~ 0.5925 kcal/mol
 # Elementary charge
 E_CHARGE: float = 1.602176634e-19  # C
 # Dielectric permittivity of vacuum
 EPS0_SI: float = 8.8541878128e-12  # C² / (N·m²)
+# Coulomb constant e² N_A / (4π ε₀) for two unit charges, 332.0637 kcal·Å/mol.
+COULOMB_KCAL: float = (
+    E_CHARGE**2 * AVOGADRO / (4.0 * math.pi * EPS0_SI) / KCAL_TO_J * 1.0e10
+)
 # Vacuum permittivity in PySTARC's internal kBT units, that is ε₀ expressed in
 # e²/(kBT·Å). This equals 1/(4π × COULOMB_K), where COULOMB_K ≈ 560.86 kBT·Å·e⁻²
 # is Coulomb's constant in kBT units. It is used for in-vacuum and Debye-Huckel
@@ -51,14 +61,11 @@ BJERRUM_LENGTH: float = 7.1846760153  # Å
 # Relative permittivity of water, matching the Bjerrum length above and the
 # solvent dielectric (sdie = 78.0) used in the production electrostatics.
 EPS_WATER: float = 78.0
-# Avogadro's number
-AVOGADRO: float = 6.02214076e23
 # Conversion factors
 ANG_TO_M: float = 1.0e-10  # Å to m
 PS_TO_S: float = 1.0e-12  # ps to s
-KCAL_TO_J: float = (
-    4184.0  # kcal/mol to J/mol (divide by AVOGADRO for a single molecule)
-)
+# Rate from ų/ps to M⁻¹ s⁻¹, N_A × 1e-27 L/ų × 1e12 ps/s.
+MOLAR_RATE_CONV: float = AVOGADRO * 1.0e-27 * 1.0e12
 KCAL_PER_MOL_TO_KBT: float = 1.0 / KBT_KCAL  # kcal/mol to kBT
 # Ion properties (default NaCl)
 DEFAULT_IONIC_STRENGTH: float = 0.15  # mol/L
@@ -79,12 +86,14 @@ __all__ = [
     "KBT_KCAL",
     "E_CHARGE",
     "EPS0_SI",
+    "COULOMB_KCAL",
     "VACUUM_PERMITTIVITY_KBT",
     "BJERRUM_LENGTH",
     "EPS_WATER",
     "AVOGADRO",
     "ANG_TO_M",
     "PS_TO_S",
+    "MOLAR_RATE_CONV",
     "KCAL_TO_J",
     "KCAL_PER_MOL_TO_KBT",
     "DEFAULT_IONIC_STRENGTH",

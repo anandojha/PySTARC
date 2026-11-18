@@ -41,9 +41,9 @@ The stored field is in kBT per e^2, is positive everywhere, and decays as
 from __future__ import annotations
 import math
 import numpy as np
+from pystarc.global_defs.constants import COULOMB_KCAL, KB_KCAL
+from pystarc.structures.pqr_io import parse_pqr_records
 
-COULOMB_KCAL = 332.0637  # e^2/(4 pi eps0), kcal/mol.Angstrom/e^2
-KB_KCAL = 0.0019872041  # kcal/mol/K
 DEN_FLOOR = 0.5  # floor on (r^2 - a^2), Angstrom^2
 CUTOFF = 15.0  # Angstrom, contributions past it are dropped
 DEFAULT_DEBYE = 7.858  # Angstrom, 150 mM
@@ -152,24 +152,17 @@ def read_pqr_geometry(pqr_path):
     """
     Atom centres and radii from a PQR (charges deliberately ignored).
 
-    PQR has no fixed standard for a trailing element column: some writers emit
-    "... x y z q r" and others "... x y z q r element". Detect which by testing
-    whether the final field parses as a number, otherwise the radius is read one
-    field off and becomes the charge.
+    PQR has no fixed standard for a trailing element column or a chain column,
+    and a negative coordinate can run into the field before it, so the records
+    are read by parse_pqr_records, which handles every one of these forms.
     """
-    xyz, rad = [], []
-    for line in open(pqr_path):
-        if not line.startswith(("ATOM", "HETATM")):
-            continue
-        p = line.split()
-        try:
-            float(p[-1])
-            off = 0  # no element column; radius is the last field
-        except ValueError:
-            off = 1  # trailing element symbol
-        rad.append(float(p[-1 - off]))
-        xyz.append([float(p[-5 - off]), float(p[-4 - off]), float(p[-3 - off])])
-    return np.asarray(xyz, dtype=np.float64), np.asarray(rad, dtype=np.float64)
+    recs = parse_pqr_records(pqr_path)
+    xyz = [[r.x, r.y, r.z] for r in recs]
+    rad = [r.radius for r in recs]
+    return (
+        np.asarray(xyz, dtype=np.float64).reshape(-1, 3),
+        np.asarray(rad, dtype=np.float64),
+    )
 
 
 def probe_contact_value(

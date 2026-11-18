@@ -68,7 +68,7 @@ def _run(monkeypatch, sim, backsteps, overlaps=()):
         calls["backstep"] += 1
         return calls["backstep"] - 1 in backsteps
 
-    def _overlap(mol1, mol2):
+    def _overlap(mol1, mol2, scale=1.0):
         calls["overlap"] += 1
         return calls["overlap"] - 1 in overlaps
 

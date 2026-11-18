@@ -42,8 +42,9 @@ from pystarc.hydrodynamics.rotne_prager import MobilityTensor
 from pystarc.forces.electrostatic.grid_force import DXGrid
 from pystarc.pipeline.input_parser import PySTARCConfig
 from pystarc.pipeline.parameterize import parameterize
-from pystarc.pipeline.output_writer import write_all
+from pystarc.pipeline.output_writer import write_all, write_cpu_results
 from pystarc.forces.engine import PySTARCEngine
+from pystarc.forces.lj import LJAtomType, LJParams
 from pystarc.forces.multipole import load_effective_charges
 from pystarc.pipeline.run_apbs import run_apbs_both
 from pystarc.structures.pqr_io import parse_pqr
@@ -51,6 +52,8 @@ from pystarc.pipeline.extract import extract
 import subprocess as _sp
 from pathlib import Path
 import shutil
+import time
+from pystarc.global_defs.constants import KB_KCAL, KBT_KCAL
 from pystarc.global_defs.defaults import (
     DEBYE_LENGTH,
     DT_RXN,
@@ -143,7 +146,16 @@ def _checklist(cfg, params, geom, k_b, gpu_engine, cpu_engine, result):
         lines.append("  APBS grids finest first, no far-field force beyond the grids")
         born1 = alpha != 0 and bool(cpu_engine._born1)
         born2 = born1 and bool(cpu_engine._born2)
-        lines.append("  Hard-sphere check (always on in the CPU model)")
+        lines.append(
+            "  Overlap check (overlapping moves are rejected)"
+            if params.use_hard_sphere
+            else "  Overlap check disabled"
+        )
+        lines.append(
+            "  WCA repulsive forces (LJ from PQR radii)"
+            if cpu_engine._lj_engine is not None
+            else "  LJ forces disabled"
+        )
     lines.append(
         f"  Born both directions            (alpha={alpha:.8f})" if born2
         else f"  Born on the ligand atoms only   (alpha={alpha:.8f})" if born1
@@ -345,6 +357,22 @@ def run(cfg: PySTARCConfig):
         len(mol_rec.atoms),
         len(mol_lig.atoms),
     )
+    # The WCA wall of the CPU model is the one of the GPU engine, with
+    # sigma_ij = r_i + r_j from the PQR radii and a well depth of 0.17 kBT at
+    # 298.15 K. One Lennard-Jones type per atom, receptor first. Atoms of radius
+    # 0 have no well and take no part.
+    lj_kw = {}
+    if cfg.lj_forces and not cfg.gpu:
+        radii = list(mol_rec.radii_array()) + list(mol_lig.radii_array())
+        eps = 4.0 * 0.17 * KBT_KCAL / (cfg.temperature / 298.15)
+        n_rec = len(mol_rec.atoms)
+        lj_kw = dict(
+            lj_params=LJParams(
+                [LJAtomType(str(i), eps if a > 0 else 0.0, a) for i, a in enumerate(radii)],
+                use_wca=True,
+            ),
+            lj_type_ids=(list(range(n_rec)), list(range(n_rec, len(radii)))),
+        )
     # Load the force engine, auto-detecting the fastest available backend. The
     # code prefers the GPU (CuPy), then Numba, and finally falls back to NumPy.
     engine = PySTARCEngine(
@@ -355,6 +383,7 @@ def run(cfg: PySTARCConfig):
         eff_charges_mol1=load_effective_charges(W, "receptor", cfg.debye_length),
         debye_length=cfg.debye_length,
         desolvation_alpha=cfg.desolvation_alpha,
+        **lj_kw,
     )
     print(f"  {engine.summary()}")
     # If the user disabled the GPU in the configuration, fall back to Numba.
@@ -459,16 +488,16 @@ def run(cfg: PySTARCConfig):
         seed=cfg.seed,
         n_threads=cfg.n_threads,
         hydrodynamic_interactions=_hi_flag,
-        use_hard_sphere=True,
+        use_hard_sphere=bool(cfg.overlap_check),
         use_brownian_bridge=getattr(cfg, "brownian_bridge", True),
         verbose=True,
         minimum_core_dt=getattr(cfg, "minimum_core_dt", 0.0),
         minimum_core_reaction_dt=getattr(cfg, "minimum_core_reaction_dt", 0.0),
         # Forward the user's screening, temperature, and dielectric so the
         # serial OuterPropagator computes k_db for the configured conditions
-        # rather than the NAMParameters defaults. kB = 0.0019872041 kcal/mol/K.
+        # rather than the NAMParameters defaults.
         debye_length=getattr(cfg, "debye_length", DEBYE_LENGTH),
-        temperature_kT=0.0019872041 * getattr(cfg, "temperature", TEMPERATURE),
+        temperature_kT=KB_KCAL * getattr(cfg, "temperature", TEMPERATURE),
         dielectric=getattr(cfg, "sdie", SOLVENT_DIELECTRIC),
     )
     sim = NAMSimulator(mol_rec, mol_lig, mob, pathway_set, params, engine)
@@ -540,7 +569,9 @@ def run(cfg: PySTARCConfig):
                 "on a machine with CuPy."
             )
         print(f"\n  Using CPU NAM Simulator ({cfg.n_threads} threads)")
+        t0 = time.time()
         result = sim.run()
+        cpu_wall = time.time() - t0
         total_steps = sum(r.steps for r in sim.results)
     # Print the results. First gather the hardware information for the summary footer.
     n_gpu = 0
@@ -562,8 +593,8 @@ def run(cfg: PySTARCConfig):
     print("  Results")
     print("=" * 64)
     # The GPU k_on is CONV k_b P with the Romberg k_b. The CPU result uses the
-    # k_db of its outer propagator and ignores the k_b passed here.
-    _k_b = gpu_sim._k_b if gpu_sim is not None else 0.0
+    # k_db of its outer propagator, which is its k_b.
+    _k_b = gpu_sim._k_b if gpu_sim is not None else getattr(result, "k_db", 0.0)
     print(result.summary(D_rel, _k_b, cfg.confidence_interval))
     print(f"  Total steps  : {total_steps:,}")
     # Hardware footer
@@ -587,6 +618,18 @@ def run(cfg: PySTARCConfig):
             D_rel=D_rel,
             confidence=cfg.confidence_interval,
             convergence_tol=cfg.convergence_tol,
+        )
+    elif gpu_sim is None:
+        write_cpu_results(
+            work_dir=cfg.work_dir,
+            result=result,
+            trajectories=sim.results,
+            output_cfg=cfg.outputs,
+            D_rel=D_rel,
+            confidence=cfg.confidence_interval,
+            convergence_tol=cfg.convergence_tol,
+            wall_time_sec=cpu_wall,
+            total_steps=total_steps,
         )
     # Clean up the temporary files.
     tmp_dir = cfg.work_dir / "tmp"

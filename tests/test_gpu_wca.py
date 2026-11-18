@@ -52,7 +52,7 @@ def test_wca_equals_the_pair_sum_over_real_atoms():
     u = g.normal(size=(100, 3))
     cen = u / np.linalg.norm(u, axis=1, keepdims=True) * g.uniform(6.0, 12.0, (100, 1))
     lig = np.einsum("nij,kj->nki", R, lig0) + cen[:, None]
-    F, T = _engine(rec, rec_r, lig_r)._wca_forces_gpu(cp.asarray(lig), cp.asarray(cen))
+    F, T, _ = _engine(rec, rec_r, lig_r)._wca_forces_gpu(cp.asarray(lig), cp.asarray(cen))
     F_ref, T_ref = _pairs(rec, rec_r, lig, lig_r, cen)
     hit = np.linalg.norm(F_ref, axis=1) > 0
     assert hit.sum() > 20
@@ -65,7 +65,7 @@ def test_ghost_atoms_take_no_part_and_radii_are_needed():
     rec = np.vstack([np.stack([4.5 * np.cos(th), 4.5 * np.sin(th), np.zeros(7)], axis=1), np.zeros((1, 3))])
     eng = _engine(rec, np.array([1.7] * 7 + [0.0]), np.array([1.7, 0.0]))
     lig = cp.asarray([[[0.5, 0.0, 0.0], [0.0, 0.0, 0.0]]])
-    F, T = eng._wca_forces_gpu(lig, lig[:, 1])
-    assert not F.any() and not T.any()
+    F, T, E = eng._wca_forces_gpu(lig, lig[:, 1])
+    assert not F.any() and not T.any() and not E.any()
     with pytest.raises(ValueError, match="radius sets"):
         GPUBatchForceEngine([], [], alpha=0.0, rec_positions=rec, use_lj=True)

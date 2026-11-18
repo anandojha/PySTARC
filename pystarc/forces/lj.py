@@ -154,24 +154,33 @@ def hydrophobic_sasa_force(
     sasa_b: float,  # solvent-accessible surface area of atom b in angstrom^2
     hp: HydrophobicParams = HydrophobicParams(),
 ) -> Tuple[np.ndarray, float]:
-    """Return the hydrophobic force based on solvent-accessible surface area."""
+    """Return the hydrophobic force based on solvent-accessible surface area.
+
+    Each of the two directed contributions has the constant force
+    fac × area_other over the shell a <= r + radius_self <= b. The energy that
+    gives this force and vanishes beyond the shell is fac × area_other ×
+    (b - r - radius_self) inside the shell and fac × area_other × (b - a) when
+    r + radius_self < a.
+    """
     fac = hp.factor  # in kcal/mol/angstrom^3; a negative value is attractive
 
-    def sasa_contrib(radius_self: float, area_other: float) -> float:
+    def sasa_contrib(radius_self: float, area_other: float) -> Tuple[float, float]:
         ri = r + radius_self
-        if hp.a <= ri <= hp.b:
-            return fac * area_other
-        return 0.0
+        if ri > hp.b:
+            return 0.0, 0.0
+        if ri >= hp.a:
+            return fac * area_other, fac * area_other * (hp.b - ri)
+        return 0.0, fac * area_other * (hp.b - hp.a)
 
-    f_scalar = sasa_contrib(radius_a, sasa_b) + sasa_contrib(radius_b, sasa_a)
+    f_a, e_a = sasa_contrib(radius_a, sasa_b)
+    f_b, e_b = sasa_contrib(radius_b, sasa_a)
+    f_scalar = f_a + f_b
     # This uses the same sign convention as lj_pair_force, namely F_a = -grad_a V.
     # With the attractive default fac < 0 the scalar f_scalar is negative, so
     # force_a = -f_scalar * r_vec points along +r_vec toward b and is attractive.
     # This is the Audit C7b fix.
     force_a = -f_scalar * r_vec
-    # Approximate the energy as a trapezoidal integral of the force across the contact shell.
-    energy = f_scalar * (hp.b - hp.a) * 0.5
-    return force_a, energy
+    return force_a, e_a + e_b
 
 
 # The full pairwise engine for Lennard-Jones and hydrophobic forces.
@@ -221,51 +230,78 @@ class LJForceEngine:
         Each force is the (3,) net force vector acting on the centroid of that
         molecule.
         """
-        N1, N2 = len(positions1), len(positions2)
-        f1 = np.zeros(3)
-        f2 = np.zeros(3)
-        E = 0.0
-        for i in range(N1):
-            for j in range(N2):
-                pos_i = positions1[i]
-                pos_j = positions2[j]
-                dpos = pos_j - pos_i
-                r = float(np.linalg.norm(dpos))
-                if r < 1e-6:
-                    continue
-                r_hat = dpos / r
-                # Add the Lennard-Jones contribution for this pair.
-                if self.lj is not None:
-                    ti = type_ids1[i]
-                    tj = type_ids2[j]
-                    # Combine the per-type parameters with the mixing rules used by
-                    # the reference C++ implementation.
-                    eps_ij = math.sqrt(self.lj.epsilon(ti) * self.lj.epsilon(tj))
-                    sig_ij = self.lj.sigma(ti) + self.lj.sigma(tj)
-                    f_lj, e_lj = lj_pair_force(
-                        pos_i, pos_j, eps_ij, sig_ij, use_wca=self.lj.use_wca
-                    )
-                    f1 += f_lj
-                    f2 -= f_lj
-                    E += e_lj
-                # Add the hydrophobic SASA contribution for this pair.
-                if (
-                    self.hp is not None
-                    and radii1 is not None
-                    and radii2 is not None
-                    and sasa1 is not None
-                    and sasa2 is not None
-                ):
-                    f_hp, e_hp = hydrophobic_sasa_force(
-                        r,
-                        r_hat,
-                        float(radii1[i]),
-                        float(radii2[j]),
-                        float(sasa1[i]),
-                        float(sasa2[j]),
-                        self.hp,
-                    )
-                    f1 += f_hp
-                    f2 -= f_hp
-                    E += e_hp
+        f1, f2, _, E = self.compute_with_torque(
+            positions1, positions2, type_ids1, type_ids2, radii1, radii2, sasa1, sasa2
+        )
         return f1, f2, E
+
+    def compute_with_torque(
+        self,
+        positions1: np.ndarray,
+        positions2: np.ndarray,
+        type_ids1: List[int],
+        type_ids2: List[int],
+        radii1: Optional[np.ndarray] = None,
+        radii2: Optional[np.ndarray] = None,
+        sasa1: Optional[np.ndarray] = None,
+        sasa2: Optional[np.ndarray] = None,
+        ref2: Optional[np.ndarray] = None,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+        """
+        The forces of compute together with the torque on molecule 2 about
+        ref2, which defaults to the centroid of positions2. The pair terms are
+        those of lj_pair_force and hydrophobic_sasa_force, evaluated for all
+        pairs at once. The return value is (force_on_mol1, force_on_mol2,
+        torque_on_mol2, total_energy).
+        """
+        p1 = np.asarray(positions1, dtype=float).reshape(-1, 3)
+        p2 = np.asarray(positions2, dtype=float).reshape(-1, 3)
+        d = p2[None, :, :] - p1[:, None, :]  # atom i of molecule 1 to atom j of 2
+        r2 = np.einsum("ijk,ijk->ij", d, d)
+        r = np.sqrt(r2)
+        # Pair weight w, with the force on atom i of molecule 1 from atom j of
+        # molecule 2 equal to -w d.
+        w = np.zeros_like(r)
+        E = 0.0
+        if self.lj is not None:
+            # Mixing rules of the reference C++ implementation.
+            eps = np.array([t.epsilon for t in self.lj.atom_types], dtype=float)
+            sig = np.array([t.sigma for t in self.lj.atom_types], dtype=float)
+            t1 = np.asarray(type_ids1, dtype=int)
+            t2 = np.asarray(type_ids2, dtype=int)
+            eps_ij = np.sqrt(eps[t1][:, None] * eps[t2][None, :])
+            sig_ij = sig[t1][:, None] + sig[t2][None, :]
+            on = r2 >= 1e-6
+            if self.lj.use_wca:
+                on &= r <= 2.0 ** (1.0 / 6.0) * sig_ij
+            inv_r2 = np.where(on, 1.0 / np.where(on, r2, 1.0), 0.0)
+            sr6 = (sig_ij**2 * inv_r2) ** 3
+            sr12 = sr6 * sr6
+            e = eps_ij * (sr12 - sr6) + (0.25 * eps_ij if self.lj.use_wca else 0.0)
+            E += float(np.sum(np.where(on, e, 0.0)))
+            w += eps_ij * (12.0 * sr12 - 6.0 * sr6) * inv_r2
+        if self.hp is not None and all(
+            v is not None for v in (radii1, radii2, sasa1, sasa2)
+        ):
+            on = r >= 1e-6
+            rad1 = np.asarray(radii1, dtype=float)
+            rad2 = np.asarray(radii2, dtype=float)
+            area1 = np.asarray(sasa1, dtype=float)
+            area2 = np.asarray(sasa2, dtype=float)
+            f_s = np.zeros_like(r)
+            for rad_self, area in (
+                (rad1[:, None], area2[None, :]),
+                (rad2[None, :], area1[:, None]),
+            ):
+                ri = r + rad_self
+                c = self.hp.factor * area
+                f_s = f_s + np.where((ri >= self.hp.a) & (ri <= self.hp.b), c, 0.0)
+                e = np.where(ri > self.hp.b, 0.0, c * (self.hp.b - np.maximum(ri, self.hp.a)))
+                E += float(np.sum(np.where(on, e, 0.0)))
+            w += np.where(on, f_s / np.where(on, r, 1.0), 0.0)
+        F1 = -w[:, :, None] * d
+        f1 = F1.sum(axis=(0, 1))
+        if ref2 is None:
+            ref2 = p2.mean(axis=0) if len(p2) else np.zeros(3)
+        t2 = np.cross(p2 - np.asarray(ref2, dtype=float), -F1.sum(axis=0)).sum(axis=0)
+        return f1, -f1, t2, E

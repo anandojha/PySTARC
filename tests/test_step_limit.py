@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 from pystarc.analysis.convergence import analyse_convergence
+from pystarc.global_defs.constants import MOLAR_RATE_CONV
 from pystarc.molsystem.system_state import Fate
 from pystarc.multi_GPU.combine_data import _p_rxn_bounds
 from pystarc.pipeline.chain_output_writer import _rate_block
@@ -23,7 +24,7 @@ from pystarc.pipeline.input_parser import PySTARCConfig, parse
 from pystarc.simulation.gpu_batch_simulator import GPUBatchResult
 from pystarc.simulation.nam_simulator import SimulationResult
 
-CONV = 6.022e23 * 1e-30 / 1e-12 / 1e-3
+CONV = MOLAR_RATE_CONV
 
 
 def _gpu_result(n_react=10, n_escape=980, n_max=10):

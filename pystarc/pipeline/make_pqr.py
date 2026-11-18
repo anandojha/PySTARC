@@ -19,7 +19,9 @@ import shlex
 import shutil
 
 
-def _run(cmd: str, cwd: Path, step: str):
+def _run(cmd: str, cwd: Path, step: str, output_path: Path = None):
+    """Run cmd without a shell. The standard output goes to output_path when it
+    is given, which stands in for a shell redirection."""
     print(f"    $ {cmd}")
     result = subprocess.run(
         shlex.split(cmd), shell=False, cwd=cwd, capture_output=True, text=True
@@ -39,6 +41,8 @@ def _run(cmd: str, cwd: Path, step: str):
             f"  stderr : {result.stderr[-500:]}\n"
             f"  leap.log (last 3000 chars):\n{leap_log if leap_log else '(no leap.log found)'}"
         )
+    if output_path is not None:
+        Path(output_path).write_text(result.stdout)
     return result
 
 
@@ -72,9 +76,11 @@ def build_complex(
     complex_pdb = work_dir / "complex.pdb"
     # Strip water and ions before handing the structure to tleap, since the
     # Brownian dynamics build is gas-phase. tleap cannot assign atom types to
-    # WAT residues unless a water force field is loaded, and solvation is
-    # unnecessary for Brownian dynamics preprocessing anyway.
-    SOLVENT = {"WAT", "HOH", "TIP", "TIP3", "SOL", "TP3", "SPC"}
+    # WAT residues or ions unless a water force field is loaded, and split_pqr
+    # drops the same ions from the receptor anyway.
+    SOLVENT = ({"WAT", "HOH", "TIP", "TIP3", "SOL", "TP3", "SPC"} | _SKIP_RESIDUES) - {
+        ligand_resname
+    }
     stripped_pdb = work_dir / "complex_nowater.pdb"
     kept = 0
     skipped_res: set = set()
@@ -144,15 +150,15 @@ def make_combined_pqr(prmtop_path: Path, complex_pdb: Path, work_dir: Path) -> P
         rst.rename(inpcrd)
     print("  [3b] ambpdb - generating combined PQR ...")
     _run(
-        f"ambpdb -p {prmtop_path.name} -c {inpcrd.name} -pqr > {combined_pqr.name}",
+        f"ambpdb -p {prmtop_path.name} -c {inpcrd.name} -pqr",
         cwd=work_dir,
         step="ambpdb",
+        output_path=combined_pqr,
     )
-    # Confirm that ambpdb actually produced usable output. The shell redirection
-    # has no built in success check, so a silent failure would leave an empty or
-    # missing file that only surfaces as a confusing error later in split_pqr.
-    # Verify the file exists and holds at least one atom record here so that the
-    # failure is reported at its source.
+    # Confirm that ambpdb actually produced usable output. A silent failure
+    # would leave an empty or missing file that only surfaces as a confusing
+    # error later in split_pqr, so verify here that the file exists and holds at
+    # least one atom record so that the failure is reported at its source.
     if not combined_pqr.exists():
         raise RuntimeError(
             f"Step 'ambpdb' produced no output file at {combined_pqr}. Check that "
@@ -186,9 +192,12 @@ _SKIP_RESIDUES = {
     "K",
     "MG",
     "CA",
-    "Na+",
-    "Cl-",
+    "NA+",
+    "CL-",
     "K+",
+    "LI+",
+    "RB+",
+    "CS+",
 }
 
 

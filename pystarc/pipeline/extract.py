@@ -22,9 +22,12 @@ _SOLVENT_RESIDUES = {
     "K",
     "MG",
     "CA",  # ions
-    "Na+",
-    "Cl-",
-    "K+",  # Amber ion names
+    "NA+",
+    "CL-",
+    "K+",
+    "LI+",
+    "RB+",
+    "CS+",  # Amber ion names, upper case as the residue name is compared
 }
 _SKIP_RECORD_TYPES = {
     "TER",

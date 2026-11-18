@@ -14,9 +14,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.ticker import FixedLocator, FuncFormatter, NullFormatter  # noqa: E402
 
+from pystarc.global_defs.constants import MOLAR_RATE_CONV  # noqa: E402
+
 NAVY, RED, GOLD, BLUE = "#2c3e50", "#c0392b", "#d4a13a", "#4a6fa5"
 Z95 = 1.959964
-AVOGADRO_CONV = 6.02214076e8
+AVOGADRO_CONV = MOLAR_RATE_CONV
 
 FIGURES = ("rate", "radial", "first_hitting", "bd_time", "steps")
 
@@ -232,24 +234,39 @@ def place_legend(ax, x, ys, extra=None, loc: str = "lower right") -> None:
 
 
 class RunFigures:
-    """Figures of one run folder; each draw_* returns None, a note or a skip reason."""
+    """Figures of one run folder; each draw_* returns None, a note or a skip reason.
+
+    A rigid run keeps the rate in the top level of results.json, a chain run
+    keeps it in the rate block with the radii in the params block, and the
+    chain files name the columns fate, steps, time_ps and q_w to q_z.
+    """
 
     def __init__(self, run: str | Path):
         self.run = Path(run)
         self.results = {}
         rp = self.run / "results.json"
         if rp.exists():
-            self.results = json.load(open(rp))
-        self.k_b = self.results.get("k_b")
-        self.p_rxn = self.results.get("P_rxn")
-        self.k_on = self.results.get("k_on")
-        self.r_start = self.results.get("r_start")
-        self.r_escape = self.results.get("r_escape")
+            with open(rp) as fh:
+                self.results = json.load(fh)
+        rate = self.results.get("rate") or {}
+        params = self.results.get("params") or {}
+        pick = lambda key, *alt: next(
+            (v for v in (self.results.get(key), *alt) if v is not None), None
+        )
+        self.k_b = pick("k_b", rate.get("k_b"))
+        self.p_rxn = pick("P_rxn", rate.get("P_rxn"))
+        self.k_on = pick("k_on", rate.get("k_on"))
+        self.r_start = pick("r_start", rate.get("b_radius"), params.get("r_start"))
+        self.r_escape = pick("r_escape", params.get("r_escape"))
         self._traj = None
 
     def _trajectories(self) -> dict[str, np.ndarray]:
         if self._traj is None:
-            self._traj = read_csv_columns(self.run / "trajectories.csv")
+            t = read_csv_columns(self.run / "trajectories.csv")
+            for name, chain_name in (("outcome", "fate"), ("n_steps", "steps"), ("total_time_ps", "time_ps")):
+                if name not in t and chain_name in t:
+                    t[name] = t[chain_name]
+            self._traj = t
         return self._traj
 
     def _rate_scale(self) -> float | None:
@@ -350,9 +367,15 @@ class RunFigures:
 
     def draw_bd_time(self, ax) -> str | None:
         p = self.run / "bd_time_to_reaction.csv"
-        if not p.exists():
+        t = self._trajectories() if (self.run / "trajectories.csv").exists() else {}
+        if p.exists():
+            times = read_csv_columns(p).get("bd_time_ps", np.array([]))
+        elif "outcome" in t and "total_time_ps" in t:
+            # The reaction times of the reactive rows of trajectories.csv.
+            reacted = np.char.startswith(np.char.lower(t["outcome"].astype(str)), "react")
+            times = np.asarray(t["total_time_ps"], float)[reacted]
+        else:
             return "skipped: bd_time_to_reaction.csv missing"
-        times = read_csv_columns(p).get("bd_time_ps", np.array([]))
         if len(times) == 0:
             ax.text(0.5, 0.5, "no reactions", ha="center", va="center", transform=ax.transAxes, color="0.4")
             ax.set_xlabel(r"BD time inside $\mathit{r}_\mathrm{esc}$ (ns)")
@@ -416,7 +439,8 @@ class RunFigures:
         if enc is None:
             return None
         pos = np.column_stack([enc["x"], enc["y"], enc["z"]]).astype(float)
-        quat = np.column_stack([enc["q0"], enc["q1"], enc["q2"], enc["q3"]]).astype(float)
+        names = ("q0", "q1", "q2", "q3") if "q0" in enc else ("q_w", "q_x", "q_y", "q_z")
+        quat = np.column_stack([enc[k] for k in names]).astype(float)
         return pos, quat / np.linalg.norm(quat, axis=1, keepdims=True)
 
     def _receptor_atoms(self):
@@ -542,10 +566,16 @@ class RunFigures:
         pos, _ = hits
         apos, arad, _ = atoms
         m = pos.mean(axis=0)
-        e3 = m / np.linalg.norm(m)
+        # View axis along the mean hit, z when the hits average to the origin.
+        e3 = m / np.linalg.norm(m) if np.linalg.norm(m) > 1e-8 else np.array([0.0, 0.0, 1.0])
         rel = pos - m
         flat = rel - np.outer(rel @ e3, e3)
-        e1 = np.linalg.eigh(flat.T @ flat)[1][:, -1]
+        lam, vec = np.linalg.eigh(flat.T @ flat)
+        e1 = vec[:, -1]
+        if lam[-1] < 1e-12:
+            # One hit or hits on the view axis: any direction normal to e3.
+            e1 = np.cross(e3, np.eye(3)[np.argmin(np.abs(e3))])
+            e1 /= np.linalg.norm(e1)
         e2 = np.cross(e3, e1)
         frame = np.column_stack([e1, e2, e3])
         uvd = apos @ frame
@@ -553,8 +583,11 @@ class RunFigures:
         c0 = h_uv.mean(axis=0)
         lh = float(np.abs(h_uv - c0).max()) + 1.5
         lx, ly = (c0[0] - lh, c0[0] + lh), (c0[1] - lh, c0[1] + lh)
-        bw = 0.7 * h_uv.std(axis=0, ddof=1) * len(h_uv) ** (-1.0 / 6.0)
         pix = 0.2
+        # Kernel bandwidth, never below one pixel, so one hit or hits on a
+        # line still give a finite density.
+        sd = h_uv.std(axis=0, ddof=1 if len(h_uv) > 1 else 0)
+        bw = np.maximum(np.nan_to_num(0.7 * sd * len(h_uv) ** (-1.0 / 6.0), nan=pix), pix)
         nb = int(np.ceil(lh / pix))
         xe = c0[0] + pix * np.arange(-nb, nb + 1)
         ye = c0[1] + pix * np.arange(-nb, nb + 1)

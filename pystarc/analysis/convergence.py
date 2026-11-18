@@ -40,6 +40,7 @@ unphysical.
 
 from typing import Optional
 import math
+from pystarc.global_defs.constants import MOLAR_RATE_CONV
 import json
 import os
 
@@ -49,7 +50,7 @@ def analyse_convergence(
     n_escaped: int,
     k_b: float,
     tol: float = 0.05,
-    conv_factor: float = 6.022e8,
+    conv_factor: float = MOLAR_RATE_CONV,
     work_dir: str = ".",
     confidence: float = 0.95,
     n_max_steps: int = 0,

@@ -42,7 +42,7 @@ import numpy as np
 import warnings
 import math
 import copy
-from pystarc.global_defs.constants import KBT_KCAL
+from pystarc.global_defs.constants import COULOMB_KCAL, KBT_KCAL, MOLAR_RATE_CONV
 from pystarc.global_defs.defaults import (
     DEBYE_LENGTH,
     HYDRODYNAMIC_INTERACTIONS,
@@ -51,15 +51,17 @@ from pystarc.global_defs.defaults import (
 )
 
 
-def _check_hard_sphere_overlap(mol1: Molecule, mol2: Molecule) -> bool:
+def _check_hard_sphere_overlap(
+    mol1: Molecule, mol2: Molecule, scale: float = 1.0
+) -> bool:
     """
     Check whether any atom of mol1 overlaps any atom of mol2 under hard-sphere
     exclusion. The function returns True when any pair of atoms from different
-    molecules have their centres closer than the sum of their radii. When an
-    overlap is detected after a BD step, the step is rejected and a new random
-    displacement is drawn. Ghost atoms have radius 0 and never overlap, because
-    they are zero-radius reference points that the radius-sum check correctly
-    excludes.
+    molecules have their centres closer than scale times the sum of their
+    radii. When an overlap is detected after a BD step, the step is rejected and
+    a new random displacement is drawn. Ghost atoms have radius 0 and never
+    overlap, because they are zero-radius reference points that the radius-sum
+    check correctly excludes.
     """
     for a1 in mol1.atoms:
         if a1.radius < 1e-10:
@@ -71,7 +73,7 @@ def _check_hard_sphere_overlap(mol1: Molecule, mol2: Molecule) -> bool:
                 continue
             p2 = np.array([a2.x, a2.y, a2.z])
             d = float(np.linalg.norm(p1 - p2))
-            if d < r1 + a2.radius:
+            if d < scale * (r1 + a2.radius):
                 return True  # Overlap detected.
     return False
 
@@ -123,6 +125,9 @@ class NAMParameters:
     use_hard_sphere: bool = (
         True  # Reject steps in which atoms overlap. This is the default.
     )
+    # Two atoms overlap below overlap_scale × (r_i + r_j), 0.5 as in the GPU
+    # overlap check and BrownDye 2.
+    overlap_scale: float = 0.5
     hydrodynamic_interactions: bool = (
         # Squeezing solvent from between two approaching surfaces slows the
         # approach, so enabling this can only lower k_on. It is honoured by
@@ -262,7 +267,7 @@ class NAMSimulator:
             viscosity = params.viscosity
             dielectric = params.dielectric
             vacuum_perm = 1.0 / (
-                4 * math.pi * 332.0636
+                4 * math.pi * COULOMB_KCAL
             )  # Vacuum permittivity in e²/(kcal·Å).
             debye_len = params.debye_length
             max_mol_r = max(mol1.bounding_radius(), mol2.bounding_radius())
@@ -345,6 +350,16 @@ class NAMSimulator:
         prev_pair_dists = None
         prev_dt_outer = 0.0
         prev_D_eff_bb = 0.0
+        # Floors of the adaptive step away from and near the reaction zone.
+        # minimum_core_dt and minimum_core_reaction_dt replace the defaults
+        # dt_rxn and dt_rxn / 4 when they are set.
+        p = self.params
+        dt_floor = p.minimum_core_dt if p.minimum_core_dt > 0 else p.dt_rxn
+        dt_floor_rxn = (
+            p.minimum_core_reaction_dt
+            if p.minimum_core_reaction_dt > 0
+            else p.dt_rxn / 4.0
+        )
         # Running total of the physical time advanced by the integrator, summed
         # from the adaptive time step actually applied on each completed step
         # (the two half steps of a force backstep each contribute their hdt). It
@@ -352,8 +367,9 @@ class NAMSimulator:
         elapsed_ps = 0.0
         for step in range(self.params.max_steps):
             mol2 = self._place_mol2(pos, ori)
-            # Compute the current pair distances when the bridge is active.
-            if _bb_active:
+            # The current pair distances, read by the bridge and by the time
+            # step near the reaction zone.
+            if _has_reactions:
                 cur_pair_dists = compute_pair_distances(
                     self.mol1,
                     _mol2_positions(mol2),
@@ -408,7 +424,11 @@ class NAMSimulator:
                 if not reached_b:
                     return TrajectoryResult(Fate.ESCAPED, step, elapsed_ps, r)
                 # The particle returned to the b-sphere, so continue the BD
-                # propagation.
+                # propagation from there. No bridge spans the jump, and the
+                # step starts afresh as at the start of a trajectory.
+                prev_pair_dists = None
+                prev_dt_outer = 0.0
+                self._dt_ctrl.reset()
                 continue
             # Simple fallback escape check, used when there is no outer
             # propagator.
@@ -419,7 +439,13 @@ class NAMSimulator:
             # translational diffusion depends on position.
             D_t = self.mobility.relative_translational_diffusion(pos)
             r = float(np.linalg.norm(pos))
-            # Geometry-based adaptive time step.
+            # Geometry-based adaptive time step, tightened when a reaction pair
+            # is within 1.5 times the smallest reaction distance.
+            min_pair = (
+                min((float(d.min()) for d in cur_pair_dists if len(d)), default=None)
+                if cur_pair_dists is not None
+                else None
+            )
             dt = self._dt_ctrl.get_dt(
                 r,
                 D_t,
@@ -427,9 +453,10 @@ class NAMSimulator:
                 r_h1,
                 r_h2,
                 self._rxn_cutoffs,
-                dt_min=self.params.dt_rxn,
-                dt_rxn_min=self.params.dt_rxn / 4.0,
+                dt_min=dt_floor,
+                dt_rxn_min=dt_floor_rxn,
                 D_rot_frame=D_r1,
+                min_pair_dist=min_pair,
             )
             # The divergence drift owed by the scalar collapse of the RPY
             # tensor. Evaluated at the pre-step position, which is where D_t
@@ -509,9 +536,11 @@ class NAMSimulator:
                 # and D_t2 times step_dt gives the same D dt.
                 D_eff_bb = 0.5 * (D_t + D_t2)
             # Reject the step if it produces a hard-sphere collision.
+            reverted = False
             if self.params.use_hard_sphere:
                 mol2_trial = self._place_mol2(pos, ori)
-                if _check_hard_sphere_overlap(self.mol1, mol2_trial):
+                scale = self.params.overlap_scale
+                if _check_hard_sphere_overlap(self.mol1, mol2_trial, scale):
                     # Redraw a fresh displacement from the previous position and
                     # keep redrawing until the new position is free of overlap,
                     # up to a fixed number of attempts. The diffusion is
@@ -543,7 +572,7 @@ class NAMSimulator:
                             grad_D_old,
                         )
                         mol2_try = self._place_mol2(pos_try, ori_try)
-                        if not _check_hard_sphere_overlap(self.mol1, mol2_try):
+                        if not _check_hard_sphere_overlap(self.mol1, mol2_try, scale):
                             pos, ori = pos_try, ori_try
                             break
                     else:
@@ -551,16 +580,18 @@ class NAMSimulator:
                         # cap, so the molecule stays at the previous
                         # non-overlapping position.
                         pos, ori = pos_old, ori_old
+                        reverted = True
             # Save the state for the next iteration's Brownian bridge check.
             # The pair distances in cur_pair_dists were captured before this
             # step. The bridge needs D dt summed over the whole move from
             # pos_old to pos. The bridge gets the time of the move in step_dt
             # and the mean diffusion over the move in D_eff_bb. After a force
             # backstep the controller holds hdt in _last_dt. _last_dt only sets
-            # how far the next step may grow.
+            # how far the next step may grow. A reverted step did not move, so
+            # no bridge spans it, as in the GPU path.
             if _bb_active:
-                prev_pair_dists = cur_pair_dists
-                prev_dt_outer = float(step_dt)
+                prev_pair_dists = None if reverted else cur_pair_dists
+                prev_dt_outer = 0.0 if reverted else float(step_dt)
                 prev_D_eff_bb = float(D_eff_bb)
             # Advance the running physical time by the step actually applied.
             elapsed_ps += step_dt
@@ -697,7 +728,8 @@ class SimulationResult:
 
             k_on = conv_factor × k_db × P
 
-        where conv_factor = 6.02e8 converts the result to M⁻¹ s⁻¹. Here P is the
+        where conv_factor = MOLAR_RATE_CONV = 6.022e8 converts the result to
+        M⁻¹ s⁻¹. Here P is the
         reaction probability. When k_db is not provided (k_db = 0), the method
         falls back to the Smoluchowski expression
 
@@ -723,19 +755,15 @@ class SimulationResult:
 
         if k_db > 0.0:
             # Here k_on = conv_factor × k_db × P. The conversion factor
-            # 6.02e8 L/mol takes the rate from Å³/ps to M⁻¹ s⁻¹, and k_db comes
+            # 6.022e8 L/mol takes the rate from Å³/ps to M⁻¹ s⁻¹, and k_db comes
             # from relative_rate() in Å³/ps. The unit chain is
-            # [Å³/ps] × [6.02e23/L] × [1e-27 L/Å³] × [1e12 ps/s] = M⁻¹ s⁻¹.
-            CONV = 6.022e23 * 1e-27 * 1e12  # Converts Å³/ps to M⁻¹ s⁻¹.
-            return CONV * k_db * P
+            # [Å³/ps] × [N_A/mol] × [1e-27 L/Å³] × [1e12 ps/s] = M⁻¹ s⁻¹.
+            return MOLAR_RATE_CONV * k_db * P
         else:
             # Smoluchowski approximation, used when there is no outer
             # propagator. Here k_D = 4π × D × b in Å³/ps is converted to
-            # M⁻¹ s⁻¹. The factor is N_A [/mol] × 1e-30 [m³/Å³] / 1e-12 [s/ps]
-            # / 1e-3 [m³/L] = 6.022e23 × 1e-30 / 1e-12 / 1e-3 = 6.022e8.
-            CONV_A3ps = (
-                6.022e23 * 1e-30 / 1e-12 / 1e-3
-            )  # Equals 6.022e8, converting Å³/ps to M⁻¹ s⁻¹.
+            # M⁻¹ s⁻¹ with the same factor.
+            CONV_A3ps = MOLAR_RATE_CONV
             k_D = 4.0 * math.pi * D_rel * self.r_start  # In Å³/ps.
             beta = self.r_start / self.r_escape
             # Northrup-Allison-McCammon truncated-escape denominator. With
@@ -785,9 +813,7 @@ def _reaction_probability_ci(self, confidence: float = 0.95):
 def _k_from_P(self, P: float, D_rel: float) -> float:
     if P <= 0.0:
         return 0.0
-    CONV_A3ps = (
-        6.022e23 * 1e-30 / 1e-12 / 1e-3
-    )  # Equals 6.022e8, converting Å³/ps to M⁻¹ s⁻¹.
+    CONV_A3ps = MOLAR_RATE_CONV  # Converts Å³/ps to M⁻¹ s⁻¹.
     if self.k_db > 0.0:
         return CONV_A3ps * self.k_db * P
     k_D = 4.0 * math.pi * D_rel * self.r_start  # In Å³/ps.

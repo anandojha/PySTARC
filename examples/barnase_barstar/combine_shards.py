@@ -53,20 +53,26 @@ for p in paths:
     print(f"{name:<10}{n_r:>9}{n_e:>9}{n_c:>9}{pct:>8.0f}%"
           f"{(kb if kb is not None else float('nan')):>10.4f}{hours:>8.1f}")
 
-n = tot_r + tot_e
+# A step-capped trajectory counts as not reacted, as in results.json of each
+# shard, and the bound counts it as reacted.
+n = tot_r + tot_e + tot_c
 print(f"{'total':<10}{tot_r:>9}{tot_e:>9}{tot_c:>9}"
-      f"{100.0*tot_c/max(n+tot_c,1):>8.0f}%")
+      f"{100.0*tot_c/max(n,1):>8.0f}%")
 print()
 
 if n == 0:
-    sys.exit("  no trajectory committed to a reaction or an escape")
+    sys.exit("  no trajectory in any shard")
 p = tot_r / n
 lo, hi = wilson(tot_r, n)
 print(f"  b surface        {b_rad:.1f} A")
-print(f"  committed        {n} of {n + tot_c}")
+print(f"  committed        {tot_r + tot_e} of {n}")
 print(f"  P_rxn            {p:.5f}   Wilson 95 percent {lo:.5f} to {hi:.5f}")
+if tot_c:
+    print(f"  P_rxn bound      {p:.5f} to {(tot_r + tot_c) / n:.5f}")
 if k_b is None:
     sys.exit("  no k_b in any shard, so no rate can be reported")
 print(f"  k_b              {k_b:.4f} A^3/ps")
 print(f"  k_on             {CONV*k_b*p:.3e} M-1 s-1"
       f"   [{CONV*k_b*lo:.2e}, {CONV*k_b*hi:.2e}]")
+if tot_c:
+    print(f"  k_on bound       {CONV*k_b*p:.2e} to {CONV*k_b*(tot_r + tot_c)/n:.2e}")

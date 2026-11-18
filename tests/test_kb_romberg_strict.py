@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from scipy.integrate import quad
 
-from pystarc.global_defs.constants import VACUUM_PERMITTIVITY_KBT
+from pystarc.global_defs.constants import MOLAR_RATE_CONV, VACUUM_PERMITTIVITY_KBT
 from pystarc.simulation.gpu_batch_simulator import GPUBatchResult, GPUBatchSimulator
 
 
@@ -67,12 +67,12 @@ def _result(n_reacted=30, n_escaped=60, n_max=10):
 
 def test_rate_is_conv_k_b_p_and_needs_a_k_b():
     r = _result()
-    assert r.rate_constant(0.05, 3.0) == pytest.approx(6.022e8 * 3.0 * 0.3, rel=1e-15)
+    assert r.rate_constant(0.05, 3.0) == pytest.approx(MOLAR_RATE_CONV * 3.0 * 0.3, rel=1e-15)
     for kb in (0.0, -1.0, float("nan"), float("inf")):
         with pytest.raises(ValueError, match="k_b must be finite and positive"):
             r.rate_constant(0.05, kb)
     lo, hi = r.rate_constant_bounds(0.05, 3.0)
-    assert hi == pytest.approx(6.022e8 * 3.0 * 0.4)
+    assert hi == pytest.approx(MOLAR_RATE_CONV * 3.0 * 0.4)
 
 
 def test_ci_uses_z_196_at_95_percent_and_labels_other_levels():

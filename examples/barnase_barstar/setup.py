@@ -8,6 +8,7 @@ import os
 import shutil
 import glob
 import re
+from pystarc.structures.pqr_io import parse_pqr_records
 
 def read_config(path):
     cfg = {}
@@ -85,26 +86,10 @@ def parse_pdb_chain(pdb_path, chain_id, heavy_only=True):
     return atoms
 
 def parse_pqr(pqr_path):
-    atoms = []
-    with open(pqr_path) as f:
-        for line in f:
-            if not line.startswith("ATOM"):
-                continue
-            parts = line.split()
-            atom_name = parts[2]
-            resname = parts[3]
-            resid = int(parts[4])
-            x = float(parts[5])
-            y = float(parts[6])
-            z = float(parts[7])
-            atoms.append({
-                "atom_idx": len(atoms),
-                "atom_name": atom_name,
-                "resname": resname,
-                "resid": resid,
-                "xyz": np.array([x, y, z]),
-            })
-    return atoms
+    recs = [r for r in parse_pqr_records(pqr_path) if r.record_type == "ATOM"]
+    return [{"atom_idx": i, "atom_name": r.name, "resname": r.resname,
+             "resid": r.resid, "xyz": np.array([r.x, r.y, r.z])}
+            for i, r in enumerate(recs)]
 
 def center_pqr(src):
     lines = open(src).read().splitlines()

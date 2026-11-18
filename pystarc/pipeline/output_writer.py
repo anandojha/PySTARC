@@ -348,3 +348,84 @@ def write_all(
             else:
                 print(f"  {name:<30s}  {size} B")
     return written
+
+
+def write_cpu_results(
+    work_dir: Path,
+    result,
+    trajectories,
+    output_cfg,
+    D_rel: float,
+    confidence: float = 0.95,
+    convergence_tol: float = 0.05,
+    wall_time_sec: float = 0.0,
+    total_steps: int = 0,
+):
+    """
+    Write results.json and trajectories.csv of a CPU run into work_dir.
+
+    result is the SimulationResult of the NAMSimulator and trajectories its
+    list of TrajectoryResult. The k_b of the CPU model is the k_db of its outer
+    propagator, 0 when the run had none and k_on comes from the Smoluchowski
+    form. The keys and columns are those of write_all that the CPU model
+    records.
+    """
+    work_dir = Path(work_dir)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    written = []
+    if output_cfg.results_json:
+        k_on = result.rate_constant(D_rel)
+        k_lo, k_hi = result.rate_constant_ci(D_rel, confidence)
+        p_lo, p_hi = result.reaction_probability_ci(confidence)
+        pb_lo, pb_hi = result.reaction_probability_bounds()
+        kb_lo, kb_hi = result.rate_constant_bounds(D_rel)
+        data = {
+            "k_on": k_on,
+            "k_on_low": k_lo,
+            "k_on_high": k_hi,
+            "k_on_units": "M-1 s-1",
+            "P_rxn": result.reaction_probability,
+            "P_rxn_low": p_lo,
+            "P_rxn_high": p_hi,
+            "k_b": result.k_db,
+            "k_b_units": "A3/ps",
+            "D_rel": D_rel,
+            "D_rel_units": "A2/ps",
+            "n_trajectories": result.n_trajectories,
+            "n_reacted": result.n_reacted,
+            "n_escaped": result.n_escaped,
+            "n_max_steps": result.n_max_steps,
+            "r_start": result.r_start,
+            "r_escape": result.r_escape,
+            "wall_time_sec": wall_time_sec,
+            "steps_per_sec": total_steps / wall_time_sec if wall_time_sec > 0 else 0.0,
+            "total_steps": int(total_steps),
+            "confidence_level": confidence,
+            "convergence_tol": convergence_tol,
+            "P_rxn_bound_low": pb_lo,
+            "P_rxn_bound_high": pb_hi,
+            "k_on_bound_low": kb_lo,
+            "k_on_bound_high": kb_hi,
+            "reaction_counts": dict(result.reaction_counts),
+        }
+        if k_on > 0:
+            data["log10_k_on"] = math.log10(k_on)
+        p = work_dir / "results.json"
+        p.write_text(json.dumps(data, indent=2))
+        written.append(("results.json", p))
+    if output_cfg.trajectories_csv:
+        p = work_dir / "trajectories.csv"
+        with open(p, "w") as f:
+            f.write("traj_id,outcome,n_steps,total_time_ps,final_separation,reaction\n")
+            for i, t in enumerate(trajectories):
+                outcome = (
+                    "reacted" if t.reacted else "escaped" if t.escaped else "max_steps"
+                )
+                f.write(
+                    f"{i},{outcome},{int(t.steps)},{t.time_ps:.4f},"
+                    f"{t.final_separation:.6f},{t.reaction_name or ''}\n"
+                )
+        written.append(("trajectories.csv", p))
+    for name, fp in written:
+        print(f"  {name:<30s}  {fp.stat().st_size} B")
+    return written

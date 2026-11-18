@@ -36,6 +36,7 @@ from pystarc.simulation.coffdrop_chain import (
     ChainCommon,
     ChainForceEvaluator,
     ChainState,
+    bonded_exclusions,
     compute_chain_forces,
     satisfy_constraints_hybrid,
 )
@@ -57,7 +58,7 @@ import multiprocessing as mp
 import numpy as np
 import math
 import warnings
-from pystarc.global_defs.constants import KB_KCAL, KBT_KCAL, T_DEFAULT
+from pystarc.global_defs.constants import COULOMB_KCAL, KB_KCAL, KBT_KCAL, T_DEFAULT
 from pystarc.global_defs.defaults import (
     DESOLVATION_ALPHA,
     HYDRODYNAMIC_INTERACTIONS,
@@ -1283,6 +1284,9 @@ class ChainBDSimulator:
         self._chain_charges = np.array(
             [a.charge for a in chain_template.atoms], dtype=float
         )
+        # The 1-2 and 1-3 pairs, which the bond and angle terms describe, stay
+        # out of the vacuum Coulomb sum of the full GB force.
+        self._gb_exclude_mask = bonded_exclusions(chain_template)
         # One force evaluation builds the index arrays and the stacked COFFDROP
         # tables of the chain here, so the workers of a parallel run share them.
         compute_chain_forces(
@@ -1388,7 +1392,7 @@ class ChainBDSimulator:
             kT = float(params.temperature_kT)
             viscosity = VISCOSITY
             dielectric = float(params.dielectric)
-            vacuum_perm = 1.0 / (4 * math.pi * 332.0636)
+            vacuum_perm = 1.0 / (4 * math.pi * COULOMB_KCAL)
             # Debye screening length. Use the user's input.xml value, threaded
             # through params.debye_length. This was previously hardcoded to 8.0,
             # which silently overrode the <debye_length> setting.
@@ -1486,7 +1490,7 @@ class ChainBDSimulator:
                 eps_in=self.params.gb_eps_in,
                 eps_out=self.params.gb_eps_out,
                 coffdrop_active=self.params.coffdrop_active,
-                exclude_pair_mask=None,
+                exclude_pair_mask=self._gb_exclude_mask,
                 obc_kwargs=obc_kwargs,
             )
             forces = forces + f_gb
@@ -1782,6 +1786,10 @@ class ChainBDSimulator:
         path_com_buf: List[np.ndarray] = []
         path_q_buf: List[List[float]] = []
         radial_buf: List[float] = []
+        # Returns to the b-sphere between each saved separation and the one
+        # before, so the milestone flux can leave the jump out.
+        radial_returns_buf: List[int] = []
+        n_returns = 0
         # Energy traces and contact-pair counts recorded at the recording cadence.
         energy_buf: List[List[float]] = []
         contact_count_buf: Dict[Tuple[int, int], int] = {}
@@ -1855,6 +1863,8 @@ class ChainBDSimulator:
                 energy_buf,
                 contact_count_buf,
             )
+            if radial_buf:
+                d["radial_returns"] = np.asarray(radial_returns_buf, dtype=int)
             d["n_relative_diffusion_clipped"] = self._n_relative_clipped
             d["n_hard_sphere_redraws"] = n_hs_redraws
             d["n_hard_sphere_rejections"] = n_hs_rejections
@@ -1897,6 +1907,8 @@ class ChainBDSimulator:
                 path_com_buf.append(pos.copy())
                 path_q_buf.append([ori.w, ori.x, ori.y, ori.z])
                 radial_buf.append(r_curr)
+                radial_returns_buf.append(n_returns)
+                n_returns = 0
                 # Sample the energy and the contacts.
                 _world_pos = place_chain(state.positions, pos, ori)
                 _e_elec = 0.0
@@ -2003,6 +2015,7 @@ class ChainBDSimulator:
                     return _result(Fate.ESCAPED, step)
                 # The chain jumped to the b-sphere, so the step starts there
                 # and no bridge spans the jump.
+                n_returns += 1
                 world_pos = place_chain(state.positions, pos, ori)
                 pair_dists = self._pair_distances(world_pos) if has_rxn else None
             # Fallback escape check, used when _outer_prop is None or when

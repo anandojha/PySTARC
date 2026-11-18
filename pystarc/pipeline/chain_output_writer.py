@@ -39,6 +39,8 @@ chain BD data, so we keep the two writers separate.
 
 from __future__ import annotations
 import math
+from pystarc.global_defs.constants import MOLAR_RATE_CONV
+from pystarc.global_defs.defaults import QB_FACTOR
 from pystarc.molsystem.system_state import Fate, TrajectoryResult
 from typing import Any, Dict, List, Optional, Tuple
 from collections import Counter
@@ -283,7 +285,7 @@ def _rate_block(sim, results) -> dict:
         return out
     p = n_r / n
     lo, hi = _wilson(n_r, n)
-    conv = 6.02214076e23 * 1e-27 * 1e12  # A^3/ps to M^-1 s^-1
+    conv = MOLAR_RATE_CONV  # A^3/ps to M^-1 s^-1
     out.update(
         {
             "k_b": float(k_b),
@@ -705,6 +707,7 @@ def write_milestone_flux_csv(
     work_dir: Path,
     results: List[TrajectoryResult],
     n_shells: int = 10,
+    b_radius: Optional[float] = None,
 ):
     """Aggregate the outward and inward shell crossings across all trajectories.
 
@@ -714,6 +717,13 @@ def write_milestone_flux_csv(
     outward when r_prev < R <= r_curr and as inward when r_curr < R <= r_prev.
     Here R is the shell radius, r_prev is the separation at the earlier
     snapshot, and r_curr is the separation at the later snapshot.
+
+    A return of the outer propagator moves the chain from QB_FACTOR × b to b in
+    one jump, which crosses no shell, as in the rigid GPU path. When
+    radial_returns records returns between two snapshots and b_radius is given,
+    the interval is split into the walk from r_prev out to QB_FACTOR × b, one
+    walk from b out to QB_FACTOR × b per further return, and the walk from b to
+    r_curr.
 
     Crossings that happen between sampled points, that is within one
     save_interval, are not detected, so this is a coarse-grained flux estimate.
@@ -727,9 +737,12 @@ def write_milestone_flux_csv(
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
     radials: List[np.ndarray] = []
+    returns: List[Optional[np.ndarray]] = []
     for r in results:
         if r.radial_trace is not None and len(r.radial_trace) >= 2:
             radials.append(np.asarray(r.radial_trace, dtype=float))
+            ret = getattr(r, "radial_returns", None)
+            returns.append(None if ret is None or b_radius is None else np.asarray(ret))
     if not radials:
         return None
     all_r = np.concatenate(radials)
@@ -743,15 +756,25 @@ def write_milestone_flux_csv(
     shells = np.linspace(r_min, r_max, n_shells + 2)[1:-1]
     n_out = np.zeros(n_shells, dtype=int)
     n_in = np.zeros(n_shells, dtype=int)
-    for trace in radials:
+
+    def cross(r_prev, r_curr):
+        for k, s in enumerate(shells):
+            if r_prev < s <= r_curr:
+                n_out[k] += 1
+            elif r_curr < s <= r_prev:
+                n_in[k] += 1
+
+    for trace, ret in zip(radials, returns):
         for i in range(1, len(trace)):
             r_prev = float(trace[i - 1])
-            r_curr = float(trace[i])
-            for k, s in enumerate(shells):
-                if r_prev < s <= r_curr:
-                    n_out[k] += 1
-                elif r_curr < s <= r_prev:
-                    n_in[k] += 1
+            n_ret = int(ret[i]) if ret is not None and i < len(ret) else 0
+            if n_ret > 0:
+                q = QB_FACTOR * float(b_radius)
+                cross(r_prev, q)
+                for _ in range(n_ret - 1):
+                    cross(float(b_radius), q)
+                r_prev = float(b_radius)
+            cross(r_prev, float(trace[i]))
     p = work_dir / "milestone_flux.csv"
     with open(p, "w") as f:
         f.write("shell_radius,n_crossings_out,n_crossings_in\n")
@@ -850,7 +873,9 @@ def write_chain_results(
             written.append(("contact_frequency.csv", p))
     # Sub-stage 2d adds the milestone flux and energetics writers.
     if outputs.milestone_flux:
-        p = write_milestone_flux_csv(work_dir, results)
+        p = write_milestone_flux_csv(
+            work_dir, results, b_radius=getattr(sim.params, "r_start", None)
+        )
         if p is not None:
             written.append(("milestone_flux.csv", p))
     if outputs.energetics:

@@ -26,7 +26,6 @@ import numpy as np
 import math
 from pystarc.global_defs.constants import KBT_KCAL
 from pystarc.global_defs.defaults import CHAIN_DT, DESOLVATION_ALPHA, VISCOSITY
-from pystarc.global_defs.defaults import CHAIN_DT
 
 # A bond, angle, or dihedral involves atoms that may live either on
 # the chain itself or on a rigid core (a structured protein domain).
@@ -712,7 +711,11 @@ def compute_target_grid_forces(
 
     Uses finest-grid-first selection per atom: each chain atom is assigned
     to the finest grid (smallest spacing) that contains its position. Atoms
-    outside all grids contribute zero (negligible far-field).
+    outside all grids contribute zero (negligible far-field). Every grid but
+    the coarsest is used only a margin in from its faces, 3 spacings (1 on a
+    grid of at most 7 points per side), since a focused APBS grid carries
+    boundary values interpolated from the coarser one and the gradient there is
+    one sided. The GPU engine keeps the same margin.
 
     Parameters
     ----------
@@ -737,10 +740,13 @@ def compute_target_grid_forces(
     positions = state.positions
     n_atoms = positions.shape[0]
     assigned = np.zeros(n_atoms, dtype=bool)
-    for grid in sorted_grids:
+    for g, grid in enumerate(sorted_grids):
         idx_list = []
         spacing = np.diag(grid.delta)
         extent = (np.array(grid.data.shape) - 1) * spacing
+        n_min = min(grid.data.shape)
+        cells = 0 if g == len(sorted_grids) - 1 else 3 if n_min > 7 else 1 if n_min > 3 else 0
+        margin = cells * spacing
         for i in range(n_atoms):
             if assigned[i]:
                 continue
@@ -749,7 +755,7 @@ def compute_target_grid_forces(
                 continue
             pt = positions[i]
             local = pt - grid.origin
-            if (local >= 0).all() and (local <= extent).all():
+            if (local >= margin).all() and (local <= extent - margin).all():
                 idx_list.append(i)
                 assigned[i] = True
         if not idx_list:
@@ -1557,15 +1563,22 @@ class ChainForceEvaluator:
         return F
 
     def _excluded_volume_forces(self, chain: FlexibleChain, kT: float) -> np.ndarray:
-        """Soft-sphere excluded volume between non-bonded bead pairs."""
+        """WCA excluded volume between bead pairs other than the 1-2 and 1-3
+        pairs, whose distances the bond and angle terms hold. The repulsion
+        ends at the Lennard-Jones minimum 2^(1/6) sig, where force and shifted
+        energy both vanish."""
         n = chain.n_beads
         F = np.zeros((n, 3))
-        bonded_pairs = {(b.a.atom_idx, b.b.atom_idx) for b in chain.bonds} | {
-            (b.b.atom_idx, b.a.atom_idx) for b in chain.bonds
-        }
+        bonded = np.zeros((n, n), dtype=bool)
+        for b in chain.bonds:
+            bonded[b.a.atom_idx, b.b.atom_idx] = bonded[b.b.atom_idx, b.a.atom_idx] = True
+        skip = bonded | ((bonded.astype(np.int64) @ bonded.astype(np.int64)) > 0)
+        for ang in chain.angles:
+            skip[ang.a.atom_idx, ang.c.atom_idx] = skip[ang.c.atom_idx, ang.a.atom_idx] = True
+        wca_cut = 2.0 ** (1.0 / 6.0)
         for i in range(n):
-            for j in range(i + 2, n):  # skip bonded neighbours
-                if (i, j) in bonded_pairs:
+            for j in range(i + 1, n):
+                if skip[i, j]:
                     continue
                 ri = chain.beads[i].pos
                 rj = chain.beads[j].pos
@@ -1574,7 +1587,7 @@ class ChainForceEvaluator:
                 )  # vector from j toward i (so f_mag*dr pushes i away from j)
                 r = float(np.linalg.norm(dr))
                 sig = chain.beads[i].radius + chain.beads[j].radius
-                if r < 1e-8 or r >= sig:
+                if r < 1e-8 or r >= wca_cut * sig:
                     continue
                 # WCA-style repulsion. The WCA potential is
                 # V = 4 eps [(sig/r)^12 - (sig/r)^6] + eps, so dV/dr carries a
