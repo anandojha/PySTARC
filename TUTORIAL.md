@@ -43,9 +43,8 @@ The last command writes a blank `config.xml` with the ten sections `structure`, 
 |---|---|---|
 | `pqr` | receptor and ligand PQR files | from the PQR files |
 | `prmtop` | AMBER topology and a PDB file with the coordinates of every topology atom in topology order | from the topology |
-| `complex_pdb` | PDB file of the bound complex | ff14SB charges for the protein, AM1 BCC charges and GAFF2 types for the ligand, default tleap radii |
-| `rcsb` | RCSB entry code and the residue name of the ligand | as for `complex_pdb` |
-| `rcsb_smiles` | RCSB entry code, the residue name of the ligand and a SMILES of the ligand | as for `complex_pdb`, ligand built from the SMILES away from the pocket |
+| `complex_pdb` | prepared PDB file of the bound complex (receptor and protonated ligand) | ff14SB charges for the protein, AM1 BCC charges and GAFF2 types for the ligand, default tleap radii |
+| `pdb_smiles` | prepared PDB file of the receptor and a SMILES of the ligand | as for `complex_pdb`, ligand built from the SMILES away from the pocket |
 | `chain_pdb` | PDB file of the bound complex and receptor PQR file | receptor from the PQR file, ligand built as coarse grained COFFDROP beads (step 16) |
 
 The trypsin benzamidine example reuses an existing AMBER topology. Unused tags of `<structure>` stay blank.
@@ -62,24 +61,23 @@ The trypsin benzamidine example reuses an existing AMBER topology. Unused tags o
 
 ### Start from a PDB file alone
 
-A PDB file of the bound complex is sufficient with `ligand_source` `complex_pdb`. The example `examples/hsp90_inhibitors/HSP90-aminopyridine` starts from a PDB file alone.
+A prepared PDB file of the bound complex is sufficient with `ligand_source` `complex_pdb`. The example `examples/hsp90_inhibitors/HSP90-aminopyridine` starts from `complex.pdb` alone.
 
 ```xml
 <structure>
   <ligand_source>complex_pdb</ligand_source>
   <complex_pdb>complex.pdb</complex_pdb>
-  <ligand_ccd>YKJ</ligand_ccd>
+  <ligand_net_charge>0</ligand_net_charge>
 </structure>
 ```
 
-`run_pystarc.py` builds the protein with tleap and ff14SB. The bond orders and formal charges of the ligand come from the Chemical Component Dictionary (CCD) entry `ligand_ccd`, read from `<code>.cif` in the run folder or downloaded from files.rcsb.org. RDKit adds the ligand hydrogens and antechamber assigns AM1 BCC charges and GAFF2 types.
+`run_pystarc.py` builds the protein with tleap and ff14SB. RDKit reads the ligand bond orders from the prepared coordinates, hydrogens and `ligand_net_charge`, and antechamber assigns AM1 BCC charges and GAFF2 types. Raw RCSB entries can be prepared beforehand with the standalone helper `scripts/prepare_pdb.py` (chain selection, single conformer selection, histidine tautomer assignment, catalytic metal retention, and ligand protonation from a CCD `.cif` definition).
 
 | records in the PDB file | requirement |
 |---|---|
-| protein | ATOM records with AMBER residue names, HID, HIE or HIP for histidine and CYX for a disulfide (plain HIS is read as HIE) |
-| ligand with a CCD entry | one HETATM residue with the CCD atom names and every heavy atom of the CCD entry except the leaving atoms, named with the CCD code or with the code in `ligand_ccd` |
-| ligand without a CCD entry | one HETATM residue named UNK, UNL, LIG, DRG, INH or MOL with every hydrogen, `ligand_ccd` blank and `ligand_net_charge` set |
-| everything else | water, ions, cofactors and other HETATM groups dropped, protein hydrogens rebuilt by tleap |
+| protein | ATOM records of a single conformer with AMBER residue names, HID, HIE or HIP for histidine and CYX for a disulfide (plain HIS is read as HIE) |
+| ligand | one single conformer HETATM residue with every hydrogen atom and `ligand_net_charge` set |
+| everything else | catalytic divalent metals (`ZN`, `MG`, `MN`, `FE`, `CU`, `CO`, `NI`, `CAL`) retained with the receptor; water, counterions and caps dropped; protein hydrogens rebuilt by tleap |
 
 ### Other tags of `structure`
 
@@ -87,17 +85,12 @@ A PDB file of the bound complex is sufficient with `ligand_source` `complex_pdb`
 |---|---|---|
 | `receptor_pqr_file`, `ligand_pqr_file` | `pqr`, `chain_pdb` (`receptor_pqr_file`) | PQR files of the receptor and the ligand in the run folder or at a relative path |
 | `prmtop` | `prmtop` | AMBER topology (.prmtop or .parm7) |
-| `complex_pdb` | `prmtop`, `complex_pdb`, `chain_pdb` | PDB file of the complex |
-| `pdb_id` | `rcsb`, `rcsb_smiles` | RCSB entry code, read from `<pdb_id>.pdb` in the run folder or downloaded |
-| `ligand_resid` | `rcsb`, `rcsb_smiles` | residue name of the ligand, read from the entry with `rcsb` and given to the ligand built from the SMILES with `rcsb_smiles`, not a residue number |
-| `smiles` | `rcsb_smiles` | SMILES of the ligand in the protonation state of the simulation |
-| `chain` | `rcsb`, `rcsb_smiles`, `chain_pdb` | receptor chain identifier, blank for every chain |
+| `complex_pdb` | `prmtop`, `complex_pdb`, `chain_pdb` | prepared PDB file of the complex |
+| `receptor_pdb` | `pdb_smiles` | prepared PDB file of the receptor |
+| `smiles` | `pdb_smiles` | SMILES of the ligand in the protonation state of the simulation |
+| `chain` | `chain_pdb` | receptor chain identifier in `complex_pdb` |
 | `ligand_chain` | `chain_pdb` | ligand chain identifier in `complex_pdb` |
-| `rec_resid_min` | `rcsb` | lowest receptor residue number kept |
-| `ligand_net_charge` | `complex_pdb`, `rcsb`, `rcsb_smiles` | integer net charge of the ligand, blank for the charge of the CCD entry or the SMILES |
-| `ligand_ccd` | `complex_pdb`, `rcsb` | CCD code of the ligand, blank for the ligand residue name |
-| `ligand_protonate`, `ligand_deprotonate` | `complex_pdb`, `rcsb` | ligand N, O or S atom names with one proton added or removed |
-| `keep_hetatm` | `rcsb_smiles` | metal ions kept with the receptor, for example `ZN` |
+| `ligand_net_charge` | `complex_pdb`, `pdb_smiles` | integer net charge of the ligand (blank in `pdb_smiles` takes the formal charge of the SMILES) |
 
 `run_pystarc.py` stops with an error for a blank or unknown `ligand_source` and for a populated tag belonging to another source.
 
@@ -119,7 +112,7 @@ C7 H9 N2 is benzamidinium, the protonated form of benzamidine with net charge +1
 | `ligand_resname` | residue name of the ligand, 3 characters at most for rigid body runs (`chain_pdb` accepts any chain label) |
 | `ligand_formula` | element symbols with counts and every hydrogen, as `C7 H9 N2` or `C7H9N2` (two letter elements as `Cl`, `Br` and `Ca`); blank for `chain_pdb` |
 
-`ligand_resname` acts per `ligand_source`. With `prmtop` the residues named `ligand_resname` in the topology form the ligand (case sensitive). With `complex_pdb` the name picks the ligand among several HETATM groups and names the ligand residue in `ligand.pqr`. With `rcsb` and `rcsb_smiles` the residue name comes from `ligand_resid`. With `pqr` and `chain_pdb` the name is a label.
+`ligand_resname` acts per `ligand_source`. With `prmtop` the residues named `ligand_resname` in the topology form the ligand (case sensitive). With `complex_pdb` the name picks the ligand among several HETATM groups and names the ligand residue in `ligand.pqr`. With `pdb_smiles` the name labels the ligand residue in `ligand.pqr`. With `pqr` and `chain_pdb` the name is a label.
 
 ## 5. Reaction criterion (`criterion`)
 
@@ -177,7 +170,7 @@ The build lists every pair of a receptor heavy atom and a ligand heavy atom clos
 </criterion>
 ```
 
-Each `<target>` names one receptor atom by residue number, atom name and residue name in `receptor.pqr`. The ligand atoms follow in the order of the targets. `<ligand>auto</ligand>` with an `atom_filter` pairs each target with the closest permitted heavy ligand atom of the bound pose. `receptor_numbering` `internal` (default) takes the residue numbers of `receptor.pqr`. With `prmtop`, `complex_pdb`, `rcsb` and `rcsb_smiles` the residues are numbered from 1 in topology order. With `pqr` the numbers of the given file stay. With `ligand_source` `rcsb` the residue numbers of the RCSB entry are accepted with `receptor_numbering` `pdb`. Running `python run_pystarc.py config.xml --setup` with mode `centroid` writes `bd_sims/receptor.pqr` for inspecting the numbering.
+Each `<target>` names one receptor atom by residue number, atom name and residue name in `receptor.pqr`. The ligand atoms follow in the order of the targets. `<ligand>auto</ligand>` with an `atom_filter` pairs each target with the closest permitted heavy ligand atom of the bound pose. `receptor_numbering` `internal` (default) takes the residue numbers of `receptor.pqr`. With `prmtop`, `complex_pdb` and `pdb_smiles` the residues are numbered from 1 in topology order. With `pqr` the numbers of the given file stay. With `ligand_source` `complex_pdb` and `pdb_smiles` the residue numbers of the prepared PDB file are accepted with `receptor_numbering` `pdb`. Running `python run_pystarc.py config.xml --setup` with mode `centroid` writes `bd_sims/receptor.pqr` for inspecting the numbering.
 
 Picked and named pairs never mix in one `config.xml`. One pair needs `n_needed` 1. An even number of rigid body pairs 2k needs `n_needed` k.
 
@@ -203,7 +196,7 @@ The simulation places a ghost atom GHO without charge or radius at the centroid 
 
 The build adds a ghost atom PKT without charge or radius to `bd_sims/receptor.pqr` at the centroid of the bound ligand. Zero charge, zero radius ghost records (`GHO` and `PKT`) are stripped before APBS runs, avoiding any dielectric cavity perturbation in the electrostatic and Born grids. A trajectory reacts when the ligand centroid is closer to PKT than the cutoff. The cutoff is `pair_cutoff`, or the closest accessible approach plus `margin` rounded to 0.01 Å. The closest accessible approach is the smallest distance of the ligand centroid from PKT among rigid ligand poses with a soft wall energy of at most 2 kT against the receptor. The build finds the closest accessible approach by a scan and local descent of ligand poses and writes the cutoff into `bd_sims/build_record.json`.
 
-One `<target>` in `receptor` and one `<atom>` in `ligand` replace PKT and the ligand centroid by two named atoms. With `rcsb_smiles` the ligand has no bound pose, and PKT sits at the centroid of the deposited ligand `pocket_ligand`.
+One `<target>` in `receptor` and one `<atom>` in `ligand` replace PKT and the ligand centroid by two named atoms. With `pdb_smiles` the ligand has no bound pose, and PKT sits at the centroid of the reference ligand `pocket_ligand` in `receptor.pdb`.
 
 ### Tags of `criterion`
 
@@ -216,12 +209,12 @@ One `<target>` in `receptor` and one `<atom>` in `ligand` replace PKT and the li
 | `excluded` | `contacts`, picked | atom names left out of the search, as `<item>NAME</item>` children |
 | `receptor` | `contacts`, named, and `site` | receptor atoms as `<target resid="..." atom="..." resname="..."/>` |
 | `ligand` | `contacts`, named, and `site` | ligand atoms as `<atom name="..."/>` in the order of the targets, or `auto` in `contacts` |
-| `receptor_numbering` | named atoms | `internal` (default, numbers of `receptor.pqr`) or `pdb` (numbers of the RCSB entry with `rcsb`) |
+| `receptor_numbering` | named atoms | `internal` (default, numbers of `receptor.pqr`) or `pdb` (numbers of the prepared PDB file with `complex_pdb` or `pdb_smiles`) |
 | `pair_cutoff` | every mode | reaction distance of every pair (Å), in `site` either `pair_cutoff` or `margin` |
 | `n_needed` | `contacts` | pairs closer than `pair_cutoff` at one time |
 | `margin` | `site` | distance added to the closest accessible approach (Å), rounded to 0.01 Å |
-| `pocket_ligand` | `site` with `rcsb_smiles` | residue name of the deposited ligand at the site |
-| `pocket_ligand_resid` | `site` with `rcsb_smiles` | residue number of `pocket_ligand` for a chain with several copies |
+| `pocket_ligand` | `site` with `pdb_smiles` | residue name of the reference ligand marking the site in `receptor.pdb` |
+| `pocket_ligand_resid` | `site` with `pdb_smiles` | residue number of `pocket_ligand` when `receptor.pdb` holds several copies |
 
 ## 6. Start sphere and hydrodynamic radii (`geometry`)
 
@@ -396,7 +389,7 @@ With `checkpoint_interval` above 0 the run writes `bd_sims/checkpoint.npz` each 
 
 `temperature` sets kT in APBS, the desolvation grids, the diffusion coefficients and the forces. The viscosity stays at 0.890 mPa s of water at 25 °C. The run prints a warning for a temperature other than 298.15 K. A new `temperature` needs a matching `debye_length` (step 7).
 
-The random numbers of a trajectory depend on `seed`, the trajectory number and the step count. `gpu_force_batch` and a resume leave the random numbers unchanged. With `rcsb_smiles` the seed fixes the ligand conformer during input preparation (step 3).
+The random numbers of a trajectory depend on `seed`, the trajectory number and the step count. `gpu_force_batch` and a resume leave the random numbers unchanged. With `pdb_smiles` the seed fixes the ligand conformer during input preparation (step 3).
 
 ## 10. Hardware (`compute`)
 

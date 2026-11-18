@@ -32,53 +32,53 @@ def test_modes():
 
 
 @pytest.mark.parametrize("c,src", [
-    (dict(mode="site", pair_cutoff=9.0), "rcsb"),
+    (dict(mode="site", pair_cutoff=9.0), "complex_pdb"),
     (dict(mode="site", margin=3.0), "complex_pdb"),
-    (dict(mode="site", margin=3.0, pocket_ligand="AZM", pocket_ligand_resid=263), "rcsb_smiles"),
-    (dict(mode="site", receptor=[(259, "ZN", "ZN")], ligand=[("N3",)], margin=3.0), "rcsb_smiles"),
-    (dict(mode="site", receptor=[(109, "N", "MET")], ligand="NB1", receptor_numbering="pdb", pair_cutoff=6.0), "rcsb"),
+    (dict(mode="site", margin=3.0, pocket_ligand="AZM", pocket_ligand_resid=263), "pdb_smiles"),
+    (dict(mode="site", receptor=[(259, "ZN", "ZN")], ligand=[("N3",)], margin=3.0), "pdb_smiles"),
+    (dict(mode="site", receptor=[(109, "N", "MET")], ligand="NB1", receptor_numbering="pdb", pair_cutoff=6.0), "complex_pdb"),
     (dict(mode="centroid", pair_cutoff=8.0), "prmtop"),
     (dict(mode="contacts", search_cutoff=6.0, n_pairs=6, atom_filter="polar", pair_cutoff=7.0, n_needed=3), "prmtop"),
-    (dict(mode="contacts", search_cutoff=5.0, n_pairs=1, atom_filter="all", excluded=["O1"], pair_cutoff=7.0, n_needed=1), "rcsb"),
+    (dict(mode="contacts", search_cutoff=5.0, n_pairs=1, atom_filter="all", excluded=["O1"], pair_cutoff=7.0, n_needed=1), "complex_pdb"),
     (dict(mode="contacts", receptor=[(1, "N", "ALA"), (2, "O", "GLY")], ligand="auto", atom_filter="polar",
-          pair_cutoff=7.0, n_needed=1), "rcsb"),
+          pair_cutoff=7.0, n_needed=1), "complex_pdb"),
     (dict(mode="contacts", receptor=[(1, "N", "ALA")], ligand=["N1"], receptor_numbering="pdb", pair_cutoff=7.0,
-          n_needed=1), "rcsb"),
+          n_needed=1), "complex_pdb"),
 ])
 def test_valid_blocks(c, src):
     assert bi.check_criterion(c, src) == c["mode"]
 
 
 @pytest.mark.parametrize("c,src,words", [
-    (dict(mode="zinc", pair_cutoff=12.4), "rcsb_smiles", "must be one of"),
-    (dict(mode="pocket", pair_cutoff=9.0), "rcsb", "must be one of"),
+    (dict(mode="zinc", pair_cutoff=12.4), "pdb_smiles", "must be one of"),
+    (dict(mode="pocket", pair_cutoff=9.0), "complex_pdb", "must be one of"),
     (dict(mode="center", pair_cutoff=8.0), "prmtop", "must be one of"),
-    (dict(mode="explicit", receptor=[(1, "N", "A")], ligand=["N1"], pair_cutoff=7.0, n_needed=1), "rcsb", "must be one of"),
-    (dict(mode="site", pair_cutoff=9.0, margin=3.0), "rcsb", "exactly one"),
-    (dict(mode="site"), "rcsb", "exactly one"),
-    (dict(mode="site", margin=3.0), "rcsb_smiles", "needs pocket_ligand"),
-    (dict(mode="site", margin=3.0, pocket_ligand="AZM"), "rcsb", "applies only"),
-    (dict(mode="site", margin=-1.0), "rcsb", "0 or more"),
-    (dict(mode="site", pair_cutoff=9.0, n_needed=1), "rcsb", "does not use"),
-    (dict(mode="site", receptor=[(259, "ZN", "ZN")], margin=3.0), "rcsb_smiles", "one receptor target and one ligand"),
-    (dict(mode="site", receptor=[(1, "N", "A"), (2, "N", "B")], ligand=["N1", "N2"], margin=3.0), "rcsb",
+    (dict(mode="explicit", receptor=[(1, "N", "A")], ligand=["N1"], pair_cutoff=7.0, n_needed=1), "complex_pdb", "must be one of"),
+    (dict(mode="site", pair_cutoff=9.0, margin=3.0), "complex_pdb", "exactly one"),
+    (dict(mode="site"), "complex_pdb", "exactly one"),
+    (dict(mode="site", margin=3.0), "pdb_smiles", "needs pocket_ligand"),
+    (dict(mode="site", margin=3.0, pocket_ligand="AZM"), "complex_pdb", "applies only"),
+    (dict(mode="site", margin=-1.0), "complex_pdb", "0 or more"),
+    (dict(mode="site", pair_cutoff=9.0, n_needed=1), "complex_pdb", "does not use"),
+    (dict(mode="site", receptor=[(259, "ZN", "ZN")], margin=3.0), "pdb_smiles", "one receptor target and one ligand"),
+    (dict(mode="site", receptor=[(1, "N", "A"), (2, "N", "B")], ligand=["N1", "N2"], margin=3.0), "complex_pdb",
      "one receptor target and one ligand"),
-    (dict(mode="site", receptor=[(1, "N", "A")], ligand="auto", margin=3.0), "rcsb", "must be named"),
-    (dict(mode="site", receptor=[(259, "ZN", "ZN")], ligand=["N3"], margin=3.0, pocket_ligand="AZM"), "rcsb_smiles",
+    (dict(mode="site", receptor=[(1, "N", "A")], ligand="auto", margin=3.0), "complex_pdb", "must be named"),
+    (dict(mode="site", receptor=[(259, "ZN", "ZN")], ligand=["N3"], margin=3.0, pocket_ligand="AZM"), "pdb_smiles",
      "only without anchor atoms"),
-    (dict(mode="site", margin=3.0, receptor_numbering="pdb"), "rcsb", "only to anchor atoms"),
-    (dict(mode="site", receptor=[(1, "N", "A")], ligand=["N1"], margin=3.0, atom_filter="polar"), "rcsb",
+    (dict(mode="site", margin=3.0, receptor_numbering="pdb"), "complex_pdb", "only to anchor atoms"),
+    (dict(mode="site", receptor=[(1, "N", "A")], ligand=["N1"], margin=3.0, atom_filter="polar"), "complex_pdb",
      "does not use"),
     (dict(mode="contacts", receptor=[(1, "N", "A"), (2, "O", "B")], ligand="auto", atom_filter="polar", n_pairs=2,
-          pair_cutoff=7.0, n_needed=1), "rcsb", "not both"),
-    (dict(mode="contacts", pair_cutoff=7.0, n_needed=1), "rcsb", "pairs picked from the crystal contacts needs"),
-    (dict(mode="contacts", receptor=[(1, "N", "A")], pair_cutoff=7.0, n_needed=1), "rcsb", "listed pairs needs"),
+          pair_cutoff=7.0, n_needed=1), "complex_pdb", "not both"),
+    (dict(mode="contacts", pair_cutoff=7.0, n_needed=1), "complex_pdb", "pairs picked from the crystal contacts needs"),
+    (dict(mode="contacts", receptor=[(1, "N", "A")], pair_cutoff=7.0, n_needed=1), "complex_pdb", "listed pairs needs"),
     (dict(mode="contacts", search_cutoff=5.0, n_pairs=8, atom_filter="all", pair_cutoff=7.0, n_needed=6), "complex_pdb", "even number"),
     (dict(mode="contacts", receptor=[(1, "N", "A"), (2, "O", "B"), (3, "O", "C")], ligand="auto", atom_filter="polar",
-          pair_cutoff=7.0, n_needed=3), "rcsb", "even number"),
+          pair_cutoff=7.0, n_needed=3), "complex_pdb", "even number"),
     (dict(mode="contacts", receptor=[(1, "N", "A"), (2, "O", "B")], ligand=["N1", "N2"], atom_filter="polar",
-          pair_cutoff=7.0, n_needed=1), "rcsb", "applies only to a ligand side"),
-    (dict(mode="contacts", search_cutoff=0.0, n_pairs=2, atom_filter="all", pair_cutoff=7.0, n_needed=1), "rcsb", "above zero"),
+          pair_cutoff=7.0, n_needed=1), "complex_pdb", "applies only to a ligand side"),
+    (dict(mode="contacts", search_cutoff=0.0, n_pairs=2, atom_filter="all", pair_cutoff=7.0, n_needed=1), "complex_pdb", "above zero"),
     (dict(mode="centroid", pair_cutoff=0.0), "prmtop", "above zero"),
 ])
 def test_invalid_blocks(c, src, words):
@@ -136,11 +136,11 @@ def test_site_pair_of_anchor_atoms(tmp_path):
     lig = _atoms([("C1", "LIG", 1, (5.0, 0.0, 0.0)), ("N3", "LIG", 1, (4.0, 0.0, 0.0))])
     c = dict(mode="site", receptor=[(262, "ZN", "ZN")], ligand=[("N3",)], receptor_numbering="pdb", pair_cutoff=6.0)
     out = {}
-    pair = bi.site_pair(str(tmp_path), rec, lig, c, dict(ligand_source="rcsb"), out, {261: 1, 262: 2})
+    pair = bi.site_pair(str(tmp_path), rec, lig, c, dict(ligand_source="complex_pdb"), out, {261: 1, 262: 2})
     assert pair == (1, 1, 6.0, 3.0) and out["anchors"] == dict(receptor=[2, "ZN", 2, "ZN"], ligand=[2, "N3"])
     assert not list(tmp_path.iterdir())
     with pytest.raises(SystemExit, match="no ZN2 ZN"):
-        bi.site_pair(str(tmp_path), rec[:1], lig, c, dict(ligand_source="rcsb"), {}, {262: 2})
+        bi.site_pair(str(tmp_path), rec[:1], lig, c, dict(ligand_source="complex_pdb"), {}, {262: 2})
 
 
 def test_closest_approach_of_an_anchor_atom():
@@ -171,7 +171,7 @@ def test_anchor_at_the_centroid_gives_the_centroid_scan():
 
 
 CA_ENTRY = os.path.join(os.path.dirname(__file__), "..", "examples", "carbonic_anhydrase_inhibitors", "ca13_azm",
-                        "3CZV.pdb")
+                        "receptor.pdb")
 RADII = {"C": 1.7, "N": 1.55, "O": 1.5, "S": 1.8, "ZN": 1.5}
 
 
@@ -215,7 +215,7 @@ def test_site_margin_rounds_to_hundredths(tmp_path):
     rec[0]["r"], lig[0]["r"] = 1.0, 1.0
     c = dict(mode="site", receptor=[(1, "ZN", "ZN")], ligand=[("N1",)], margin=0.83)
     out = {}
-    _, _, cut, _ = bi.site_pair(str(tmp_path), rec, lig, c, dict(ligand_source="rcsb"), out)
+    _, _, cut, _ = bi.site_pair(str(tmp_path), rec, lig, c, dict(ligand_source="complex_pdb"), out)
     assert cut == round(out["closest_approach"] + 0.83, 2)
 
 
@@ -227,3 +227,41 @@ def test_closest_approach_runs_descent_above_eight_angstroms():
     res = closest_approach(rec, [5.5], lig, [5.5], [0.0, 0.0, 0.0], bound=True,
                            ball=16.0, n_coarse=4_000, n_dense=4_000, n_starts=16, n_steps=100)
     assert res["closest"] >= 8.0 and res["descent"] is not None
+
+
+def test_structure_sources_and_single_conformer_guard(tmp_path):
+    assert sorted(bi.SOURCES) == ["chain_pdb", "complex_pdb", "pdb_smiles", "pqr", "prmtop"]
+    dropped = {"pdb_id", "ligand_resid", "rec_resid_min", "ligand_ccd",
+               "ligand_protonate", "ligand_deprotonate", "keep_hetatm"}
+    assert not (dropped & set(bi.KEYS))
+    multi = [
+        "HETATM    1  C1 ALIG A   1       0.000   0.000   0.000  0.50  0.00           C\n",
+        "HETATM    2  C1 BLIG A   1       1.000   0.000   0.000  0.50  0.00           C\n",
+    ]
+    with pytest.raises(SystemExit, match="multiple altloc conformers"):
+        bi._check_single_conformer(multi, "multi.pdb")
+
+
+def test_prepare_pdb_script_metal_his_and_altloc(tmp_path):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "prepare_pdb",
+        os.path.join(os.path.dirname(__file__), "..", "scripts", "prepare_pdb.py"),
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    raw = tmp_path / "raw.pdb"
+    out = tmp_path / "receptor.pdb"
+    raw.write_text(
+        "ATOM      1  ND1 HIS A  94       3.500   0.000   0.000  1.00  0.00           N\n"
+        "ATOM      2  NE2AHIS A  94       2.000   0.000   0.000  0.50  0.00           N\n"
+        "ATOM      3  NE2BHIS A  94       2.100   0.000   0.000  0.50  0.00           N\n"
+        "ATOM      4  ND1 HIS A 119       0.000   2.050   0.000  1.00  0.00           N\n"
+        "HETATM    5 ZN    ZN A 301       0.000   0.000   0.000  1.00  0.00          ZN\n"
+        "END\n"
+    )
+    mod.main(["--pdb", str(raw), "--chain", "A", "--altloc", "B",
+              "--keep-hetatm", "ZN", "--metal-his", "-o", str(out)])
+    txt = out.read_text()
+    assert "HID A  94" in txt and "HIE A 119" in txt and "2.100" in txt and "2.000" not in txt

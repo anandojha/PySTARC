@@ -1,24 +1,16 @@
 <?xml version="1.0" ?>
 <config>
   <structure>
-    <ligand_source>rcsb_smiles</ligand_source>                   <!-- Source of the receptor and ligand structures. Options: pqr, prmtop, complex_pdb, rcsb, rcsb_smiles, and chain_pdb. -->
+    <ligand_source>pdb_smiles</ligand_source>                    <!-- Source of the receptor and ligand structures. Options: pqr, prmtop, complex_pdb, pdb_smiles, and chain_pdb. -->
     <receptor_pqr_file></receptor_pqr_file>                      <!-- Existing receptor PQR with charges and radii. -->
     <ligand_pqr_file></ligand_pqr_file>                          <!-- Existing ligand PQR with charges and radii. -->
     <prmtop></prmtop>                                            <!-- Existing AMBER topology. -->
-    <complex_pdb></complex_pdb>                                  <!-- Single PDB containing receptor and ligand. -->
-    <pdb_id>3CZV</pdb_id>                                        <!-- RCSB entry to download. -->
-    <ligand_resid>AZM</ligand_resid>                             <!-- Residue name of the ligand within the RCSB entry. -->
+    <complex_pdb></complex_pdb>                                  <!-- Prepared PDB containing receptor and protonated ligand. -->
+    <receptor_pdb>receptor.pdb</receptor_pdb>                    <!-- Prepared receptor PDB for pdb_smiles. -->
     <smiles>CC(=O)NC1=NN=C(S1)S([NH-])(=O)=O</smiles>            <!-- Ligand SMILES, in place of deposited coordinates. -->
-    <chain>A</chain>                                             <!-- Receptor chain retained. Blank retains all chains. -->
+    <chain></chain>                                              <!-- Receptor chain in complex_pdb for chain_pdb. -->
     <ligand_chain></ligand_chain>                                <!-- Ligand chain in complex_pdb for chain_pdb. -->
-    <rec_resid_min></rec_resid_min>                              <!-- Lowest receptor residue number retained. -->
-    <ligand_net_charge>-1</ligand_net_charge>                    <!-- Formal charge of the ligand. Blank takes the charge from the component definition or the SMILES. -->
-    <ligand_ccd></ligand_ccd>                                    <!-- Component supplying bond orders and formal charges. Blank takes the residue name of the ligand when valid. -->
-    <ligand_protonate></ligand_protonate>                        <!-- Component atoms that each take one proton on top of the component definition. -->
-    <ligand_deprotonate></ligand_deprotonate>                    <!-- Component atoms that each drop one proton of the component definition. -->
-    <keep_hetatm>                                                <!-- Het groups retained with the receptor. -->
-      <item>ZN</item>
-    </keep_hetatm>
+    <ligand_net_charge>-1</ligand_net_charge>                    <!-- Formal charge of the ligand. Blank takes the charge from the SMILES. -->
   </structure>
   <names>
     <receptor_resname>CA13</receptor_resname>                    <!-- Receptor label. -->
