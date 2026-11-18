@@ -428,3 +428,88 @@ def test_target_field_grids_wca_and_overlap_match_cpu(xp):
     np.testing.assert_allclose(_to_np(f_x), f_c, rtol=1e-12, atol=1e-12)
     np.testing.assert_allclose(_to_np(ee_x), ee_c, rtol=1e-12, atol=1e-12)
     np.testing.assert_allclose(_to_np(eb_x), eb_c, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("xp", _BACKENDS)
+def test_gpu_target_field_gb_bonded_exclusions_and_kt_scale(xp):
+    """GPUChainTargetField honors 1-2/1-3 bonded exclusions in full GB and scales multipole far-field by kT_scale."""
+    atoms = [
+        ChainAtom(radius=1.5, charge=1.0, resname="ALA:CA"),
+        ChainAtom(radius=1.5, charge=1.0, resname="ALA:CA"),
+        ChainAtom(radius=1.5, charge=-1.0, resname="ALA:CA"),
+    ]
+    bonds = [
+        ChainBond(ChainAtomRef(0), ChainAtomRef(1), 3.8, 10.0),
+        ChainBond(ChainAtomRef(1), ChainAtomRef(2), 3.8, 10.0),
+    ]
+    common = ChainCommon(name="tri", atoms=atoms, bonds=bonds)
+    excl = bonded_exclusions(common)
+    charges = np.array([a.charge for a in atoms], dtype=float)
+    radii = np.array([a.radius for a in atoms], dtype=float)
+
+    target = Molecule(
+        name="t",
+        atoms=[
+            Atom(index=0, x=-2.0, y=0.0, z=0.0, charge=1.0, radius=1.5),
+            Atom(index=1, x=2.0, y=0.0, z=0.0, charge=-1.0, radius=1.5),
+        ],
+    )
+    t_pos = np.array([[-2.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+    t_chg = np.array([1.0, -1.0])
+    mp_default = MultipoleExpansion(t_pos, t_chg, debye_length=8.0, sdie=78.0, kT_scale=1.0)
+    mp_scaled = MultipoleExpansion(t_pos, t_chg, debye_length=8.0, sdie=78.0, kT_scale=1.10)
+
+    f_unscaled = GPUChainTargetField(
+        target=target,
+        chain_charges=charges,
+        chain_radii=radii,
+        use_far_field=True,
+        target_charge=0.0,
+        debye_length=8.0,
+        sdie=78.0,
+        kT_scale=1.10,
+        multipole_expansion=mp_default,
+        gb_exclude_mask=excl,
+        xp=xp,
+    )
+    f_scaled = GPUChainTargetField(
+        target=target,
+        chain_charges=charges,
+        chain_radii=radii,
+        use_far_field=True,
+        target_charge=0.0,
+        debye_length=8.0,
+        sdie=78.0,
+        kT_scale=1.10,
+        multipole_expansion=mp_scaled,
+        gb_exclude_mask=excl,
+        xp=xp,
+    )
+    pts = np.array([[[0.0, 20.0, 0.0], [3.8, 20.0, 0.0], [6.0, 23.1, 0.0]]])
+    fe1, ee1, _ = f_unscaled.evaluate_external_forces(xp.asarray(pts), want_energy=True)
+    fe2, ee2, _ = f_scaled.evaluate_external_forces(xp.asarray(pts), want_energy=True)
+    np.testing.assert_allclose(_to_np(fe1), _to_np(fe2), rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(_to_np(ee1), _to_np(ee2), rtol=1e-12, atol=1e-12)
+
+    # Check that self_born with coffdrop_active=False uses gb_exclude_mask by default.
+    f_gb_only = GPUChainTargetField(
+        target=Molecule(name="empty", atoms=[]),
+        chain_charges=charges,
+        chain_radii=radii,
+        gb_exclude_mask=excl,
+        xp=xp,
+    )
+    f_got, _, _ = f_gb_only.evaluate_external_forces(
+        xp.asarray(pts),
+        self_born=True,
+        gb_params={"coffdrop_active": False},
+    )
+    f_ref, _ = chain_full_gb_force(
+        pts[0], charges, radii, coffdrop_active=False, exclude_pair_mask=excl
+    )
+    f_open, _ = chain_full_gb_force(
+        pts[0], charges, radii, coffdrop_active=False, exclude_pair_mask=None
+    )
+    np.testing.assert_allclose(_to_np(f_got)[0], f_ref, rtol=1e-12, atol=1e-12)
+    assert not np.allclose(_to_np(f_got)[0], f_open)
+

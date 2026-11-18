@@ -528,6 +528,7 @@ def _sum_csv(
     total_N=None,
     density_mode=False,
     time_col=None,
+    sort_desc_col=None,
 ):
     """Sum histogram-style CSV files across shards bin by bin.
 
@@ -615,6 +616,8 @@ def _sum_csv(
     if time_col:
         for row in rows:
             row[time_col] = f"{float(row[time_col]):.6f}"
+    if sort_desc_col:
+        rows.sort(key=lambda r: -float(r.get(sort_desc_col, 0)))
     out_path = os.path.join(out_dir, filename)
     with open(out_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=header)
@@ -716,7 +719,7 @@ def _combine_chain_runs(runs, dirs_valid, subdirs, bd_sims):
     k_b = ref_rate.get("k_b")
     conf = float(ref_rate.get("confidence_level", 0.95))
     conv_tol = float(ref_rate.get("convergence_tol", 0.05))
-    CONV = 6.02214076e23 * 1.0e-27 * 1.0e12
+    CONV = MOLAR_RATE_CONV
 
     z = (
         1.96
@@ -893,6 +896,7 @@ def _combine_chain_runs(runs, dirs_valid, subdirs, bd_sims):
         "contact_frequency.csv",
         bd_sims,
         sum_cols=["total_contacts", "n_trajectories"],
+        sort_desc_col="total_contacts",
     )
     _sum_npz(
         dirs_valid,
@@ -903,6 +907,7 @@ def _combine_chain_runs(runs, dirs_valid, subdirs, bd_sims):
     )
     _concat_chain_flat_npz(dirs_valid, "paths.npz", bd_sims, traj_offsets)
     _concat_chain_flat_npz(dirs_valid, "energetics.npz", bd_sims, traj_offsets)
+    _rebuild_chain_derived_csvs(dirs_valid, bd_sims, pooled_doc)
 
     targets = {}
     if 0.0 < P < 1.0:
@@ -958,6 +963,87 @@ def _concat_chain_flat_npz(dirs, filename, out_dir, offsets):
     np.savez(out_path, **save_dict)
     n_rows = len(save_dict.get("traj_id", next(iter(save_dict.values()))))
     print(f"    {filename} ({n_rows:,} rows)")
+
+
+def _rebuild_chain_derived_csvs(dirs_valid, out_dir, pooled_doc):
+    """Rebuild pooled fpt_distribution.csv, radial_density.csv, and milestone_flux.csv."""
+    from pathlib import Path
+    from pystarc.molsystem.system_state import Fate, TrajectoryResult
+    from pystarc.pipeline.chain_output_writer import (
+        write_fpt_distribution_csv,
+        write_milestone_flux_csv,
+        write_radial_density_csv,
+    )
+
+    out_p = Path(out_dir)
+    want_fpt = any(
+        os.path.exists(os.path.join(d, "fpt_distribution.csv")) for d in dirs_valid
+    )
+    traj_csv = out_p / "trajectories.csv"
+    if want_fpt and traj_csv.exists():
+        fpt_stubs = []
+        with open(traj_csv) as f:
+            for row in csv.DictReader(f):
+                if row.get("fate", "").strip().upper() == "REACTED":
+                    fpt_stubs.append(
+                        TrajectoryResult(
+                            fate=Fate.REACTED,
+                            steps=int(row.get("steps", 0)),
+                            time_ps=float(row.get("time_ps", 0.0)),
+                            final_separation=float(row.get("final_separation", 0.0)),
+                        )
+                    )
+        p = write_fpt_distribution_csv(out_p, fpt_stubs)
+        if p is not None:
+            print(f"    {p.name}")
+
+    want_rad = any(
+        os.path.exists(os.path.join(d, "radial_density.csv")) for d in dirs_valid
+    )
+    want_flux = any(
+        os.path.exists(os.path.join(d, "milestone_flux.csv")) for d in dirs_valid
+    )
+    paths_npz = out_p / "paths.npz"
+    if (want_rad or want_flux) and paths_npz.exists():
+        with np.load(paths_npz, allow_pickle=False) as npz:
+            tids = np.asarray(npz["traj_id"], dtype=int)
+            rad = np.asarray(npz["radial"], dtype=float)
+            ret = (
+                np.asarray(npz["radial_returns"], dtype=int)
+                if "radial_returns" in npz.files
+                else None
+            )
+        if len(tids) > 0:
+            order = np.argsort(tids, kind="mergesort")
+            tids_s = tids[order]
+            rad_s = rad[order]
+            ret_s = ret[order] if ret is not None else None
+            uniq, starts = np.unique(tids_s, return_index=True)
+            ends = np.append(starts[1:], len(tids_s))
+            path_stubs = []
+            for s_i, e_i in zip(starts, ends):
+                tr = TrajectoryResult(
+                    fate=Fate.ESCAPED, steps=0, time_ps=0.0, final_separation=0.0
+                )
+                tr.radial_trace = rad_s[s_i:e_i]
+                if ret_s is not None:
+                    tr.radial_returns = ret_s[s_i:e_i]
+                path_stubs.append(tr)
+            if want_rad:
+                p = write_radial_density_csv(out_p, path_stubs)
+                if p is not None:
+                    print(f"    {p.name}")
+            if want_flux:
+                b_rad = pooled_doc.get("rate", {}).get("b_radius") or pooled_doc.get(
+                    "params", {}
+                ).get("r_start")
+                p = write_milestone_flux_csv(
+                    out_p,
+                    path_stubs,
+                    b_radius=float(b_rad) if b_rad is not None else None,
+                )
+                if p is not None:
+                    print(f"    {p.name}")
 
 
 if __name__ == "__main__":

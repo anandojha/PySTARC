@@ -583,6 +583,8 @@ def write_paths_npz(
     com_list: List[np.ndarray] = []
     q_list: List[np.ndarray] = []
     radial_list: List[float] = []
+    returns_list: List[int] = []
+    has_returns = False
     fate_list: List[str] = []
     has_data = False
     for i, r in enumerate(results):
@@ -598,12 +600,17 @@ def write_paths_npz(
             radial_list.extend([float(v) for v in r.radial_trace])
         else:
             radial_list.extend([float(np.linalg.norm(c)) for c in r.path_com])
+        ret_arr = getattr(r, "radial_returns", None)
+        if ret_arr is not None and len(ret_arr) == n:
+            returns_list.extend([int(v) for v in ret_arr])
+            has_returns = True
+        else:
+            returns_list.extend([0] * n)
         has_data = True
     if not has_data:
         return None
     p = work_dir / "paths.npz"
-    np.savez(
-        p,
+    save_kw = dict(
         traj_id=np.array(traj_id_list, dtype=int),
         step=np.array(step_list, dtype=int),
         com=np.concatenate(com_list, axis=0),
@@ -611,6 +618,9 @@ def write_paths_npz(
         radial=np.array(radial_list, dtype=float),
         fate=np.array(fate_list, dtype="U10"),
     )
+    if has_returns:
+        save_kw["radial_returns"] = np.array(returns_list, dtype=int)
+    np.savez(p, **save_kw)
     return p
 
 

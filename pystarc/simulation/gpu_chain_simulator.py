@@ -54,6 +54,7 @@ from pystarc.motion.do_bd_step import (
 from pystarc.simulation.coffdrop_chain import (
     ChainCommon,
     ChainState,
+    bonded_exclusions,
     compute_chain_forces,
 )
 from pystarc.global_defs.defaults import (
@@ -63,7 +64,13 @@ from pystarc.global_defs.defaults import (
 )
 from pystarc.simulation.step_near_surface import step_near_absorbing_surface
 from pystarc.simulation.outer_propagator import OPGroupInfo, OuterPropagator
-from pystarc.global_defs.constants import KB_KCAL, KBT_KCAL, T_DEFAULT
+from pystarc.global_defs.constants import (
+    COULOMB_KCAL,
+    KB_KCAL,
+    KBT_KCAL,
+    MOLAR_RATE_CONV,
+    T_DEFAULT,
+)
 from pystarc.simulation.gpu_random import DEVICE_CODE as _RNG_DEVICE_CODE
 from pystarc.molsystem.system_state import Fate, TrajectoryResult
 from pystarc.forces.electrostatic.grid_force import DXGrid
@@ -2016,6 +2023,7 @@ class GPUChainBDSimulator:
             soft_repulsion_eps=params.soft_repulsion_eps,
             xp=xp,
         )
+        self._gb_exclude_mask = bonded_exclusions(chain_template)
         self._field = GPUChainTargetField(
             target=target,
             chain_charges=self._chain_charges,
@@ -2029,12 +2037,14 @@ class GPUChainBDSimulator:
             sdie=params.dielectric,
             kT_scale=params.temperature_kT / KBT_KCAL,
             multipole_expansion=multipole_expansion,
+            gb_exclude_mask=self._gb_exclude_mask,
             xp=xp,
         )
         self._gb_params = dict(
             eps_in=params.gb_eps_in,
             eps_out=params.gb_eps_out,
             coffdrop_active=params.coffdrop_active,
+            exclude_pair_mask=xp.asarray(self._gb_exclude_mask, dtype=bool),
             obc_kwargs=dict(
                 obc_alpha=params.gb_obc_alpha,
                 obc_beta=params.gb_obc_beta,
@@ -2080,7 +2090,7 @@ class GPUChainBDSimulator:
                 kT=float(params.temperature_kT),
                 viscosity=VISCOSITY,
                 dielectric=float(params.dielectric),
-                vacuum_perm=1.0 / (4.0 * math.pi * 332.0636),
+                vacuum_perm=1.0 / (4.0 * math.pi * COULOMB_KCAL),
                 debye_len=float(params.debye_length),
                 g0=g0,
                 g1=g1,
@@ -2697,6 +2707,7 @@ class GPUChainBDSimulator:
             "n_clipped": xp.zeros(B, dtype=xp.int64),
             "n_hs_redraws": xp.zeros(B, dtype=xp.int64),
             "n_hs_rejections": xp.zeros(B, dtype=xp.int64),
+            "n_returns": xp.zeros(B, dtype=xp.int64),
             "n_rebuilds": xp.asarray(n_rebuilds, dtype=xp.int64),
             "n_rebuild_failures": xp.asarray(n_rebuild_failures, dtype=xp.int64),
         }
@@ -2754,18 +2765,18 @@ class GPUChainBDSimulator:
                     "path_com": [],
                     "path_q": [],
                     "radial": [],
+                    "radial_returns": [],
                     "energy": [],
                     "contacts": {},
                 }
 
         results_by_id: List[Optional[TrajectoryResult]] = [None] * N
-        next_traj_id = 0
         n_done = 0
         last_conv_done = 0
         last_ckpt_done = 0
         t_wall_start = time.time()
         last_progress_time = t_wall_start
-        conv_factor = 6.02214076e23 * 1.0e-27 * 1.0e12
+        conv_factor = MOLAR_RATE_CONV
         k_b_val = (
             float(self._outer_prop.k_b) if self._outer_prop is not None else 0.0
         )
@@ -2775,6 +2786,57 @@ class GPUChainBDSimulator:
             if (self.checkpoint_interval > 0 and self.work_dir is not None)
             else None
         )
+        if ckpt_path is not None and ckpt_path.exists():
+            try:
+                with np.load(str(ckpt_path), allow_pickle=False) as ck:
+                    if int(ck["n_trajectories"]) == N:
+                        done_ids = np.asarray(ck["done_ids"], dtype=np.int64)
+                        fates_arr = np.asarray(ck["fates"], dtype=np.int32)
+                        steps_arr = np.asarray(ck["steps"], dtype=np.int64)
+                        times_arr = np.asarray(ck["times_ps"], dtype=np.float64)
+                        seps_arr = np.asarray(ck["final_separations"], dtype=np.float64)
+                        rnames_arr = (
+                            np.asarray(ck["reaction_names"])
+                            if "reaction_names" in ck.files
+                            else None
+                        )
+                        for j, tid_v in enumerate(done_ids):
+                            tid_i = int(tid_v)
+                            if not (0 <= tid_i < N) or results_by_id[tid_i] is not None:
+                                continue
+                            f_enum = Fate(int(fates_arr[j]))
+                            rn = (
+                                str(rnames_arr[j])
+                                if (rnames_arr is not None and str(rnames_arr[j]))
+                                else None
+                            )
+                            results_by_id[tid_i] = TrajectoryResult(
+                                fate=f_enum,
+                                steps=int(steps_arr[j]),
+                                time_ps=float(times_arr[j]),
+                                final_separation=float(seps_arr[j]),
+                                reaction_name=rn,
+                            )
+                            if f_enum == Fate.REACTED:
+                                self.n_reacted += 1
+                            elif f_enum == Fate.ESCAPED:
+                                self.n_escaped += 1
+                            else:
+                                self.n_max_steps += 1
+                            n_done += 1
+                        last_ckpt_done = n_done
+                        last_conv_done = n_done
+            except Exception as _ck_err:
+                warnings.warn(
+                    f"Ignoring unreadable chain checkpoint {ckpt_path}: {_ck_err}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+
+        pending_ids = np.array(
+            [i for i in range(N) if results_by_id[i] is None], dtype=np.int64
+        )
+        pending_cursor = 0
 
         def _finalize_subset(
             pool: Dict[str, Any],
@@ -2816,6 +2878,10 @@ class GPUChainBDSimulator:
                         db["energy"],
                         db["contacts"],
                     )
+                    if db["radial"]:
+                        d["radial_returns"] = np.asarray(
+                            db["radial_returns"], dtype=int
+                        )
                 else:
                     d = {}
                 d["n_relative_diffusion_clipped"] = int(clip_np[k])
@@ -2857,12 +2923,15 @@ class GPUChainBDSimulator:
 
         pool: Optional[Dict[str, Any]] = None
 
-        while (pool is not None and len(pool["traj_id"]) > 0) or next_traj_id < N:
+        n_pending = len(pending_ids)
+        while (
+            pool is not None and len(pool["traj_id"]) > 0
+        ) or pending_cursor < n_pending:
             cur_active = 0 if pool is None else len(pool["traj_id"])
-            if cur_active < pool_cap and next_traj_id < N:
-                n_add = min(pool_cap - cur_active, N - next_traj_id)
-                new_ids = np.arange(next_traj_id, next_traj_id + n_add, dtype=np.int64)
-                next_traj_id += n_add
+            if cur_active < pool_cap and pending_cursor < n_pending:
+                n_add = min(pool_cap - cur_active, n_pending - pending_cursor)
+                new_ids = pending_ids[pending_cursor : pending_cursor + n_add]
+                pending_cursor += n_add
                 pool = self._concat_pool(xp, pool, self._spawn_slots(new_ids, rng_helper))
 
             B_act = len(pool["traj_id"])
@@ -2895,6 +2964,8 @@ class GPUChainBDSimulator:
                     pos_s = self._to_numpy(pool["pos"][s_idx])
                     ori_s = self._to_numpy(pool["ori"][s_idx])
                     rc_s = self._to_numpy(r_curr[s_idx])
+                    ret_s = self._to_numpy(pool["n_returns"][s_idx])
+                    pool["n_returns"][s_idx] = 0
                     eel_np = self._to_numpy(e_el_s)
                     ebn_np = self._to_numpy(e_bn_s)
                     wp_s_np = self._to_numpy(wp_s)
@@ -2904,6 +2975,7 @@ class GPUChainBDSimulator:
                         db["path_com"].append(pos_s[k].copy())
                         db["path_q"].append(ori_s[k].tolist())
                         db["radial"].append(float(rc_s[k]))
+                        db["radial_returns"].append(int(ret_s[k]))
                         ee = float(eel_np[k])
                         eb = float(ebn_np[k])
                         db["energy"].append([ee + eb, ee, eb, 0.0])
@@ -2975,8 +3047,12 @@ class GPUChainBDSimulator:
                     pool["ori"][o_idx] = new_q
                     esc_mask = xp.zeros(len(pool["traj_id"]), dtype=bool)
                     esc_mask[o_idx[~reached_b]] = True
+                    ret_mask = xp.zeros(len(pool["traj_id"]), dtype=bool)
                     ret_idx = o_idx[reached_b]
                     if len(ret_idx) > 0:
+                        ret_mask[ret_idx] = True
+                        pool["n_returns"][ret_idx] += 1
+                        pool["has_prev_bridge"][ret_idx] = False
                         wp_ret = place_chain_batch(
                             pool["body_pos"][ret_idx],
                             pool["pos"][ret_idx],
@@ -2992,6 +3068,46 @@ class GPUChainBDSimulator:
                         pool = self._filter_pool(pool, keep)
                         world_pos = world_pos[keep]
                         pair_dists = pair_dists[keep]
+                        ret_mask = ret_mask[keep]
+                    if has_rxn and len(pool["traj_id"]) > 0 and bool(ret_mask.any()):
+                        rm_idx = xp.where(ret_mask)[0]
+                        no_bridge = xp.zeros(len(rm_idx), dtype=bool)
+                        ret_fired = self._check_reactions_batch(
+                            pair_dists[rm_idx],
+                            pool["prev_pair_dists"][rm_idx],
+                            pool["prev_D_eff"][rm_idx],
+                            pool["prev_dt_outer"][rm_idx],
+                            no_bridge,
+                            pool["traj_id"][rm_idx],
+                            pool["step"][rm_idx],
+                            rng_helper,
+                        )
+                        hit_sub = ret_fired >= 0
+                        if bool(hit_sub.any()):
+                            hit_idx = rm_idx[hit_sub]
+                            wp_hr = world_pos[hit_idx]
+                            _, e_el_hr = self._field.evaluate_elec(
+                                wp_hr, want_energy=True
+                            )
+                            if self.born_grids and self.desolvation_alpha != 0.0:
+                                _, e_bn_hr = self._field.evaluate_born(
+                                    wp_hr, want_energy=True
+                                )
+                                e_tot_hr = e_el_hr + e_bn_hr
+                            else:
+                                e_tot_hr = e_el_hr
+                            _finalize_subset(
+                                pool,
+                                hit_idx,
+                                Fate.REACTED,
+                                rxn_indices_np=self._to_numpy(ret_fired[hit_sub]),
+                                e_rxn_np=self._to_numpy(e_tot_hr),
+                            )
+                            keep_r = xp.ones(len(pool["traj_id"]), dtype=bool)
+                            keep_r[hit_idx] = False
+                            pool = self._filter_pool(pool, keep_r)
+                            world_pos = world_pos[keep_r]
+                            pair_dists = pair_dists[keep_r]
             else:
                 esc_mask = r_curr >= params.r_escape
                 if bool(esc_mask.any()):
@@ -3233,6 +3349,7 @@ class GPUChainBDSimulator:
         steps = [int(results_by_id[i].steps) for i in done_ids]
         times = [float(results_by_id[i].time_ps) for i in done_ids]
         seps = [float(results_by_id[i].final_separation) for i in done_ids]
+        rnames = [results_by_id[i].reaction_name or "" for i in done_ids]
         np.savez_compressed(
             str(tmp_path),
             n_trajectories=int(self.params.n_trajectories),
@@ -3245,5 +3362,6 @@ class GPUChainBDSimulator:
             steps=np.asarray(steps, dtype=np.int64),
             times_ps=np.asarray(times, dtype=np.float64),
             final_separations=np.asarray(seps, dtype=np.float64),
+            reaction_names=np.asarray(rnames, dtype="U128"),
         )
         tmp_path.replace(ckpt_path)

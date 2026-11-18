@@ -354,11 +354,15 @@ def run_chain(
         born_grids.append(born_grid)
 
     multipole_exp = None
-    if use_gpu and cc.far_field and config.multipole_fallback and len(target_mol.atoms) > 0:
+    if cc.far_field and config.multipole_fallback and len(target_mol.atoms) > 0:
         t_pos = np.array([[a.x, a.y, a.z] for a in target_mol.atoms], dtype=float)
         t_chg = np.array([float(getattr(a, "charge", 0.0)) for a in target_mol.atoms], dtype=float)
         multipole_exp = MultipoleExpansion(
-            t_pos, t_chg, debye_length=config.debye_length, sdie=config.sdie
+            t_pos,
+            t_chg,
+            debye_length=config.debye_length,
+            sdie=config.sdie,
+            kT_scale=config.temperature / 298.15,
         )
 
     # Resolve the r_escape sentinel. A value of 0 means 2.0 × r_start, the LMZ
@@ -501,7 +505,15 @@ def run_chain(
         )
     else:
         print("Constructing ChainBDSimulator ...")
-        sim = ChainBDSimulator(**sim_kwargs)
+        cpu_extra = {}
+        if ChainBDSimulator is _DEFAULT_CHAIN_SIM or len(elec_grids) > 1 or cc.far_field:
+            cpu_extra = dict(
+                elec_grids=elec_grids,
+                born_grids=born_grids,
+                use_far_field=cc.far_field,
+                multipole_expansion=multipole_exp,
+            )
+        sim = ChainBDSimulator(**sim_kwargs, **cpu_extra)
     sim.flexible_partner = role
     sim.confidence_interval = config.confidence_interval
     sim.convergence_tol = config.convergence_tol

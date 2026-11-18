@@ -1976,6 +1976,7 @@ class GPUChainTargetField:
         sdie: float = 78.0,
         kT_scale: float = 1.0,
         multipole_expansion=None,
+        gb_exclude_mask: Optional[np.ndarray] = None,
         xp=None,
     ):
         if xp is None:
@@ -1983,6 +1984,11 @@ class GPUChainTargetField:
         self.xp = xp
         self.target = target
         self.alpha = float(desolvation_alpha)
+        self.gb_exclude_mask = (
+            xp.asarray(gb_exclude_mask, dtype=bool)
+            if gb_exclude_mask is not None
+            else None
+        )
         self.chain_charges_np = np.asarray(chain_charges, dtype=np.float64)
         self.chain_radii_np = np.asarray(chain_radii, dtype=np.float64)
         self.chain_charges = xp.asarray(self.chain_charges_np, dtype=xp.float64)
@@ -2014,7 +2020,10 @@ class GPUChainTargetField:
             far_c[0] = self._V_factor
             far_c[1] = self._debye
             if multipole_expansion is not None:
-                far_c[2] = multipole_expansion.four_pi_eps
+                # Use 4π ε_s scaled by the run's kT_scale so monopole and higher
+                # multipoles share one thermal energy scale even when the
+                # MultipoleExpansion object was built with the default kT_scale.
+                far_c[2] = 4.0 * math.pi * eps_s
                 far_c[3] = float(getattr(multipole_expansion, "trace_moment", 0.0)) / (
                     6.0 * self._debye**2
                 )
@@ -2360,7 +2369,7 @@ class GPUChainTargetField:
                 eps_in=gp.get("eps_in", 1.0),
                 eps_out=gp.get("eps_out", WATER_DIELECTRIC),
                 coffdrop_active=gp.get("coffdrop_active", False),
-                exclude_pair_mask=None,
+                exclude_pair_mask=gp.get("exclude_pair_mask", self.gb_exclude_mask),
                 obc_kwargs=gp.get("obc_kwargs"),
                 xp=self.xp,
             )

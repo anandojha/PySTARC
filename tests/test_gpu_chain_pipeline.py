@@ -435,10 +435,124 @@ def test_run_pystarc_chain_summary_and_multi_gpu_pooling(tmp_path, monkeypatch):
     assert (bd_multi / "trajectories.csv").is_file()
     assert (bd_multi / "paths.npz").is_file()
     assert (bd_multi / "energetics.npz").is_file()
+    assert (bd_multi / "radial_density.csv").is_file()
+    assert (bd_multi / "milestone_flux.csv").is_file()
     assert (bd_multi / "convergence.json").is_file()
+    if pooled["summary"]["n_reacted"] > 0:
+        assert (bd_multi / "fpt_distribution.csv").is_file()
+    if (bd_multi / "contact_frequency.csv").is_file():
+        cf_lines = (bd_multi / "contact_frequency.csv").read_text().strip().splitlines()[1:]
+        cf_tots = [int(l.split(",")[2]) for l in cf_lines]
+        assert cf_tots == sorted(cf_tots, reverse=True)
     paths_npz = np.load(bd_multi / "paths.npz")
     assert set(np.unique(paths_npz["traj_id"])).issubset(set(range(9)))
     assert int(paths_npz["traj_id"].max()) >= 6
+
+
+def test_cpu_chain_pipeline_uses_coarse_grid_and_far_field_with_kt_scale(tmp_path):
+    """CPU run_chain (<gpu>false</gpu>) wires coarse_grid_dx, far_field, and temperature-scaled MultipoleExpansion."""
+    _, pqr_a, _ = _write_synthetic_complex_pdb_and_pqrs(tmp_path)
+    common = chain_from_sequence("AKRD", sidechains=True)
+    pos0 = place_relaxed_geometry(common)
+    pos0 -= pos0.mean(axis=0)
+    c_json = save_chain_to_json(common, pos0, tmp_path / "chain.json")
+
+    fine_dx = _write_dx(tmp_path / "fine.dx", [-6.0, -6.0, -6.0], 1.5, 9, 2.0)
+    coarse_dx = _write_dx(tmp_path / "coarse.dx", [-15.0, -15.0, -15.0], 3.0, 11, 0.5)
+    rxn_xml = tmp_path / "r.xml"
+    rxn_xml.write_text(
+        """<reactions><reaction name="r" n_needed="1">
+        <contact molecule1_index="0" molecule2_index="0" distance="3.0"/>
+        </reaction></reactions>"""
+    )
+
+    xml_path = tmp_path / "cpu_chain.xml"
+    xml_path.write_text(
+        f"""<pystarc>
+        <receptor_pqr>{pqr_a}</receptor_pqr>
+        <rxns_xml>{rxn_xml}</rxns_xml>
+        <gpu>false</gpu>
+        <temperature>298.15</temperature>
+        <ion_concentration>0.15</ion_concentration>
+        <sdie>78.0</sdie>
+        <multipole_fallback>true</multipole_fallback>
+        <bd_milestone_radius>25.0</bd_milestone_radius>
+        <n_trajectories>2</n_trajectories>
+        <max_steps>3</max_steps>
+        <seed>5</seed>
+        <work_dir>{tmp_path / "cpu_out"}</work_dir>
+        <chain>
+            <chain_json>{c_json}</chain_json>
+            <auto_diffusion>true</auto_diffusion>
+            <target_grid_dx>{fine_dx}</target_grid_dx>
+            <coarse_grid_dx>{coarse_dx}</coarse_grid_dx>
+            <far_field>true</far_field>
+            <n_workers>1</n_workers>
+        </chain>
+        </pystarc>"""
+    )
+    cfg = parse(xml_path)
+    seen = {}
+    real_cls = chain_pipeline.ChainBDSimulator
+
+    def spy_sim(*args, **kwargs):
+        inst = real_cls(*args, **kwargs)
+        seen["sim"] = inst
+        return inst
+
+    orig_cls = chain_pipeline.ChainBDSimulator
+    try:
+        chain_pipeline.ChainBDSimulator = spy_sim
+        chain_pipeline.run_chain(cfg)
+    finally:
+        chain_pipeline.ChainBDSimulator = orig_cls
+
+    sim = seen["sim"]
+    assert sim._cpu_field is not None
+    assert len(sim.elec_grids) == 2
+    assert sim.use_far_field is True
+    assert sim.multipole_expansion is not None
+    # Beads placed at x = 10 A (outside fine [-6, 6] A, inside coarse [-15, 15] A)
+    # and at x = 30 A (outside both grids, in Yukawa/multipole far-field) must feel non-zero force.
+    f_coarse = sim._compute_per_atom_external_forces(pos0 + np.array([10.0, 0.0, 0.0]))
+    f_far = sim._compute_per_atom_external_forces(pos0 + np.array([30.0, 0.0, 0.0]))
+    assert np.linalg.norm(f_coarse) > 0.0
+    assert np.linalg.norm(f_far) > 0.0
+
+    # Verify kT_scale is forwarded to MultipoleExpansion when temperature != 298.15 K.
+    from pystarc.forces.multipole_farfield import MultipoleExpansion
+
+    cfg_310 = parse(xml_path)
+    cfg_310.temperature = 310.0
+    captured = {}
+
+    class _CaptureSim:
+        def __init__(self, **kw):
+            captured.update(kw)
+
+        def run(self):
+            return []
+
+    orig_cls2 = chain_pipeline.ChainBDSimulator
+    orig_write = chain_pipeline.write_chain_results
+    try:
+        chain_pipeline.ChainBDSimulator = _CaptureSim
+        chain_pipeline.write_chain_results = lambda **kw: []
+        chain_pipeline.run_chain(cfg_310)
+    finally:
+        chain_pipeline.ChainBDSimulator = orig_cls2
+        chain_pipeline.write_chain_results = orig_write
+
+    mp_298 = MultipoleExpansion(
+        np.array([[a.x, a.y, a.z] for a in sim.target.atoms], dtype=float),
+        np.array([a.charge for a in sim.target.atoms], dtype=float),
+        debye_length=cfg_310.debye_length,
+        sdie=78.0,
+        kT_scale=1.0,
+    )
+    assert captured["multipole_expansion"].four_pi_eps == pytest.approx(
+        mp_298.four_pi_eps * (310.0 / 298.15), rel=1e-12
+    )
 
 
 def test_cli_chain_simulation_options(tmp_path):

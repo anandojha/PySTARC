@@ -1101,6 +1101,10 @@ class ChainBDSimulator:
         auto_diffusion: bool = False,
         outputs=None,
         target_hydro_radius: Optional[float] = None,
+        elec_grids: Optional[List] = None,
+        born_grids: Optional[List] = None,
+        use_far_field: bool = False,
+        multipole_expansion=None,
     ):
         if params.diffusion_update_interval < 0:
             raise ValueError(
@@ -1287,6 +1291,40 @@ class ChainBDSimulator:
         # The 1-2 and 1-3 pairs, which the bond and angle terms describe, stay
         # out of the vacuum Coulomb sum of the full GB force.
         self._gb_exclude_mask = bonded_exclusions(chain_template)
+        e_grids = (
+            list(elec_grids)
+            if elec_grids is not None
+            else ([target_grid] if target_grid is not None else [])
+        )
+        b_grids = (
+            list(born_grids)
+            if born_grids is not None
+            else ([born_grid] if born_grid is not None else [])
+        )
+        self.elec_grids = e_grids
+        self.born_grids = b_grids
+        self.use_far_field = bool(use_far_field)
+        self.multipole_expansion = multipole_expansion
+        self._cpu_field = None
+        if len(e_grids) > 1 or len(b_grids) > 1 or self.use_far_field:
+            from pystarc.forces.gpu_chain_forces import GPUChainTargetField
+
+            self._cpu_field = GPUChainTargetField(
+                target=target,
+                chain_charges=self._chain_charges,
+                chain_radii=self._chain_radii,
+                elec_grids=e_grids,
+                born_grids=b_grids,
+                desolvation_alpha=self.desolvation_alpha,
+                use_far_field=self.use_far_field,
+                target_charge=target.total_charge() if target is not None else 0.0,
+                debye_length=params.debye_length,
+                sdie=params.dielectric,
+                kT_scale=params.temperature_kT / KBT_KCAL,
+                multipole_expansion=multipole_expansion,
+                gb_exclude_mask=self._gb_exclude_mask,
+                xp=np,
+            )
         # One force evaluation builds the index arrays and the stacked COFFDROP
         # tables of the chain here, so the workers of a parallel run share them.
         compute_chain_forces(
@@ -1450,22 +1488,30 @@ class ChainBDSimulator:
 
         If none of these contributions are active, the function returns zeros.
         """
-        if self.target_grid is not None:
-            forces, _energy = evaluate_target_grid_force_on_chain(
-                world_positions,
-                self._chain_charges,
-                self.target_grid,
-            )
+        if self._cpu_field is not None:
+            wp_batch = np.asarray(world_positions, dtype=np.float64)[None, :, :]
+            f_e, _ = self._cpu_field.evaluate_elec(wp_batch, want_energy=False)
+            forces = f_e[0]
+            if self.born_grids and self.desolvation_alpha != 0.0:
+                f_b, _ = self._cpu_field.evaluate_born(wp_batch, want_energy=False)
+                forces = forces + f_b[0]
         else:
-            forces = np.zeros_like(world_positions)
-        if self.born_grid is not None:
-            f_born, _e_born = evaluate_born_force_on_chain(
-                world_positions,
-                self._chain_charges,
-                self.born_grid,
-                alpha=self.desolvation_alpha,
-            )
-            forces = forces + f_born
+            if self.target_grid is not None:
+                forces, _energy = evaluate_target_grid_force_on_chain(
+                    world_positions,
+                    self._chain_charges,
+                    self.target_grid,
+                )
+            else:
+                forces = np.zeros_like(world_positions)
+            if self.born_grid is not None:
+                f_born, _e_born = evaluate_born_force_on_chain(
+                    world_positions,
+                    self._chain_charges,
+                    self.born_grid,
+                    alpha=self.desolvation_alpha,
+                )
+                forces = forces + f_born
         self._refresh_geometry()
         spheres = None
         if self.params.use_soft_repulsion:
@@ -1913,17 +1959,27 @@ class ChainBDSimulator:
                 _world_pos = place_chain(state.positions, pos, ori)
                 _e_elec = 0.0
                 _e_born = 0.0
-                if self.target_grid is not None:
-                    _f, _e_elec = evaluate_target_grid_force_on_chain(
-                        _world_pos, self._chain_charges, self.target_grid
-                    )
-                if self.born_grid is not None:
-                    _f, _e_born = evaluate_born_force_on_chain(
-                        _world_pos,
-                        self._chain_charges,
-                        self.born_grid,
-                        alpha=self.desolvation_alpha,
-                    )
+                if self._cpu_field is not None:
+                    _wp_b = np.asarray(_world_pos, dtype=np.float64)[None, :, :]
+                    _, _ee_arr = self._cpu_field.evaluate_elec(_wp_b, want_energy=True)
+                    _e_elec = float(_ee_arr[0])
+                    if self.born_grids and self.desolvation_alpha != 0.0:
+                        _, _eb_arr = self._cpu_field.evaluate_born(
+                            _wp_b, want_energy=True
+                        )
+                        _e_born = float(_eb_arr[0])
+                else:
+                    if self.target_grid is not None:
+                        _f, _e_elec = evaluate_target_grid_force_on_chain(
+                            _world_pos, self._chain_charges, self.target_grid
+                        )
+                    if self.born_grid is not None:
+                        _f, _e_born = evaluate_born_force_on_chain(
+                            _world_pos,
+                            self._chain_charges,
+                            self.born_grid,
+                            alpha=self.desolvation_alpha,
+                        )
                 # The steric energy is left at 0 here as a documented omission,
                 # because chain_target_steric_forces returns only the force.
                 energy_buf.append([_e_elec + _e_born, _e_elec, _e_born, 0.0])
@@ -1970,17 +2026,27 @@ class ChainBDSimulator:
                 # Interaction energy at the encounter, sampled here because
                 # energy_buf is filled only every save_interval steps.
                 _e_rxn = 0.0
-                if self.target_grid is not None:
-                    _e_rxn += evaluate_target_grid_force_on_chain(
-                        world_pos, self._chain_charges, self.target_grid
-                    )[1]
-                if self.born_grid is not None:
-                    _e_rxn += evaluate_born_force_on_chain(
-                        world_pos,
-                        self._chain_charges,
-                        self.born_grid,
-                        alpha=self.desolvation_alpha,
-                    )[1]
+                if self._cpu_field is not None:
+                    _wp_b = np.asarray(world_pos, dtype=np.float64)[None, :, :]
+                    _, _ee_arr = self._cpu_field.evaluate_elec(_wp_b, want_energy=True)
+                    _e_rxn += float(_ee_arr[0])
+                    if self.born_grids and self.desolvation_alpha != 0.0:
+                        _, _eb_arr = self._cpu_field.evaluate_born(
+                            _wp_b, want_energy=True
+                        )
+                        _e_rxn += float(_eb_arr[0])
+                else:
+                    if self.target_grid is not None:
+                        _e_rxn += evaluate_target_grid_force_on_chain(
+                            world_pos, self._chain_charges, self.target_grid
+                        )[1]
+                    if self.born_grid is not None:
+                        _e_rxn += evaluate_born_force_on_chain(
+                            world_pos,
+                            self._chain_charges,
+                            self.born_grid,
+                            alpha=self.desolvation_alpha,
+                        )[1]
                 return _result(
                     Fate.REACTED,
                     step,

@@ -591,3 +591,146 @@ def test_cpu_vs_gpu_ensemble_rate_parity(xp):
     p_pool = 0.5 * (p_cpu + p_gpu)
     se = math.sqrt(max(2.0 * p_pool * (1.0 - p_pool) / n_traj, 1.0e-12))
     assert abs(p_gpu - p_cpu) < 3.5 * se
+
+
+@pytest.mark.parametrize("xp", _BACKENDS)
+def test_gpu_chain_checkpoint_resume_matches_uninterrupted(tmp_path, xp):
+    """Resuming GPUChainBDSimulator from an out-of-order chain_checkpoint.npz reproduces the uninterrupted run."""
+    common = chain_from_sequence("AKRD", sidechains=True)
+    pos0 = place_relaxed_geometry(common)
+    pos0 -= pos0.mean(axis=0)
+    target = Molecule(
+        name="t",
+        atoms=[Atom(index=0, x=0.0, y=0.0, z=0.0, charge=-1.0, radius=2.0)],
+    )
+    rxn = ReactionInterface(
+        name="hit",
+        criteria=ReactionCriteria(
+            name="hit",
+            pairs=[ContactPair(0, 0, 7.5)],
+            n_needed=1,
+        ),
+    )
+    params = ChainBDParameters(
+        n_trajectories=10,
+        dt=0.25,
+        dt_rxn=0.05,
+        dt_chain=0.05,
+        chain_steps_per_outer=2,
+        max_steps=40,
+        r_start=10.0,
+        r_escape=16.0,
+        use_lmz=False,
+        seed=77,
+    )
+    sim_full = GPUChainBDSimulator(
+        target=target,
+        chain_template=common,
+        chain_init_body_positions=pos0,
+        params=params,
+        pathway_set=PathwaySet([rxn]),
+        auto_diffusion=True,
+        outputs=OutputConfig(save_interval=0),
+        batch_size=4,
+        xp=xp,
+    )
+    full_res = sim_full.run()
+    assert len(full_res) == 10
+
+    # Seed a checkpoint containing an out-of-order subset of finished trajectories.
+    ckpt_dir = tmp_path / "ckpt_run"
+    ckpt_dir.mkdir()
+    done_ids = [1, 4, 7, 9]
+    partial = [full_res[i] if i in done_ids else None for i in range(10)]
+    sim_full.n_reacted = sum(full_res[i].fate == Fate.REACTED for i in done_ids)
+    sim_full.n_escaped = sum(full_res[i].fate == Fate.ESCAPED for i in done_ids)
+    sim_full.n_max_steps = sum(full_res[i].fate == Fate.MAX_STEPS for i in done_ids)
+    sim_full._write_checkpoint(ckpt_dir / "chain_checkpoint.npz", partial, len(done_ids))
+    assert (ckpt_dir / "chain_checkpoint.npz").is_file()
+
+    sim_resumed = GPUChainBDSimulator(
+        target=target,
+        chain_template=common,
+        chain_init_body_positions=pos0,
+        params=params,
+        pathway_set=PathwaySet([rxn]),
+        auto_diffusion=True,
+        outputs=OutputConfig(save_interval=0),
+        batch_size=3,
+        checkpoint_interval=2,
+        work_dir=ckpt_dir,
+        xp=xp,
+    )
+    resumed_res = sim_resumed.run()
+    assert not (ckpt_dir / "chain_checkpoint.npz").exists()
+    assert len(resumed_res) == 10
+    for r_ref, r_got in zip(full_res, resumed_res):
+        assert r_got.fate == r_ref.fate
+        assert r_got.steps == r_ref.steps
+        assert r_got.time_ps == pytest.approx(r_ref.time_ps, rel=1e-12, abs=1e-12)
+        assert r_got.final_separation == pytest.approx(
+            r_ref.final_separation, rel=1e-12, abs=1e-12
+        )
+        assert r_got.reaction_name == r_ref.reaction_name
+
+
+@pytest.mark.parametrize("xp", _BACKENDS)
+def test_gpu_chain_lmz_return_records_radial_returns(monkeypatch, xp):
+    """GPUChainBDSimulator records radial_returns across LMZ returns matching ChainBDSimulator."""
+    import pystarc.simulation.gpu_chain_simulator as gcs
+
+    common = chain_from_sequence("AAA", sidechains=False)
+    pos0 = place_relaxed_geometry(common)
+    pos0 -= pos0.mean(axis=0)
+    target = Molecule(
+        name="t",
+        atoms=[Atom(index=0, x=0.0, y=0.0, z=0.0, charge=0.0, radius=1.5)],
+    )
+    params = ChainBDParameters(
+        n_trajectories=1,
+        dt=0.5,
+        dt_rxn=0.1,
+        dt_chain=0.05,
+        chain_steps_per_outer=1,
+        max_steps=4,
+        r_start=20.0,
+        r_escape=40.0,
+        use_lmz=True,
+        seed=11,
+    )
+    sim = GPUChainBDSimulator(
+        target=target,
+        chain_template=common,
+        chain_init_body_positions=pos0,
+        params=params,
+        pathway_set=PathwaySet([]),
+        D_trans=50.0,
+        D_rot=0.01,
+        outputs=OutputConfig(save_interval=1),
+        xp=xp,
+    )
+    calls = []
+
+    def fake_outer(outer_prop, pos_sub, ori_sub, tids, stps, rng_h):
+        calls.append(1)
+        b_len = len(tids)
+        if len(calls) == 1:
+            nrm = xp.maximum(xp.sqrt(xp.sum(pos_sub * pos_sub, axis=1, keepdims=True)), 1e-12)
+            return xp.ones(b_len, dtype=bool), (pos_sub / nrm) * 20.0, ori_sub
+        return xp.zeros(b_len, dtype=bool), pos_sub, ori_sub
+
+    monkeypatch.setattr(gcs, "outer_propagate_batch", fake_outer)
+    orig_spawn = sim._spawn_slots
+
+    def spawn_at_outer(tids, rng_h):
+        slot = orig_spawn(tids, rng_h)
+        slot["pos"] = xp.asarray([[24.0, 0.0, 0.0]] * len(tids), dtype=xp.float64)
+        return slot
+
+    monkeypatch.setattr(sim, "_spawn_slots", spawn_at_outer)
+    res = sim.run()
+    assert len(res) == 1
+    assert res[0].radial_returns is not None
+    assert len(res[0].radial_returns) == len(res[0].radial_trace)
+    assert int(res[0].radial_returns.sum()) == 1
+
