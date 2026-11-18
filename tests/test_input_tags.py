@@ -118,7 +118,7 @@ def test_rigid_input_must_name_the_excluded_volume(tmp_path):
 @pytest.mark.parametrize("cfg_path", sorted(EXAMPLES.glob("**/config.xml")),
                          ids=lambda p: p.parent.name)
 def test_every_example_config_follows_the_universal_template(cfg_path):
-    """Every example config.xml has the same 10 sections and tag order, with no setup.py left."""
+    """Every example config.xml has the same 9 sections and tag order, with no setup.py left."""
     from pystarc.pipeline import build_inputs as bi
 
     assert not (cfg_path.parent / "setup.py").exists()
@@ -186,8 +186,8 @@ def test_config_strict_tag_and_section_validation(tmp_path):
     with pytest.raises(ValueError, match="<seed> in <outputs>: place it inside <simulation>"):
         parse(p2)
     p3 = tmp_path / "typo.xml"
-    p3.write_text("<config><structure><smiels>CCO</smiels></structure></config>")
-    with pytest.raises(ValueError, match="Unknown tag <smiels>.*did you mean <smiles>"):
+    p3.write_text("<config><structure><recpetor>receptor.pdb</recpetor></structure></config>")
+    with pytest.raises(ValueError, match="Unknown tag <recpetor>.*did you mean <receptor>"):
         parse(p3)
     blank = tmp_path / "template.xml"
     blank.write_text(bi.config_xml({}, full_template=True))

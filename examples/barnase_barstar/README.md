@@ -4,8 +4,8 @@ Runs on CPUs and needs no GPU. The shard count and the CPUs and memory per shard
 
 ## Input files
 ```
-1BRS.pdb           PDB structure of the complex
 barnase.pqr        PQR file for receptor charges and radii
+barstar.pdb        Prepared PDB structure of the diffusing chain
 config.xml         PySTARC configuration file
 run.sh             Script to run a single simulation on the workstation
 make_grids.py      Builds the APBS electrostatic and Born grids

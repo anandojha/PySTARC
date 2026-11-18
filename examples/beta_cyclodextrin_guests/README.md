@@ -16,8 +16,8 @@ beta_cyclodextrin_guests/
 
 ## Input files for each complex
 ```
-complex.pdb                 PDB structure of the complex
-complex.parm7               AMBER topology file
+receptor.pqr                PQR file for receptor charges and radii
+ligand.pqr                  PQR file for ligand charges and radii
 config.xml                  PySTARC configuration file
 run.sh                      Script to run PySTARC simulations on the workstation
 submit_SLURM_single_GPU.sh  Script to run PySTARC simulations on the cluster with 1 GPU

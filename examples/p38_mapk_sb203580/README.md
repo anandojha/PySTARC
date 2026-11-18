@@ -4,7 +4,8 @@ Requires a CUDA GPU.
 
 ## Input files
 ```
-complex.pdb                 Prepared PDB structure of the complex
+receptor.pdb                Prepared PDB structure of the receptor
+ligand.pdb                  Prepared PDB structure of the ligand
 config.xml                  PySTARC configuration file
 run.sh                      Script to run PySTARC simulations on the workstation
 submit_SLURM_single_GPU.sh  Script to run PySTARC simulations on the cluster with 1 GPU

@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <pystarc>
   <!-- System -->
-  <receptor_resname> </receptor_resname>
-  <ligand_resname> </ligand_resname>
   <receptor_pqr> </receptor_pqr>
   <ligand_pqr> </ligand_pqr>
   <rxns_xml> </rxns_xml>
