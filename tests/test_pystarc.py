@@ -22150,11 +22150,11 @@ def test_parse_reads_r_escape_override(tmp_path):
     )
     dst = tmp_path / "tcs"
     shutil.copytree(src, dst)
-    base = (dst / "input.xml").read_text()
-    assert parse(dst / "input.xml").r_escape == 0.0
-    inj = base.replace("</pystarc>", "  <r_escape>40.0</r_escape>\n</pystarc>")
-    (dst / "input_resc.xml").write_text(inj)
-    assert parse(dst / "input_resc.xml").r_escape == 40.0
+    assert parse(dst / "config.xml").r_escape == 0.0
+    base = (dst / "bd_sims" / "input.xml").read_text()
+    inj = re.sub(r"<r_escape>[^<]*</r_escape>", "<r_escape>40.0</r_escape>", base)
+    (dst / "bd_sims" / "input_resc.xml").write_text(inj)
+    assert parse(dst / "bd_sims" / "input_resc.xml").r_escape == 40.0
 
 
 def test_dx_gradient_is_central_difference_and_more_accurate():

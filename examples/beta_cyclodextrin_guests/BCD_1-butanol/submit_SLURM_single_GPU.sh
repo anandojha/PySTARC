@@ -20,9 +20,4 @@ export PYTHONPATH=$ROOT
 
 cd "$BASE"
 rm -rf bd_sims
-if [ -f setup.py ]; then
-  rm -f input.xml rxns.xml receptor.pqr ligand.pqr receptor.pdb ligand.pdb
-  rm -f protein.prmtop protein.rst7 ligand.prmtop ligand.rst7 *.cache _full.rst7
-  python setup.py
-fi
-python "$ROOT/run_pystarc.py" input.xml
+python "$ROOT/run_pystarc.py" config.xml

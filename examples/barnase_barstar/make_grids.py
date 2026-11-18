@@ -13,7 +13,7 @@ from pystarc.pipeline.input_parser import parse
 from pystarc.pipeline.chain_pipeline import _ensure_chain_apbs_grids, parse_pqr
 
 os.chdir(HERE)
-xml = sys.argv[1] if len(sys.argv) > 1 else "input.xml"
+xml = sys.argv[1] if len(sys.argv) > 1 else "config.xml"
 cfg = parse(xml)
 cc = cfg.chain
 

@@ -1,11 +1,12 @@
 """
 Builds the input files of a PySTARC run from a config.xml: receptor.pqr,
-ligand.pqr, rxns.xml, input.xml and build_record.json, in the folder of the
-config. The structure sources are pqr, prmtop, complex_pdb, rcsb and
-rcsb_smiles. The reaction criterion modes are contacts, centroid and site.
+ligand.pqr, rxns.xml (or chain.json and reaction_pairs.json), input.xml and
+build_record.json. The structure sources are pqr, prmtop, complex_pdb, rcsb,
+rcsb_smiles and chain_pdb. The reaction criterion modes are contacts, centroid
+and site.
 
-    python -m pystarc.pipeline.build_inputs [config.xml]
-    python -m pystarc.pipeline.build_inputs --template
+    python run_pystarc.py config.xml --setup
+    python run_pystarc.py --template
 """
 
 import xml.etree.ElementTree as ET
@@ -13,6 +14,8 @@ import urllib.request
 import numpy as np
 import collections
 import subprocess
+import difflib
+import shutil
 import sys
 import os
 import re
@@ -22,11 +25,12 @@ import hashlib
 from pystarc.structures.pqr_io import parse_pqr_records
 
 SOURCES = {
-    "pqr":         dict(need=("receptor_pqr_file", "ligand_pqr_file"), opt=(), note="Uses receptor and ligand PQR files that already exist"),
-    "prmtop":      dict(need=("prmtop", "complex_pdb"), opt=(), note="Uses a topology and PDB that already exist"),
+    "pqr":         dict(need=("receptor_pqr_file", "ligand_pqr_file"), opt=(), note="Reads receptor and ligand PQR files that already exist"),
+    "prmtop":      dict(need=("prmtop", "complex_pdb"), opt=(), note="Reads an AMBER topology and PDB that already exist"),
     "complex_pdb": dict(need=("complex_pdb",), opt=("ligand_net_charge", "ligand_ccd", "ligand_protonate", "ligand_deprotonate"), note="Takes one PDB holding the receptor and the ligand"),
     "rcsb":        dict(need=("pdb_id", "ligand_resid"), opt=("chain", "rec_resid_min", "ligand_net_charge", "ligand_ccd", "ligand_protonate", "ligand_deprotonate"), note="Downloads the entry and takes the ligand as deposited"),
     "rcsb_smiles": dict(need=("pdb_id", "ligand_resid", "smiles"), opt=("chain", "keep_hetatm", "ligand_net_charge"), note="Takes the receptor from the entry and builds the ligand from SMILES"),
+    "chain_pdb":   dict(need=("complex_pdb", "receptor_pqr_file", "chain", "ligand_chain"), opt=(), note="Builds a flexible COFFDROP bead chain from a PDB complex and a receptor PQR"),
 }
 
 MODES = {
@@ -45,49 +49,51 @@ ATOM_FILTERS = {
     "polar":          "Matches N O or S on both sides",
     "nonpolar":       "Matches carbon on both sides",
     "any_polar":      "Matches N O or S on either side",
-    "receptor_polar": "Matches N O or S on the receptor side only",
+    "receptor_polar": "Matches N O or S on the receptor side",
 }
 
 KEYS = {
     "ligand_source":       "Source of the receptor and ligand structures.",
-    "receptor_pqr_file":   "Existing receptor PQR with charges and radii. Not named receptor.pqr, which the run remakes.",
-    "ligand_pqr_file":     "Existing ligand PQR with charges and radii. Not named ligand.pqr, which the run remakes.",
+    "receptor_pqr_file":   "Existing receptor PQR with charges and radii.",
+    "ligand_pqr_file":     "Existing ligand PQR with charges and radii.",
     "prmtop":              "Existing AMBER topology.",
     "complex_pdb":         "Single PDB containing receptor and ligand.",
     "pdb_id":              "RCSB entry to download.",
     "ligand_resid":        "Residue name of the ligand within the RCSB entry.",
-    "smiles":              "Ligand SMILES, used in place of the deposited coordinates.",
+    "smiles":              "Ligand SMILES, in place of deposited coordinates.",
     "chain":               "Receptor chain retained. Blank retains all chains.",
+    "ligand_chain":        "Ligand chain in complex_pdb for chain_pdb.",
     "rec_resid_min":       "Lowest receptor residue number retained.",
-    "ligand_net_charge":   "Formal charge of the ligand. Blank takes it from the component definition or the SMILES. Required when the ligand has neither.",
-    "ligand_ccd":          "Component supplying the bond orders and formal charges. Blank uses the residue name of the ligand when it is a component code.",
-    "ligand_protonate":    "Component atoms that each take one proton on top of the component definition. Each adds one to the net charge.",
-    "ligand_deprotonate":  "Component atoms that each give up one proton of the component definition. Each takes one from the net charge.",
+    "ligand_net_charge":   "Formal charge of the ligand. Blank takes the charge from the component definition or the SMILES.",
+    "ligand_ccd":          "Component supplying bond orders and formal charges. Blank takes the residue name of the ligand when valid.",
+    "ligand_protonate":    "Component atoms that each take one proton on top of the component definition.",
+    "ligand_deprotonate":  "Component atoms that each drop one proton of the component definition.",
     "keep_hetatm":         "Het groups retained with the receptor.",
     "ligand_formula":      "Expected ligand composition. The build aborts on a mismatch.",
-    "receptor_resname":    "Receptor label written to input.xml.",
-    "ligand_resname":      "Ligand label written to input.xml.",
+    "receptor_resname":    "Receptor label.",
+    "ligand_resname":      "Ligand label.",
     "mode":                "How the atom pairs of the reaction criterion are chosen.",
     "receptor_numbering":  "Numbering for the target residues.",
-    "search_cutoff":       "Mode contacts with pairs picked from the crystal contacts. Search radius (in angstroms).",
-    "n_pairs":             "Mode contacts with pairs picked from the crystal contacts. Number of contacts retained, one or an even number.",
-    "receptor":            "Receptor side of each listed pair of mode contacts, or the receptor anchor atom of mode site. A pair counts when its receptor atom is within the cutoff of its ligand atom.",
-    "ligand":              "Ligand side of each listed pair of mode contacts, or the ligand anchor atom of mode site. In mode contacts, auto chooses the nearest atom that atom_filter permits.",
+    "search_cutoff":       "Mode contacts with pairs picked from the bound contacts. Search radius (in angstroms).",
+    "n_pairs":             "Mode contacts with pairs picked from the bound contacts. Number of contacts retained, one or an even number.",
+    "receptor":            "Receptor side of each listed pair of mode contacts, or the receptor anchor atom of mode site.",
+    "ligand":              "Ligand side of each listed pair of mode contacts, or the ligand anchor atom of mode site. In mode contacts, auto chooses the nearest permitted atom.",
     "atom_filter":         "Element pairings permitted.",
     "excluded":            "Atom names omitted from the search.",
-    "pair_cutoff":         "Reaction distance for every pair (in angstroms). Mode site takes this or margin.",
-    "margin":              "Mode site only. Distance added to the closest accessible approach of the ligand anchor atom to the receptor anchor atom, or of the ligand centroid to the site ghost atom. The cutoff is rounded to the nearest 0.25 A (in angstroms).",
-    "pocket_ligand":       "Mode site without anchor atoms and with a ligand built from SMILES. Residue name of the deposited ligand whose centroid marks the site.",
+    "pair_cutoff":         "Reaction distance for every pair (in angstroms). Mode site takes pair_cutoff or margin.",
+    "margin":              "Mode site distance added to the closest accessible approach (in angstroms), rounded to 0.01 A.",
+    "pocket_ligand":       "Mode site without anchor atoms for a SMILES ligand. Residue name of the deposited ligand marking the site.",
     "pocket_ligand_resid": "Residue number of pocket_ligand when the chain holds several copies.",
-    "n_needed":            "Mode contacts only. Pairs that must be inside their cutoff at once: 1 for one pair, half of them for an even number of pairs.",
+    "n_needed":            "Mode contacts pairs that must be inside cutoff at once: 1 for one pair, half of an even pair count, or any positive count for chain_pdb.",
     "bd_milestone_radius": "Radius of the starting sphere (in angstroms).",
+    "r_escape":            "Escape sphere radius (in angstroms). 0 derives twice bd_milestone_radius.",
     "n_trajectories":      "Number of Brownian dynamics trajectories.",
     "apbs_fglen":          "Fine electrostatic grid length (in angstroms). 0 derives it.",
     "apbs_dime":           "Grid points per axis of the electrostatic grid.",
     "apbs_cglen":          "Coarse electrostatic grid length (in angstroms). 0 derives it.",
-    "apbs_coarse_dime":    "Grid points per axis of the coarse grid. 0 uses apbs_dime.",
-    "apbs_fine_dime":      "Grid points per axis of the fine grid. 0 uses apbs_dime.",
-    "debye_length":        "Electrostatic screening length of the salt (in angstroms).",
+    "apbs_coarse_dime":    "Grid points per axis of the coarse grid. 0 takes apbs_dime.",
+    "apbs_fine_dime":      "Grid points per axis of the fine grid. 0 takes apbs_dime.",
+    "debye_length":        "Electrostatic screening length of the salt (in angstroms). Blank derives it from ion_concentration.",
     "ion_concentration":   "Salt concentration (in molar).",
     "ion_radius_pos":      "Radius of the positive ion (in angstroms).",
     "ion_radius_neg":      "Radius of the negative ion (in angstroms).",
@@ -105,25 +111,36 @@ KEYS = {
     "max_steps":           "Step limit per trajectory.",
     "dt":                  "Outer time step of the flexible chain model (in picoseconds). No effect on rigid body runs.",
     "minimum_core_dt":     "Smallest permitted time step. 0 imposes no floor.",
-    "minimum_core_reaction_dt": "Smallest time step near the reaction surface (in picoseconds). 0 imposes no floor on the GPU, the CPU model uses 0.05.",
+    "minimum_core_reaction_dt": "Smallest time step near the reaction surface (in picoseconds). 0 imposes no floor on the GPU.",
     "max_dt":              "Ceiling on the time step. 0 imposes no ceiling.",
     "r_hydro_rec":         "Receptor hydrodynamic radius. 0 derives it from the PQR.",
     "r_hydro_lig":         "Ligand hydrodynamic radius. 0 derives it from the PQR file.",
     "temperature":         "Temperature (in kelvin).",
     "seed":                "Random number seed.",
     "gpu":                 "Evaluate forces on the GPU.",
+    "n_gpus":              "Number of GPUs for parallel trajectory splitting. 1 runs a single worker.",
     "n_threads":           "Number of CPU threads.",
+    "work_dir":            "Output directory for grids, generated inputs and trajectory data.",
     "convergence_check":   "Run convergence analysis after the simulation.",
     "convergence_interval": "Reporting interval for the running rate.",
     "convergence_tol":     "Relative error defining convergence.",
     "checkpoint_interval": "Trajectories between checkpoints. 0 disables checkpointing.",
-    "save_interval":       "Steps between saved positions. 0 saves endpoints only.",
+    "save_interval":       "Steps between saved positions. 0 saves endpoints.",
     "full_paths":          "Save positions and orientations every save_interval steps.",
     "energetics":          "Save the force on the ligand and the time step every save_interval steps.",
+    "dt_chain":            "Inner time step of flexible chain internal coordinates (in picoseconds).",
+    "chain_steps_per_outer": "Inner chain steps per outer step.",
+    "n_equilibration_steps": "Pre-equilibration chain steps before each trajectory. 0 skips pre-equilibration.",
+    "auto_diffusion":      "Compute chain diffusion tensors from RPY bead geometry.",
+    "d_trans":             "Explicit chain translational diffusion when auto_diffusion is false (in A^2/ps).",
+    "d_rot":               "Explicit chain rotational diffusion when auto_diffusion is false (in rad^2/ps).",
+    "soft_repulsion_eps":  "Chain soft repulsion strength (in units of kT).",
+    "target_grid_dx":      "Optional receptor electrostatic DX grid path for chain_pdb. Blank builds in work_dir.",
+    "born_grid_dx":        "Optional receptor Born DX grid path for chain_pdb. Blank builds in work_dir.",
 }
 
 # Run parameters written into input.xml grouped by section of config.xml
-GEOMETRY = ("bd_milestone_radius", "r_hydro_rec", "r_hydro_lig")
+GEOMETRY = ("bd_milestone_radius", "r_escape", "r_hydro_rec", "r_hydro_lig")
 ELECTROSTATICS = (
     "debye_length", "ion_concentration", "ion_radius_pos", "ion_radius_neg",
     "pdie", "sdie", "srad", "apbs_fglen", "apbs_dime", "apbs_cglen",
@@ -139,18 +156,24 @@ SIMULATION = (
     "convergence_check", "convergence_interval", "convergence_tol",
     "checkpoint_interval",
 )
-COMPUTE = ("gpu", "gpu_force_batch", "n_threads")
+COMPUTE = ("gpu", "n_gpus", "gpu_force_batch", "n_threads", "work_dir")
 OUTPUTS = ("save_interval", "full_paths", "energetics")
-BD_PARAMS = GEOMETRY + ELECTROSTATICS + PHYSICS + SIMULATION + COMPUTE + OUTPUTS
+CHAIN = (
+    "dt_chain", "chain_steps_per_outer", "n_equilibration_steps",
+    "auto_diffusion", "d_trans", "d_rot", "soft_repulsion_eps",
+    "target_grid_dx", "born_grid_dx",
+)
+INPUT_COMPUTE = ("gpu", "gpu_force_batch", "n_threads")
+BD_PARAMS = GEOMETRY + ELECTROSTATICS + PHYSICS + SIMULATION + INPUT_COMPUTE + OUTPUTS
 
-# Settings a config.xml may leave out and the value input.xml then gets.
-# These are the defaults of pystarc/pipeline/input_parser.py.
+# Settings a config.xml may leave blank and the value input.xml then gets.
 OPTIONAL = {"soft_repulsion": "false", "minimum_core_reaction_dt": "0",
-            "full_paths": "true", "energetics": "true"}
+            "full_paths": "true", "energetics": "true", "r_escape": "0",
+            "debye_length": ""}
 
 BOOL = ("enable_born2_torque", "hydrodynamic_interactions", "multipole_fallback",
         "lj_forces", "overlap_check", "soft_repulsion", "gpu", "convergence_check",
-        "full_paths", "energetics")
+        "full_paths", "energetics", "auto_diffusion")
 
 POLAR = {"N", "O", "S"}
 SITE_ATOM = "PKT"
@@ -185,7 +208,7 @@ def tidy(W, cfg, cif=None):
 # config, so a PDB id, a component code or a chain stays as written.
 NUMBER = {"rec_resid_min": int, "ligand_net_charge": int, "search_cutoff": float,
           "n_pairs": int, "pair_cutoff": float, "n_needed": int, "margin": float,
-          "pocket_ligand_resid": int}
+          "pocket_ligand_resid": int, "n_gpus": int}
 
 def _number(tag, text, kind=None):
     try:
@@ -200,14 +223,16 @@ def _value(el):
         return _number(el.tag, text) if text and el.tag in NUMBER else text
     out = []
     for c in kids:
-        a = {k: v.strip() for k, v in c.attrib.items()}
+        a = {k: v.strip() for k, v in c.attrib.items() if v.strip()}
         if {"resid", "atom", "resname"} <= set(a):
             out.append((_number("resid", a["resid"], int), a["atom"], a["resname"]))
         elif a:
             out.append(tuple(a.values()))
         else:
-            out.append((c.text or "").strip())
-    return out
+            txt = (c.text or "").strip()
+            if txt:
+                out.append(txt)
+    return out if out else ""
 
 def _list(v):
     """A list key as a list. A key written as plain text holds one entry."""
@@ -215,12 +240,54 @@ def _list(v):
         return []
     return [v] if isinstance(v, (str, tuple)) else list(v)
 
+def _src_file(cfg, W, rel_path):
+    if os.path.isabs(rel_path):
+        return rel_path
+    sdir = cfg.get("source_dir", W)
+    cand = os.path.join(sdir, rel_path)
+    if os.path.exists(cand):
+        return cand
+    return os.path.join(W, rel_path)
+
 def read_config(path):
+    root = ET.parse(path).getroot()
+    if root.tag != "config":
+        raise ValueError(f"Expected <config> root in {path}, got <{root.tag}>")
+    sec_map = dict(SECTIONS)
+    tag_home = {t: sname for sname, order in SECTIONS for t in order}
+    all_tags = list(tag_home)
     cfg = {}
-    for sec in ET.parse(path).getroot():
-        vals = {el.tag: v for el in sec if (v := _value(el)) != ""}
+    for sec in root:
+        if sec.tag not in sec_map:
+            hint = difflib.get_close_matches(sec.tag, list(sec_map), n=1)
+            raise ValueError(
+                f"Unknown section <{sec.tag}> in <config>"
+                + (f": did you mean <{hint[0]}>?" if hint else ".")
+            )
+        allowed = set(sec_map[sec.tag])
+        vals = {}
+        for el in sec:
+            if el.tag not in allowed:
+                if el.tag in tag_home:
+                    raise ValueError(
+                        f"<{el.tag}> in <{sec.tag}>: place it inside <{tag_home[el.tag]}>."
+                    )
+                hint = difflib.get_close_matches(el.tag, all_tags, n=1)
+                raise ValueError(
+                    f"Unknown tag <{el.tag}> in <{sec.tag}>"
+                    + (f": did you mean <{hint[0]}>?" if hint else ".")
+                )
+            v = _value(el)
+            if v != "":
+                vals[el.tag] = v
         if sec.tag == "criterion":
             cfg["criterion"] = vals
+        elif sec.tag == "chain":
+            cfg["chain_cfg"] = vals
+        elif sec.tag == "compute":
+            if "work_dir" in vals:
+                cfg["bd_work_dir"] = vals.pop("work_dir")
+            cfg.update(vals)
         else:
             cfg.update(vals)
     return cfg
@@ -277,18 +344,19 @@ def source_prmtop(cfg, W):
     One ambpdb run gives the whole complex, which is split by residue name.
     Anything in SKIP_HET, water and loose counter ions, is dropped.
     """
-    top, pdb = cfg["prmtop"], cfg["complex_pdb"]
-    for f in (top, pdb):
-        if not os.path.exists(os.path.join(W, f)):
-            sys.exit(f"  ERROR: no {f}")
+    top = _src_file(cfg, W, cfg["prmtop"])
+    pdb = _src_file(cfg, W, cfg["complex_pdb"])
+    for raw, f in ((cfg["prmtop"], top), (cfg["complex_pdb"], pdb)):
+        if not os.path.exists(f):
+            sys.exit(f"  ERROR: no {raw}")
     full = os.path.join(W, "_full.rst7")
     _gone(full)
     subprocess.run("cpptraj", input=f"parm {top}\ntrajin {pdb}\n"
                    f"trajout _full.rst7\nrun\n", cwd=W,
                    capture_output=True, text=True)
     if not os.path.exists(full):
-        sys.exit(f"  ERROR: cpptraj could not read {pdb} with {top}")
-    r = subprocess.run(f"ambpdb -p {top} -c _full.rst7 -pqr", shell=True, cwd=W,
+        sys.exit(f"  ERROR: cpptraj could not read {cfg['complex_pdb']} with {cfg['prmtop']}")
+    r = subprocess.run(["ambpdb", "-p", top, "-c", "_full.rst7", "-pqr"], cwd=W,
                        capture_output=True, text=True)
     lig_name = cfg["ligand_resname"]
     rec, lig = [], []
@@ -388,10 +456,11 @@ def _cif_rows(path, category):
 
 ORDERS = {"SING": 1, "DOUB": 2, "TRIP": 3}
 
-def ccd_definition(code, W):
+def ccd_definition(code, W, source_dir=None):
     """Bonds with their orders, formal charges, elements and leaving atoms of
     the deposited chemical component, by atom name."""
-    cif = os.path.join(W, f"{code}.cif")
+    cif_src = os.path.join(source_dir, f"{code}.cif") if source_dir else None
+    cif = cif_src if (cif_src and os.path.exists(cif_src)) else os.path.join(W, f"{code}.cif")
     if not os.path.exists(cif):
         _download(f"https://files.rcsb.org/ligands/download/{code}.cif", cif,
                   f"the chemical component {code}. Name the component in ligand_ccd, "
@@ -500,7 +569,7 @@ def _parameterize(cfg, W):
         sys.exit(f"  ERROR: {sorted(set(prot) & set(deprot))} named in both "
                  f"ligand_protonate and ligand_deprotonate")
     if code:
-        bonds, charges, elements, leaving = ccd_definition(code, W)
+        bonds, charges, elements, leaving = ccd_definition(code, W, cfg.get("source_dir"))
         name = lambda a: a.GetPDBResidueInfo().GetName().strip()
         rw = Chem.RWMol(m)
         for i, j in [(b.GetBeginAtomIdx(), b.GetEndAtomIdx()) for b in rw.GetBonds()]:
@@ -653,7 +722,9 @@ def _label(key):
 
 def source_complex_pdb(cfg, W):
     """Split the PDB, parameterize both, ambpdb."""
-    src = os.path.join(W, cfg["complex_pdb"])
+    src = _src_file(cfg, W, cfg["complex_pdb"])
+    if not os.path.exists(src):
+        sys.exit(f"  ERROR: no {cfg['complex_pdb']}")
     prot, het = [], []
     for line in open(src):
         if line.startswith("ATOM"):
@@ -693,8 +764,9 @@ def source_rcsb(cfg, W):
     from the component definition when the composition check asks for them.
     """
     pid = cfg["pdb_id"]
-    entry = os.path.join(W, f"{pid}.pdb")
+    entry = _src_file(cfg, W, f"{pid}.pdb")
     if not os.path.exists(entry):
+        entry = os.path.join(W, f"{pid}.pdb")
         _download(f"https://files.rcsb.org/download/{pid}.pdb", entry, f"the entry {pid}")
         print(f"  downloaded {pid}.pdb")
 
@@ -788,8 +860,9 @@ def source_rcsb_smiles(cfg, W):
     oxygen it did not add itself.
     """
     pid = cfg["pdb_id"]
-    entry = os.path.join(W, f"{pid}.pdb")
+    entry = _src_file(cfg, W, f"{pid}.pdb")
     if not os.path.exists(entry):
+        entry = os.path.join(W, f"{pid}.pdb")
         _download(f"https://files.rcsb.org/download/{pid}.pdb", entry, f"the entry {pid}")
         print(f"  downloaded {pid}.pdb")
     chain = cfg.get("chain")
@@ -812,38 +885,198 @@ def source_pqr(cfg, W):
     """Receptor and ligand PQR files that already exist, charges and radii included."""
     for key, out in (("receptor_pqr_file", "receptor.pqr"),
                      ("ligand_pqr_file", "ligand.pqr")):
-        src = os.path.join(W, cfg[key])
+        src = _src_file(cfg, W, cfg[key])
         if not os.path.exists(src):
             sys.exit(f"  ERROR: no {cfg[key]}")
         dst = os.path.join(W, out)
         if os.path.abspath(src) == os.path.abspath(dst):
-            sys.exit(f"  ERROR: {key} must not be {out}, which the run remakes")
+            sys.exit(f"  ERROR: {key} must not overwrite {out} in place")
         # The run places its own ghost atoms, so a GHO or PKT left in the file
         # by an earlier run is taken out here.
         lines = open(src).read().split("\n")
         ghost = lambda l: (l.startswith(("ATOM", "HETATM"))
-                           and l[12:16].strip().upper() in ("GHO", SITE_ATOM))
+                           and (l[12:16].strip().upper() in ("GHO", SITE_ATOM)
+                                or (len(l.split()) >= 3 and l.split()[2].upper() in ("GHO", SITE_ATOM))))
         n_gho = sum(1 for l in lines if ghost(l))
         open(dst, "w").write("\n".join(l for l in lines if not ghost(l)))
         n = sum(1 for l in open(dst) if l.startswith(("ATOM", "HETATM")))
         print(f"  {out}: {n} atoms from {cfg[key]}"
               + (f", {n_gho} ghost atom left out" if n_gho else ""))
 
+TLEAP_VARIANT_GROUPS = [
+    {"HIS", "HIE", "HID", "HIP"},
+    {"CYS", "CYX", "CYM"},
+    {"ASP", "ASH"},
+    {"GLU", "GLH"},
+    {"LYS", "LYN"},
+]
+
+def _resname_match(r1, r2):
+    return r1 == r2 or any(r1 in g and r2 in g for g in TLEAP_VARIANT_GROUPS)
+
+def _parse_pdb_chain_heavy(pdb_path, chain_id):
+    atoms = []
+    for line in open(pdb_path):
+        if not line.startswith("ATOM") or line[21] != chain_id:
+            continue
+        aname = line[12:16].strip()
+        if aname.startswith("H") or (len(aname) > 1 and aname[0].isdigit() and aname[1] == "H"):
+            continue
+        atoms.append({
+            "atom_name": aname,
+            "resname": line[17:20].strip(),
+            "resid": int(line[22:26]),
+            "xyz": np.array([float(line[30:38]), float(line[38:46]), float(line[46:54])]),
+        })
+    return atoms
+
+def _seq_residues(atoms):
+    out, last = [], None
+    for a in atoms:
+        if a["resid"] != last:
+            last = a["resid"]
+            out.append({"seq_pos": len(out), "resname": a["resname"], "resid_native": last, "atoms": []})
+        out[-1]["atoms"].append(a)
+    return out
+
+def _center_pqr_copy(src, dst):
+    lines = open(src).read().splitlines()
+    hits = [i for i, l in enumerate(lines)
+            if l[:6].strip() in ("ATOM", "HETATM") and len(l) >= 54
+            and l[12:16].strip().upper() not in ("GHO", SITE_ATOM)]
+    if not hits:
+        sys.exit(f"  ERROR: no fixed-column ATOM records in {src}")
+    xyz = np.array([[float(lines[i][30:38]), float(lines[i][38:46]), float(lines[i][46:54])] for i in hits])
+    shift = xyz.mean(axis=0)
+    for k, i in enumerate(hits):
+        v = xyz[k] - shift
+        lines[i] = f"{lines[i][:30]}{v[0]:8.3f}{v[1]:8.3f}{v[2]:8.3f}{lines[i][54:]}"
+    open(dst, "w").write("\n".join(lines) + "\n")
+
+def source_chain_pdb(cfg, W):
+    """Builds receptor.pqr (centered), chain.json and reaction_pairs.json for chain BD."""
+    from pystarc.simulation.coffdrop_chain import chain_from_pdb
+    from pystarc.structures.chain_io import save_chain_to_json
+    pdb_src = _src_file(cfg, W, cfg["complex_pdb"])
+    pqr_src = _src_file(cfg, W, cfg["receptor_pqr_file"])
+    for raw, f in ((cfg["complex_pdb"], pdb_src), (cfg["receptor_pqr_file"], pqr_src)):
+        if not os.path.exists(f):
+            sys.exit(f"  ERROR: no {raw}")
+    rec_chain = cfg["chain"]
+    lig_chain = cfg["ligand_chain"]
+    dst_pqr = os.path.join(W, "receptor.pqr")
+    _center_pqr_copy(pqr_src, dst_pqr)
+    rec_pdb = _parse_pdb_chain_heavy(pdb_src, rec_chain)
+    lig_pdb = _parse_pdb_chain_heavy(pdb_src, lig_chain)
+    if not rec_pdb or not lig_pdb:
+        sys.exit(f"  ERROR: empty chain {rec_chain} or {lig_chain} in {cfg['complex_pdb']}")
+    rec_res_pdb = _seq_residues(rec_pdb)
+    lig_res_pdb = _seq_residues(lig_pdb)
+    rec_pqr_recs = [r for r in parse_pqr_records(dst_pqr) if r.record_type == "ATOM"]
+    rec_pqr_atoms = [{"atom_idx": i, "atom_name": r.name, "resname": r.resname,
+                      "resid": r.resid, "xyz": np.array([r.x, r.y, r.z])}
+                     for i, r in enumerate(rec_pqr_recs)]
+    rec_res_pqr = _seq_residues(rec_pqr_atoms)
+    if len(rec_res_pdb) != len(rec_res_pqr):
+        sys.exit(f"  ERROR: residue count mismatch: PDB={len(rec_res_pdb)} vs PQR={len(rec_res_pqr)}")
+    for k, (r1, r2) in enumerate(zip(rec_res_pdb, rec_res_pqr)):
+        if not _resname_match(r1["resname"], r2["resname"]):
+            sys.exit(f"  ERROR: residue mismatch at position {k}: {r1['resname']} vs {r2['resname']}")
+    pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    coffdrop_dir = os.path.join(pkg_dir, "coffdrop_data")
+    chain = chain_from_pdb(pdb_src, chain_id=lig_chain, name=cfg["ligand_resname"],
+                           sidechains=True, coffdrop_dir=coffdrop_dir)
+    unique_resids = []
+    for bead in chain.atoms:
+        if not unique_resids or unique_resids[-1] != bead.resid:
+            unique_resids.append(bead.resid)
+    resid_to_sp = {r: k for k, r in enumerate(unique_resids)}
+    map_root = ET.parse(os.path.join(coffdrop_dir, "map.xml")).getroot()
+    bead_map = {
+        re_el.findtext("name").strip(): {
+            b_el.findtext("name").strip(): b_el.findtext("atoms").strip().split()
+            for b_el in re_el.findall("bead")
+        }
+        for re_el in map_root.findall("residue")
+    }
+    def _resolve_res(rn):
+        if rn in bead_map:
+            return rn
+        for g in TLEAP_VARIANT_GROUPS:
+            if rn in g:
+                for cand in g:
+                    if cand in bead_map:
+                        return cand
+        return None
+    body_positions = np.zeros((chain.n_atoms, 3))
+    for i, bead in enumerate(chain.atoms):
+        b_rn, b_an = bead.resname.split(":")
+        res = lig_res_pdb[resid_to_sp[bead.resid]]
+        mrn = _resolve_res(b_rn)
+        if mrn is None or b_an not in bead_map[mrn]:
+            sys.exit(f"  ERROR: unmapped COFFDROP bead {bead.resname}")
+        coords = [a["xyz"] for an in bead_map[mrn][b_an]
+                  for a in res["atoms"] if a["atom_name"] == an]
+        if not coords:
+            coords = [a["xyz"] for a in res["atoms"] if a["atom_name"] == "CA"]
+        if not coords:
+            sys.exit(f"  ERROR: no coordinates found for bead {bead.resname}")
+        body_positions[i] = np.mean(coords, axis=0)
+    chain_json_path = os.path.join(W, "chain.json")
+    save_chain_to_json(chain, body_positions, chain_json_path)
+    c = cfg["criterion"]
+    rec_xyz = np.array([a["xyz"] for a in rec_pdb])
+    lig_xyz = np.array([a["xyz"] for a in lig_pdb])
+    hits = np.argwhere(np.linalg.norm(rec_xyz[:, None, :] - lig_xyz[None, :, :], axis=-1) < c["search_cutoff"])
+    rec_sp = {r["resid_native"]: r["seq_pos"] for r in rec_res_pdb}
+    lig_sp = {r["resid_native"]: r["seq_pos"] for r in lig_res_pdb}
+    beads_by_sp = {}
+    for i, bead in enumerate(chain.atoms):
+        beads_by_sp.setdefault(resid_to_sp[bead.resid], []).append((i, bead))
+    pairs = set()
+    for ia, id_ in hits:
+        ra, la = rec_pdb[int(ia)], lig_pdb[int(id_)]
+        sp_r = rec_sp.get(ra["resid"])
+        rec_idx = next((a["atom_idx"] for a in rec_res_pqr[sp_r]["atoms"]
+                        if a["atom_name"] == ra["atom_name"]), None) if sp_r is not None else None
+        sp_l = lig_sp.get(la["resid"])
+        cands = beads_by_sp.get(sp_l, []) if sp_l is not None else []
+        tname = f"{la['resname']}:{la['atom_name']}"
+        bead_idx = next((i for i, b in cands if b.resname == tname), None)
+        if bead_idx is None and cands:
+            bead_idx = min(cands, key=lambda ib: float(np.linalg.norm(body_positions[ib[0]] - la["xyz"])))[0]
+        if rec_idx is not None and bead_idx is not None:
+            pairs.add((int(rec_idx), int(bead_idx)))
+    min_req = max(int(c.get("n_pairs", 0) or 0), int(c["n_needed"]))
+    if len(pairs) < min_req:
+        sys.exit(f"  ERROR: {len(pairs)} chain reaction pairs found (minimum {min_req}).")
+    rp_list = [[rec_i, bd_i, float(c["pair_cutoff"])] for rec_i, bd_i in sorted(pairs)]
+    with open(os.path.join(W, "reaction_pairs.json"), "w") as fh:
+        json.dump(rp_list, fh, indent=2)
+    print(f"  chain.json: {chain.n_atoms} beads; reaction_pairs.json: {len(rp_list)} pairs, n_needed {c['n_needed']}")
+    return {"chain_pairs": rp_list, "n_beads": chain.n_atoms}
+
 HANDLERS = {"pqr": source_pqr, "prmtop": source_prmtop,
             "complex_pdb": source_complex_pdb,
-            "rcsb": source_rcsb, "rcsb_smiles": source_rcsb_smiles}
+            "rcsb": source_rcsb, "rcsb_smiles": source_rcsb_smiles,
+            "chain_pdb": source_chain_pdb}
 
 # reaction criterion and output files
-def _element(name, column=""):
+def _element(name, column="", resname=""):
     """Element of a PQR atom, upper case. The element column when the file has
-    one, else the name, with chlorine and bromine told by two letters."""
+    one, else the name, with two-letter halogens and metal ions distinguished."""
     if column.isalpha() and len(column) <= 2:
         return column.upper()
-    nm = name.lstrip("0123456789")
-    return nm[:2].upper() if nm[:2].upper() in ("CL", "BR") else nm[:1].upper()
+    ru = resname.strip().upper()
+    nm = name.lstrip("0123456789").upper()
+    if ru in ("CAL", "CA") and nm.startswith("CA"):
+        return "CA"
+    if ru in ("ZN", "MG", "FE", "CU") and nm.startswith(ru):
+        return ru
+    return nm[:2] if nm[:2] in ("CL", "BR") else nm[:1]
 
 def read_pqr(path):
-    return [dict(name=a.name, el=_element(a.name, a.element), resname=a.resname,
+    return [dict(name=a.name, el=_element(a.name, a.element, a.resname), resname=a.resname,
                  resid=a.resid, xyz=np.array([a.x, a.y, a.z]), q=a.charge, r=a.radius)
             for a in parse_pqr_records(path)]
 
@@ -918,6 +1151,12 @@ def check_criterion(c, src):
         if src != "rcsb_smiles" and ("pocket_ligand" in c or "pocket_ligand_resid" in c):
             sys.exit("  ERROR: pocket_ligand applies only to a ligand built from SMILES.")
     if mode == "contacts":
+        if src == "chain_pdb":
+            if not isinstance(c.get("search_cutoff"), (int, float)) or c["search_cutoff"] <= 0:
+                sys.exit("  ERROR: chain_pdb contacts needs search_cutoff above zero.")
+            if not isinstance(c.get("n_needed"), int) or c["n_needed"] < 1:
+                sys.exit("  ERROR: chain_pdb contacts needs n_needed >= 1.")
+            return mode
         if contacts_style(c) == "picked":
             if c["atom_filter"] not in ATOM_FILTERS:
                 sys.exit(f"  ERROR: atom_filter must be one of {sorted(ATOM_FILTERS)}.")
@@ -935,6 +1174,8 @@ def check_criterion(c, src):
         if not pair_count_ok(n, c["n_needed"]):
             sys.exit(f"  ERROR: {n} pairs with n_needed {c['n_needed']} are not allowed. Use one pair with "
                      "n_needed 1, or an even number of pairs with n_needed half of them.")
+    elif src == "chain_pdb":
+        sys.exit("  ERROR: chain_pdb requires criterion mode 'contacts'.")
     return mode
 
 def contacts_picked(rec, lig, c):
@@ -1087,7 +1328,8 @@ def site_pair(W, rec, lig, c, cfg, rec_out, rmap=None):
         rec_out["site_reference"] = (f"receptor atom {i + 1} ({rec[i]['resname']} {rec[i]['resid']} {rec[i]['name']}) "
                                      f"and ligand atom {anchor + 1} ({lig[anchor]['name']})")
     elif cfg["ligand_source"] == "rcsb_smiles":
-        p, n = deposited_centroid(os.path.join(W, f"{cfg['pdb_id']}.pdb"), cfg.get("chain"),
+        entry = _src_file(cfg, W, f"{cfg['pdb_id']}.pdb")
+        p, n = deposited_centroid(entry, cfg.get("chain"),
                                   c["pocket_ligand"], c.get("pocket_ligand_resid"))
         rec_out["site_reference"] = f"{c['pocket_ligand']} {c.get('pocket_ligand_resid', '')} of {cfg['pdb_id']}, {n} atoms"
     else:
@@ -1100,7 +1342,7 @@ def site_pair(W, rec, lig, c, cfg, rec_out, rmap=None):
                                [a["r"] for a in lig], p, anchor=anchor, bound=cfg["ligand_source"] != "rcsb_smiles")
         if res["closest"] is None:
             sys.exit("  ERROR: The scan found no accessible pose of the ligand near the site.")
-        cut = round_quarter(res["closest"] + c["margin"])
+        cut = round(res["closest"] + c["margin"], 2)
         rec_out.update(closest_approach=res["closest"], margin=c["margin"], scan=res)
         print(f"  The closest accessible approach is {res['closest']:.2f} A, so the cutoff is {cut} A "
               f"with a margin of {c['margin']} A.")
@@ -1113,10 +1355,12 @@ def site_pair(W, rec, lig, c, cfg, rec_out, rmap=None):
     return (len(rec), len(lig), cut, 0.0)
 
 def _md5(path):
-    return hashlib.md5(open(path, "rb").read()).hexdigest()
+    with open(path, "rb") as fh:
+        return hashlib.md5(fh.read()).hexdigest()
 
 TOP_LEVEL = ({"ligand_source", "ligand_formula", "receptor_resname",
-              "ligand_resname", "criterion", "work_dir"}
+              "ligand_resname", "criterion", "work_dir", "bd_work_dir",
+              "source_dir", "chain_cfg", "n_gpus", "resolve_paths_in_w"}
              | set(BD_PARAMS))
 
 def _check(choice, table, given, what, ignore=frozenset()):
@@ -1134,6 +1378,84 @@ def _check(choice, table, given, what, ignore=frozenset()):
         sys.exit(f"{what} {choice!r} does not use {sorted(extra)}, so remove it "
                  f"rather than leave it dead")
 
+def write_chain_input(path, cfg, W):
+    cc = cfg.get("chain_cfg", {})
+    use_abs = bool(cfg.get("resolve_paths_in_w"))
+    rec_pqr = os.path.join(W, "receptor.pqr") if use_abs else "receptor.pqr"
+    chain_json = os.path.join(W, "chain.json") if use_abs else "chain.json"
+    rp_json = os.path.join(W, "reaction_pairs.json") if use_abs else "reaction_pairs.json"
+    sdir = cfg.get("source_dir", W)
+    def _grid_path(raw, default_name):
+        if not raw:
+            return os.path.join(W, default_name) if use_abs else default_name
+        if os.path.isabs(raw):
+            return raw
+        return os.path.join(sdir, raw) if use_abs else raw
+    tg_dx = _grid_path(cc.get("target_grid_dx", ""), "receptor1.dx")
+    bn_dx = _grid_path(cc.get("born_grid_dx", ""), "receptor0_born.dx")
+    auto_diff = str(cc.get("auto_diffusion", "true"))
+    diff_xml = "" if auto_diff.lower() in ("true", "yes", "1") else (
+        f"\n    <D_trans>{cc.get('d_trans', '0.015')}</D_trans>"
+        f"\n    <D_rot>{cc.get('d_rot', '0.00005')}</D_rot>"
+    )
+    debye_line = (f"  <debye_length>{cfg['debye_length']}</debye_length>\n"
+                  if cfg.get("debye_length") not in (None, "") else "")
+    bd_wdir = cfg.get("bd_work_dir", "bd_sims")
+    txt = (
+        '<?xml version="1.0"?>\n<pystarc>\n'
+        f'  <receptor_resname>{cfg["receptor_resname"]}</receptor_resname>\n'
+        f'  <ligand_resname>{cfg["ligand_resname"]}</ligand_resname>\n'
+        f'  <receptor_pqr>{rec_pqr}</receptor_pqr>\n'
+        f'{debye_line}'
+        f'  <ion_concentration>{cfg.get("ion_concentration", "0.15")}</ion_concentration>\n'
+        f'  <ion_radius_pos>{cfg.get("ion_radius_pos", "0.95")}</ion_radius_pos>\n'
+        f'  <ion_radius_neg>{cfg.get("ion_radius_neg", "1.81")}</ion_radius_neg>\n'
+        f'  <pdie>{cfg.get("pdie", "4.0")}</pdie>\n'
+        f'  <sdie>{cfg.get("sdie", "78.0")}</sdie>\n'
+        f'  <srad>{cfg.get("srad", "1.4")}</srad>\n'
+        f'  <apbs_cglen>{cfg.get("apbs_cglen", "0")}</apbs_cglen>\n'
+        f'  <apbs_fglen>{cfg["apbs_fglen"]}</apbs_fglen>\n'
+        f'  <apbs_dime>{cfg["apbs_dime"]}</apbs_dime>\n'
+        f'  <r_hydro_rec>{cfg.get("r_hydro_rec", "0")}</r_hydro_rec>\n'
+        f'  <bd_milestone_radius>{cfg["bd_milestone_radius"]}</bd_milestone_radius>\n'
+        f'  <n_trajectories>{cfg["n_trajectories"]}</n_trajectories>\n'
+        f'  <max_steps>{cfg["max_steps"]}</max_steps>\n'
+        f'  <dt>{cfg["dt"]}</dt>\n'
+        f'  <temperature>{cfg["temperature"]}</temperature>\n'
+        f'  <seed>{cfg["seed"]}</seed>\n'
+        f'  <work_dir>{bd_wdir}</work_dir>\n'
+        f'  <gpu>{cfg.get("gpu", "false")}</gpu>\n'
+        f'  <hydrodynamic_interactions>{cfg.get("hydrodynamic_interactions", "true")}</hydrodynamic_interactions>\n'
+        f'  <desolvation_alpha>{cfg["desolvation_alpha"]}</desolvation_alpha>\n'
+        f'  <convergence_check>{cfg["convergence_check"]}</convergence_check>\n'
+        f'  <convergence_interval>{cfg["convergence_interval"]}</convergence_interval>\n'
+        f'  <convergence_tol>{cfg["convergence_tol"]}</convergence_tol>\n'
+        f'  <checkpoint_interval>{cfg.get("checkpoint_interval", "0")}</checkpoint_interval>\n'
+        '  <outputs>\n'
+        f'    <save_interval>{cfg["save_interval"]}</save_interval>\n'
+        f'    <full_paths>{cfg.get("full_paths", "true")}</full_paths>\n'
+        f'    <energetics>{cfg.get("energetics", "true")}</energetics>\n'
+        '  </outputs>\n'
+        '  <chain>\n'
+        f'    <chain_json>{chain_json}</chain_json>\n'
+        f'    <reaction_pairs_json>{rp_json}</reaction_pairs_json>\n'
+        f'    <target_grid_dx>{tg_dx}</target_grid_dx>\n'
+        f'    <born_grid_dx>{bn_dx}</born_grid_dx>\n'
+        f'    <r_escape>{cfg.get("r_escape", "0")}</r_escape>\n'
+        f'    <reaction_n_needed>{cfg["criterion"]["n_needed"]}</reaction_n_needed>\n'
+        f'    <auto_diffusion>{auto_diff}</auto_diffusion>{diff_xml}\n'
+        f'    <use_soft_repulsion>{cfg.get("soft_repulsion", "true")}</use_soft_repulsion>\n'
+        f'    <soft_repulsion_eps>{cc.get("soft_repulsion_eps", "1.0")}</soft_repulsion_eps>\n'
+        f'    <n_workers>{cfg.get("n_threads", "1")}</n_workers>\n'
+        f'    <dt_chain>{cc.get("dt_chain", "0.05")}</dt_chain>\n'
+        f'    <chain_steps_per_outer>{cc.get("chain_steps_per_outer", "4")}</chain_steps_per_outer>\n'
+        f'    <n_equilibration_steps>{cc.get("n_equilibration_steps", "0")}</n_equilibration_steps>\n'
+        '  </chain>\n'
+        '</pystarc>\n'
+    )
+    with open(path, "w") as fh:
+        fh.write(txt)
+
 def build(**cfg):
     src = cfg.get("ligand_source")
     _check(src, SOURCES, cfg, "ligand_source", ignore=TOP_LEVEL)
@@ -1143,11 +1465,30 @@ def build(**cfg):
         - set(SOURCES[src]["opt"])
     if unknown:
         sys.exit(f"CONFIG does not use {sorted(unknown)}")
-    missing = [k for k in NAMES if not cfg.get(k)]
+    if src != "chain_pdb" and cfg.get("chain_cfg"):
+        sys.exit(f"  ERROR: <chain> settings {sorted(cfg['chain_cfg'])} apply to chain_pdb runs.")
+    req_names = ("receptor_resname", "ligand_resname") if src == "chain_pdb" else NAMES
+    missing = [k for k in req_names if not cfg.get(k)]
     if missing:
         sys.exit(f"config.xml needs {missing} in the names section")
     W = cfg["work_dir"]
+    os.makedirs(W, exist_ok=True)
     extra = HANDLERS[src](cfg, W) or {}
+    if src == "chain_pdb":
+        write_chain_input(os.path.join(W, "input.xml"), cfg, W)
+        record = dict(
+            mode=mode,
+            ligand_source=src,
+            n_beads=extra["n_beads"],
+            n_needed=c["n_needed"],
+            pairs=extra["chain_pairs"],
+            code=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            md5={f: _md5(os.path.join(W, f)) for f in ("receptor.pqr", "chain.json", "reaction_pairs.json", "input.xml")},
+        )
+        with open(os.path.join(W, RECORD), "w") as fh:
+            json.dump(record, fh, indent=1, default=float)
+        tidy(W, cfg)
+        return
     rec = read_pqr(os.path.join(W, "receptor.pqr"))
     lig = read_pqr(os.path.join(W, "ligand.pqr"))
     check_formula(lig, cfg["ligand_formula"])
@@ -1168,7 +1509,8 @@ def build(**cfg):
     record.update(pairs=[[int(i) + 1, int(j) + 1, float(cut)] for i, j, cut, _d in pairs], n_needed=n_needed,
                   code=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                   md5={f: _md5(os.path.join(W, f)) for f in ("receptor.pqr", "ligand.pqr", "rxns.xml", "input.xml")})
-    json.dump(record, open(os.path.join(W, RECORD), "w"), indent=1, default=float)
+    with open(os.path.join(W, RECORD), "w") as fh:
+        json.dump(record, fh, indent=1, default=float)
     print(f"  {len(pairs)} pairs, n_needed {n_needed}")
     geometry_check(rec, lig, cfg)
     tidy(W, cfg, extra.get("cif"))
@@ -1179,20 +1521,39 @@ def find_templates():
 
 def write_input(path, cfg):
     txt = open(os.path.join(find_templates(), "input.xml")).read()
+    use_abs = bool(cfg.get("resolve_paths_in_w"))
+    W = cfg["work_dir"]
     vals = {"receptor_resname": cfg["receptor_resname"],
             "ligand_resname": cfg["ligand_resname"],
-            "receptor_pqr": "receptor.pqr", "ligand_pqr": "ligand.pqr",
-            "rxns_xml": "rxns.xml", "work_dir": cfg.get("bd_work_dir", "bd_sims")}
+            "receptor_pqr": os.path.join(W, "receptor.pqr") if use_abs else "receptor.pqr",
+            "ligand_pqr": os.path.join(W, "ligand.pqr") if use_abs else "ligand.pqr",
+            "rxns_xml": os.path.join(W, "rxns.xml") if use_abs else "rxns.xml",
+            "work_dir": cfg.get("bd_work_dir", "bd_sims")}
     missing = [k for k in BD_PARAMS if k not in cfg and k not in OPTIONAL]
     if missing:
         sys.exit(f"  ERROR: config.xml has no {', '.join(missing)}")
     vals.update({k: cfg.get(k, OPTIONAL.get(k)) for k in BD_PARAMS})
     for k, v in vals.items():
         txt = re.sub(rf"<{k}>\s*</{k}>", f"<{k}>{v}</{k}>", txt)
-    open(path, "w").write(txt)
-    left = re.findall(r"<([a-z0-9_]+)>\s*</\1>", txt)
+    with open(path, "w") as fh:
+        fh.write(txt)
+    left = [t for t in re.findall(r"<([a-z0-9_]+)>\s*</\1>", txt) if t != "debye_length"]
     if left:
         sys.exit(f"  ERROR: input.xml still has empty tags {left}")
+
+def build_from_config(config_path, work_dir_override=None):
+    """Read config.xml, build all simulation inputs in <work_dir>, and return (input_xml_path, cfg_dict)."""
+    cpath = os.path.abspath(config_path)
+    if not os.path.exists(cpath):
+        raise FileNotFoundError(f"Configuration file not found: {cpath}")
+    cfg = read_config(cpath)
+    source_dir = os.path.dirname(cpath)
+    raw_bd = work_dir_override if work_dir_override is not None else cfg.get("bd_work_dir", "bd_sims")
+    W = str(raw_bd) if os.path.isabs(str(raw_bd)) else os.path.join(source_dir, str(raw_bd))
+    os.makedirs(W, exist_ok=True)
+    run_cfg = dict(cfg, source_dir=source_dir, work_dir=W, bd_work_dir=W, resolve_paths_in_w=True)
+    build(**run_cfg)
+    return os.path.join(W, "input.xml"), cfg
 
 def geometry_check(rec, lig, cfg):
     R = np.array([a["xyz"] for a in rec])
@@ -1211,15 +1572,18 @@ def geometry_check(rec, lig, cfg):
 
 STRUCTURE = ("ligand_source", "receptor_pqr_file", "ligand_pqr_file",
              "prmtop", "complex_pdb", "pdb_id",
-             "ligand_resid", "smiles", "chain", "rec_resid_min",
+             "ligand_resid", "smiles", "chain", "ligand_chain", "rec_resid_min",
              "ligand_net_charge", "ligand_ccd", "ligand_protonate",
              "ligand_deprotonate", "keep_hetatm")
-NAMES = ("ligand_formula", "receptor_resname", "ligand_resname")
-CRITERION = ("mode", "receptor_numbering", "search_cutoff", "n_pairs",
-             "receptor", "ligand", "atom_filter", "excluded", "pair_cutoff",
-             "margin", "pocket_ligand", "pocket_ligand_resid", "n_needed")
+NAMES = ("receptor_resname", "ligand_resname", "ligand_formula")
+CRITERION = ("mode", "search_cutoff", "n_pairs", "atom_filter", "excluded",
+             "receptor_numbering", "receptor", "ligand",
+             "pocket_ligand", "pocket_ligand_resid", "pair_cutoff",
+             "margin", "n_needed")
 
 def _el(t, v, ind):
+    if v in (None, "", [], ()):
+        return f"{ind}<{t}></{t}>"
     if t == "receptor":
         rows = "".join(f'{ind}  <target resid="{r}" atom="{a}" resname="{n}"/>\n'
                        for r, a, n in v)
@@ -1245,12 +1609,13 @@ def _doc(t):
         return f"{KEYS[t]} Options: {_listed(('true', 'false'))}."
     return KEYS[t]
 
-def _section(order, src, ind, w):
+def _section(order, src, ind, w, full_template=True):
     out = []
     for t in order:
-        if t not in src:
+        if not full_template and t not in src:
             continue
-        first, _, rest = _el(t, src[t], ind).partition("\n")
+        val = src.get(t, "")
+        first, _, rest = _el(t, val, ind).partition("\n")
         if t in KEYS:
             first = f"{first:<{w}}<!-- {_doc(t)} -->"
         out.append(first + ("\n" + rest if rest else ""))
@@ -1260,32 +1625,43 @@ SECTIONS = (
     ("structure", STRUCTURE), ("names", NAMES), ("criterion", CRITERION),
     ("geometry", GEOMETRY), ("electrostatics", ELECTROSTATICS),
     ("physics", PHYSICS), ("simulation", SIMULATION), ("compute", COMPUTE),
-    ("outputs", OUTPUTS),
+    ("outputs", OUTPUTS), ("chain", CHAIN),
 )
 
-def config_xml(cfg):
+def config_xml(cfg, full_template=True):
     c = cfg.get("criterion", {})
-    secs = [(order, c if name == "criterion" else cfg) for name, order in SECTIONS]
-    w = max((len(_el(t, src[t], "    ").partition("\n")[0])
-             for order, src in secs for t in order if t in src), default=0) + 2
+    cc = cfg.get("chain_cfg", {})
+    comp = dict(cfg)
+    if "bd_work_dir" in comp and "work_dir" not in comp:
+        comp["work_dir"] = comp["bd_work_dir"]
+    def _src_for(name):
+        if name == "criterion":
+            return c
+        if name == "chain":
+            return cc
+        return comp
+    secs = [(order, _src_for(name)) for name, order in SECTIONS]
+    w = max((len(_el(t, src.get(t, ""), "    ").partition("\n")[0])
+             for order, src in secs for t in order
+             if full_template or t in src), default=0) + 2
     body = "".join(
-        f"  <{name}>\n{_section(order, src, '    ', w)}\n  </{name}>\n"
+        f"  <{name}>\n{_section(order, src, '    ', w, full_template=full_template)}\n  </{name}>\n"
         for (name, order), (_, src) in zip(SECTIONS, secs))
     return f'<?xml version="1.0" ?>\n<config>\n{body}</config>\n'
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if "--template" in argv:
-        blank = {t: "" for t in ("ligand_source",) + NAMES}
-        blank["criterion"] = {"mode": "", "pair_cutoff": "", "n_needed": ""}
-        blank.update({t: "" for t in BD_PARAMS})
-        sys.stdout.write(config_xml(blank))
+        sys.stdout.write(config_xml({}, full_template=True))
         return
     given = [x for x in argv if not x.startswith("-")]
     path = os.path.abspath(given[0] if given else "config.xml")
     if not os.path.exists(path):
         sys.exit(f"  ERROR: no {path}")
-    cfg = read_config(path)
+    try:
+        cfg = read_config(path)
+    except ValueError as exc:
+        sys.exit(f"  ERROR: {exc}")
     cfg.setdefault("work_dir", os.path.dirname(path))
     build(**cfg)
 

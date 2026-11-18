@@ -20,8 +20,9 @@ EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "two_charged_sph
 def _input_with(tmp_path, extra: str) -> Path:
     dst = tmp_path / "tcs"
     shutil.copytree(EXAMPLE, dst)
-    path = dst / "input_bridge.xml"
-    base = (dst / "input.xml").read_text()
+    parse(dst / "config.xml")
+    path = dst / "bd_sims" / "input_bridge.xml"
+    base = (dst / "bd_sims" / "input.xml").read_text()
     path.write_text(base.replace("</pystarc>", extra + "</pystarc>"))
     return path
 

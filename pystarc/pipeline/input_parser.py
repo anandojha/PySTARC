@@ -174,6 +174,7 @@ class PySTARCConfig:
     n_trajectories: int = 10000
     n_threads: int = 24
     gpu: bool = True
+    n_gpus: int = 1
     seed: int = 1523
     confidence_interval: float = 0.95
     # Trajectories start on the b surface and the escape sphere sits at twice its
@@ -407,6 +408,8 @@ class PySTARCConfig:
                 f"gpu_force_batch must be >= 0 (0 chooses automatically), got "
                 f"{self.gpu_force_batch}"
             )
+        if self.n_gpus < 0:
+            raise ValueError(f"n_gpus must be >= 0, got {self.n_gpus}")
         for k in ("confidence_interval", "convergence_tol"):
             if not 0 < getattr(self, k) < 1:
                 raise ValueError(f"{k} must lie between 0 and 1, got {getattr(self, k)}")
@@ -561,6 +564,13 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
     0 in any case, and a blank element counts as omitted.
     """
     root = ET.parse(xml_path).getroot()
+    if root.tag == "config":
+        from pystarc.pipeline.build_inputs import build_from_config
+
+        gen_xml, raw_cfg = build_from_config(xml_path)
+        cfg = parse(gen_xml)
+        cfg.n_gpus = int(raw_cfg.get("n_gpus", 1) or 1)
+        return cfg.validate()
     seen = {"outputs", "chain"}
     _get = _reader(root, seen)
 
@@ -582,6 +592,7 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
         n_trajectories=get("n_trajectories", default=10000, cast=int),
         n_threads=get("n_threads", default=24, cast=int),
         gpu=get("gpu", default=True, cast=bool),
+        n_gpus=get("n_gpus", default=1, cast=int),
         seed=get("seed", default=1523, cast=int),
         confidence_interval=get("confidence_interval", default=0.95, cast=float),
         bd_milestone_radius=get("bd_milestone_radius", cast=float),
@@ -725,8 +736,14 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
     return PySTARCConfig(**kw, outputs=outputs, chain=chain).validate()
 
 
-def write_template(path: str | Path = "pystarc_input.xml"):
-    """Write a fully commented template input file."""
+def write_template(path: str | Path = "config.xml"):
+    """Write a fully commented template configuration file."""
+    if Path(path).name == "config.xml":
+        from pystarc.pipeline.build_inputs import config_xml
+
+        Path(path).write_text(config_xml({}, full_template=True))
+        print(f"Template written to: {path}")
+        return
     template = """<?xml version="1.0" ?>
 <!--
   PySTARC Input File

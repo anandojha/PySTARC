@@ -80,9 +80,10 @@ kon_exact = CONV * kb * Pexact
 print(f"Exact: P_rxn={Pexact:.6f}, k_on={kon_exact:.4e}")
 print()
 
+base_cfg = parse("config.xml")
 results = []
 for seed in [11111111, 22222222, 33333333, 44444444]:
-    cfg = parse("input.xml")
+    cfg = parse(base_cfg.work_dir / "input.xml")
     cfg.seed = seed
     cfg.n_trajectories = 10000
     cfg.work_dir = Path(f"bd_sims/convergence_seed_{seed}")

@@ -60,8 +60,26 @@ import math
 GRID_FORMAT = 2
 
 
+def _is_ghost_line(line: str) -> bool:
+    if not line.startswith(("ATOM", "HETATM")):
+        return False
+    col = line[12:16].strip().upper() if len(line) >= 16 else ""
+    if col in GHOST_NAMES:
+        return True
+    parts = line.split()
+    return len(parts) >= 3 and parts[2].upper() in GHOST_NAMES
+
+
+def _strip_ghost_pqr_bytes(pqr_path: Path) -> bytes:
+    raw = Path(pqr_path).read_bytes()
+    text = raw.decode("utf-8", errors="replace")
+    lines = text.splitlines(keepends=True)
+    kept = [l for l in lines if not _is_ghost_line(l)]
+    return raw if len(kept) == len(lines) else "".join(kept).encode("utf-8")
+
+
 def _grid_key(pqr_path: Path, settings: dict) -> str:
-    h = hashlib.sha1(Path(pqr_path).read_bytes())
+    h = hashlib.sha1(_strip_ghost_pqr_bytes(pqr_path))
     h.update(json.dumps({**settings, "grid_format": GRID_FORMAT}, sort_keys=True).encode())
     return h.hexdigest()
 
@@ -521,66 +539,70 @@ def run_apbs(
             )
             continue
         print(f"  [4] APBS - {mol_name} {label} (2-level two-level) ...")
-        # Coarse level (level 0), which has no previous DX to read.
-        inp0 = _write_apbs_input(
-            pqr_path=pqr_path,
-            out_dx_name=f"{mol_name}0{suffix}",
-            params=coarse,
-            prev_dx_name=None,
-            work_dir=work_dir,
-            inp_name=f"{mol_name}_{'born' if is_born else 'elec'}_0.in",
-            is_born=is_born,
-            ion_conc=ion_conc,
-            dielectric_in=dielectric_in,
-            dielectric_out=dielectric_out,
-            srad=srad,
-            temp=temp,
-            ion_radius_pos=ion_radius_pos,
-            ion_radius_neg=ion_radius_neg,
-        )
-        _run(
-            ["apbs", inp0.name],
-            cwd=work_dir,
-            step=f"apbs-{mol_name}-{'born' if is_born else 'elec'}-coarse",
-        )
-        dx0 = work_dir / f"{mol_name}0{suffix}.dx"
-        if not dx0.exists():
-            raise RuntimeError(f"Expected {dx0} not found after APBS")
-        print(f"    -> {dx0.name}  ({dx0.stat().st_size//1024} KB)  [coarse]")
-        dx_files.append(dx0)
-        inp0.unlink(missing_ok=True)
-        # Fine level (level 1), which reads the coarse DX as its boundary
-        # conditions.
-        inp1 = _write_apbs_input(
-            pqr_path=pqr_path,
-            out_dx_name=f"{mol_name}1{suffix}",
-            params=fine,
-            prev_dx_name=dx0.name,
-            work_dir=work_dir,
-            inp_name=f"{mol_name}_{'born' if is_born else 'elec'}_1.in",
-            is_born=is_born,
-            ion_conc=ion_conc,
-            dielectric_in=dielectric_in,
-            dielectric_out=dielectric_out,
-            srad=srad,
-            temp=temp,
-            ion_radius_pos=ion_radius_pos,
-            ion_radius_neg=ion_radius_neg,
-        )
-        _run(
-            ["apbs", inp1.name],
-            cwd=work_dir,
-            step=f"apbs-{mol_name}-{'born' if is_born else 'elec'}-fine",
-        )
-        dx1 = work_dir / f"{mol_name}1{suffix}.dx"
-        if not dx1.exists():
-            raise RuntimeError(f"Expected {dx1} not found after APBS")
-        print(f"    -> {dx1.name}  ({dx1.stat().st_size//1024} KB)  [fine]")
-        dx_files.append(dx1)
-        inp1.unlink(missing_ok=True)
-
-        for f in work_dir.glob("io.mc"):
-            f.unlink(missing_ok=True)
+        apbs_pqr = work_dir / f"_apbs_{mol_name}.pqr"
+        apbs_pqr.write_bytes(_strip_ghost_pqr_bytes(pqr_path))
+        try:
+            # Coarse level (level 0), which has no previous DX to read.
+            inp0 = _write_apbs_input(
+                pqr_path=apbs_pqr,
+                out_dx_name=f"{mol_name}0{suffix}",
+                params=coarse,
+                prev_dx_name=None,
+                work_dir=work_dir,
+                inp_name=f"{mol_name}_{'born' if is_born else 'elec'}_0.in",
+                is_born=is_born,
+                ion_conc=ion_conc,
+                dielectric_in=dielectric_in,
+                dielectric_out=dielectric_out,
+                srad=srad,
+                temp=temp,
+                ion_radius_pos=ion_radius_pos,
+                ion_radius_neg=ion_radius_neg,
+            )
+            _run(
+                ["apbs", inp0.name],
+                cwd=work_dir,
+                step=f"apbs-{mol_name}-{'born' if is_born else 'elec'}-coarse",
+            )
+            dx0 = work_dir / f"{mol_name}0{suffix}.dx"
+            if not dx0.exists():
+                raise RuntimeError(f"Expected {dx0} not found after APBS")
+            print(f"    -> {dx0.name}  ({dx0.stat().st_size//1024} KB)  [coarse]")
+            dx_files.append(dx0)
+            inp0.unlink(missing_ok=True)
+            # Fine level (level 1), which reads the coarse DX as its boundary
+            # conditions.
+            inp1 = _write_apbs_input(
+                pqr_path=apbs_pqr,
+                out_dx_name=f"{mol_name}1{suffix}",
+                params=fine,
+                prev_dx_name=dx0.name,
+                work_dir=work_dir,
+                inp_name=f"{mol_name}_{'born' if is_born else 'elec'}_1.in",
+                is_born=is_born,
+                ion_conc=ion_conc,
+                dielectric_in=dielectric_in,
+                dielectric_out=dielectric_out,
+                srad=srad,
+                temp=temp,
+                ion_radius_pos=ion_radius_pos,
+                ion_radius_neg=ion_radius_neg,
+            )
+            _run(
+                ["apbs", inp1.name],
+                cwd=work_dir,
+                step=f"apbs-{mol_name}-{'born' if is_born else 'elec'}-fine",
+            )
+            dx1 = work_dir / f"{mol_name}1{suffix}.dx"
+            if not dx1.exists():
+                raise RuntimeError(f"Expected {dx1} not found after APBS")
+            print(f"    -> {dx1.name}  ({dx1.stat().st_size//1024} KB)  [fine]")
+            dx_files.append(dx1)
+            inp1.unlink(missing_ok=True)
+        finally:
+            apbs_pqr.unlink(missing_ok=True)
+            for f in work_dir.glob("io.mc"):
+                f.unlink(missing_ok=True)
     key_path.write_text(key + "\n")
     return dx_files
 

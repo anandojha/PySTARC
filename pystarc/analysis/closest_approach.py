@@ -124,15 +124,15 @@ def descend(wall, bound, ref, n_starts, n_steps, xp, e_max=2.0, seed=SEED, ancho
 
 
 def closest_approach(rec_xyz, rec_radii, lig_xyz, lig_radii, ref, anchor=None, bound=True, ball=16.0,
-                     n_coarse=2_000_000, n_dense=8_000_000, widen=1.5, descent_below=8.0, n_starts=2048,
+                     n_coarse=2_000_000, n_dense=8_000_000, widen=1.5, descent_below=None, n_starts=2048,
                      n_steps=4000, e_max=2.0, seed=SEED):
     """Closest accessible approach of the ligand centroid, or of the ligand atom
     with index anchor, to ref (in angstroms).
 
     The atoms are the real atoms without ghost atoms. lig_xyz is the bound pose
-    when bound is True; otherwise only its shape enters and the descent is
-    skipped. Returns the coarse, dense and descent results, the closest approach
-    rounded to 0.01 A, the ligand atoms of the closest pose, and the settings."""
+    when bound is True; otherwise its shape enters and the descent is skipped.
+    Returns the coarse, dense and descent results, the closest approach rounded
+    to 0.01 A, the ligand atoms of the closest pose, and the settings."""
     xp = cp if cp is not None else np
     rec_xyz, lig_xyz = np.asarray(rec_xyz, float), np.asarray(lig_xyz, float)
     ref = np.asarray(ref, float)
@@ -145,7 +145,7 @@ def closest_approach(rec_xyz, rec_radii, lig_xyz, lig_radii, ref, anchor=None, b
         dense, n1, p1 = scan(wall, body, ref, n_dense, coarse + widen, rng, xp, e_max)
     scans = [x for x in (coarse, dense) if x is not None]
     descent, n2, p2 = None, 0, None
-    if bound and scans and min(scans) < descent_below:
+    if bound and (descent_below is None or (scans and min(scans) < descent_below)):
         descent, n2, p2 = descend(wall, lig_xyz, ref, n_starts, n_steps, xp, e_max, seed, anchor)
     found = [(x, p) for x, p in ((coarse, p0), (dense, p1), (descent, p2)) if x is not None]
     best, pose = min(found, key=lambda f: f[0]) if found else (None, None)

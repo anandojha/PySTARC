@@ -19,7 +19,6 @@ ttk_inhibitors/
 ```
 <PDB>.pdb                   PDB structure of the complex
 config.xml                  PySTARC configuration file
-setup.py                    Reads the config.xml file to set up the input.xml file
 run.sh                      Script to run PySTARC simulations on the workstation
 submit_SLURM_single_GPU.sh  Script to run PySTARC simulations on the cluster with 1 GPU
 submit_SLURM_multi_GPUs.sh  Script to run PySTARC simulations on the cluster with multiple GPUs
@@ -48,11 +47,12 @@ cd 2X9E && sbatch submit_SLURM_multi_GPUs.sh  # Submit one complex on multiple G
 
 ## Once the simulation finishes, the following files will be generated with 1 GPU
 ```
-input.xml                         PySTARC input file
-rxns.xml                          Reaction criterion file
-receptor.pqr                      PQR file for receptor charges and radii
-ligand.pqr                        PQR file for ligand charges and radii
 bd_sims/
+├── input.xml                     Generated PySTARC runtime input file
+├── rxns.xml                      Generated reaction criterion file
+├── build_record.json             Build provenance and checksums
+├── receptor.pqr                  PQR file for receptor charges and radii
+├── ligand.pqr                    PQR file for ligand charges and radii
 ├── results.json                  Association rate constant, reaction probability, and confidence intervals
 ├── convergence.json              Running rate estimate versus the number of trajectories
 ├── receptor0.dx                  Coarse APBS electrostatic grid of the receptor
@@ -82,11 +82,12 @@ bd_sims/
 
 ## Once the simulation finishes, the following files will be generated with multiple GPUs
 ```
-input.xml                             PySTARC input file
-rxns.xml                              Reaction criterion file
-receptor.pqr                          PQR file for receptor charges and radii
-ligand.pqr                            PQR file for ligand charges and radii
 bd_sims/
+├── input.xml                         Generated PySTARC runtime input file
+├── rxns.xml                          Generated reaction criterion file
+├── build_record.json                 Build provenance and checksums
+├── receptor.pqr                      PQR file for receptor charges and radii
+├── ligand.pqr                        PQR file for ligand charges and radii
 ├── bd_1/                             One directory per GPU, each running a share of the trajectories
 │   ├── input.xml                     PySTARC input file for this slice
 │   ├── receptor.pqr                  PQR file for receptor charges and radii

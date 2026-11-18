@@ -8,18 +8,20 @@ RUNNER="$BASE"
 while [ ! -f "$RUNNER/run_pystarc.py" ] && [ "$RUNNER" != "/" ]; do RUNNER="$(dirname "$RUNNER")"; done
 RUNNER="$RUNNER/run_pystarc.py"
 CORES=96
-SHARE=(chain.json reaction_pairs.json barnase.pqr apbs_output)
+SHARE=(apbs_output)
 
 cd "$BASE"
-[ -f input.xml ] || { echo "no input.xml, run: python setup.py"; exit 1; }
+rm -rf bd_sims
+python "$RUNNER" config.xml --setup
 
-read -r BRAD NTRAJ NSHARD < <(python - config.xml <<'PY'
+read -r BRAD NTRAJ < <(python - config.xml <<'PY'
 import sys, xml.etree.ElementTree as ET
 c = {e.tag: (e.text or "").strip()
      for s in ET.parse(sys.argv[1]).getroot() for e in s}
-print(c["bd_milestone_radius"], c["n_trajectories"], c["n_shards"])
+print(c["bd_milestone_radius"], c["n_trajectories"])
 PY
 )
+NSHARD=${NSHARD:-25}
 
 mkdir -p shards logs
 echo "b $BRAD A   $NTRAJ trajectories x $NSHARD shards = $((NTRAJ*NSHARD))"
@@ -34,12 +36,14 @@ for i in $(seq 1 "$NSHARD"); do
         [ -e "$d/$f" ] || ln -s "$BASE/$f" "$d/$f"
     done
     seed=$(( i * 11111111 + 1 ))
-    python - "$BASE/input.xml" "$d/input.xml" "$seed" <<'PY'
+    python - "$BASE/bd_sims/input.xml" "$d/input.xml" "$seed" "$BASE/$d/bd_sims" <<'PY'
 import re, sys
-src, dst, seed = sys.argv[1:4]
+src, dst, seed, wdir = sys.argv[1:5]
 t = open(src).read()
 t, n = re.subn(r"<seed>[^<]*</seed>", f"<seed>{seed}</seed>", t)
 assert n == 1, f"seed not found in {src}"
+t, n2 = re.subn(r"<work_dir>[^<]*</work_dir>", f"<work_dir>{wdir}</work_dir>", t)
+assert n2 == 1, f"work_dir not found in {src}"
 open(dst, "w").write(t)
 PY
     jid=$(sbatch --parsable \

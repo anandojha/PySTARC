@@ -2,7 +2,7 @@
 import numpy as np
 
 from pystarc.pipeline.prepare_bd_surface import PQRAtom, centroid, compute_grid_params
-from pystarc.pipeline.run_apbs import _read_pqr_atoms
+from pystarc.pipeline.run_apbs import _grid_key, _read_pqr_atoms, _strip_ghost_pqr_bytes
 
 
 def _atoms():
@@ -21,7 +21,12 @@ def test_centroid_leaves_out_the_ghost_atoms():
 
 
 def test_apbs_grid_atoms_leave_out_the_ghost_atoms(tmp_path):
-    _, every = _atoms()
-    p = tmp_path / "r.pqr"
-    p.write_text("".join(a.to_pqr_line() for a in every) + "END\n")
-    assert [round(a[0], 3) for a in _read_pqr_atoms(p)] == [0.0, 2.0, 4.0]
+    real, every = _atoms()
+    p_real = tmp_path / "real.pqr"
+    p_all = tmp_path / "all.pqr"
+    p_real.write_text("".join(a.to_pqr_line() for a in real) + "END\n")
+    p_all.write_text("".join(a.to_pqr_line() for a in every) + "END\n")
+    assert [round(a[0], 3) for a in _read_pqr_atoms(p_all)] == [0.0, 2.0, 4.0]
+    stripped = _strip_ghost_pqr_bytes(p_all).decode("utf-8")
+    assert "PKT" not in stripped and "GHO" not in stripped
+    assert _grid_key(p_all, {"dime": 129}) == _grid_key(p_real, {"dime": 129})

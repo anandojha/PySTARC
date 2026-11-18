@@ -207,3 +207,23 @@ def test_anchor_scan_on_a_carbonic_anhydrase_complex():
     assert len(lig) == 13 and abs(np.linalg.norm(L[j] - zn) - 2.01) < 0.01 and res["descent"] is not None
     assert res["closest"] >= floor - 0.005 and float(e.sum()) <= 2.0 + 1e-9
     assert np.allclose(pairs(pose), pairs(L), atol=1e-9) and abs(np.linalg.norm(pose[j] - zn) - res["closest"]) <= 0.005
+
+
+def test_site_margin_rounds_to_hundredths(tmp_path):
+    rec = _atoms([("ZN", "ZN", 1, (0.0, 0.0, 0.0))])
+    lig = _atoms([("N1", "LIG", 1, (0.4, 0.0, 0.0))])
+    rec[0]["r"], lig[0]["r"] = 1.0, 1.0
+    c = dict(mode="site", receptor=[(1, "ZN", "ZN")], ligand=[("N1",)], margin=0.83)
+    out = {}
+    _, _, cut, _ = bi.site_pair(str(tmp_path), rec, lig, c, dict(ligand_source="rcsb"), out)
+    assert cut == round(out["closest_approach"] + 0.83, 2)
+
+
+def test_closest_approach_runs_descent_above_eight_angstroms():
+    from pystarc.analysis.closest_approach import closest_approach
+
+    rec = [[0.0, 0.0, 0.0]]
+    lig = [[0.0, 0.0, 9.5]]
+    res = closest_approach(rec, [5.5], lig, [5.5], [0.0, 0.0, 0.0], bound=True,
+                           ball=16.0, n_coarse=4_000, n_dense=4_000, n_starts=16, n_steps=100)
+    assert res["closest"] >= 8.0 and res["descent"] is not None

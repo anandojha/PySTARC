@@ -8,6 +8,7 @@
   <rxns_xml> </rxns_xml>
   <!-- Geometry -->
   <bd_milestone_radius> </bd_milestone_radius>
+  <r_escape> </r_escape>
   <r_hydro_rec> </r_hydro_rec>
   <r_hydro_lig> </r_hydro_lig>
   <!-- Electrostatics -->

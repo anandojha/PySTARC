@@ -211,7 +211,9 @@ def run_chain(
 
     # Copy input.xml into the work_dir for reproducibility.
     if input_xml_path is not None:
-        shutil.copy(str(input_xml_path), str(work_dir / "input.xml"))
+        dst_xml = work_dir / "input.xml"
+        if Path(input_xml_path).resolve() != dst_xml.resolve():
+            shutil.copy(str(input_xml_path), str(dst_xml))
 
     # Load the chain topology and the initial atom positions, which are already
     # centered at the origin.

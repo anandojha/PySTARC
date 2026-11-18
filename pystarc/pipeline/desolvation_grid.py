@@ -42,6 +42,7 @@ from __future__ import annotations
 import math
 import numpy as np
 from pystarc.global_defs.constants import COULOMB_KCAL, KB_KCAL
+from pystarc.global_defs.defaults import GHOST_NAMES
 from pystarc.structures.pqr_io import parse_pqr_records
 
 DEN_FLOOR = 0.5  # floor on (r^2 - a^2), Angstrom^2
@@ -156,7 +157,7 @@ def read_pqr_geometry(pqr_path):
     and a negative coordinate can run into the field before it, so the records
     are read by parse_pqr_records, which handles every one of these forms.
     """
-    recs = parse_pqr_records(pqr_path)
+    recs = [r for r in parse_pqr_records(pqr_path) if r.name.strip().upper() not in GHOST_NAMES]
     xyz = [[r.x, r.y, r.z] for r in recs]
     rad = [r.radius for r in recs]
     return (

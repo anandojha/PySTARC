@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 """
-PySTARC command from PDB to calculate association rate constants.
+PySTARC command to build simulation inputs and calculate association rate constants.
 
 Usage
 -----
-    python run_pystarc.py pystarc_input.xml
-    # Generate a template input file:
-    python run_pystarc.py --template
+    python run_pystarc.py config.xml
+    python run_pystarc.py config.xml --n-gpus 4
+    python run_pystarc.py config.xml --setup
+    # Generate a blank configuration file:
+    python run_pystarc.py --template [config.xml]
 
 Requirements
 ------------
     conda activate PySTARC
-    conda install -c conda-forge ambertools apbs -y
-    pip install dist/pystarc-1.1.0-py3-none-any.whl
-    pip install 'cupy-cuda12x[ctk]>=14'    # NVIDIA GPU with CUDA 12 or newer, required
 """
 
 from pystarc.analysis.convergence import (
@@ -24,6 +23,7 @@ from pystarc.analysis.convergence import (
 from pystarc.pipeline.input_parser import write_template
 from pystarc.pipeline.input_parser import parse
 from pystarc.pipeline.pipeline import run
+import xml.etree.ElementTree as ET
 from pathlib import Path
 import subprocess
 import datetime
@@ -57,26 +57,102 @@ class _Tee:
         return getattr(self._stream, name)
 
 
+def _parse_cli(argv):
+    setup_mode = False
+    n_gpus_override = None
+    positional = []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--setup":
+            setup_mode = True
+            i += 1
+        elif a == "--n-gpus":
+            if i + 1 >= len(argv):
+                sys.exit("ERROR: --n-gpus requires a positive integer")
+            try:
+                n_gpus_override = int(argv[i + 1])
+            except ValueError:
+                sys.exit(f"ERROR: --n-gpus must be an integer, got {argv[i + 1]!r}")
+            if n_gpus_override < 1:
+                sys.exit("ERROR: --n-gpus must be >= 1")
+            i += 2
+        elif a.startswith("--n-gpus="):
+            val = a.split("=", 1)[1]
+            try:
+                n_gpus_override = int(val)
+            except ValueError:
+                sys.exit(f"ERROR: --n-gpus must be an integer, got {val!r}")
+            if n_gpus_override < 1:
+                sys.exit("ERROR: --n-gpus must be >= 1")
+            i += 1
+        else:
+            positional.append(a)
+            i += 1
+    return positional, setup_mode, n_gpus_override
+
+
+def _run_multi_gpu(input_xml_path: Path, work_dir: Path, n_gpus: int):
+    from pystarc.multi_GPU.multi_GPU_runs import split_multi_gpu
+
+    rc = split_multi_gpu(str(input_xml_path), n_splits=n_gpus)
+    if rc != 0:
+        sys.exit(rc)
+    visible = [d.strip() for d in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",") if d.strip()]
+    runner = str(Path(__file__).resolve())
+    procs = []
+    for i in range(1, n_gpus + 1):
+        shard_dir = work_dir / f"bd_{i}"
+        env = dict(os.environ)
+        env["CUDA_VISIBLE_DEVICES"] = visible[(i - 1) % len(visible)] if visible else str(i - 1)
+        procs.append((i, subprocess.Popen([sys.executable, runner, "input.xml"], cwd=str(shard_dir), env=env)))
+    failed = []
+    for i, p in procs:
+        code = p.wait()
+        if code != 0:
+            failed.append((i, code))
+    if failed:
+        sys.exit(f"ERROR: multi-GPU shard failure: {failed}")
+    combiner = str(Path(__file__).resolve().parent / "pystarc" / "multi_GPU" / "combine_data.py")
+    rc = subprocess.run([sys.executable, combiner, "--bd-sims", str(work_dir)]).returncode
+    if rc != 0:
+        sys.exit(rc)
+
+
 def main():
     if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
         print(__doc__)
         sys.exit(0)
     if sys.argv[1] == "--template":
-        out = sys.argv[2] if len(sys.argv) > 2 else "pystarc_input.xml"
+        out = sys.argv[2] if len(sys.argv) > 2 else "config.xml"
         write_template(out)
         print(f"Edit {out} then run:  python run_pystarc.py {out}")
         sys.exit(0)
-    xml_path = Path(sys.argv[1])
+    positional, setup_mode, n_gpus_override = _parse_cli(sys.argv[1:])
+    if not positional:
+        print(__doc__)
+        sys.exit(1)
+    xml_path = Path(positional[0])
     if not xml_path.exists():
         print(f"ERROR: Input file not found: {xml_path}")
         print("Generate a template with:  python run_pystarc.py --template")
         sys.exit(1)
+    is_config_root = ET.parse(xml_path).getroot().tag == "config"
     cfg = parse(xml_path)
+    if n_gpus_override is not None:
+        cfg.n_gpus = n_gpus_override
     # Set up log file in work_dir
     work_dir = Path(cfg.work_dir)
     if not work_dir.is_absolute():
-        work_dir = xml_path.parent / work_dir
+        work_dir = xml_path.resolve().parent / work_dir
     work_dir.mkdir(parents=True, exist_ok=True)
+    if setup_mode:
+        print(f"  Setup complete -> {work_dir.resolve()}")
+        return
+    if cfg.gpu and cfg.chain is None and cfg.n_gpus > 1:
+        split_src = (work_dir / "input.xml") if is_config_root else xml_path.resolve()
+        _run_multi_gpu(split_src, work_dir.resolve(), cfg.n_gpus)
+        return
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = work_dir / f"pystarc_{timestamp}.log"
     # Detect GPU

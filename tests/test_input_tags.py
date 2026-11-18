@@ -115,22 +115,33 @@ def test_rigid_input_must_name_the_excluded_volume(tmp_path):
     _quiet(_write(tmp_path, chain, soft_repulsion=None, ligand_pqr=None, rxns_xml=None))
 
 
-@pytest.mark.parametrize("setup", [p for p in sorted(EXAMPLES.glob("**/setup.py"))
-                                   if "BD_PARAMS" in p.read_text() or "build_inputs" in p.read_text()],
+@pytest.mark.parametrize("cfg_path", sorted(EXAMPLES.glob("**/config.xml")),
                          ids=lambda p: p.parent.name)
-def test_input_written_from_an_example_config_parses_without_warning(tmp_path, setup):
-    """The template filled from config.xml as write_input of build_inputs fills it."""
-    vals = {"soft_repulsion": "false", "minimum_core_reaction_dt": "0", "full_paths": "true",
-            "energetics": "true"}
-    for sec in ET.parse(setup.parent / "config.xml").getroot():
-        if sec.tag != "criterion":
-            vals.update((e.tag, (e.text or "").strip()) for e in sec if len(e) == 0)
-    vals.update(receptor_pqr="r.pqr", ligand_pqr="l.pqr", rxns_xml="rxns.xml", work_dir=str(tmp_path / "bd"))
-    text = (EXAMPLES.parent / "pystarc" / "templates" / "input.xml").read_text()
-    text = re.sub(r"<([a-z0-9_]+)>\s*</\1>", lambda m: f"<{m[1]}>{vals[m[1]]}</{m[1]}>", text)
-    (tmp_path / "input.xml").write_text(text)
+def test_every_example_config_follows_the_universal_template(cfg_path):
+    """Every example config.xml has the same 10 sections and tag order, with no setup.py left."""
+    from pystarc.pipeline import build_inputs as bi
+
+    assert not (cfg_path.parent / "setup.py").exists()
+    root = ET.parse(cfg_path).getroot()
+    assert root.tag == "config"
+    assert [sec.tag for sec in root] == [name for name, _ in bi.SECTIONS]
+    for sec, (_, expected_tags) in zip(root, bi.SECTIONS):
+        assert [el.tag for el in sec] == list(expected_tags)
+
+
+@pytest.mark.parametrize("cfg_path", [p for p in sorted(EXAMPLES.glob("**/config.xml"))
+                                      if p.parent.name != "barnase_barstar"],
+                         ids=lambda p: p.parent.name)
+def test_input_written_from_an_example_config_parses_without_warning(tmp_path, cfg_path):
+    """write_input of build_inputs produces an input.xml that parses without warning."""
+    from pystarc.pipeline import build_inputs as bi
+
+    raw = bi.read_config(cfg_path)
+    raw["work_dir"] = str(tmp_path)
+    raw["bd_work_dir"] = str(tmp_path / "bd")
+    bi.write_input(str(tmp_path / "input.xml"), raw)
     cfg = _quiet(tmp_path / "input.xml")
-    assert cfg.dt == float(vals["dt"]) and cfg.gpu_force_batch == 0
+    assert cfg.dt == float(raw["dt"]) and cfg.gpu_force_batch == 0
 
 
 def test_relative_viscosity_must_be_one_and_temperature_warns(tmp_path):
@@ -147,9 +158,51 @@ def test_ligand_dime_is_read_and_checked(tmp_path):
         parse(_write(tmp_path, apbs_ligand_dime="128"))
 
 
-@pytest.mark.parametrize("path", sorted(EXAMPLES.glob("**/input.xml")), ids=lambda p: p.parent.name)
-def test_example_inputs_parse_without_warning(tmp_path, monkeypatch, path):
-    shutil.copy(path, tmp_path / "input.xml")
-    monkeypatch.chdir(tmp_path)
-    cfg = _quiet(tmp_path / "input.xml")
-    assert math.isfinite(cfg.debye_length) and cfg.gpu_force_batch == 0
+@pytest.mark.parametrize("sub,want_pairs", [
+    ("two_charged_spheres", 1),
+    ("thrombin_thrombomodulin", 6),
+    ("barnase_barstar", 568),
+])
+def test_example_configs_with_local_files_build_and_parse_cleanly(tmp_path, sub, want_pairs):
+    import json
+
+    dst = tmp_path / sub
+    shutil.copytree(EXAMPLES / sub, dst)
+    cfg = _quiet(dst / "config.xml")
+    rec = json.loads((dst / "bd_sims" / "build_record.json").read_text())
+    assert len(rec["pairs"]) == want_pairs
+    assert math.isfinite(cfg.debye_length)
+
+
+def test_config_strict_tag_and_section_validation(tmp_path):
+    from pystarc.pipeline import build_inputs as bi
+
+    p = tmp_path / "bad_sec.xml"
+    p.write_text("<config><unknown_sec/></config>")
+    with pytest.raises(ValueError, match="Unknown section <unknown_sec>"):
+        parse(p)
+    p2 = tmp_path / "misplaced.xml"
+    p2.write_text("<config><outputs><seed>1</seed></outputs></config>")
+    with pytest.raises(ValueError, match="<seed> in <outputs>: place it inside <simulation>"):
+        parse(p2)
+    p3 = tmp_path / "typo.xml"
+    p3.write_text("<config><structure><smiels>CCO</smiels></structure></config>")
+    with pytest.raises(ValueError, match="Unknown tag <smiels>.*did you mean <smiles>"):
+        parse(p3)
+    blank = tmp_path / "template.xml"
+    blank.write_text(bi.config_xml({}, full_template=True))
+    assert bi.read_config(blank) == {"criterion": {}, "chain_cfg": {}}
+
+
+def test_run_pystarc_template_and_setup_cli(tmp_path):
+    import subprocess
+    import sys
+
+    runner = EXAMPLES.parent / "run_pystarc.py"
+    tpl = tmp_path / "config.xml"
+    r1 = subprocess.run([sys.executable, str(runner), "--template", str(tpl)], capture_output=True, text=True)
+    assert r1.returncode == 0 and tpl.exists()
+    dst = tmp_path / "tcs"
+    shutil.copytree(EXAMPLES / "two_charged_spheres", dst)
+    r2 = subprocess.run([sys.executable, str(runner), str(dst / "config.xml"), "--setup"], capture_output=True, text=True)
+    assert r2.returncode == 0 and (dst / "bd_sims" / "rxns.xml").exists()
