@@ -12,8 +12,17 @@
 # sbatch --nodes=1 --ntasks-per-node=1 submit.sh     # 1 node with 1 GPU
 # sbatch --nodes=2 --ntasks-per-node=4 submit.sh     # 2 nodes with 4 GPUs/node (8 GPUs total)
 
+if ! command -v conda >/dev/null 2>&1; then
+  [ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc" 2>/dev/null || true
+fi
+if ! command -v conda >/dev/null 2>&1; then
+  for _c in "${CONDA_BASE:-}" "$HOME/miniforge3" "$HOME/mambaforge" "$HOME/miniconda3" "$HOME/anaconda3"; do
+    [ -f "$_c/etc/profile.d/conda.sh" ] && { source "$_c/etc/profile.d/conda.sh"; break; }
+  done
+fi
 set -eo pipefail
 module load cuda 2>/dev/null || true
+command -v conda >/dev/null 2>&1 || { echo "conda not found. Load conda or set CONDA_BASE." >&2; exit 1; }
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate PySTARC
 BASE="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "$0")" && pwd)}"
