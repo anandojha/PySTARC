@@ -44,7 +44,7 @@
   </physics>
   <simulation>
     <n_trajectories>1000000</n_trajectories>                      <!-- Number of Brownian dynamics trajectories. -->
-    <max_steps>1000000</max_steps>                                <!-- Step limit per trajectory. -->
+    <max_steps>10000000</max_steps>                               <!-- Step limit per trajectory. -->
     <dt>0.2</dt>                                                  <!-- Outer time step of the flexible chain model (in picoseconds). No effect on rigid body runs. -->
     <minimum_core_dt>0.0</minimum_core_dt>                        <!-- Smallest permitted time step. 0 imposes no floor. -->
     <minimum_core_reaction_dt>0</minimum_core_reaction_dt>        <!-- Smallest time step near the reaction surface (in picoseconds). 0 imposes no floor on the GPU. -->

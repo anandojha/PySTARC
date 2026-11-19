@@ -53,7 +53,7 @@
     <multipole_fallback>true</multipole_fallback>                <!-- Extend the electrostatics beyond the grid by multipole expansion. Options: true and false. -->
   </physics>
   <simulation>
-    <n_trajectories>20000000</n_trajectories>                    <!-- Number of Brownian dynamics trajectories. -->
+    <n_trajectories>10000000</n_trajectories>                    <!-- Number of Brownian dynamics trajectories. -->
     <max_steps>10000000</max_steps>                              <!-- Step limit per trajectory. -->
     <dt>0.2</dt>                                                 <!-- Outer time step of the flexible chain model (in picoseconds). No effect on rigid body runs. -->
     <minimum_core_dt>0.2</minimum_core_dt>                       <!-- Smallest permitted time step. 0 imposes no floor. -->
