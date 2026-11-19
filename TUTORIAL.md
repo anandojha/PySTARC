@@ -20,11 +20,11 @@ conda activate PySTARC
 ```bash
 mkdir examples/my_trypsin
 cd examples/my_trypsin
-cp ../trypsin_benzamidine/{receptor.pqr,ligand.pqr,run.sh,submit_SLURM_single_GPU.sh,submit_SLURM_multi_GPUs.sh} .
+cp ../trypsin_benzamidine/{receptor.pqr,ligand.pqr,run.sh,submit.sh} .
 python ../../run_pystarc.py --template > config.xml
 ```
 
-The last command writes a `config.xml` template with the nine sections `structure`, `criterion`, `geometry`, `electrostatics`, `physics`, `simulation`, `compute`, `outputs` and `chain`. `run.sh` and the SLURM scripts find PySTARC in a parent folder of the run folder. A run folder outside the PySTARC folder needs `export PYSTARC_ROOT=/path/to/PySTARC`.
+The last command writes a `config.xml` template with the nine sections `structure`, `criterion`, `geometry`, `electrostatics`, `physics`, `simulation`, `compute`, `outputs` and `chain`. `run.sh` and `submit.sh` find PySTARC in a parent folder of the run folder. A run folder outside the PySTARC folder needs `export PYSTARC_ROOT=/path/to/PySTARC`.
 
 | file | content |
 |---|---|
@@ -32,8 +32,7 @@ The last command writes a `config.xml` template with the nine sections `structur
 | `ligand.pqr` | benzamidine coordinates, charges and radii in the bound pose |
 | `config.xml` | settings of the build and the simulation |
 | `run.sh` | runs `run_pystarc.py config.xml` on one GPU |
-| `submit_SLURM_single_GPU.sh` | the same on one GPU of a SLURM cluster |
-| `submit_SLURM_multi_GPUs.sh` | runs `run_pystarc.py config.xml --n-gpus 4` on four GPUs of a SLURM cluster |
+| `submit.sh` | unified SLURM submission script (defaults to 1 node, 4 GPUs, scales to 1 GPU or multiple nodes via `sbatch` flags) |
 
 ## 3. Receptor and ligand structures (`structure`)
 
@@ -300,7 +299,7 @@ The trypsin example enables the soft wall, hydrodynamic interactions, the base d
 | `convergence_tol` | number between 0 and 1 | relative standard error for the converged flag |
 | `checkpoint_interval` | integer, 0 for none | finished trajectories between checkpoints |
 
-The trypsin run starts 10,000,000 trajectories with a step limit of 1,000,000. `submit_SLURM_multi_GPUs.sh` (`--n-gpus 4`) splits the run into four shards of 2,500,000 trajectories with the seeds `seed` + 11111111 i for i = 1 to 4.
+The trypsin run starts 10,000,000 trajectories with a step limit of 10,000,000. `submit.sh` (4 GPUs by default) splits the run into four shards of 2,500,000 trajectories with the seeds `seed` + 11111111 i for i = 1 to 4.
 
 ### Time step
 
@@ -463,10 +462,11 @@ The last line ends with OK for b + lmax < fglen/2 and with WARNING for b + lmax 
 | command | GPUs | actions |
 |---|---|---|
 | `bash run.sh` | one GPU of the current node | deletes `bd_sims`, runs `run_pystarc.py config.xml` |
-| `sbatch submit_SLURM_single_GPU.sh` | one GPU of a SLURM node | deletes `bd_sims`, runs `run_pystarc.py config.xml` |
-| `sbatch submit_SLURM_multi_GPUs.sh` | four GPUs of a SLURM node | deletes `bd_sims`, runs `run_pystarc.py config.xml --n-gpus 4` |
+| `sbatch submit.sh` | 1 node, 4 GPUs (default) | deletes `bd_sims`, splits into 4 shards via `srun`, pools into `bd_sims/results.json` |
+| `sbatch --nodes=1 --ntasks-per-node=1 submit.sh` | 1 node, 1 GPU | deletes `bd_sims`, runs `run_pystarc.py config.xml --n-gpus 1` |
+| `sbatch --nodes=2 --ntasks-per-node=4 submit.sh` | 2 nodes, 4 GPUs per node (8 total) | deletes `bd_sims`, splits into 8 shards across nodes via `srun`, pools into `bd_sims/results.json` |
 
-Submit the SLURM scripts from the run folder. The `#SBATCH` lines set the partition, memory and time limit of the local cluster. Every script deletes `bd_sims` with every earlier result and checkpoint.
+Submit `submit.sh` from the run folder. The `#SBATCH` lines set the job name, partition, node/GPU count, memory, and time limit of the local cluster. Both `run.sh` and `submit.sh` delete `bd_sims` with every earlier result and checkpoint.
 
 In a four GPU run (`--n-gpus 4` or `<n_gpus>4</n_gpus>`), `run_pystarc.py` builds the inputs and grids once in `bd_sims` and starts four shards in `bd_sims/bd_1` to `bd_sims/bd_4`. Each shard runs a quarter of `n_trajectories` with a seed of its own (step 8). `pystarc/multi_GPU/combine_data.py` then pools the counts of the finished shards into `bd_sims/results.json` and `bd_sims/convergence.json`. A shard without `results.json` stays out of the pool.
 

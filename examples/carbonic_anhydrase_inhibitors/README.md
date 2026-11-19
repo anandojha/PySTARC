@@ -20,8 +20,7 @@ receptor.pdb                Prepared PDB structure of the receptor
 ligand.pdb                  Prepared PDB structure of the ligand
 config.xml                  PySTARC configuration file
 run.sh                      Script to run PySTARC simulations on the workstation
-submit_SLURM_single_GPU.sh  Script to run PySTARC simulations on the cluster with 1 GPU
-submit_SLURM_multi_GPUs.sh  Script to run PySTARC simulations on the cluster with multiple GPUs
+submit.sh                   Unified SLURM script (1 GPU, 1-node multi-GPU, or multi-node GPUs)
 ```
 
 ## To run Brownian dynamics simulations on the workstation
@@ -31,18 +30,13 @@ conda activate PySTARC                               # Activate the PySTARC envi
 bash ca13_azm/run.sh                                 # Run one complex
 ```
 
-## To run Brownian dynamics simulations on the cluster with 1 GPU
-```
-cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors  # Navigate to the example directory within PySTARC
-conda activate PySTARC                               # Activate the PySTARC environment
-cd ca13_azm && sbatch submit_SLURM_single_GPU.sh     # Submit one complex on 1 GPU
-```
-
-## To run Brownian dynamics simulations on the cluster with multiple GPUs
-```
-cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors  # Navigate to the example directory within PySTARC
-conda activate PySTARC                               # Activate the PySTARC environment
-cd ca13_azm && sbatch submit_SLURM_multi_GPUs.sh     # Submit one complex on multiple GPUs
+## To run Brownian dynamics simulations on a SLURM cluster
+```bash
+cd ~/PySTARC/examples/carbonic_anhydrase_inhibitors/ca13_azm
+conda activate PySTARC
+sbatch submit.sh                                # 1 node, 4 GPUs (default)
+sbatch --nodes=1 --ntasks-per-node=1 submit.sh  # 1 node, 1 GPU
+sbatch --nodes=2 --ntasks-per-node=4 submit.sh  # 2 nodes, 4 GPUs per node (8 total)
 ```
 
 ## Once the simulation finishes, the following files will be generated with 1 GPU
