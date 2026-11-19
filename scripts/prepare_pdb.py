@@ -25,6 +25,7 @@ import argparse
 import collections
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -265,7 +266,75 @@ def _apply_mutations(prot_lines, mut_specs):
             applied.append(f"{ch.strip()}{rcode}:{old_res}->{new_res}")
     if len(seen) < len(parsed):
         sys.exit(f"ERROR: one or more --mutate targets {mut_specs} were absent from receptor ATOM records")
+    if shutil.which("tleap") is not None:
+        out = _complete_mutated_sidechains(out, {(t[0], t[1]) for t in seen})
     return out, applied
+
+
+def _complete_mutated_sidechains(prot_lines, mutated_keys):
+    """Build missing heavy sidechain atoms on mutated residues via tleap when installed."""
+    with tempfile.TemporaryDirectory() as tmp:
+        in_pdb = os.path.join(tmp, "in.pdb")
+        with open(in_pdb, "w") as fh:
+            _write_chain_separated_atoms(fh, prot_lines)
+            fh.write("END\n")
+        with open(os.path.join(tmp, "tleap.in"), "w") as fh:
+            fh.write("source leaprc.protein.ff14SB\nmol = loadpdb in.pdb\nsavepdb mol out.pdb\nquit\n")
+        subprocess.run(["tleap", "-f", "tleap.in"], cwd=tmp, capture_output=True, text=True)
+        out_pdb = os.path.join(tmp, "out.pdb")
+        if not os.path.exists(out_pdb) or os.path.getsize(out_pdb) == 0:
+            return prot_lines
+        leap_lines = [l for l in open(out_pdb) if l.startswith("ATOM")]
+
+    orig_res_order = []
+    orig_groups = {}
+    for l in prot_lines:
+        rk = (l[21], l[22:27].strip())
+        if rk not in orig_groups:
+            orig_res_order.append(rk)
+            orig_groups[rk] = []
+        orig_groups[rk].append(l if l.endswith("\n") else l + "\n")
+
+    leap_res_order = []
+    leap_groups = {}
+    for l in leap_lines:
+        an = l[12:16].strip()
+        if an == "OXT" or an.startswith("H") or (len(an) > 1 and an[0].isdigit() and an[1] == "H"):
+            continue
+        lrk = int(l[22:26])
+        if lrk not in leap_groups:
+            leap_res_order.append(lrk)
+            leap_groups[lrk] = []
+        leap_groups[lrk].append(l)
+
+    if len(orig_res_order) != len(leap_res_order):
+        return prot_lines
+
+    merged = []
+    serial = 0
+    for rk, lrk in zip(orig_res_order, leap_res_order):
+        existing = orig_groups[rk]
+        if rk not in mutated_keys:
+            for l in existing:
+                serial += 1
+                merged.append(f"ATOM  {serial:5d}{l[11:]}")
+            continue
+        have_names = {l[12:16].strip() for l in existing}
+        tmpl = existing[-1]
+        for l in existing:
+            serial += 1
+            merged.append(f"ATOM  {serial:5d}{l[11:]}")
+        for ll in leap_groups[lrk]:
+            an = ll[12:16].strip()
+            if an in have_names:
+                continue
+            serial += 1
+            el = an[:1]
+            merged.append(
+                f"ATOM  {serial:5d} {ll[12:16]} {tmpl[17:27]}   "
+                f"{ll[30:54]}{tmpl[54:66]}          {el:>2s}\n"
+            )
+    return merged
 
 
 def _parse_res_targets(specs, chains):
