@@ -1,23 +1,31 @@
 <?xml version="1.0" ?>
 <config>
   <structure>
-    <receptor>receptor.pdb</receptor>                            <!-- Prepared receptor structure (.pdb or .pqr). -->
-    <ligand>ligand.pdb</ligand>                                  <!-- Prepared ligand structure (.pdb or .pqr). -->
-    <ligand_net_charge>0</ligand_net_charge>                     <!-- Formal integer charge of a small-molecule .pdb ligand. Blank for .pqr or protein chain. -->
+    <receptor>receptor.pdb</receptor>                            <!-- Prepared receptor structure (.pdb or .pqr, matching ligand format). -->
+    <ligand>ligand.pdb</ligand>                                  <!-- Prepared ligand structure (.pdb or .pqr, matching receptor format). -->
+    <ligand_net_charge>0</ligand_net_charge>                     <!-- Formal integer charge of the ligand (in elementary charge units). -->
     <model>rigid</model>                                         <!-- Solute representation. Options: rigid and chain. -->
   </structure>
   <criterion>
-    <mode>site</mode>                                            <!-- How the atom pairs of the reaction criterion are chosen. Options: contacts, centroid, and site. -->
-    <search_cutoff></search_cutoff>                              <!-- Mode contacts with pairs picked from the bound contacts. Search radius (in angstroms). -->
-    <n_pairs></n_pairs>                                          <!-- Mode contacts with pairs picked from the bound contacts. Number of contacts retained, one or an even number. -->
-    <atom_filter></atom_filter>                                  <!-- Element pairings permitted. Options: all, polar, nonpolar, any_polar, and receptor_polar. -->
-    <excluded></excluded>                                        <!-- Atom names omitted from the search. -->
-    <receptor_numbering></receptor_numbering>                    <!-- Numbering for the target residues. Options: pdb and internal. -->
-    <receptor></receptor>                                        <!-- Receptor side of each named pair of mode contacts, or the receptor anchor atom of mode site. -->
-    <ligand></ligand>                                            <!-- Ligand side of each named pair of mode contacts, or the ligand anchor atom of mode site. In mode contacts, auto chooses the nearest permitted atom. -->
-    <pair_cutoff></pair_cutoff>                                  <!-- Reaction distance for every pair (in angstroms). Mode site takes pair_cutoff or margin. -->
-    <margin>3.0</margin>                                         <!-- Mode site distance added to the closest accessible approach (in angstroms), rounded to 0.01 A. -->
-    <n_needed></n_needed>                                        <!-- Mode contacts pairs that must be inside cutoff at once: 1 for one pair, half of an even pair count, or any positive count for model chain. -->
+    <mode>contacts</mode>                                        <!-- How the reaction criterion is defined. Options: contacts and centroid. -->
+    <receptor>                                                   <!-- Receptor atom of each contact pair (<target resid="..." atom="..." resname="..."/>). -->
+      <target resid="605" atom="O" resname="GLY"/>
+      <target resid="603" atom="O" resname="GLU"/>
+      <target resid="602" atom="SD" resname="MET"/>
+      <target resid="606" atom="O" resname="ASN"/>
+      <target resid="607" atom="N" resname="ILE"/>
+      <target resid="611" atom="OG" resname="SER"/>
+    </receptor>
+    <ligand>                                                     <!-- Ligand atom of each contact pair (<atom name="..."/> or <target resid="..." atom="..." resname="..."/>). -->
+      <atom name="N2"/>
+      <atom name="N9"/>
+      <atom name="N7"/>
+      <atom name="N2"/>
+      <atom name="N2"/>
+      <atom name="OAU"/>
+    </ligand>
+    <pair_cutoff>7.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
+    <n_needed>3</n_needed>                                       <!-- Mode contacts pairs inside cutoff at once (1 for one pair, half of an even pair count, or positive count for model chain); 0 in mode centroid (rxns.xml writes 1). -->
   </criterion>
   <geometry>
     <bd_milestone_radius>60.0</bd_milestone_radius>              <!-- Radius of the starting sphere (in angstroms). -->
@@ -75,6 +83,7 @@
     <energetics>true</energetics>                                <!-- Save the force on the ligand and the time step every save_interval steps. Options: true and false. -->
   </outputs>
   <chain>
+    <reaction_pairs_json></reaction_pairs_json>                  <!-- Pre-built chain reaction pairs JSON file for model chain. Blank builds from criterion pairs. -->
     <dt_chain></dt_chain>                                        <!-- Inner time step of flexible chain internal coordinates (in picoseconds). -->
     <chain_steps_per_outer></chain_steps_per_outer>              <!-- Inner chain steps per outer step. -->
     <n_equilibration_steps></n_equilibration_steps>              <!-- Pre-equilibration chain steps before each trajectory. 0 skips pre-equilibration. -->

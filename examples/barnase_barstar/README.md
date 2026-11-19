@@ -4,13 +4,14 @@ Runs on CPUs and needs no GPU. The shard count and the CPUs and memory per shard
 
 ## Input files
 ```
-barnase.pqr        PQR file for receptor charges and radii
-barstar.pdb        Prepared PDB structure of the diffusing chain
-config.xml         PySTARC configuration file
-run.sh             Script to run a single simulation on the workstation
-make_grids.py      Builds the APBS electrostatic and Born grids
-submit_shards.sh   Stages and submits the 25 shards on the cluster
-combine_shards.py  Pools the shards into one rate
+receptor.pdb         Prepared PDB structure of the receptor (barnase)
+ligand.pdb           Prepared PDB structure of the diffusing chain (barstar)
+reaction_pairs.json  Receptor atom and chain bead contact pairs
+config.xml           PySTARC configuration file
+run.sh               Script to run a single simulation on the workstation
+make_grids.py        Builds the APBS electrostatic and Born grids
+submit_shards.sh     Stages and submits the 25 shards on the cluster
+combine_shards.py    Pools the shards into one rate
 ```
 
 ## To run Brownian dynamics simulations

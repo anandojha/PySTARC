@@ -37,22 +37,22 @@ The last command writes a `config.xml` template with the nine sections `structur
 
 ## 3. Receptor and ligand structures (`structure`)
 
-`<structure>` names two separate solute files (`receptor` and `ligand`), each ending in `.pdb` or `.pqr`, plus `ligand_net_charge` and `model`.
+`<structure>` names two separate solute files (`receptor` and `ligand`) in matching formats (both `.pdb` or both `.pqr`), plus `ligand_net_charge` and `model`.
 
 | tag | accepted entries | effect |
 |---|---|---|
 | `receptor` | `.pdb` or `.pqr` path | prepared receptor structure; `.pdb` is parameterized with AmberTools (`tleap` and `ff14SB`), `.pqr` supplies existing charges and radii |
-| `ligand` | `.pdb` or `.pqr` path | prepared ligand structure; small-molecule `.pdb` is parameterized with `antechamber` (`AM1-BCC` and `GAFF2`), `.pqr` supplies existing charges and radii, and `model` `chain` builds COFFDROP beads from a protein `.pdb` (step 15) |
-| `ligand_net_charge` | integer or blank | formal net charge required for a small-molecule `.pdb` ligand; blank when `ligand` is `.pqr` or a protein chain |
+| `ligand` | `.pdb` or `.pqr` path (matching `receptor`) | prepared ligand structure; small-molecule `.pdb` is parameterized with `antechamber` (`AM1-BCC` and `GAFF2`), protein `.pdb` is parameterized with `tleap` (`rigid`) or built into COFFDROP beads (`chain`, step 15), and `.pqr` supplies existing charges and radii |
+| `ligand_net_charge` | integer | formal net charge of the ligand (in elementary charge units); passed to `antechamber` for a small-molecule `.pdb` and verified against the summed atomic or bead charges of `.pqr` and protein `.pdb` ligands |
 | `model` | `rigid` or `chain` | rigid-body Brownian dynamics (`rigid`) or flexible COFFDROP bead chain (`chain`, step 15) |
 
-The trypsin benzamidine example supplies PQR files matching the atomic charges and radii of the BrownDye 2 comparison:
+Mixing `.pdb` and `.pqr` in one `config.xml` stops the build with an error. The trypsin benzamidine example supplies PQR files matching the atomic charges and radii of the BrownDye 2 comparison:
 
 ```xml
 <structure>
   <receptor>receptor.pqr</receptor>
   <ligand>ligand.pqr</ligand>
-  <ligand_net_charge></ligand_net_charge>
+  <ligand_net_charge>1</ligand_net_charge>
   <model>rigid</model>
 </structure>
 ```
@@ -81,32 +81,40 @@ A new protein-ligand complex starts from prepared `receptor.pdb` and `ligand.pdb
 
 ## 4. Reaction criterion (`criterion`)
 
-The reaction criterion defines the bound state. For rigid body runs the build step writes the criterion into `bd_sims/rxns.xml` as receptor and ligand atom pairs with a reaction distance. A trajectory reacts when at least `n_needed` pairs are closer than the reaction distance at one time. `mode` selects the pairs.
+The reaction criterion defines the bound state. For rigid body runs the build step writes the criterion into `bd_sims/rxns.xml` as receptor and ligand atom pairs with a reaction distance `pair_cutoff`. A trajectory reacts when at least `n_needed` pairs are closer than `pair_cutoff` at one time. `mode` selects one of two criteria.
 
-| `mode` | pairs | former mode |
-|---|---|---|
-| `contacts` | receptor and ligand atoms picked from the contacts of the bound pose, or named in `config.xml` | `auto` (picked), `explicit` (named) |
-| `centroid` | receptor centroid with ligand centroid | `center` |
-| `site` | a point of the binding site with the ligand centroid, or one named receptor atom with one named ligand atom | none |
+| `mode` | pairs |
+|---|---|
+| `contacts` | receptor and ligand atom pairs listed in `<receptor>` and `<ligand>` |
+| `centroid` | receptor centroid paired with ligand centroid |
 
-The build stops with an error for the former mode names.
+### Contact pairs (`contacts`)
 
-### Pairs picked from the bound pose (former `auto`)
-
-The trypsin benzamidine example picks six pairs.
+The trypsin benzamidine example specifies six contact pairs with `pair_cutoff` 7.0 Å and `n_needed` 3:
 
 ```xml
 <criterion>
   <mode>contacts</mode>
-  <search_cutoff>6.0</search_cutoff>
-  <n_pairs>6</n_pairs>
-  <atom_filter>polar</atom_filter>
+  <receptor>
+    <target resid="193" atom="O" resname="TRP"/>
+    <target resid="192" atom="O" resname="SER"/>
+    <target resid="173" atom="O" resname="CYX"/>
+    <target resid="205" atom="O" resname="VAL"/>
+    <target resid="174" atom="N" resname="GLN"/>
+    <target resid="194" atom="N" resname="GLY"/>
+  </receptor>
+  <ligand>
+    <atom name="N2"/>
+    <atom name="N2"/>
+    <atom name="N1"/>
+    <atom name="N2"/>
+    <atom name="N1"/>
+    <atom name="N2"/>
+  </ligand>
   <pair_cutoff>7.0</pair_cutoff>
   <n_needed>3</n_needed>
 </criterion>
 ```
-
-The build lists every pair of a receptor heavy atom and a ligand heavy atom closer than `search_cutoff` in the bound pose. `atom_filter` `polar` keeps the pairs with N, O or S on both sides. The `n_pairs` closest pairs enter `rxns.xml`, with at most one pair per receptor residue. A trajectory reacts when `n_needed` of the six pairs are closer than `pair_cutoff` at one time, here 3 pairs within 7.0 Å.
 
 | receptor atom in `receptor.pqr` | ligand atom | distance in the bound pose (Å) |
 |---|---|---|
@@ -117,67 +125,33 @@ The build lists every pair of a receptor heavy atom and a ligand heavy atom clos
 | GLN 174 N | N1 | 4.24 |
 | GLY 194 N | N2 | 4.31 |
 
-### Pairs named in `config.xml` (former `explicit`)
+Each `<target resid="..." atom="..." resname="..."/>` in `<receptor>` names one receptor atom by residue number, atom name and residue name. When `<receptor>` is a `.pdb` file, residue numbers written in `receptor.pdb` (including retained catalytic metals such as `ZN`) are mapped automatically to the residue numbers of `bd_sims/receptor.pqr`. Protonation tautomers assigned by `tleap` (`HIS`/`HID`/`HIE`/`HIP`, `CYS`/`CYX`/`CYM`, `ASP`/`ASH`, `GLU`/`GLH`, `LYS`/`LYN`) match across group members. Each entry in `<ligand>` follows the receptor target order as `<atom name="..."/>` for a single-residue ligand, or `<target resid="..." atom="..." resname="..."/>` for a multi-residue protein ligand (`examples/thrombin_thrombomodulin`).
 
-```xml
-<criterion>
-  <mode>contacts</mode>
-  <receptor>
-    <target resid="193" atom="O" resname="TRP"/>
-    <target resid="173" atom="O" resname="CYX"/>
-  </receptor>
-  <ligand>
-    <atom name="N2"/>
-    <atom name="N1"/>
-  </ligand>
-  <pair_cutoff>7.0</pair_cutoff>
-  <n_needed>1</n_needed>
-</criterion>
-```
-
-Each `<target>` names one receptor atom by residue number, atom name and residue name in `receptor.pqr`. The ligand atoms follow in the order of the targets. `<ligand>auto</ligand>` with an `atom_filter` pairs each target with the closest permitted heavy ligand atom of the bound pose. `receptor_numbering` `internal` (default) takes the residue numbers of `receptor.pqr` (`tleap` numbers `.pdb` receptors from 1 in residue order, while `.pqr` receptors keep the numbers of the supplied file). When `<receptor>` is a `.pdb` file, `receptor_numbering` `pdb` accepts the residue numbers written in `receptor.pdb`. Running `python run_pystarc.py config.xml --setup` with mode `centroid` writes `bd_sims/receptor.pqr` for inspecting the numbering.
-
-Picked and named pairs never mix in one `config.xml`. One pair needs `n_needed` 1. An even number of rigid body pairs 2k needs `n_needed` k.
+For rigid body runs, one pair requires `n_needed` 1, and an even number of pairs 2k requires `n_needed` k. Candidate contact pairs from a bound pose can be inspected beforehand with `scripts/find_reaction_criteria.py`.
 
 ### Distance of the centroids (`centroid`)
 
 ```xml
 <criterion>
   <mode>centroid</mode>
+  <receptor></receptor>
+  <ligand></ligand>
   <pair_cutoff>8.0</pair_cutoff>
+  <n_needed>0</n_needed>
 </criterion>
 ```
 
-The simulation places a ghost atom GHO without charge or radius at the centroid of each molecule. A trajectory reacts when the two centroids are closer than `pair_cutoff`. The beta cyclodextrin and two charged spheres examples configure mode `centroid`.
-
-### Distance to the binding site (`site`)
-
-```xml
-<criterion>
-  <mode>site</mode>
-  <margin>3.0</margin>
-</criterion>
-```
-
-The build adds a ghost atom PKT without charge or radius to `bd_sims/receptor.pqr` at the centroid of the bound ligand. Zero charge, zero radius ghost records (`GHO` and `PKT`) are stripped before APBS runs, avoiding any dielectric cavity perturbation in the electrostatic and Born grids. A trajectory reacts when the ligand centroid is closer to PKT than the cutoff. The cutoff is `pair_cutoff`, or the closest accessible approach plus `margin` rounded to 0.01 Å. The closest accessible approach is the smallest distance of the ligand centroid from PKT among rigid ligand poses with a soft wall energy of at most 2 kT against the receptor. The build finds the closest accessible approach by a scan and local descent of ligand poses and writes the cutoff into `bd_sims/build_record.json`.
-
-One `<target>` in `receptor` and one `<atom>` in `ligand` replace PKT and the ligand centroid by two named atoms.
+The simulation places a ghost atom GHO without charge or radius at the centroid of each molecule. Zero charge, zero radius ghost records are stripped before APBS runs, avoiding any dielectric cavity perturbation in the electrostatic and Born grids. A trajectory reacts when the two centroids are closer than `pair_cutoff` (`n_needed` is set to `0` in `config.xml`, and `rxns.xml` writes `1`). The beta cyclodextrin and two charged spheres examples configure mode `centroid`.
 
 ### Tags of `criterion`
 
 | tag | mode | meaning |
 |---|---|---|
-| `mode` | every mode | `contacts`, `centroid` or `site` |
-| `search_cutoff` | `contacts`, picked or `model` `chain` | search distance in the bound pose (Å) |
-| `n_pairs` | `contacts`, picked or `model` `chain` | pairs kept in rigid body runs, or minimum pair count required in `model` `chain` |
-| `atom_filter` | `contacts`, picked or `auto` | `all` (any heavy atoms), `polar` (N, O or S on both sides), `nonpolar` (C on both sides), `any_polar` (N, O or S on at least one side), `receptor_polar` (N, O or S on the receptor side) |
-| `excluded` | `contacts`, picked | atom names left out of the search, as `<item>NAME</item>` children |
-| `receptor` | `contacts`, named, and `site` | receptor atoms as `<target resid="..." atom="..." resname="..."/>` |
-| `ligand` | `contacts`, named, and `site` | ligand atoms as `<atom name="..."/>` in the order of the targets, or `auto` in `contacts` |
-| `receptor_numbering` | named atoms | `internal` (default, numbers of `receptor.pqr`) or `pdb` (numbers of a `.pdb` `receptor` file) |
-| `pair_cutoff` | every mode | reaction distance of every pair (Å), in `site` either `pair_cutoff` or `margin` |
-| `n_needed` | `contacts` | pairs closer than `pair_cutoff` at one time |
-| `margin` | `site` | distance added to the closest accessible approach (Å), rounded to 0.01 Å |
+| `mode` | `contacts` or `centroid` | reaction criterion type |
+| `receptor` | `contacts` (blank in `centroid`) | receptor atoms as `<target resid="..." atom="..." resname="..."/>` |
+| `ligand` | `contacts` (blank in `centroid`) | ligand atoms as `<atom name="..."/>` or `<target resid="..." atom="..." resname="..."/>` |
+| `pair_cutoff` | `contacts` and `centroid` | reaction distance of every pair (Å) |
+| `n_needed` | `contacts` and `centroid` | pairs closer than `pair_cutoff` at one time (`0` in `centroid`, where `rxns.xml` writes `1`) |
 
 ## 5. Start sphere and hydrodynamic radii (`geometry`)
 
@@ -228,7 +202,7 @@ The run stops when a populated `debye_length` differs by more than 1% from the D
 
 ### Two grids for the receptor potential
 
-APBS solves the linearized Poisson Boltzmann equation of the receptor on two nested cubic grids centered on the receptor, on a temporary ghost free PQR copy (`GHO` and `PKT` stripped).
+APBS solves the linearized Poisson Boltzmann equation of the receptor on two nested cubic grids centered on the receptor, on a temporary ghost free PQR copy (`GHO` stripped).
 
 | grid | file in `bd_sims` | edge (Å) | points per axis | boundary condition |
 |---|---|---|---|---|
@@ -429,6 +403,7 @@ Rigid body examples keep every tag inside `<chain>` blank:
 
 ```xml
 <chain>
+  <reaction_pairs_json></reaction_pairs_json>
   <dt_chain></dt_chain>
   <chain_steps_per_outer></chain_steps_per_outer>
   <n_equilibration_steps></n_equilibration_steps>
@@ -473,7 +448,7 @@ During the build step `run_pystarc.py` reads `config.xml` and writes five files 
 | `rmax`, `lmax` | largest distance of a receptor atom and of a ligand atom from the centroid of the molecule (Å) |
 | `b`, `fglen` | `bd_milestone_radius` and the edge of the fine grid (Å) |
 
-The last line ends with OK for b + lmax < fglen/2 and with WARNING for b + lmax ≥ fglen/2 (step 6). The warning does not stop the build. For `apbs_fglen` 0 the build derives the fine edge with the formula of step 6. PDB parameterization and mode `site` print additional lines.
+The last line ends with OK for b + lmax < fglen/2 and with WARNING for b + lmax ≥ fglen/2 (step 6). The warning does not stop the build. For `apbs_fglen` 0 the build derives the fine edge with the formula of step 6. PDB parameterization prints additional lines.
 
 | file in `bd_sims` | content |
 |---|---|
@@ -613,19 +588,20 @@ The flexible chain model treats the ligand as a chain of coarse grained COFFDROP
 
 ```xml
   <structure>
-    <receptor>barnase.pqr</receptor>
-    <ligand>barstar.pdb</ligand>
-    <ligand_net_charge></ligand_net_charge>
+    <receptor>receptor.pdb</receptor>
+    <ligand>ligand.pdb</ligand>
+    <ligand_net_charge>-5</ligand_net_charge>
     <model>chain</model>
   </structure>
   <criterion>
     <mode>contacts</mode>
-    <search_cutoff>6.0</search_cutoff>
-    <n_pairs>5</n_pairs>
+    <receptor></receptor>
+    <ligand></ligand>
     <pair_cutoff>8.0</pair_cutoff>
     <n_needed>3</n_needed>
   </criterion>
   <chain>
+    <reaction_pairs_json>reaction_pairs.json</reaction_pairs_json>
     <dt_chain>0.025</dt_chain>
     <chain_steps_per_outer>8</chain_steps_per_outer>
     <n_equilibration_steps>0</n_equilibration_steps>
@@ -647,9 +623,9 @@ python make_grids.py
 python combine_shards.py
 ```
 
-During the build step (`python ../../run_pystarc.py config.xml --setup`, called inside `submit_shards.sh`), `run_pystarc.py` writes a centered copy of `barnase.pqr` to `bd_sims/receptor.pqr` without modifying the source `barnase.pqr`, builds `barstar.pdb` as 230 COFFDROP beads across 87 residues in `bd_sims/chain.json`, converts heavy atom contacts of `barnase.pqr` and `barstar.pdb` within `search_cutoff` (6.0 Å) into the 568 receptor atom and bead pairs of `bd_sims/reaction_pairs.json` (requiring at least `n_pairs` pairs), and writes `bd_sims/input.xml` and `bd_sims/build_record.json`.
+During the build step (`python ../../run_pystarc.py config.xml --setup`, called inside `submit_shards.sh`), `run_pystarc.py` parameterizes `receptor.pdb` with `tleap` (`ff14SB`) and writes a centered receptor PQR to `bd_sims/receptor.pqr`, builds `ligand.pdb` as 230 COFFDROP beads across 87 residues in `bd_sims/chain.json`, copies the 568 receptor atom and bead pairs of `reaction_pairs.json` into `bd_sims/reaction_pairs.json` (or builds `bd_sims/reaction_pairs.json` from `<criterion>` when `reaction_pairs_json` is blank), and writes `bd_sims/input.xml` and `bd_sims/build_record.json`.
 
-`make_grids.py` runs APBS on a centered copy of `barnase.pqr` with the `<electrostatics>` settings of `config.xml` (`srad` 1.5 Å, `apbs_fglen` 140.0 Å, `apbs_dime` 449) and writes `barnase0.dx`, `barnase1.dx`, `barnase0_born.dx` and `barnase1_born.dx` into `apbs_output`. `examples/barnase_barstar/README.md` submits `make_grids.py` as a SLURM job with 128 GB of memory.
+`make_grids.py` builds `bd_sims/receptor.pqr` from `config.xml`, runs APBS with the `<electrostatics>` settings (`srad` 1.5 Å, `apbs_fglen` 140.0 Å, `apbs_dime` 449), and writes `barnase0.dx`, `barnase1.dx`, `barnase0_born.dx` and `barnase1_born.dx` into `apbs_output`. `examples/barnase_barstar/README.md` submits `make_grids.py` as a SLURM job with 128 GB of memory.
 
 `submit_shards.sh` creates `shards/shard_01` to `shards/shard_25` (`NSHARD=25` by default), links `apbs_output`, copies `bd_sims/input.xml` into each shard folder with seed `11111111 * i + 1`, and submits one 96 CPU SLURM job per shard running `python $RUNNER input.xml`. Each shard writes `results.json`, `trajectories.csv`, saved paths and a log into `bd_sims` of that shard.
 
@@ -659,8 +635,9 @@ Each trajectory starts with the chain centroid on the sphere of radius b = `bd_m
 
 | tag in `<chain>` (and companion sections) | entries | effect |
 |---|---|---|
-| `receptor`, `ligand`, `model` (`<structure>`) | `.pdb`/`.pqr` receptor, `.pdb` protein chain, `chain` | receptor charges and radii, chain sequence, bead positions and interface contacts |
-| `search_cutoff`, `n_pairs`, `pair_cutoff`, `n_needed` (`<criterion>`) | distances (Å) and counts | contact cutoff in the bound pose, minimum pair count, reaction distance per pair, and simultaneous pairs needed |
+| `receptor`, `ligand`, `model` (`<structure>`) | `.pdb` receptor and `.pdb` protein chain, `chain` | receptor charges and radii, chain sequence and bead positions |
+| `mode`, `receptor`, `ligand`, `pair_cutoff`, `n_needed` (`<criterion>`) | `contacts`, optional target lists, distance (Å) and count | reaction distance per pair and simultaneous pairs needed |
+| `reaction_pairs_json` | JSON path, blank to build from `<criterion>` | pre-built `[rec_atom_idx, bead_idx, cutoff]` pairs |
 | `dt` (`<simulation>`) | `chain_steps_per_outer` × `dt_chain` (ps) | outer step, shortened to 0.05 ps when a pair is closer than 1.5 × `pair_cutoff` |
 | `dt_chain` | time > 0 (ps) | internal step of the beads |
 | `chain_steps_per_outer` | integer ≥ 1 | internal steps per outer step of `dt` |

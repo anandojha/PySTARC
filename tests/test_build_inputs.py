@@ -1,7 +1,6 @@
-"""pystarc.pipeline.build_inputs and scripts/prepare_pdb.py: the criterion modes
-contacts, centroid and site, the anchor atoms of mode site, the pair-count rule,
-the hundredth-angstrom rounding of the site margin, the rxns.xml layout, the
-two-solute structure schema, and the standalone PDB/SMILES preparation helper."""
+"""pystarc.pipeline.build_inputs, scripts/prepare_pdb.py and scripts/find_reaction_criteria.py:
+criterion modes contacts and centroid, the pair-count rule, the rxns.xml layout,
+strict .pdb+.pdb or .pqr+.pqr two-solute structure schema, and standalone helpers."""
 import importlib.util
 import os
 import shutil
@@ -15,10 +14,10 @@ TRYPSIN_RXNS = '<top>\n  <first_state> start </first_state>\n  <reactions>\n    
 TRYPSIN_PAIRS = [(2766, 8), (2742, 8), (2496, 7), (2923, 8), (2497, 7), (2767, 8)]
 
 
-def _load_prepare_pdb():
+def _load_script(name):
     spec = importlib.util.spec_from_file_location(
-        "prepare_pdb",
-        os.path.join(os.path.dirname(__file__), "..", "scripts", "prepare_pdb.py"),
+        name,
+        os.path.join(os.path.dirname(__file__), "..", "scripts", f"{name}.py"),
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -28,7 +27,8 @@ def _load_prepare_pdb():
 @pytest.mark.parametrize("x,want", [(9.24, 9.25), (9.12, 9.0), (9.13, 9.25), (5.631, 5.75), (9.97, 10.0),
                                     (12.42, 12.5), (9.125, 9.25), (9.0, 9.0), (0.1, 0.0), (0.13, 0.25)])
 def test_round_quarter(x, want):
-    assert bi.round_quarter(x) == want
+    mod = _load_script("find_reaction_criteria")
+    assert mod.round_quarter(x) == want
 
 
 @pytest.mark.parametrize("n,need,ok", [(1, 1, True), (6, 3, True), (4, 2, True), (2, 1, True), (3, 3, False),
@@ -38,56 +38,44 @@ def test_pair_count_rule(n, need, ok):
 
 
 def test_modes():
-    assert sorted(bi.MODES) == ["centroid", "contacts", "site"]
+    assert sorted(bi.MODES) == ["centroid", "contacts"]
+    assert bi.CRITERION == ("mode", "receptor", "ligand", "pair_cutoff", "n_needed")
 
 
-@pytest.mark.parametrize("c,model", [
-    (dict(mode="site", pair_cutoff=9.0), "rigid"),
-    (dict(mode="site", margin=3.0), "rigid"),
-    (dict(mode="site", receptor=[(259, "ZN", "ZN")], ligand=[("N3",)], margin=3.0), "rigid"),
-    (dict(mode="site", receptor=[(109, "N", "MET")], ligand="NB1", receptor_numbering="pdb", pair_cutoff=6.0), "rigid"),
-    (dict(mode="centroid", pair_cutoff=8.0), "rigid"),
-    (dict(mode="contacts", search_cutoff=6.0, n_pairs=6, atom_filter="polar", pair_cutoff=7.0, n_needed=3), "rigid"),
-    (dict(mode="contacts", search_cutoff=5.0, n_pairs=1, atom_filter="all", excluded=["O1"], pair_cutoff=7.0, n_needed=1), "rigid"),
-    (dict(mode="contacts", receptor=[(1, "N", "ALA"), (2, "O", "GLY")], ligand="auto", atom_filter="polar",
-          pair_cutoff=7.0, n_needed=1), "rigid"),
-    (dict(mode="contacts", receptor=[(1, "N", "ALA")], ligand=["N1"], receptor_numbering="pdb", pair_cutoff=7.0,
-          n_needed=1), "rigid"),
-    (dict(mode="contacts", search_cutoff=6.0, n_pairs=5, pair_cutoff=8.0, n_needed=3), "chain"),
+@pytest.mark.parametrize("c,model,has_rp", [
+    (dict(mode="centroid", pair_cutoff=8.0, n_needed=0), "rigid", False),
+    (dict(mode="contacts", receptor=[(1, "N", "ALA")], ligand=[("N1",)], pair_cutoff=7.0, n_needed=1), "rigid", False),
+    (dict(mode="contacts", receptor=[(1, "N", "ALA"), (2, "O", "GLY")], ligand=[("N1",), ("O2",)],
+          pair_cutoff=7.0, n_needed=1), "rigid", False),
+    (dict(mode="contacts", receptor=[(1, "N", "ALA")], ligand=[(5, "OD1", "ASP")],
+          pair_cutoff=7.0, n_needed=1), "rigid", False),
+    (dict(mode="contacts", receptor=[(1, "N", "ALA"), (2, "O", "GLY"), (3, "O", "SER")],
+          ligand=[(1, "N", "ALA"), (2, "O", "GLY"), (3, "O", "SER")], pair_cutoff=8.0, n_needed=2), "chain", False),
+    (dict(mode="contacts", pair_cutoff=8.0, n_needed=3), "chain", True),
 ])
-def test_valid_blocks(c, model):
-    assert bi.check_criterion(c, model) == c["mode"]
+def test_valid_blocks(c, model, has_rp):
+    assert bi.check_criterion(c, model, has_chain_rp_json=has_rp) == c["mode"]
 
 
 @pytest.mark.parametrize("c,model,words", [
+    (dict(mode="site", pair_cutoff=9.0), "rigid", "must be one of"),
     (dict(mode="zinc", pair_cutoff=12.4), "rigid", "must be one of"),
     (dict(mode="pocket", pair_cutoff=9.0), "rigid", "must be one of"),
     (dict(mode="center", pair_cutoff=8.0), "rigid", "must be one of"),
+    (dict(mode="auto", pair_cutoff=7.0, n_needed=3), "rigid", "must be one of"),
     (dict(mode="explicit", receptor=[(1, "N", "A")], ligand=["N1"], pair_cutoff=7.0, n_needed=1), "rigid", "must be one of"),
-    (dict(mode="site", pair_cutoff=9.0, margin=3.0), "rigid", "one of pair_cutoff and margin"),
-    (dict(mode="site"), "rigid", "one of pair_cutoff and margin"),
-    (dict(mode="site", margin=-1.0), "rigid", "0 or more"),
-    (dict(mode="site", pair_cutoff=9.0, n_needed=1), "rigid", "does not accept"),
-    (dict(mode="site", receptor=[(259, "ZN", "ZN")], margin=3.0), "rigid", "one receptor target and one ligand"),
-    (dict(mode="site", receptor=[(1, "N", "A"), (2, "N", "B")], ligand=["N1", "N2"], margin=3.0), "rigid",
-     "one receptor target and one ligand"),
-    (dict(mode="site", receptor=[(1, "N", "A")], ligand="auto", margin=3.0), "rigid", "must be named"),
-    (dict(mode="site", margin=3.0, receptor_numbering="pdb"), "rigid", "to anchor atoms"),
-    (dict(mode="site", receptor=[(1, "N", "A")], ligand=["N1"], margin=3.0, atom_filter="polar"), "rigid",
-     "does not accept"),
-    (dict(mode="site", margin=3.0), "chain", "requires criterion mode 'contacts'"),
-    (dict(mode="centroid", pair_cutoff=8.0), "chain", "requires criterion mode 'contacts'"),
-    (dict(mode="contacts", receptor=[(1, "N", "A"), (2, "O", "B")], ligand="auto", atom_filter="polar", n_pairs=2,
-          pair_cutoff=7.0, n_needed=1), "rigid", "not both"),
-    (dict(mode="contacts", pair_cutoff=7.0, n_needed=1), "rigid", "pairs picked from the crystal contacts needs"),
-    (dict(mode="contacts", receptor=[(1, "N", "A")], pair_cutoff=7.0, n_needed=1), "rigid", "listed pairs needs"),
-    (dict(mode="contacts", search_cutoff=5.0, n_pairs=8, atom_filter="all", pair_cutoff=7.0, n_needed=6), "rigid", "even number"),
-    (dict(mode="contacts", receptor=[(1, "N", "A"), (2, "O", "B"), (3, "O", "C")], ligand="auto", atom_filter="polar",
+    (dict(mode="contacts", search_cutoff=6.0, pair_cutoff=7.0, n_needed=1), "rigid", "does not accept"),
+    (dict(mode="contacts", atom_filter="polar", pair_cutoff=7.0, n_needed=1), "rigid", "does not accept"),
+    (dict(mode="centroid", pair_cutoff=8.0, n_needed=1), "rigid", "n_needed 0"),
+    (dict(mode="centroid", pair_cutoff=8.0, n_needed=0), "chain", "requires criterion mode 'contacts'"),
+    (dict(mode="contacts", pair_cutoff=7.0, n_needed=1), "rigid", "explicit"),
+    (dict(mode="contacts", receptor=[(1, "N", "A")], pair_cutoff=7.0, n_needed=1), "rigid", "explicit"),
+    (dict(mode="contacts", receptor=[(1, "N", "A"), (2, "O", "B")], ligand=[("N1",)], pair_cutoff=7.0, n_needed=1),
+     "rigid", "against"),
+    (dict(mode="contacts", receptor=[(1, "N", "A"), (2, "O", "B"), (3, "O", "C")], ligand=["N1", "N2", "N3"],
           pair_cutoff=7.0, n_needed=3), "rigid", "even number"),
-    (dict(mode="contacts", receptor=[(1, "N", "A"), (2, "O", "B")], ligand=["N1", "N2"], atom_filter="polar",
-          pair_cutoff=7.0, n_needed=1), "rigid", "applies to a ligand side"),
-    (dict(mode="contacts", search_cutoff=0.0, n_pairs=2, atom_filter="all", pair_cutoff=7.0, n_needed=1), "rigid", "above zero"),
-    (dict(mode="centroid", pair_cutoff=0.0), "rigid", "above zero"),
+    (dict(mode="contacts", receptor=[(1, "N", "A")], ligand=["N1"], pair_cutoff=0.0, n_needed=1), "rigid", "above zero"),
+    (dict(mode="centroid", pair_cutoff=0.0, n_needed=0), "rigid", "above zero"),
 ])
 def test_invalid_blocks(c, model, words):
     with pytest.raises(SystemExit, match=words):
@@ -115,7 +103,7 @@ def test_rxns_quarter_distance_is_written_in_full(tmp_path):
 
 
 def test_prepare_pdb_deposited_centroid_and_split(tmp_path):
-    mod = _load_prepare_pdb()
+    mod = _load_script("prepare_pdb")
     rows = []
     for k, (x, rid) in enumerate([(0.0, 263), (2.0, 263), (10.0, 264)]):
         rows.append(f"HETATM{k + 1:5d}  C1  AZM A{rid:4d}    {x:8.3f}{1.0:8.3f}{2.0:8.3f}  1.00  0.00           C\n")
@@ -141,7 +129,7 @@ def test_prepare_pdb_deposited_centroid_and_split(tmp_path):
 
 
 def test_closest_approach_of_two_spheres():
-    from pystarc.analysis.closest_approach import closest_approach
+    closest_approach = _load_script("find_reaction_criteria").closest_approach
     want = 0.9345 * 2.0 * 2.0 ** (-1.0 / 12.0)
     res = closest_approach([[0.0, 0.0, 0.0]], [1.0], [[0.3, 0.2, 0.1]], [1.0], [0.0, 0.0, 0.0], bound=True,
                            ball=4.0, n_coarse=40_000, n_dense=40_000, n_starts=64, n_steps=400)
@@ -153,20 +141,48 @@ def _atoms(rows):
     return [dict(name=n, el=n[:1], resname=rn, resid=ri, xyz=np.array(x, float), q=0.0, r=1.5) for n, rn, ri, x in rows]
 
 
-def test_site_pair_of_anchor_atoms(tmp_path):
+def test_contacts_listed_metal_and_multi_residue_ligand(tmp_path):
+    pdb = tmp_path / "rec.pdb"
+    pdb.write_text(
+        "ATOM      1  N   GLY A  10       0.000   0.000   0.000  1.00  0.00           N\n"
+        "HETATM    2 ZN    ZN A 262       1.000   0.000   0.000  1.00  0.00          ZN\n"
+        "END\n"
+    )
+    rmap = bi.resid_map(str(pdb))
+    assert rmap == {10: 1, 262: 2}
     rec = _atoms([("N", "GLY", 1, (0.0, 0.0, 0.0)), ("ZN", "ZN", 2, (1.0, 0.0, 0.0))])
-    lig = _atoms([("C1", "LIG", 1, (5.0, 0.0, 0.0)), ("N3", "LIG", 1, (4.0, 0.0, 0.0))])
-    c = dict(mode="site", receptor=[(262, "ZN", "ZN")], ligand=[("N3",)], receptor_numbering="pdb", pair_cutoff=6.0)
-    out = {}
-    pair = bi.site_pair(str(tmp_path), rec, lig, c, dict(model="rigid"), out, {261: 1, 262: 2})
-    assert pair == (1, 1, 6.0, 3.0) and out["anchors"] == dict(receptor=[2, "ZN", 2, "ZN"], ligand=[2, "N3"])
-    assert not list(tmp_path.iterdir())
-    with pytest.raises(SystemExit, match="no ZN2 ZN"):
-        bi.site_pair(str(tmp_path), rec[:1], lig, c, dict(model="rigid"), {}, {262: 2})
+    lig = _atoms([("OD1", "ASP", 400, (5.0, 0.0, 0.0)), ("N3", "ASP", 401, (4.0, 0.0, 0.0))])
+    c = dict(mode="contacts", receptor=[(262, "ZN", "ZN")], ligand=[(401, "N3", "ASP")],
+             pair_cutoff=6.0, n_needed=1)
+    pairs = bi.contacts_listed(rec, lig, c, rmap, None)
+    assert pairs == [(1, 1, 6.0, 3.0)]
+    with pytest.raises(SystemExit, match="no ZN262 ZN"):
+        bi.contacts_listed(rec[:1], lig, c, rmap, None)
+
+
+def test_mixed_pdb_and_pqr_formats_rejected(tmp_path):
+    rec = tmp_path / "receptor.pqr"
+    lig = tmp_path / "ligand.pdb"
+    rec.write_text("ATOM      1  CA  ALA     1       0.000   0.000   0.000  0.0000 1.5000\nEND\n")
+    lig.write_text("HETATM    1  C1  LIG A   1       5.000   0.000   0.000  1.00  0.00           C\nEND\n")
+    with pytest.raises(SystemExit, match="both be .pdb or both be .pqr"):
+        bi.build(
+            receptor="receptor.pqr", ligand="ligand.pdb", ligand_net_charge=0, model="rigid",
+            criterion=dict(mode="centroid", pair_cutoff=5.0, n_needed=0),
+            source_dir=str(tmp_path), work_dir=str(tmp_path / "bd"),
+        )
+    lig_pqr = tmp_path / "ligand.pqr"
+    lig_pqr.write_text("ATOM      1  CA  ALA     1       5.000   0.000   0.000 -1.0000 1.5000\nEND\n")
+    with pytest.raises(SystemExit, match="ligand_net_charge is \\+1 e"):
+        bi.build(
+            receptor="receptor.pqr", ligand="ligand.pqr", ligand_net_charge=1, model="rigid",
+            criterion=dict(mode="centroid", pair_cutoff=5.0, n_needed=0),
+            source_dir=str(tmp_path), work_dir=str(tmp_path / "bd2"),
+        )
 
 
 def test_closest_approach_of_an_anchor_atom():
-    from pystarc.analysis.closest_approach import closest_approach
+    closest_approach = _load_script("find_reaction_criteria").closest_approach
     want = 0.9345 * 2.0 * 2.0 ** (-1.0 / 12.0)
     lig = [[0.3, 0.2, 0.1], [0.3, 0.2, 6.1]]
     kw = dict(bound=True, ball=4.0, n_coarse=40_000, n_dense=40_000, n_starts=64, n_steps=400)
@@ -177,7 +193,7 @@ def test_closest_approach_of_an_anchor_atom():
 
 
 def test_anchor_at_the_centroid_gives_the_centroid_scan():
-    from pystarc.analysis.closest_approach import closest_approach
+    closest_approach = _load_script("find_reaction_criteria").closest_approach
     rec = [[0.0, 0.0, 0.0], [3.0, 0.0, 0.0], [0.0, 3.0, 0.0]]
     lig = [[-1.25, 0.5, 0.75], [0.25, 0.5, 0.75], [1.75, 0.5, 0.75]]
     kw = dict(bound=True, ball=6.0, n_coarse=20_000, n_dense=20_000, n_starts=32, n_steps=200)
@@ -192,7 +208,7 @@ RADII = {"C": 1.7, "N": 1.55, "O": 1.5, "S": 1.8, "ZN": 1.5}
 
 
 def test_anchor_scan_on_a_carbonic_anhydrase_complex():
-    from pystarc.analysis.closest_approach import closest_approach
+    closest_approach = _load_script("find_reaction_criteria").closest_approach
     from pystarc.forces.soft_repulsion import repulsion_reference
     rec, lig = [], []
     with open(os.path.join(CA_DIR, "receptor.pdb")) as fh:
@@ -226,18 +242,8 @@ def test_anchor_scan_on_a_carbonic_anhydrase_complex():
     assert np.allclose(pairs(pose), pairs(L), atol=1e-9) and abs(np.linalg.norm(pose[j] - zn) - res["closest"]) <= 0.005
 
 
-def test_site_margin_rounds_to_hundredths(tmp_path):
-    rec = _atoms([("ZN", "ZN", 1, (0.0, 0.0, 0.0))])
-    lig = _atoms([("N1", "LIG", 1, (0.4, 0.0, 0.0))])
-    rec[0]["r"], lig[0]["r"] = 1.0, 1.0
-    c = dict(mode="site", receptor=[(1, "ZN", "ZN")], ligand=[("N1",)], margin=0.83)
-    out = {}
-    _, _, cut, _ = bi.site_pair(str(tmp_path), rec, lig, c, dict(model="rigid"), out)
-    assert cut == round(out["closest_approach"] + 0.83, 2)
-
-
 def test_closest_approach_runs_descent_above_eight_angstroms():
-    from pystarc.analysis.closest_approach import closest_approach
+    closest_approach = _load_script("find_reaction_criteria").closest_approach
 
     rec = [[0.0, 0.0, 0.0]]
     lig = [[0.0, 0.0, 9.5]]
@@ -253,8 +259,10 @@ def test_two_solute_schema_and_single_conformer_guard(tmp_path):
     dropped = {"ligand_source", "receptor_pqr_file", "ligand_pqr_file", "prmtop",
                "complex_pdb", "receptor_pdb", "smiles", "chain", "ligand_chain",
                "pocket_ligand", "pocket_ligand_resid", "ligand_formula",
-               "receptor_resname", "ligand_resname"}
+               "receptor_resname", "ligand_resname", "search_cutoff", "n_pairs",
+               "atom_filter", "excluded", "receptor_numbering", "margin"}
     assert not (dropped & set(bi.KEYS))
+    assert not (dropped & set(bi.CRITERION))
     multi = [
         "HETATM    1  C1 ALIG A   1       0.000   0.000   0.000  0.50  0.00           C\n",
         "HETATM    2  C1 BLIG A   1       1.000   0.000   0.000  0.50  0.00           C\n",
@@ -264,7 +272,7 @@ def test_two_solute_schema_and_single_conformer_guard(tmp_path):
 
 
 def test_prepare_pdb_script_metal_his_and_altloc(tmp_path):
-    mod = _load_prepare_pdb()
+    mod = _load_script("prepare_pdb")
     raw = tmp_path / "raw.pdb"
     out = tmp_path / "receptor.pdb"
     raw.write_text(

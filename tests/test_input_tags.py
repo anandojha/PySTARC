@@ -160,12 +160,15 @@ def test_ligand_dime_is_read_and_checked(tmp_path):
 
 @pytest.mark.parametrize("sub,want_pairs", [
     ("two_charged_spheres", 1),
+    ("trypsin_benzamidine", 6),
     ("thrombin_thrombomodulin", 6),
     ("barnase_barstar", 568),
 ])
 def test_example_configs_with_local_files_build_and_parse_cleanly(tmp_path, sub, want_pairs):
     import json
 
+    if sub == "barnase_barstar" and shutil.which("tleap") is None:
+        pytest.skip("tleap not installed")
     dst = tmp_path / sub
     shutil.copytree(EXAMPLES / sub, dst)
     cfg = _quiet(dst / "config.xml")

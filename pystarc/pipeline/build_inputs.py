@@ -1,9 +1,9 @@
 """
 Builds the input files of a PySTARC run from a config.xml: receptor.pqr,
 ligand.pqr, rxns.xml (or chain.json and reaction_pairs.json), input.xml and
-build_record.json. Receptor and ligand structures are passed as .pdb or .pqr
-files, with solute model rigid or chain. The reaction criterion modes are
-contacts, centroid and site.
+build_record.json. Receptor and ligand structures are passed both as .pdb or
+both as .pqr files, with solute model rigid or chain. The reaction criterion
+modes are contacts and centroid.
 
     python run_pystarc.py config.xml --setup
     python run_pystarc.py --template
@@ -12,9 +12,9 @@ contacts, centroid and site.
 import difflib
 import hashlib
 import json
-import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -23,43 +23,23 @@ from pystarc.structures.pqr_io import parse_pqr_records
 
 
 MODELS = {
-    "rigid": dict(need=("receptor", "ligand"), opt=("ligand_net_charge",), note="Rigid-body Brownian dynamics"),
-    "chain": dict(need=("receptor", "ligand"), opt=(), note="Flexible COFFDROP bead chain"),
+    "rigid": dict(need=("receptor", "ligand", "ligand_net_charge"), opt=(), note="Rigid-body Brownian dynamics"),
+    "chain": dict(need=("receptor", "ligand", "ligand_net_charge"), opt=(), note="Flexible COFFDROP bead chain"),
 }
 
 MODES = {
-    "contacts": dict(need=("pair_cutoff", "n_needed"), opt=("receptor", "ligand", "receptor_numbering", "atom_filter", "search_cutoff", "n_pairs", "excluded"), note="Atom pairs named in the config or picked from the bound contacts"),
-    "centroid": dict(need=("pair_cutoff",), opt=(), note="Pairs the centroid of the receptor with the centroid of the ligand"),
-    "site":     dict(need=(), opt=("pair_cutoff", "margin", "receptor", "ligand", "receptor_numbering"), note="Pairs a receptor anchor atom with a ligand anchor atom, or a ghost atom at the centroid of the bound ligand with the centroid of the ligand"),
-}
-
-NUMBERING = {
-    "pdb":      "Read as numbered in receptor.pdb",
-    "internal": "Read as renumbered from 1",
-}
-
-ATOM_FILTERS = {
-    "all":            "Matches any heavy atom against any heavy atom",
-    "polar":          "Matches N O or S on both sides",
-    "nonpolar":       "Matches carbon on both sides",
-    "any_polar":      "Matches N O or S on either side",
-    "receptor_polar": "Matches N O or S on the receptor side",
+    "contacts": dict(need=("pair_cutoff", "n_needed"), opt=("receptor", "ligand"), note="Explicit atom pairs named in the config"),
+    "centroid": dict(need=("pair_cutoff", "n_needed"), opt=(), note="Pairs the centroid of the receptor with the centroid of the ligand"),
 }
 
 KEYS = {
-    "receptor":                  "Prepared receptor structure (.pdb or .pqr).",
-    "ligand":                    "Prepared ligand structure (.pdb or .pqr).",
-    "ligand_net_charge":         "Formal integer charge of a small-molecule .pdb ligand. Blank for .pqr or protein chain.",
+    "receptor":                  "Prepared receptor structure (.pdb or .pqr, matching ligand format).",
+    "ligand":                    "Prepared ligand structure (.pdb or .pqr, matching receptor format).",
+    "ligand_net_charge":         "Formal integer charge of the ligand (in elementary charge units).",
     "model":                     "Solute representation.",
-    "mode":                      "How the atom pairs of the reaction criterion are chosen.",
-    "receptor_numbering":        "Numbering for the target residues.",
-    "search_cutoff":             "Mode contacts with pairs picked from the bound contacts. Search radius (in angstroms).",
-    "n_pairs":                   "Mode contacts with pairs picked from the bound contacts. Number of contacts retained, one or an even number.",
-    "atom_filter":               "Element pairings permitted.",
-    "excluded":                  "Atom names omitted from the search.",
-    "pair_cutoff":               "Reaction distance for every pair (in angstroms). Mode site takes pair_cutoff or margin.",
-    "margin":                    "Mode site distance added to the closest accessible approach (in angstroms), rounded to 0.01 A.",
-    "n_needed":                  "Mode contacts pairs that must be inside cutoff at once: 1 for one pair, half of an even pair count, or any positive count for model chain.",
+    "mode":                      "How the reaction criterion is defined.",
+    "pair_cutoff":               "Reaction distance for every pair (in angstroms).",
+    "n_needed":                  "Mode contacts pairs inside cutoff at once (1 for one pair, half of an even pair count, or positive count for model chain); 0 in mode centroid (rxns.xml writes 1).",
     "bd_milestone_radius":       "Radius of the starting sphere (in angstroms).",
     "r_escape":                  "Escape sphere radius (in angstroms). 0 derives twice bd_milestone_radius.",
     "n_trajectories":            "Number of Brownian dynamics trajectories.",
@@ -103,6 +83,7 @@ KEYS = {
     "save_interval":             "Steps between saved positions. 0 saves endpoints.",
     "full_paths":                "Save positions and orientations every save_interval steps.",
     "energetics":                "Save the force on the ligand and the time step every save_interval steps.",
+    "reaction_pairs_json":       "Pre-built chain reaction pairs JSON file for model chain. Blank builds from criterion pairs.",
     "dt_chain":                  "Inner time step of flexible chain internal coordinates (in picoseconds).",
     "chain_steps_per_outer":     "Inner chain steps per outer step.",
     "n_equilibration_steps":     "Pre-equilibration chain steps before each trajectory. 0 skips pre-equilibration.",
@@ -115,14 +96,12 @@ KEYS = {
 }
 
 CRITERION_KEYS = {
-    "receptor": "Receptor side of each named pair of mode contacts, or the receptor anchor atom of mode site.",
-    "ligand":   "Ligand side of each named pair of mode contacts, or the ligand anchor atom of mode site. In mode contacts, auto chooses the nearest permitted atom.",
+    "receptor": "Receptor atom of each contact pair (<target resid=\"...\" atom=\"...\" resname=\"...\"/>).",
+    "ligand":   "Ligand atom of each contact pair (<atom name=\"...\"/> or <target resid=\"...\" atom=\"...\" resname=\"...\"/>).",
 }
 
 STRUCTURE = ("receptor", "ligand", "ligand_net_charge", "model")
-CRITERION = ("mode", "search_cutoff", "n_pairs", "atom_filter", "excluded",
-             "receptor_numbering", "receptor", "ligand",
-             "pair_cutoff", "margin", "n_needed")
+CRITERION = ("mode", "receptor", "ligand", "pair_cutoff", "n_needed")
 GEOMETRY = ("bd_milestone_radius", "r_escape", "r_hydro_rec", "r_hydro_lig")
 ELECTROSTATICS = (
     "debye_length", "ion_concentration", "ion_radius_pos", "ion_radius_neg",
@@ -142,9 +121,9 @@ SIMULATION = (
 COMPUTE = ("gpu", "n_gpus", "gpu_force_batch", "n_threads", "work_dir")
 OUTPUTS = ("save_interval", "full_paths", "energetics")
 CHAIN = (
-    "dt_chain", "chain_steps_per_outer", "n_equilibration_steps",
-    "auto_diffusion", "d_trans", "d_rot", "soft_repulsion_eps",
-    "target_grid_dx", "born_grid_dx",
+    "reaction_pairs_json", "dt_chain", "chain_steps_per_outer",
+    "n_equilibration_steps", "auto_diffusion", "d_trans", "d_rot",
+    "soft_repulsion_eps", "target_grid_dx", "born_grid_dx",
 )
 INPUT_COMPUTE = ("gpu", "gpu_force_batch", "n_threads")
 BD_PARAMS = GEOMETRY + ELECTROSTATICS + PHYSICS + SIMULATION + INPUT_COMPUTE + OUTPUTS
@@ -157,8 +136,6 @@ BOOL = ("enable_born2_torque", "hydrodynamic_interactions", "multipole_fallback"
         "lj_forces", "overlap_check", "soft_repulsion", "gpu", "convergence_check",
         "full_paths", "energetics", "auto_diffusion")
 
-POLAR = {"N", "O", "S"}
-SITE_ATOM = "PKT"
 RECORD = "build_record.json"
 
 RETAINED_METALS = {"ZN", "MG", "MN", "FE", "CU", "CO", "NI", "CAL"}
@@ -196,9 +173,7 @@ def tidy(W, _cfg=None):
             os.remove(p)
 
 
-NUMBER = {"ligand_net_charge": int, "search_cutoff": float,
-          "n_pairs": int, "pair_cutoff": float, "n_needed": int,
-          "margin": float, "n_gpus": int}
+NUMBER = {"ligand_net_charge": int, "pair_cutoff": float, "n_needed": int, "n_gpus": int}
 
 
 def _number(tag, text, kind=None):
@@ -409,8 +384,8 @@ def _copy_clean_pqr(src, dst, label):
         lines = fh.read().split("\n")
     ghost = lambda l: (
         l.startswith(("ATOM", "HETATM"))
-        and (l[12:16].strip().upper() in ("GHO", SITE_ATOM)
-             or (len(l.split()) >= 3 and l.split()[2].upper() in ("GHO", SITE_ATOM)))
+        and (l[12:16].strip().upper() in ("GHO", "PKT")
+             or (len(l.split()) >= 3 and l.split()[2].upper() in ("GHO", "PKT")))
     )
     n_gho = sum(1 for l in lines if ghost(l))
     kept = [l for l in lines if not ghost(l)]
@@ -587,51 +562,32 @@ def _center_pqr_copy(src, dst):
         fh.write("\n".join(lines) + "\n")
 
 
-def _build_chain(cfg, rec_src, rec_ext, lig_src, lig_ext, W):
+def _check_net_charge(q_sum, netq, label):
+    if not isinstance(netq, int):
+        sys.exit(f"  ERROR: ligand_net_charge must be an integer, got {netq!r}")
+    if abs(float(q_sum) - int(netq)) > 0.05:
+        sys.exit(f"  ERROR: ligand_net_charge is {int(netq):+d} e, where {label} sums to {float(q_sum):+.2f} e")
+
+
+def _build_chain(cfg, rec_src, rec_ext, lig_src, _lig_ext, W):
     from pystarc.simulation.coffdrop_chain import chain_from_pdb
     from pystarc.structures.chain_io import save_chain_to_json
 
-    if lig_ext != ".pdb":
-        sys.exit("  ERROR: model 'chain' requires a .pdb ligand protein chain")
-    if cfg.get("ligand_net_charge") not in (None, ""):
-        sys.exit("  ERROR: ligand_net_charge must be blank for model 'chain'")
+    netq = int(cfg["ligand_net_charge"])
 
     dst_pqr = os.path.join(W, "receptor.pqr")
+    rec_rmap = None
     if rec_ext == ".pqr":
         _center_pqr_copy(rec_src, dst_pqr)
-        raw_pqr_recs = [r for r in parse_pqr_records(rec_src) if r.record_type == "ATOM"]
-        rec_heavy = [
-            {"atom_idx": i, "atom_name": r.name, "resname": r.resname,
-             "resid": r.resid, "xyz": np.array([r.x, r.y, r.z])}
-            for i, r in enumerate(raw_pqr_recs) if not _is_h_atom(r.name, r.element)
-        ]
     else:
         raw_pqr_path = os.path.join(W, "_receptor_raw.pqr")
         _parameterize_protein_pdb(rec_src, cfg["receptor"], W, "protein", "_receptor_raw.pqr")
         _center_pqr_copy(raw_pqr_path, dst_pqr)
-        rec_pdb_atoms, rec_chains = _parse_pdb_heavy(rec_src)
-        if len(rec_chains) > 1:
-            sys.exit(f"  ERROR: {cfg['receptor']} contains multiple chains {rec_chains}. Keep one chain.")
-        rec_res_pdb = _seq_residues(rec_pdb_atoms)
-        pqr_recs = [r for r in parse_pqr_records(dst_pqr) if r.record_type == "ATOM"]
-        pqr_atoms = [{"atom_idx": i, "atom_name": r.name, "resname": r.resname,
-                      "resid": r.resid, "xyz": np.array([r.x, r.y, r.z])}
-                     for i, r in enumerate(pqr_recs)]
-        rec_res_pqr = _seq_residues(pqr_atoms)
-        if len(rec_res_pdb) != len(rec_res_pqr):
-            sys.exit(f"  ERROR: residue count mismatch: PDB={len(rec_res_pdb)} vs PQR={len(rec_res_pqr)}")
-        rec_heavy = []
-        for r_pdb, r_pqr in zip(rec_res_pdb, rec_res_pqr):
-            if not _resname_match(r_pdb["resname"], r_pqr["resname"]):
-                sys.exit(f"  ERROR: residue mismatch: {r_pdb['resname']} vs {r_pqr['resname']}")
-            for a in r_pdb["atoms"]:
-                idx = next((pa["atom_idx"] for pa in r_pqr["atoms"] if pa["atom_name"] == a["atom_name"]), None)
-                if idx is not None:
-                    rec_heavy.append(dict(a, atom_idx=idx))
+        rec_rmap = resid_map(rec_src)
 
     lig_pdb, lig_chains = _parse_pdb_heavy(lig_src)
-    if not rec_heavy or not lig_pdb:
-        sys.exit(f"  ERROR: empty receptor or ligand heavy atoms in {cfg['receptor']} / {cfg['ligand']}")
+    if not lig_pdb:
+        sys.exit(f"  ERROR: no heavy ATOM records in {cfg['ligand']}")
     if len(lig_chains) > 1:
         sys.exit(f"  ERROR: {cfg['ligand']} contains multiple chains {lig_chains}. Keep one chain.")
     lig_chain_id = lig_chains[0] if lig_chains and lig_chains[0].strip() else None
@@ -642,6 +598,7 @@ def _build_chain(cfg, rec_src, rec_ext, lig_src, lig_ext, W):
     coffdrop_dir = os.path.join(pkg_dir, "coffdrop_data")
     chain = chain_from_pdb(lig_src, chain_id=lig_chain_id, name=lig_name,
                            sidechains=True, coffdrop_dir=coffdrop_dir)
+    _check_net_charge(sum(float(b.charge) for b in chain.atoms), netq, cfg["ligand"])
     unique_resids = []
     for bead in chain.atoms:
         if not unique_resids or unique_resids[-1] != bead.resid:
@@ -683,56 +640,63 @@ def _build_chain(cfg, rec_src, rec_ext, lig_src, lig_ext, W):
     save_chain_to_json(chain, body_positions, os.path.join(W, "chain.json"))
 
     c = cfg["criterion"]
-    rec_xyz = np.array([a["xyz"] for a in rec_heavy])
-    lig_xyz = np.array([a["xyz"] for a in lig_pdb])
-    hits = np.argwhere(np.linalg.norm(rec_xyz[:, None, :] - lig_xyz[None, :, :], axis=-1) < c["search_cutoff"])
-    lig_sp = {r["resid_native"]: r["seq_pos"] for r in lig_res_pdb}
-    beads_by_sp = {}
-    for i, bead in enumerate(chain.atoms):
-        beads_by_sp.setdefault(resid_to_sp[bead.resid], []).append((i, bead))
-    pairs = set()
-    for ia, id_ in hits:
-        ra, la = rec_heavy[int(ia)], lig_pdb[int(id_)]
-        rec_idx = ra["atom_idx"]
-        sp_l = lig_sp.get(la["resid"])
-        cands = beads_by_sp.get(sp_l, []) if sp_l is not None else []
-        tname = f"{la['resname']}:{la['atom_name']}"
-        bead_idx = next((i for i, b in cands if b.resname == tname), None)
-        if bead_idx is None and cands:
-            bead_idx = min(cands, key=lambda ib: float(np.linalg.norm(body_positions[ib[0]] - la["xyz"])))[0]
-        if rec_idx is not None and bead_idx is not None:
-            pairs.add((int(rec_idx), int(bead_idx)))
-    min_req = max(int(c.get("n_pairs", 0) or 0), int(c["n_needed"]))
-    if len(pairs) < min_req:
-        sys.exit(f"  ERROR: {len(pairs)} chain reaction pairs found (minimum {min_req}).")
-    rp_list = [[rec_i, bd_i, float(c["pair_cutoff"])] for rec_i, bd_i in sorted(pairs)]
-    with open(os.path.join(W, "reaction_pairs.json"), "w") as fh:
-        json.dump(rp_list, fh, indent=2)
+    cc = cfg.get("chain_cfg", {})
+    rp_out = os.path.join(W, "reaction_pairs.json")
+    if cc.get("reaction_pairs_json"):
+        rp_src = _src_file(cfg, W, cc["reaction_pairs_json"])
+        if not os.path.exists(rp_src):
+            sys.exit(f"  ERROR: no {cc['reaction_pairs_json']}")
+        with open(rp_src) as fh:
+            rp_list = json.load(fh)
+        if os.path.abspath(rp_src) != os.path.abspath(rp_out):
+            shutil.copyfile(rp_src, rp_out)
+    else:
+        rec_pqr = read_pqr(dst_pqr)
+        lig_sp = {r["resid_native"]: r["seq_pos"] for r in lig_res_pdb}
+        beads_by_sp = {}
+        for i, bead in enumerate(chain.atoms):
+            beads_by_sp.setdefault(resid_to_sp[bead.resid], []).append((i, bead))
+        rp_list = []
+        for rt, lt in zip(_list(c["receptor"]), _list(c["ligand"])):
+            rec_i = _match_atom(rec_pqr, rt, rec_rmap, "receptor")
+            if not (isinstance(lt, tuple) and len(lt) == 3):
+                sys.exit('  ERROR: chain <ligand> needs <target resid="..." atom="..." resname="..."/> entries')
+            l_resid, l_aname, l_resn = lt
+            sp_l = lig_sp.get(l_resid)
+            cands = beads_by_sp.get(sp_l, []) if sp_l is not None else []
+            if not cands:
+                sys.exit(f"  ERROR: no residue {l_resn}{l_resid} in {cfg['ligand']}")
+            tname = f"{l_resn}:{l_aname}"
+            bead_i = next((i for i, b in cands if b.resname == tname), cands[0][0])
+            rp_list.append([int(rec_i), int(bead_i), float(c["pair_cutoff"])])
+        with open(rp_out, "w") as fh:
+            json.dump(rp_list, fh, indent=2)
+
+    if len(rp_list) < int(c["n_needed"]):
+        sys.exit(f"  ERROR: {len(rp_list)} chain reaction pairs found (minimum {c['n_needed']}).")
     print(f"  chain.json: {chain.n_atoms} beads; reaction_pairs.json: {len(rp_list)} pairs, n_needed {c['n_needed']}")
     return {"chain_pairs": rp_list, "n_beads": chain.n_atoms}
 
 
 def _build_rigid(cfg, rec_src, rec_ext, lig_src, lig_ext, W):
-    rmap = None
+    rec_rmap, lig_rmap = None, None
     if rec_ext == ".pqr":
         _copy_clean_pqr(rec_src, os.path.join(W, "receptor.pqr"), cfg["receptor"])
     else:
         _parameterize_protein_pdb(rec_src, cfg["receptor"], W, "protein", "receptor.pqr")
-        rmap = resid_map(rec_src)
+        rec_rmap = resid_map(rec_src)
 
-    netq = cfg.get("ligand_net_charge")
+    netq = int(cfg["ligand_net_charge"])
     if lig_ext == ".pqr":
-        if netq not in (None, ""):
-            sys.exit("  ERROR: ligand_net_charge must be blank when <ligand> is a .pqr file")
         _copy_clean_pqr(lig_src, os.path.join(W, "ligand.pqr"), cfg["ligand"])
+    elif _is_protein_chain_pdb(lig_src):
+        _parameterize_protein_pdb(lig_src, cfg["ligand"], W, "ligand", "ligand.pqr")
+        lig_rmap = resid_map(lig_src)
     else:
-        if netq in (None, "") and _is_protein_chain_pdb(lig_src):
-            _parameterize_protein_pdb(lig_src, cfg["ligand"], W, "ligand", "ligand.pqr")
-        else:
-            if netq in (None, ""):
-                sys.exit(f"  ERROR: set ligand_net_charge in <structure> for small-molecule PDB {cfg['ligand']}")
-            _parameterize_small_mol_pdb(lig_src, cfg["ligand"], int(netq), W)
-    return {"rmap": rmap}
+        _parameterize_small_mol_pdb(lig_src, cfg["ligand"], netq, W)
+    lig_q = sum(a["q"] for a in read_pqr(os.path.join(W, "ligand.pqr")))
+    _check_net_charge(lig_q, netq, "ligand.pqr")
+    return {"rec_rmap": rec_rmap, "lig_rmap": lig_rmap}
 
 
 def _element(name, column="", resname=""):
@@ -757,172 +721,86 @@ def _name(x):
     return x[0] if isinstance(x, (list, tuple)) else x
 
 
-def keeper(kind):
-    return {"all": lambda a, b: True,
-            "polar": lambda a, b: a in POLAR and b in POLAR,
-            "nonpolar": lambda a, b: a == "C" and b == "C",
-            "any_polar": lambda a, b: a in POLAR or b in POLAR,
-            "receptor_polar": lambda a, b: a in POLAR}[kind]
-
-
-def round_quarter(x):
-    return math.floor(x / 0.25 + 0.5) * 0.25
-
-
 def pair_count_ok(n, need):
     return (n == 1 and need == 1) or (n >= 2 and n % 2 == 0 and need == n // 2)
 
 
-def contacts_style(c):
-    listed = [k for k in ("receptor", "ligand", "receptor_numbering") if k in c]
-    picked = [k for k in ("search_cutoff", "n_pairs", "excluded") if k in c]
-    if listed and picked:
-        sys.exit(f"  ERROR: Mode contacts either names its pairs or picks them from the bound contacts, "
-                 f"not both (received {listed} and {picked}).")
-    need = ("receptor", "ligand") if listed else ("search_cutoff", "n_pairs", "atom_filter")
-    missing = [k for k in need if c.get(k) in (None, "", [], ())]
-    if missing:
-        sys.exit(f"  ERROR: Mode contacts with {'listed pairs' if listed else 'pairs picked from the crystal contacts'} "
-                 f"needs {missing}.")
-    return "listed" if listed else "picked"
-
-
-def check_criterion(c, model="rigid"):
+def check_criterion(c, model="rigid", has_chain_rp_json=False):
     _check(c.get("mode"), MODES, c, "criterion mode")
     mode = c["mode"]
-    if "pair_cutoff" in c and (not isinstance(c["pair_cutoff"], (int, float)) or c["pair_cutoff"] <= 0):
+    if not isinstance(c.get("pair_cutoff"), (int, float)) or c["pair_cutoff"] <= 0:
         sys.exit("  ERROR: pair_cutoff must be a distance above zero (in angstroms).")
-    if c.get("receptor_numbering", "internal") not in NUMBERING:
-        sys.exit(f"  ERROR: receptor_numbering must be one of {sorted(NUMBERING)}.")
-    if mode == "site":
-        if model == "chain":
-            sys.exit("  ERROR: model 'chain' requires criterion mode 'contacts'.")
-        if sum(c.get(k) not in (None, "") for k in ("pair_cutoff", "margin")) != 1:
-            sys.exit("  ERROR: Mode site takes one of pair_cutoff and margin (not both or neither).")
-        if "margin" in c and (not isinstance(c["margin"], (int, float)) or c["margin"] < 0):
-            sys.exit("  ERROR: margin must be a distance of 0 or more (in angstroms).")
-        anchors = [k for k in ("receptor", "ligand") if c.get(k) not in (None, "", [], ())]
-        if anchors:
-            if len(anchors) == 1 or len(_list(c["receptor"])) != 1 or len(_list(c["ligand"])) != 1:
-                sys.exit("  ERROR: Mode site with anchor atoms takes one receptor target and one ligand atom.")
-            if _name(_list(c["ligand"])[0]) == "auto":
-                sys.exit("  ERROR: The ligand anchor atom of mode site must be named (auto applies to mode contacts).")
+    if mode == "contacts":
+        if not isinstance(c.get("n_needed"), int) or c["n_needed"] < 1:
+            sys.exit("  ERROR: mode 'contacts' needs integer n_needed >= 1.")
+        if model == "chain" and has_chain_rp_json:
             return mode
-        if "receptor_numbering" in c:
-            sys.exit("  ERROR: receptor_numbering applies in mode site to anchor atoms.")
-    elif mode == "contacts":
-        if model == "chain":
-            if not isinstance(c.get("search_cutoff"), (int, float)) or c["search_cutoff"] <= 0:
-                sys.exit("  ERROR: chain contacts needs search_cutoff above zero.")
-            if not isinstance(c.get("n_needed"), int) or c["n_needed"] < 1:
-                sys.exit("  ERROR: chain contacts needs n_needed >= 1.")
-            return mode
-        if contacts_style(c) == "picked":
-            if c["atom_filter"] not in ATOM_FILTERS:
-                sys.exit(f"  ERROR: atom_filter must be one of {sorted(ATOM_FILTERS)}.")
-            if not isinstance(c["search_cutoff"], (int, float)) or c["search_cutoff"] <= 0:
-                sys.exit("  ERROR: search_cutoff must be above zero.")
-            n = c["n_pairs"]
-        else:
-            L = c["ligand"]
-            auto = L == "auto" or any(_name(x) == "auto" for x in _list(L))
-            if auto and c.get("atom_filter") not in ATOM_FILTERS:
-                sys.exit(f"  ERROR: A ligand side of auto needs atom_filter, one of {sorted(ATOM_FILTERS)}.")
-            if not auto and "atom_filter" in c:
-                sys.exit("  ERROR: atom_filter applies to a ligand side of auto, remove it.")
-            n = len(_list(c["receptor"]))
-        if not pair_count_ok(n, c["n_needed"]):
-            sys.exit(f"  ERROR: {n} pairs with n_needed {c['n_needed']} are not allowed. Choose one pair with "
+        missing = [k for k in ("receptor", "ligand") if c.get(k) in (None, "", [], ())]
+        if missing:
+            sys.exit(f"  ERROR: mode 'contacts' needs explicit {missing} atom entries.")
+        R, L = _list(c["receptor"]), _list(c["ligand"])
+        if len(R) != len(L):
+            sys.exit(f"  ERROR: {len(R)} receptor targets against {len(L)} ligand entries.")
+        if model != "chain" and not pair_count_ok(len(R), c["n_needed"]):
+            sys.exit(f"  ERROR: {len(R)} pairs with n_needed {c['n_needed']} are not allowed. Choose one pair with "
                      "n_needed 1, or an even number of pairs with n_needed half of that count.")
     elif model == "chain":
         sys.exit("  ERROR: model 'chain' requires criterion mode 'contacts'.")
+    else:
+        if not isinstance(c.get("n_needed"), int) or c["n_needed"] != 0:
+            sys.exit("  ERROR: mode 'centroid' takes integer n_needed 0 (ignored, rxns.xml writes 1).")
     return mode
 
 
-def contacts_picked(rec, lig, c):
-    keep = keeper(c["atom_filter"])
-    skip = {_name(x) for x in _list(c.get("excluded"))}
-    found = []
-    for i, a in enumerate(rec):
-        if a["el"] == "H" or a["name"] in skip:
-            continue
-        for j, b in enumerate(lig):
-            if b["el"] == "H" or b["name"] in skip:
-                continue
-            d = float(np.linalg.norm(a["xyz"] - b["xyz"]))
-            if d < c["search_cutoff"] and keep(a["el"], b["el"]):
-                found.append((d, i, j))
-    found.sort()
-    out, seen = [], set()
-    for d, i, j in found:
-        if rec[i]["resid"] in seen:
-            continue
-        seen.add(rec[i]["resid"])
-        out.append((i, j, c["pair_cutoff"], d))
-        if len(out) >= c["n_pairs"]:
-            break
-    return out
-
-
-def resid_map(pdb_path, chain=None, resid_min=None):
-    seen = []
+def resid_map(pdb_path):
+    prot_seen, metal_seen = [], []
     with open(pdb_path) as fh:
         for line in fh:
-            if not line.startswith("ATOM"):
-                continue
-            if chain and line[21] != chain:
-                continue
-            r = int(line[22:26])
-            if resid_min is not None and r < resid_min:
-                continue
-            if r not in seen:
-                seen.append(r)
-    return {r: i + 1 for i, r in enumerate(seen)}
+            if line.startswith("ATOM"):
+                r = int(line[22:26])
+                if r not in prot_seen:
+                    prot_seen.append(r)
+            elif line.startswith("HETATM") and line[17:20].strip() in RETAINED_METALS:
+                r = int(line[22:26])
+                if r not in metal_seen:
+                    metal_seen.append(r)
+    ordered = prot_seen + [r for r in metal_seen if r not in prot_seen]
+    return {r: i + 1 for i, r in enumerate(ordered)}
 
 
-def receptor_atom(rec, target, c, rmap=None):
+def _match_atom(atoms, target, rmap, side_label):
     if not (isinstance(target, tuple) and len(target) == 3):
-        sys.exit('  ERROR: receptor needs <target resid="..." atom="..." resname="..."/> entries')
+        sys.exit(f'  ERROR: {side_label} needs <target resid="..." atom="..." resname="..."/> entries')
     resid, aname, resname = target
-    if c.get("receptor_numbering", "internal") == "pdb":
-        if not rmap:
-            sys.exit("  ERROR: receptor_numbering is pdb without a .pdb receptor map")
-        if resid not in rmap:
-            sys.exit(f"  ERROR: residue {resid} is not in the receptor PDB")
-        resid = rmap[resid]
-    i = next((k for k, a in enumerate(rec) if a["resid"] == resid
-              and a["name"] == aname and a["resname"] == resname), None)
+    q_resid = rmap.get(resid, resid) if rmap else resid
+    i = next((k for k, a in enumerate(atoms)
+              if a["resid"] == q_resid and a["name"] == aname and _resname_match(a["resname"], resname)), None)
+    if i is None and rmap:
+        i = next((k for k, a in enumerate(atoms)
+                  if a["resid"] == resid and a["name"] == aname and _resname_match(a["resname"], resname)), None)
     if i is None:
-        sys.exit(f"  ERROR: no {resname}{resid} {aname} in the receptor")
+        sys.exit(f"  ERROR: no {resname}{resid} {aname} in the {side_label}")
     return i
 
 
-def ligand_atom(lig, name):
+def ligand_atom(lig, target, lig_rmap=None):
+    if isinstance(target, tuple) and len(target) == 3:
+        return _match_atom(lig, target, lig_rmap, "ligand")
+    name = _name(target)
     js = [k for k, b in enumerate(lig) if b["name"] == name]
     if len(js) != 1:
         sys.exit(f"  ERROR: {'no' if not js else 'more than one'} ligand atom {name} in ligand.pqr")
     return js[0]
 
 
-def contacts_listed(rec, lig, c, rmap=None):
-    R, L = _list(c["receptor"]), c["ligand"]
-    L = ["auto"] * len(R) if L == "auto" else _list(L)
+def contacts_listed(rec, lig, c, rec_rmap=None, lig_rmap=None):
+    R, L = _list(c["receptor"]), _list(c["ligand"])
     if len(R) != len(L):
-        sys.exit(f"  ERROR: {len(R)} receptor targets against {len(L)} ligand atoms")
+        sys.exit(f"  ERROR: {len(R)} receptor targets against {len(L)} ligand entries")
     out = []
-    for target, lname in zip(R, L):
-        i = receptor_atom(rec, target, c, rmap)
-        if _name(lname) == "auto":
-            keep = keeper(c["atom_filter"])
-            near = [(float(np.linalg.norm(rec[i]["xyz"] - b["xyz"])), k)
-                    for k, b in enumerate(lig) if b["el"] != "H"
-                    and keep(rec[i]["el"], b["el"])]
-            if not near:
-                sys.exit(f"  ERROR: no {c['atom_filter']} ligand atom for "
-                         f"{rec[i]['resname']}{rec[i]['resid']} {rec[i]['name']}")
-            j = min(near)[1]
-        else:
-            j = ligand_atom(lig, _name(lname))
+    for r_target, l_target in zip(R, L):
+        i = _match_atom(rec, r_target, rec_rmap, "receptor")
+        j = ligand_atom(lig, l_target, lig_rmap)
         d = float(np.linalg.norm(rec[i]["xyz"] - lig[j]["xyz"]))
         out.append((i, j, c["pair_cutoff"], d))
     return out
@@ -932,18 +810,6 @@ def centroid_pair(rec, lig, c):
     R = np.mean([a["xyz"] for a in rec], axis=0)
     L = np.mean([a["xyz"] for a in lig], axis=0)
     return (len(rec), len(lig), c["pair_cutoff"], float(np.linalg.norm(R - L)))
-
-
-def write_site_atom(W, rec, p):
-    path = os.path.join(W, "receptor.pqr")
-    with open(path) as fh:
-        lines = [l for l in fh.read().split("\n") if l.strip() and l.strip() != "END"]
-    serial = max(int(l[6:11]) for l in lines if l.startswith(("ATOM", "HETATM"))) + 1
-    resid = max(a["resid"] for a in rec) + 1
-    lines.append(f"HETATM{serial:5d} {SITE_ATOM:<4s} {SITE_ATOM:<4s}{resid:5d}    "
-                 f"{p[0]:8.3f}{p[1]:8.3f}{p[2]:8.3f}  {0.0:7.4f}  {0.0:6.4f}")
-    with open(path, "w") as fh:
-        fh.write("\n".join(lines) + "\nEND\n")
 
 
 def write_rxns(path, pairs, n_needed):
@@ -960,39 +826,6 @@ def write_rxns(path, pairs, n_needed):
             f"        </molecules>\n        <n_needed> {n_needed} </n_needed>\n{body}"
             "      </criterion>\n    </reaction>\n  </reactions>\n</top>\n"
         )
-
-
-def site_pair(W, rec, lig, c, _cfg, rec_out, rmap=None):
-    anchor = None
-    if c.get("receptor"):
-        i = receptor_atom(rec, _list(c["receptor"])[0], c, rmap)
-        anchor = ligand_atom(lig, _name(_list(c["ligand"])[0]))
-        p = rec[i]["xyz"]
-        rec_out["anchors"] = dict(receptor=[i + 1, rec[i]["resname"], rec[i]["resid"], rec[i]["name"]],
-                                  ligand=[anchor + 1, lig[anchor]["name"]])
-        rec_out["site_reference"] = (f"receptor atom {i + 1} ({rec[i]['resname']} {rec[i]['resid']} {rec[i]['name']}) "
-                                     f"and ligand atom {anchor + 1} ({lig[anchor]['name']})")
-    else:
-        p = np.mean([a["xyz"] for a in lig], axis=0)
-        rec_out["site_reference"] = f"bound ligand centroid, {len(lig)} atoms"
-    cut = c.get("pair_cutoff")
-    if c.get("margin") not in (None, ""):
-        from pystarc.analysis.closest_approach import closest_approach
-        res = closest_approach([a["xyz"] for a in rec], [a["r"] for a in rec],
-                               [a["xyz"] for a in lig], [a["r"] for a in lig],
-                               p, anchor=anchor, bound=True)
-        if res["closest"] is None:
-            sys.exit("  ERROR: The scan found no accessible pose of the ligand near the site.")
-        cut = round(res["closest"] + c["margin"], 2)
-        rec_out.update(closest_approach=res["closest"], margin=c["margin"], scan=res)
-        print(f"  Closest accessible approach {res['closest']:.2f} A, cutoff {cut} A (margin {c['margin']} A).")
-    if anchor is not None:
-        print(f"  Site pair: {rec_out['site_reference']}.")
-        return (i, anchor, cut, float(np.linalg.norm(p - lig[anchor]["xyz"])))
-    write_site_atom(W, rec, p)
-    rec_out["site_atom"] = [round(float(x), 3) for x in p]
-    print(f"  Site ghost atom {SITE_ATOM} placed at ({p[0]:.3f}, {p[1]:.3f}, {p[2]:.3f}) as receptor atom {len(rec) + 1}.")
-    return (len(rec), len(lig), cut, 0.0)
 
 
 def _md5(path):
@@ -1103,9 +936,10 @@ def build(**cfg):
     model = cfg.get("model", "rigid")
     _check(model, MODELS, cfg, "model", ignore=TOP_LEVEL)
     c = cfg.get("criterion", {})
-    mode = check_criterion(c, model)
-    if model != "chain" and cfg.get("chain_cfg"):
-        sys.exit(f"  ERROR: <chain> settings {sorted(cfg['chain_cfg'])} apply to model 'chain'.")
+    cc = cfg.get("chain_cfg", {})
+    mode = check_criterion(c, model, has_chain_rp_json=bool(cc.get("reaction_pairs_json")))
+    if model != "chain" and cc:
+        sys.exit(f"  ERROR: <chain> settings {sorted(cc)} apply to model 'chain'.")
     W = cfg["work_dir"]
     os.makedirs(W, exist_ok=True)
     rec_src = _src_file(cfg, W, cfg["receptor"])
@@ -1114,6 +948,8 @@ def build(**cfg):
         if not os.path.exists(full):
             sys.exit(f"  ERROR: no {raw}")
     rec_ext, lig_ext = _ext(cfg["receptor"]), _ext(cfg["ligand"])
+    if rec_ext != lig_ext:
+        sys.exit(f"  ERROR: <receptor> ({rec_ext}) and <ligand> ({lig_ext}) must both be .pdb or both be .pqr")
 
     if model == "chain":
         extra = _build_chain(cfg, rec_src, rec_ext, lig_src, lig_ext, W)
@@ -1139,16 +975,12 @@ def build(**cfg):
     lig = read_pqr(os.path.join(W, "ligand.pqr"))
     record = dict(mode=mode, model=model, receptor=cfg["receptor"], ligand=cfg["ligand"])
     if mode == "contacts":
-        record["contacts_style"] = contacts_style(c)
-        pairs = (contacts_picked(rec, lig, c) if record["contacts_style"] == "picked"
-                 else contacts_listed(rec, lig, c, extra.get("rmap")))
+        pairs = contacts_listed(rec, lig, c, extra.get("rec_rmap"), extra.get("lig_rmap"))
         n_needed = c["n_needed"]
         if not pair_count_ok(len(pairs), n_needed):
             sys.exit(f"  ERROR: {len(pairs)} pairs were found for n_needed {n_needed}.")
-    elif mode == "centroid":
-        pairs, n_needed = [centroid_pair(rec, lig, c)], 1
     else:
-        pairs, n_needed = [site_pair(W, rec, lig, c, cfg, record, extra.get("rmap"))], 1
+        pairs, n_needed = [centroid_pair(rec, lig, c)], 1
     write_rxns(os.path.join(W, "rxns.xml"), pairs, n_needed)
     write_input(os.path.join(W, "input.xml"), cfg)
     record.update(
@@ -1228,10 +1060,16 @@ def _el(sec_name, t, v, ind):
         rows = "".join(f'{ind}  <target resid="{r}" atom="{a}" resname="{n}"/>\n'
                        for r, a, n in v)
         return f"{ind}<{t}>\n{rows}{ind}</{t}>"
+    if sec_name == "criterion" and t == "ligand" and isinstance(v, (list, tuple)):
+        rows = "".join(
+            f'{ind}  <target resid="{x[0]}" atom="{x[1]}" resname="{x[2]}"/>\n'
+            if isinstance(x, tuple) and len(x) == 3
+            else f'{ind}  <atom name="{_name(x)}"/>\n'
+            for x in v
+        )
+        return f"{ind}<{t}>\n{rows}{ind}</{t}>"
     if isinstance(v, (list, tuple)):
-        rows = ("".join(f'{ind}  <atom name="{_name(x)}"/>\n' for x in v)
-                if sec_name == "criterion" and t == "ligand"
-                else "".join(f"{ind}  <item>{_name(x)}</item>\n" for x in v))
+        rows = "".join(f"{ind}  <item>{_name(x)}</item>\n" for x in v)
         return f"{ind}<{t}>\n{rows}{ind}</{t}>"
     return f"{ind}<{t}>{v}</{t}>"
 
@@ -1244,9 +1082,7 @@ def _listed(names):
 def _doc(sec_name, t):
     if sec_name == "criterion" and t in CRITERION_KEYS:
         return CRITERION_KEYS[t]
-    table = {"model": MODELS, "mode": MODES,
-             "atom_filter": ATOM_FILTERS,
-             "receptor_numbering": NUMBERING}.get(t)
+    table = {"model": MODELS, "mode": MODES}.get(t)
     base = KEYS[t]
     if table:
         return f"{base} Options: {_listed(table)}."

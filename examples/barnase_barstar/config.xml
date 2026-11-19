@@ -1,88 +1,83 @@
 <?xml version="1.0" ?>
 <config>
   <structure>
-    <receptor>barnase.pqr</receptor>                             <!-- Prepared receptor structure (.pdb or .pqr). -->
-    <ligand>barstar.pdb</ligand>                                 <!-- Prepared ligand structure (.pdb or .pqr). -->
-    <ligand_net_charge></ligand_net_charge>                      <!-- Formal integer charge of a small-molecule .pdb ligand. Blank for .pqr or protein chain. -->
-    <model>chain</model>                                         <!-- Solute representation. Options: rigid and chain. -->
+    <receptor>receptor.pdb</receptor>                               <!-- Prepared receptor structure (.pdb or .pqr, matching ligand format). -->
+    <ligand>ligand.pdb</ligand>                                     <!-- Prepared ligand structure (.pdb or .pqr, matching receptor format). -->
+    <ligand_net_charge>-5</ligand_net_charge>                       <!-- Formal integer charge of the ligand (in elementary charge units). -->
+    <model>chain</model>                                            <!-- Solute representation. Options: rigid and chain. -->
   </structure>
   <criterion>
-    <mode>contacts</mode>                                        <!-- How the atom pairs of the reaction criterion are chosen. Options: contacts, centroid, and site. -->
-    <search_cutoff>6.0</search_cutoff>                           <!-- Mode contacts with pairs picked from the bound contacts. Search radius (in angstroms). -->
-    <n_pairs>5</n_pairs>                                         <!-- Mode contacts with pairs picked from the bound contacts. Number of contacts retained, one or an even number. -->
-    <atom_filter></atom_filter>                                  <!-- Element pairings permitted. Options: all, polar, nonpolar, any_polar, and receptor_polar. -->
-    <excluded></excluded>                                        <!-- Atom names omitted from the search. -->
-    <receptor_numbering></receptor_numbering>                    <!-- Numbering for the target residues. Options: pdb and internal. -->
-    <receptor></receptor>                                        <!-- Receptor side of each named pair of mode contacts, or the receptor anchor atom of mode site. -->
-    <ligand></ligand>                                            <!-- Ligand side of each named pair of mode contacts, or the ligand anchor atom of mode site. In mode contacts, auto chooses the nearest permitted atom. -->
-    <pair_cutoff>8.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). Mode site takes pair_cutoff or margin. -->
-    <margin></margin>                                            <!-- Mode site distance added to the closest accessible approach (in angstroms), rounded to 0.01 A. -->
-    <n_needed>3</n_needed>                                       <!-- Mode contacts pairs that must be inside cutoff at once: 1 for one pair, half of an even pair count, or any positive count for model chain. -->
+    <mode>contacts</mode>                                           <!-- How the reaction criterion is defined. Options: contacts and centroid. -->
+    <receptor></receptor>                                           <!-- Receptor atom of each contact pair (<target resid="..." atom="..." resname="..."/>). -->
+    <ligand></ligand>                                               <!-- Ligand atom of each contact pair (<atom name="..."/> or <target resid="..." atom="..." resname="..."/>). -->
+    <pair_cutoff>8.0</pair_cutoff>                                  <!-- Reaction distance for every pair (in angstroms). -->
+    <n_needed>3</n_needed>                                          <!-- Mode contacts pairs inside cutoff at once (1 for one pair, half of an even pair count, or positive count for model chain); 0 in mode centroid (rxns.xml writes 1). -->
   </criterion>
   <geometry>
-    <bd_milestone_radius>60.0</bd_milestone_radius>              <!-- Radius of the starting sphere (in angstroms). -->
-    <r_escape>160.0</r_escape>                                   <!-- Escape sphere radius (in angstroms). 0 derives twice bd_milestone_radius. -->
-    <r_hydro_rec>0</r_hydro_rec>                                 <!-- Receptor hydrodynamic radius. 0 derives it from the PQR. -->
-    <r_hydro_lig>0</r_hydro_lig>                                 <!-- Ligand hydrodynamic radius. 0 derives it from the PQR file. -->
+    <bd_milestone_radius>60.0</bd_milestone_radius>                 <!-- Radius of the starting sphere (in angstroms). -->
+    <r_escape>160.0</r_escape>                                      <!-- Escape sphere radius (in angstroms). 0 derives twice bd_milestone_radius. -->
+    <r_hydro_rec>0</r_hydro_rec>                                    <!-- Receptor hydrodynamic radius. 0 derives it from the PQR. -->
+    <r_hydro_lig>0</r_hydro_lig>                                    <!-- Ligand hydrodynamic radius. 0 derives it from the PQR file. -->
   </geometry>
   <electrostatics>
-    <debye_length>7.858</debye_length>                           <!-- Electrostatic screening length of the salt (in angstroms). Blank derives it from ion_concentration. -->
-    <ion_concentration>0.15</ion_concentration>                  <!-- Salt concentration (in molar). -->
-    <ion_radius_pos>0.95</ion_radius_pos>                        <!-- Radius of the positive ion (in angstroms). -->
-    <ion_radius_neg>1.81</ion_radius_neg>                        <!-- Radius of the negative ion (in angstroms). -->
-    <pdie>4.0</pdie>                                             <!-- Dielectric constant of the protein. -->
-    <sdie>78.0</sdie>                                            <!-- Dielectric constant of the solvent. -->
-    <srad>1.5</srad>                                             <!-- Solvent probe radius (in angstroms). -->
-    <apbs_fglen>140.0</apbs_fglen>                               <!-- Fine electrostatic grid length (in angstroms). 0 derives it. -->
-    <apbs_dime>449</apbs_dime>                                   <!-- Grid points per axis of the electrostatic grid. -->
-    <apbs_cglen>0</apbs_cglen>                                   <!-- Coarse electrostatic grid length (in angstroms). 0 derives it. -->
-    <apbs_coarse_dime>0</apbs_coarse_dime>                       <!-- Grid points per axis of the coarse grid. 0 takes apbs_dime. -->
-    <apbs_fine_dime>0</apbs_fine_dime>                           <!-- Grid points per axis of the fine grid. 0 takes apbs_dime. -->
+    <debye_length>7.858</debye_length>                              <!-- Electrostatic screening length of the salt (in angstroms). Blank derives it from ion_concentration. -->
+    <ion_concentration>0.15</ion_concentration>                     <!-- Salt concentration (in molar). -->
+    <ion_radius_pos>0.95</ion_radius_pos>                           <!-- Radius of the positive ion (in angstroms). -->
+    <ion_radius_neg>1.81</ion_radius_neg>                           <!-- Radius of the negative ion (in angstroms). -->
+    <pdie>4.0</pdie>                                                <!-- Dielectric constant of the protein. -->
+    <sdie>78.0</sdie>                                               <!-- Dielectric constant of the solvent. -->
+    <srad>1.5</srad>                                                <!-- Solvent probe radius (in angstroms). -->
+    <apbs_fglen>140.0</apbs_fglen>                                  <!-- Fine electrostatic grid length (in angstroms). 0 derives it. -->
+    <apbs_dime>449</apbs_dime>                                      <!-- Grid points per axis of the electrostatic grid. -->
+    <apbs_cglen>0</apbs_cglen>                                      <!-- Coarse electrostatic grid length (in angstroms). 0 derives it. -->
+    <apbs_coarse_dime>0</apbs_coarse_dime>                          <!-- Grid points per axis of the coarse grid. 0 takes apbs_dime. -->
+    <apbs_fine_dime>0</apbs_fine_dime>                              <!-- Grid points per axis of the fine grid. 0 takes apbs_dime. -->
   </electrostatics>
   <physics>
-    <soft_repulsion>true</soft_repulsion>                        <!-- Soft excluded volume of BrownDye 2 between receptor and ligand atoms in place of the overlap check. Options: true and false. -->
-    <overlap_check>false</overlap_check>                         <!-- Forbid the ligand from entering the receptor volume. Options: true and false. -->
-    <lj_forces>false</lj_forces>                                 <!-- Apply repulsive forces at close contact. Options: true and false. -->
-    <hydrodynamic_interactions>true</hydrodynamic_interactions>  <!-- Include hydrodynamic coupling between the two molecules. Options: true and false. -->
-    <desolvation_alpha>1.0</desolvation_alpha>                   <!-- Scaling applied to the desolvation penalty. -->
-    <enable_born2_torque>true</enable_born2_torque>              <!-- Add the desolvation of the receptor charges in the ligand Born field, a force and a torque on the ligand. Options: true and false. -->
-    <multipole_fallback>true</multipole_fallback>                <!-- Extend the electrostatics beyond the grid by multipole expansion. Options: true and false. -->
+    <soft_repulsion>true</soft_repulsion>                           <!-- Soft excluded volume of BrownDye 2 between receptor and ligand atoms in place of the overlap check. Options: true and false. -->
+    <overlap_check>false</overlap_check>                            <!-- Forbid the ligand from entering the receptor volume. Options: true and false. -->
+    <lj_forces>false</lj_forces>                                    <!-- Apply repulsive forces at close contact. Options: true and false. -->
+    <hydrodynamic_interactions>true</hydrodynamic_interactions>     <!-- Include hydrodynamic coupling between the two molecules. Options: true and false. -->
+    <desolvation_alpha>1.0</desolvation_alpha>                      <!-- Scaling applied to the desolvation penalty. -->
+    <enable_born2_torque>true</enable_born2_torque>                 <!-- Add the desolvation of the receptor charges in the ligand Born field, a force and a torque on the ligand. Options: true and false. -->
+    <multipole_fallback>true</multipole_fallback>                   <!-- Extend the electrostatics beyond the grid by multipole expansion. Options: true and false. -->
   </physics>
   <simulation>
-    <n_trajectories>200</n_trajectories>                         <!-- Number of Brownian dynamics trajectories. -->
-    <max_steps>500000</max_steps>                                <!-- Step limit per trajectory. -->
-    <dt>0.2</dt>                                                 <!-- Outer time step of the flexible chain model (in picoseconds). No effect on rigid body runs. -->
-    <minimum_core_dt>0</minimum_core_dt>                         <!-- Smallest permitted time step. 0 imposes no floor. -->
-    <minimum_core_reaction_dt>0</minimum_core_reaction_dt>       <!-- Smallest time step near the reaction surface (in picoseconds). 0 imposes no floor on the GPU. -->
-    <max_dt>0</max_dt>                                           <!-- Ceiling on the time step. 0 imposes no ceiling. -->
-    <temperature>298.15</temperature>                            <!-- Temperature (in kelvin). -->
-    <seed>1</seed>                                               <!-- Random number seed. -->
-    <convergence_check>false</convergence_check>                 <!-- Run convergence analysis after the simulation. Options: true and false. -->
-    <convergence_interval>10</convergence_interval>              <!-- Reporting interval for the running rate. -->
-    <convergence_tol>0.05</convergence_tol>                      <!-- Relative error defining convergence. -->
-    <checkpoint_interval>0</checkpoint_interval>                 <!-- Trajectories between checkpoints. 0 disables checkpointing. -->
+    <n_trajectories>200</n_trajectories>                            <!-- Number of Brownian dynamics trajectories. -->
+    <max_steps>500000</max_steps>                                   <!-- Step limit per trajectory. -->
+    <dt>0.2</dt>                                                    <!-- Outer time step of the flexible chain model (in picoseconds). No effect on rigid body runs. -->
+    <minimum_core_dt>0</minimum_core_dt>                            <!-- Smallest permitted time step. 0 imposes no floor. -->
+    <minimum_core_reaction_dt>0</minimum_core_reaction_dt>          <!-- Smallest time step near the reaction surface (in picoseconds). 0 imposes no floor on the GPU. -->
+    <max_dt>0</max_dt>                                              <!-- Ceiling on the time step. 0 imposes no ceiling. -->
+    <temperature>298.15</temperature>                               <!-- Temperature (in kelvin). -->
+    <seed>1</seed>                                                  <!-- Random number seed. -->
+    <convergence_check>false</convergence_check>                    <!-- Run convergence analysis after the simulation. Options: true and false. -->
+    <convergence_interval>10</convergence_interval>                 <!-- Reporting interval for the running rate. -->
+    <convergence_tol>0.05</convergence_tol>                         <!-- Relative error defining convergence. -->
+    <checkpoint_interval>0</checkpoint_interval>                    <!-- Trajectories between checkpoints. 0 disables checkpointing. -->
   </simulation>
   <compute>
-    <gpu>false</gpu>                                             <!-- Evaluate forces on the GPU. Options: true and false. -->
-    <n_gpus>0</n_gpus>                                           <!-- Number of GPUs for parallel trajectory splitting. 1 runs a single worker. -->
-    <gpu_force_batch>0</gpu_force_batch>                         <!-- Trajectories per GPU force evaluation. 0 selects automatically. -->
-    <n_threads>96</n_threads>                                    <!-- Number of CPU threads. -->
-    <work_dir>bd_sims</work_dir>                                 <!-- Output directory for grids, generated inputs and trajectory data. -->
+    <gpu>false</gpu>                                                <!-- Evaluate forces on the GPU. Options: true and false. -->
+    <n_gpus>0</n_gpus>                                              <!-- Number of GPUs for parallel trajectory splitting. 1 runs a single worker. -->
+    <gpu_force_batch>0</gpu_force_batch>                            <!-- Trajectories per GPU force evaluation. 0 selects automatically. -->
+    <n_threads>96</n_threads>                                       <!-- Number of CPU threads. -->
+    <work_dir>bd_sims</work_dir>                                    <!-- Output directory for grids, generated inputs and trajectory data. -->
   </compute>
   <outputs>
-    <save_interval>10</save_interval>                            <!-- Steps between saved positions. 0 saves endpoints. -->
-    <full_paths>true</full_paths>                                <!-- Save positions and orientations every save_interval steps. Options: true and false. -->
-    <energetics>true</energetics>                                <!-- Save the force on the ligand and the time step every save_interval steps. Options: true and false. -->
+    <save_interval>10</save_interval>                               <!-- Steps between saved positions. 0 saves endpoints. -->
+    <full_paths>true</full_paths>                                   <!-- Save positions and orientations every save_interval steps. Options: true and false. -->
+    <energetics>true</energetics>                                   <!-- Save the force on the ligand and the time step every save_interval steps. Options: true and false. -->
   </outputs>
   <chain>
-    <dt_chain>0.025</dt_chain>                                   <!-- Inner time step of flexible chain internal coordinates (in picoseconds). -->
-    <chain_steps_per_outer>8</chain_steps_per_outer>             <!-- Inner chain steps per outer step. -->
-    <n_equilibration_steps>0</n_equilibration_steps>             <!-- Pre-equilibration chain steps before each trajectory. 0 skips pre-equilibration. -->
-    <auto_diffusion>true</auto_diffusion>                        <!-- Compute chain diffusion tensors from RPY bead geometry. Options: true and false. -->
-    <d_trans>0.015</d_trans>                                     <!-- Explicit chain translational diffusion when auto_diffusion is false (in A^2/ps). -->
-    <d_rot>0.00005</d_rot>                                       <!-- Explicit chain rotational diffusion when auto_diffusion is false (in rad^2/ps). -->
-    <soft_repulsion_eps>1.0</soft_repulsion_eps>                 <!-- Chain soft repulsion strength (in units of kT). -->
-    <target_grid_dx>apbs_output/barnase1.dx</target_grid_dx>     <!-- Optional receptor electrostatic DX grid path for model chain. Blank builds in work_dir. -->
-    <born_grid_dx>apbs_output/barnase0_born.dx</born_grid_dx>    <!-- Optional receptor Born DX grid path for model chain. Blank builds in work_dir. -->
+    <reaction_pairs_json>reaction_pairs.json</reaction_pairs_json>  <!-- Pre-built chain reaction pairs JSON file for model chain. Blank builds from criterion pairs. -->
+    <dt_chain>0.025</dt_chain>                                      <!-- Inner time step of flexible chain internal coordinates (in picoseconds). -->
+    <chain_steps_per_outer>8</chain_steps_per_outer>                <!-- Inner chain steps per outer step. -->
+    <n_equilibration_steps>0</n_equilibration_steps>                <!-- Pre-equilibration chain steps before each trajectory. 0 skips pre-equilibration. -->
+    <auto_diffusion>true</auto_diffusion>                           <!-- Compute chain diffusion tensors from RPY bead geometry. Options: true and false. -->
+    <d_trans>0.015</d_trans>                                        <!-- Explicit chain translational diffusion when auto_diffusion is false (in A^2/ps). -->
+    <d_rot>0.00005</d_rot>                                          <!-- Explicit chain rotational diffusion when auto_diffusion is false (in rad^2/ps). -->
+    <soft_repulsion_eps>1.0</soft_repulsion_eps>                    <!-- Chain soft repulsion strength (in units of kT). -->
+    <target_grid_dx>apbs_output/barnase1.dx</target_grid_dx>        <!-- Optional receptor electrostatic DX grid path for model chain. Blank builds in work_dir. -->
+    <born_grid_dx>apbs_output/barnase0_born.dx</born_grid_dx>       <!-- Optional receptor Born DX grid path for model chain. Blank builds in work_dir. -->
   </chain>
 </config>
