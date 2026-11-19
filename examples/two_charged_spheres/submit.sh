@@ -52,24 +52,25 @@ if [ "$N_TASKS" -le 1 ] && [ "$N_NODES" -le 1 ]; then
   else
     python "$ROOT/run_pystarc.py" config.xml --n-gpus 1
   fi
-  exit 0
+else
+  # Multiple GPU tasks across 1 or more nodes (1 GPU per SLURM task)
+  python "$ROOT/pystarc/multi_GPU/multi_GPU_runs.py" config.xml --n-splits "$N_TASKS"
+  SRUN_ARGS=(--ntasks="$N_TASKS" --kill-on-bad-exit=1)
+  if [ -n "${SLURM_GPUS_PER_TASK:-}" ]; then
+    SRUN_ARGS+=(--gpus-per-task="${SLURM_GPUS_PER_TASK}")
+  fi
+  if [ -n "${SLURM_CPUS_PER_TASK:-}" ]; then
+    SRUN_ARGS+=(--cpus-per-task="${SLURM_CPUS_PER_TASK}")
+  fi
+  srun "${SRUN_ARGS[@]}" \
+    bash -c '
+      sleep $(( ${SLURM_LOCALID:-0} * 2 ))
+      T="/tmp/pystarc_${SLURM_JOB_ID:-local}_${SLURM_PROCID:-0}"
+      trap "rm -rf \"$T\"" EXIT
+      export NUMBA_CACHE_DIR="$T/numba" CUPY_CACHE_DIR="$T/cupy" MPLCONFIGDIR="$T/mpl"
+      cd "$1/bd_$((SLURM_PROCID + 1))"
+      python "$2/run_pystarc.py" input.xml --n-gpus 1
+    ' _ "$WORK_DIR" "$ROOT"
+  python "$ROOT/pystarc/multi_GPU/combine_data.py" --bd-sims "$WORK_DIR"
 fi
-# Multiple GPU tasks across 1 or more nodes (1 GPU per SLURM task)
-python "$ROOT/pystarc/multi_GPU/multi_GPU_runs.py" config.xml --n-splits "$N_TASKS"
-SRUN_ARGS=(--ntasks="$N_TASKS" --kill-on-bad-exit=1)
-if [ -n "${SLURM_GPUS_PER_TASK:-}" ]; then
-  SRUN_ARGS+=(--gpus-per-task="${SLURM_GPUS_PER_TASK}")
-fi
-if [ -n "${SLURM_CPUS_PER_TASK:-}" ]; then
-  SRUN_ARGS+=(--cpus-per-task="${SLURM_CPUS_PER_TASK}")
-fi
-srun "${SRUN_ARGS[@]}" \
-  bash -c '
-    sleep $(( ${SLURM_LOCALID:-0} * 2 ))
-    T="/tmp/pystarc_${SLURM_JOB_ID:-local}_${SLURM_PROCID:-0}"
-    trap "rm -rf \"$T\"" EXIT
-    export NUMBA_CACHE_DIR="$T/numba" CUPY_CACHE_DIR="$T/cupy" MPLCONFIGDIR="$T/mpl"
-    cd "$1/bd_$((SLURM_PROCID + 1))"
-    python "$2/run_pystarc.py" input.xml --n-gpus 1
-  ' _ "$WORK_DIR" "$ROOT"
-python "$ROOT/pystarc/multi_GPU/combine_data.py" --bd-sims "$WORK_DIR"
+python analytical.py

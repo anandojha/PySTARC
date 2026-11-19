@@ -6,6 +6,7 @@ Exact Smoluchowski solution vs PySTARC simulation vs analytical reference.
 """
 
 from scipy.integrate import quad
+import json
 import math
 import os
 import re
@@ -146,21 +147,47 @@ for r in [2.6, 3, 4, 5, 7, 10, 15, 19]:
 print()
 hdr("Step 5: Comparison with simulation")
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bd_sims")
-sim_prxn = sim_kon = sim_kb = sim_rp = None
+sim_prxn = sim_kon = sim_kb = sim_rp = sim_n = None
 if os.path.isdir(log_dir):
-    logs = sorted([f for f in os.listdir(log_dir) if f.endswith(".log")])
-    if logs:
-        txt = open(os.path.join(log_dir, logs[-1])).read()
-        m = re.search(r"P_rxn\s+:\s+([\d.]+)", txt)
-        sim_prxn = float(m.group(1)) if m else None
-        m = re.search(r"k_on\s+:\s+([\d.e+]+)", txt)
-        sim_kon = float(m.group(1)) if m else None
-        m = re.search(r"k_b:\s+([\d.]+)", txt)
-        sim_kb = float(m.group(1)) if m else None
+    results_json = os.path.join(log_dir, "results.json")
+    if os.path.isfile(results_json):
+        with open(results_json) as f:
+            res = json.load(f)
+        sim_prxn = res.get("P_rxn")
+        sim_kon = res.get("k_on")
+        sim_kb = res.get("k_b")
+        sim_n = res.get("n_trajectories")
+    log_candidates = []
+    for d in (log_dir, os.path.join(log_dir, "bd_1")):
+        if os.path.isdir(d):
+            log_candidates.extend(
+                os.path.join(d, f)
+                for f in sorted(os.listdir(d))
+                if f.startswith("pystarc_") and f.endswith(".log")
+            )
+    if not log_candidates:
+        log_candidates = [
+            os.path.join(log_dir, f)
+            for f in sorted(os.listdir(log_dir))
+            if f.endswith(".log")
+        ]
+    if log_candidates:
+        with open(log_candidates[-1]) as f:
+            txt = f.read()
+        if sim_prxn is None:
+            m = re.search(r"P_rxn\s+:\s+([\d.]+)", txt)
+            sim_prxn = float(m.group(1)) if m else None
+        if sim_kon is None:
+            m = re.search(r"k_on\s+:\s+([\d.e+]+)", txt)
+            sim_kon = float(m.group(1)) if m else None
+        if sim_kb is None:
+            m = re.search(r"k_b:\s+([\d.]+)", txt)
+            sim_kb = float(m.group(1)) if m else None
         m = re.search(r"return_prob:\s+([\d.]+)", txt)
         sim_rp = float(m.group(1)) if m else None
-        m = re.search(r"Trajectories\s+:\s+([\d,]+)", txt)
-        sim_n = int(m.group(1).replace(",", "")) if m else None
+        if sim_n is None:
+            m = re.search(r"Trajectories\s+:\s+([\d,]+)", txt)
+            sim_n = int(m.group(1).replace(",", "")) if m else None
 print(f"  {'':28s}  {'Analytical':>14s}  {'Simulation':>14s}  {'Ref':>14s}")
 print(f"  {'-'*28}  {'-'*14}  {'-'*14}  {'-'*14}")
 
