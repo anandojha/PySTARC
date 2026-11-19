@@ -72,7 +72,7 @@ A new protein-ligand complex starts from prepared `receptor.pdb` and `ligand.pdb
 </structure>
 ```
 
-`run_pystarc.py` parameterizes `receptor.pdb` with `tleap` (`ff14SB`). RDKit assigns the ligand bond orders from the coordinates, explicit hydrogens and `ligand_net_charge` in `ligand.pdb`, and `antechamber` assigns `AM1-BCC` partial charges and `GAFF2` atom types. Raw RCSB entries, docked poses, SMILES conformers, or AMBER `.prmtop` topologies can be prepared beforehand with the standalone script `scripts/prepare_pdb.py` (documented in `scripts/README.md`).
+`run_pystarc.py` parameterizes `receptor.pdb` with `tleap` (`ff14SB`). RDKit assigns the ligand bond orders from the coordinates, explicit hydrogens and `ligand_net_charge` in `ligand.pdb`, and `antechamber` assigns `AM1-BCC` partial charges and `GAFF2` atom types.
 
 | file | requirement |
 |---|---|
@@ -127,7 +127,7 @@ The trypsin benzamidine example specifies six contact pairs with `pair_cutoff` 7
 
 Each `<target resid="..." atom="..." resname="..."/>` in `<receptor>` names one receptor atom by residue number, atom name and residue name. When `<receptor>` is a `.pdb` file, residue numbers written in `receptor.pdb` (including retained catalytic metals such as `ZN`) are mapped automatically to the residue numbers of `bd_sims/receptor.pqr`. Protonation tautomers assigned by `tleap` (`HIS`/`HID`/`HIE`/`HIP`, `CYS`/`CYX`/`CYM`, `ASP`/`ASH`, `GLU`/`GLH`, `LYS`/`LYN`) match across group members. Each entry in `<ligand>` follows the receptor target order as `<atom name="..."/>` for a single-residue ligand, or `<target resid="..." atom="..." resname="..."/>` for a multi-residue protein ligand (`examples/thrombin_thrombomodulin`).
 
-For rigid body runs, one pair requires `n_needed` 1, and an even number of pairs 2k requires `n_needed` k. Candidate contact pairs from a bound pose can be inspected beforehand with `scripts/find_reaction_criteria.py`.
+For rigid body runs, one pair requires `n_needed` 1, and an even number of pairs 2k requires `n_needed` k.
 
 ### Distance of the centroids (`centroid`)
 
@@ -245,7 +245,7 @@ Every flag accepts `true`, `false`, `yes`, `no`, `1` and `0` with any capitaliza
 
 ### Excluded volume
 
-The soft wall adds the energy V = kT (a/r)<sup>12</sup> with a = 0.9345 (r<sub>i</sub> + r<sub>j</sub>) for every receptor atom i and ligand atom j closer than 2a. The radii come from the PQR files. Atoms of radius 0 take no part. The overlap check rejects a move bringing a ligand atom closer than 0.5 (r<sub>i</sub> + r<sub>j</sub>) to a receptor atom. The trajectory keeps the old pose and the clock still advances. The WCA repulsion is the force of the potential 4ε[(σ/r)<sup>12</sup> − (σ/r)<sup>6</sup>] below r = 2<sup>1/6</sup>σ, with σ = r<sub>i</sub> + r<sub>j</sub> and ε = 0.1 kcal/mol. The soft wall and the overlap check shorten the time step near the receptor (step 8).
+The soft wall adds the energy V = kT (a/r)<sup>12</sup> with a = 0.9345 (r<sub>i</sub> + r<sub>j</sub>) for every receptor atom i and ligand atom j closer than 2a. The radii come from the PQR files. Atoms of radius 0 do not participate. The overlap check rejects a move bringing a ligand atom closer than 0.5 (r<sub>i</sub> + r<sub>j</sub>) to a receptor atom. The trajectory keeps the old pose and the clock still advances. The WCA repulsion is the force of the potential 4ε[(σ/r)<sup>12</sup> − (σ/r)<sup>6</sup>] below r = 2<sup>1/6</sup>σ, with σ = r<sub>i</sub> + r<sub>j</sub> and ε = 0.1 kcal/mol. The soft wall and the overlap check shorten the time step near the receptor (step 8).
 
 | `soft_repulsion` | `overlap_check` | `lj_forces` | excluded volume |
 |---|---|---|---|
@@ -316,7 +316,7 @@ Each trajectory runs to a reaction, an escape or `max_steps` steps. A trajectory
 
 After N trajectories the relative standard error of P<sub>rxn</sub> is √((1 − P<sub>rxn</sub>)/(N P<sub>rxn</sub>)). With `convergence_check` true the run writes `bd_sims/convergence.json` with P<sub>rxn</sub>, k<sub>on</sub>, the standard errors, the 95% Wilson intervals, the converged flag and the N for a relative error of 10, 5 and 1%. The flag is true for a relative standard error below `convergence_tol`. The trypsin value 0.05 flags convergence below a relative standard error of 5%.
 
-`convergence_interval` prints the running P<sub>rxn</sub> and k<sub>on</sub> each time the count of finished trajectories passes a multiple of `convergence_interval` percent of `n_trajectories`. A progress line appears every 10 s once trajectories finish. None of the convergence tags stops a run. The run takes every trajectory to a reaction, an escape or the step limit.
+`convergence_interval` prints the running P<sub>rxn</sub> and k<sub>on</sub> each time the count of finished trajectories passes a multiple of `convergence_interval` percent of `n_trajectories`. A progress line appears every 10 s once trajectories finish. None of the convergence tags stops a run. The run propagates every trajectory to a reaction, an escape or the step limit.
 
 ### Checkpoints
 
@@ -466,9 +466,9 @@ The last line ends with OK for b + lmax < fglen/2 and with WARNING for b + lmax 
 | `sbatch submit_SLURM_single_GPU.sh` | one GPU of a SLURM node | deletes `bd_sims`, runs `run_pystarc.py config.xml` |
 | `sbatch submit_SLURM_multi_GPUs.sh` | four GPUs of a SLURM node | deletes `bd_sims`, runs `run_pystarc.py config.xml --n-gpus 4` |
 
-Submit the SLURM scripts from the run folder. The `#SBATCH` lines take the partition, memory and time limit of the local cluster. Every script deletes `bd_sims` with every earlier result and checkpoint.
+Submit the SLURM scripts from the run folder. The `#SBATCH` lines set the partition, memory and time limit of the local cluster. Every script deletes `bd_sims` with every earlier result and checkpoint.
 
-In a four GPU run (`--n-gpus 4` or `<n_gpus>4</n_gpus>`), `run_pystarc.py` builds the inputs and grids once in `bd_sims` and starts four shards in `bd_sims/bd_1` to `bd_sims/bd_4`. Each shard takes a quarter of `n_trajectories` with a seed of its own (step 8). `pystarc/multi_GPU/combine_data.py` then pools the counts of the finished shards into `bd_sims/results.json` and `bd_sims/convergence.json`. A shard without `results.json` stays out of the pool.
+In a four GPU run (`--n-gpus 4` or `<n_gpus>4</n_gpus>`), `run_pystarc.py` builds the inputs and grids once in `bd_sims` and starts four shards in `bd_sims/bd_1` to `bd_sims/bd_4`. Each shard runs a quarter of `n_trajectories` with a seed of its own (step 8). `pystarc/multi_GPU/combine_data.py` then pools the counts of the finished shards into `bd_sims/results.json` and `bd_sims/convergence.json`. A shard without `results.json` stays out of the pool.
 
 ### Resuming or running from `bd_sims/input.xml`
 
@@ -509,7 +509,7 @@ The run resumes from `bd_sims/checkpoint.npz` when present (step 8) and reuses t
 | `k_on_units`, `k_b_units`, `D_rel_units` | unit labels |
 | `completed_reactions` | firing count of each reaction with `state_machine_reactions` `true` |
 
-The factor 6.022×10<sup>8</sup> converts Å³/ps into M⁻¹ s⁻¹. A trajectory at `max_steps` counts as not reacted in P<sub>rxn</sub>. The low bounds therefore repeat P<sub>rxn</sub> and k<sub>on</sub>. The high bounds count every trajectory at `max_steps` as reacted (step 8). The Wilson intervals take z = 1.96 at the confidence level 0.95. The pooled file of a multi GPU run has no `total_steps` and no `contact_total_steps`; `wall_time_sec` reports the slowest shard and `aggregate_gpu_sec` reports the summed wall time across shards (s).
+The factor 6.022×10<sup>8</sup> converts Å³/ps into M⁻¹ s⁻¹. A trajectory at `max_steps` counts as not reacted in P<sub>rxn</sub>. The low bounds therefore repeat P<sub>rxn</sub> and k<sub>on</sub>. The high bounds count every trajectory at `max_steps` as reacted (step 8). The Wilson intervals evaluate z = 1.96 at the confidence level 0.95. The pooled file of a multi GPU run has no `total_steps` and no `contact_total_steps`; `wall_time_sec` reports the slowest shard and `aggregate_gpu_sec` reports the summed wall time across shards (s).
 
 ### convergence.json
 
@@ -642,7 +642,7 @@ Each trajectory starts with the chain centroid on the sphere of radius b = `bd_m
 | `dt_chain` | time > 0 (ps) | internal step of the beads |
 | `chain_steps_per_outer` | integer ≥ 1 | internal steps per outer step of `dt` |
 | `n_equilibration_steps` | integer ≥ 0 | internal steps without receptor forces before each trajectory, 0 for none |
-| `auto_diffusion` | `true` or `false` | `true` rebuilds chain diffusion tensors from bead geometry every 10 outer steps, `false` takes `d_trans` and `d_rot` |
+| `auto_diffusion` | `true` or `false` | `true` rebuilds chain diffusion tensors from bead geometry every 10 outer steps, `false` reads `d_trans` and `d_rot` |
 | `d_trans`, `d_rot` | > 0 (Å<sup>2</sup>/ps), > 0 (rad<sup>2</sup>/ps) | chain diffusion coefficients when `auto_diffusion` is `false` |
 | `soft_repulsion` (`<physics>`), `soft_repulsion_eps` | `true` or `false`, energy ≥ 0 (kT) | repulsion 4ε[(σ/r)<sup>12</sup> − (σ/r)<sup>6</sup>] + ε for r < 2<sup>1/6</sup>σ between beads and receptor atoms and nonbonded bead pairs |
 | `target_grid_dx` | DX path, blank to build in `work_dir` | receptor APBS fine potential grid acting on bead charges |

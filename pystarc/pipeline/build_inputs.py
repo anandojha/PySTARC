@@ -46,8 +46,8 @@ KEYS = {
     "apbs_fglen":                "Fine electrostatic grid length (in angstroms). 0 derives it.",
     "apbs_dime":                 "Grid points per axis of the electrostatic grid.",
     "apbs_cglen":                "Coarse electrostatic grid length (in angstroms). 0 derives it.",
-    "apbs_coarse_dime":          "Grid points per axis of the coarse grid. 0 takes apbs_dime.",
-    "apbs_fine_dime":            "Grid points per axis of the fine grid. 0 takes apbs_dime.",
+    "apbs_coarse_dime":          "Grid points per axis of the coarse grid. 0 copies apbs_dime.",
+    "apbs_fine_dime":            "Grid points per axis of the fine grid. 0 copies apbs_dime.",
     "debye_length":              "Electrostatic screening length of the salt (in angstroms). Blank derives it from ion_concentration.",
     "ion_concentration":         "Salt concentration (in molar).",
     "ion_radius_pos":            "Radius of the positive ion (in angstroms).",
@@ -367,7 +367,7 @@ def _check_single_conformer(lines, path):
     multi = [f"{k[2]} {k[0].strip()}{k[1]} ({''.join(sorted(v))})" for k, v in seen.items() if len(v) > 1]
     if multi:
         sys.exit(f"  ERROR: {path} contains multiple altloc conformers for {', '.join(multi)}. "
-                 f"Select one conformer first (for example with scripts/prepare_pdb.py)")
+                 f"Select a single conformer before running PySTARC")
 
 
 def _ext(path):
@@ -415,7 +415,7 @@ def _parameterize_protein_pdb(pdb_src, label, W, stem, out_pqr):
                 bad_het.add(resn)
     if bad_het:
         sys.exit(f"  ERROR: {label} contains non-metal HETATM {sorted(bad_het)}. "
-                 f"Place the diffusing ligand in <ligand> or prepare with scripts/prepare_pdb.py")
+                 f"Place the diffusing ligand in <ligand> and strip extra heteroatoms from <receptor>")
     if not prot and not metals:
         sys.exit(f"  ERROR: no ATOM records in {label}")
     stage_pdb = f"{stem}.pdb"
@@ -466,7 +466,7 @@ def _parameterize_small_mol_pdb(lig_src, label, netq, W):
     has_h = any(a.GetAtomicNum() == 1 for a in m.GetAtoms())
     if not has_h:
         sys.exit(f"  ERROR: ligand {resn_pdb} has no hydrogens in {label}. "
-                 f"Prepare the ligand PDB with hydrogens first (for example with scripts/prepare_pdb.py)")
+                 f"Add explicit hydrogens to the ligand PDB before running PySTARC")
     try:
         rdDetermineBonds.DetermineBondOrders(m, charge=netq)
     except Exception as e:
@@ -748,7 +748,7 @@ def check_criterion(c, model="rigid", has_chain_rp_json=False):
         sys.exit("  ERROR: model 'chain' requires criterion mode 'contacts'.")
     else:
         if not isinstance(c.get("n_needed"), int) or c["n_needed"] != 0:
-            sys.exit("  ERROR: mode 'centroid' takes integer n_needed 0 (ignored, rxns.xml writes 1).")
+            sys.exit("  ERROR: mode 'centroid' requires integer n_needed 0 (ignored, rxns.xml writes 1).")
     return mode
 
 

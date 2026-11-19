@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-"""Standalone reaction-criterion builder for PySTARC config.xml.
+"""Standalone reaction-criterion builder for any receptor-ligand complex.
 
 Inspects prepared receptor and ligand structures (.pdb + .pdb or .pqr + .pqr)
-before filling config.xml and prints a ready-to-paste <criterion> block (plus
-reaction_pairs.json when --chain-pairs-out is requested). Independent of
-pystarc, run_pystarc.py, and config.xml.
+and prints a ready-to-paste <criterion> block (or writes reaction_pairs.json
+when --chain-pairs-out is set). Independent of PySTARC runtime code.
 
-Supported workflows:
-  1. Bound-pose contact pairs (polar or heavy-atom):
+Workflows:
+  1. Bound-pose contact pairs (polar, hetero, all, nonpolar, or custom --elements):
      python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --atom-filter polar --n-pairs 6 --pair-cutoff 7.0
   2. Named active-site receptor targets (with explicit or auto-picked ligand atoms):
      python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --receptor-targets 199:OG1:THR,94:NE2:HID,96:NE2:HID,119:ND1:HIE --ligand-atoms N1 --pair-cutoff 7.0
   3. Centroid reaction criterion:
      python scripts/find_reaction_criteria.py --receptor receptor.pqr --ligand ligand.pqr --mode centroid --pair-cutoff 8.0
-  4. Flexible-chain COFFDROP reaction_pairs.json (model chain):
+  4. Flexible-chain COFFDROP reaction_pairs.json (single or multi-chain receptor):
      python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --search-cutoff 6.0 --pair-cutoff 8.0 --n-needed 3 --chain-pairs-out reaction_pairs.json
 """
 
@@ -28,8 +27,17 @@ import numpy as np
 
 
 POLAR_ELEMENTS = {"N", "O", "S"}
-RETAINED_METALS = {"ZN", "MG", "MN", "FE", "CU", "CO", "NI", "CAL"}
-SKIP_SOLVENT = {"HOH", "WAT", "NA", "CL", "Na+", "Cl-", "K+"}
+RETAINED_METALS = {"ZN", "MG", "MN", "FE", "FE2", "CU", "CU1", "CO", "NI", "CA", "CAL", "CD", "HG", "SR", "BA"}
+SKIP_SOLVENT = {"HOH", "WAT", "TIP3", "SPC", "NA", "CL", "K", "Na+", "Cl-", "K+"}
+PROTEIN_RESIDUES = {
+    "ALA", "ARG", "ASN", "ASP", "ASH", "CYS", "CYX", "CYM", "GLN", "GLU", "GLH",
+    "GLY", "HIS", "HID", "HIE", "HIP", "ILE", "LEU", "LYS", "LYN", "MET", "PHE",
+    "PRO", "SER", "THR", "TRP", "TYR", "VAL", "ACE", "NME",
+}
+TWO_LETTER_ELEMENTS = {
+    "CL", "BR", "SE", "SI", "ZN", "MG", "MN", "FE", "CU", "CO", "NI",
+    "CA", "NA", "PT", "AU", "AG", "HG", "CD", "SR", "BA", "AL",
+}
 VARIANT_GROUPS = [
     {"HIS", "HIE", "HID", "HIP"},
     {"CYS", "CYX", "CYM"},
@@ -41,16 +49,25 @@ VARIANT_GROUPS = [
 ATOM_FILTERS = {
     "all":            "Matches any heavy atom against any heavy atom",
     "polar":          "Matches N O or S on both sides",
+    "hetero":         "Matches any non-carbon heavy atom (N O S P halogens metals) on both sides",
     "nonpolar":       "Matches carbon on both sides",
     "any_polar":      "Matches N O or S on either side",
     "receptor_polar": "Matches N O or S on the receptor side",
 }
 
 
-def keeper(kind):
+def keeper(kind, custom_elements=""):
+    if custom_elements:
+        if ":" not in custom_elements:
+            sys.exit("ERROR: --elements expects REC_ELEMENTS:LIG_ELEMENTS (for example ZN,O,N:N,O)")
+        r_part, l_part = custom_elements.split(":", 1)
+        r_set = {x.strip().upper() for x in r_part.split(",") if x.strip()}
+        l_set = {x.strip().upper() for x in l_part.split(",") if x.strip()}
+        return lambda a, b: a in r_set and b in l_set
     return {
         "all": lambda a, b: True,
         "polar": lambda a, b: a in POLAR_ELEMENTS and b in POLAR_ELEMENTS,
+        "hetero": lambda a, b: a not in ("C", "H") and b not in ("C", "H"),
         "nonpolar": lambda a, b: a == "C" and b == "C",
         "any_polar": lambda a, b: a in POLAR_ELEMENTS or b in POLAR_ELEMENTS,
         "receptor_polar": lambda a, b: a in POLAR_ELEMENTS,
@@ -76,11 +93,13 @@ def _infer_element(aname, col_el="", resname=""):
         return ce
     ru = (resname or "").strip().upper()
     nm = aname.lstrip("0123456789").upper()
+    if ru in PROTEIN_RESIDUES:
+        return nm[:1]
     if ru in ("CAL", "CA") and nm.startswith("CA"):
         return "CA"
-    if ru in ("ZN", "MG", "FE", "CU") and nm.startswith(ru):
-        return ru
-    return nm[:2] if nm[:2] in ("CL", "BR") else nm[:1]
+    if ru in RETAINED_METALS and nm[:2] in TWO_LETTER_ELEMENTS:
+        return nm[:2]
+    return nm[:2] if nm[:2] in ("CL", "BR", "SE", "SI", "ZN", "MG", "MN", "FE", "CU") else nm[:1]
 
 
 def _parse_pqr_records_standalone(path):
@@ -98,58 +117,77 @@ def _parse_pqr_records_standalone(path):
             if len(l) >= 54 and l[30:38].strip() and l[38:46].strip() and l[46:54].strip():
                 try:
                     resname = l[17:20].strip()
+                    ch = l[21].strip()
                     resid = int(l[22:26])
+                    rescode = l[22:27].strip()
                     x, y, z = float(l[30:38]), float(l[38:46]), float(l[46:54])
                     tail = l[54:].split()
                     col_el = tail[2] if len(tail) >= 3 and tail[2].isalpha() else ""
-                    records.append((l[:6].strip(), aname, resname, resid, x, y, z, col_el))
+                    records.append((l[:6].strip(), aname, resname, ch, resid, rescode, x, y, z, col_el))
                     continue
                 except ValueError:
                     pass
-            # Whitespace fallback (with or without chain column)
             if len(toks) >= 10 and not toks[4].lstrip("+-").isdigit():
-                resname, resid = toks[3], int(toks[5])
+                resname, ch, resid = toks[3], toks[4], int(toks[5])
                 x, y, z = float(toks[6]), float(toks[7]), float(toks[8])
             else:
-                resname, resid = toks[3], int(toks[4])
+                resname, ch, resid = toks[3], "", int(toks[4])
                 x, y, z = float(toks[5]), float(toks[6]), float(toks[7])
-            records.append((toks[0], toks[2], resname, resid, x, y, z, ""))
+            records.append((toks[0], toks[2], resname, ch, resid, str(resid), x, y, z, ""))
     return records
 
 
 def parse_structure_atoms(path):
-    """Parse ATOM/HETATM records from a .pdb or .pqr file into dicts with name, el, resname, resid, xyz."""
+    """Parse ATOM/HETATM records from a .pdb or .pqr file into atom dicts."""
     if not os.path.exists(path):
         sys.exit(f"ERROR: {path} not found")
     atoms = []
     if path.lower().endswith(".pqr"):
-        for _rt, aname, resname, resid, x, y, z, col_el in _parse_pqr_records_standalone(path):
+        for _rt, aname, resname, ch, resid, rescode, x, y, z, col_el in _parse_pqr_records_standalone(path):
             el = _infer_element(aname, col_el, resname)
-            atoms.append(dict(name=aname, el=el, resname=resname, resid=resid,
+            atoms.append(dict(name=aname, el=el, resname=resname, chain=ch, resid=resid, rescode=rescode,
                               xyz=np.array([x, y, z], dtype=float)))
-        return atoms
-    with open(path) as fh:
-        for l in fh:
-            if not l.startswith(("ATOM", "HETATM")) or len(l) < 54:
-                continue
-            if l[16] not in (" ", "A"):
-                continue
-            aname = l[12:16].strip()
-            if aname.upper() in ("GHO", "PKT"):
-                continue
-            resname = l[17:20].strip()
-            resid = int(l[22:26])
-            col_el = l[76:78].strip() if len(l) >= 78 else ""
-            el = _infer_element(aname, col_el, resname)
-            atoms.append(dict(name=aname, el=el, resname=resname, resid=resid,
-                              xyz=np.array([float(l[30:38]), float(l[38:46]), float(l[46:54])], dtype=float)))
+    else:
+        with open(path) as fh:
+            for l in fh:
+                if not l.startswith(("ATOM", "HETATM")) or len(l) < 54 or l[16] not in (" ", "A"):
+                    continue
+                aname = l[12:16].strip()
+                if aname.upper() in ("GHO", "PKT"):
+                    continue
+                resname = l[17:20].strip()
+                ch = l[21].strip()
+                resid = int(l[22:26])
+                rescode = l[22:27].strip()
+                col_el = l[76:78].strip() if len(l) >= 78 else ""
+                el = _infer_element(aname, col_el, resname)
+                atoms.append(dict(name=aname, el=el, resname=resname, chain=ch, resid=resid, rescode=rescode,
+                                  xyz=np.array([float(l[30:38]), float(l[38:46]), float(l[46:54])], dtype=float)))
+    # Assign 1-based sequential residue index matching tleap ordering (protein residues then retained metals)
+    seq_order = []
+    for a in atoms:
+        rk = (a["chain"], a["rescode"])
+        if rk not in seq_order:
+            seq_order.append(rk)
+    seq_map = {rk: idx + 1 for idx, rk in enumerate(seq_order)}
+    for a in atoms:
+        a["seq_resid"] = seq_map[(a["chain"], a["rescode"])]
     return atoms
 
 
+def _has_duplicate_resid_across_chains(atoms):
+    seen = {}
+    for a in atoms:
+        rk = (a["chain"], a["rescode"])
+        seen.setdefault(a["resid"], set()).add(rk)
+    return any(len(v) > 1 for v in seen.values())
+
+
 def contacts_picked(rec, lig, c):
-    keep = keeper(c["atom_filter"])
+    keep = keeper(c["atom_filter"], c.get("custom_elements", ""))
     raw_excl = c.get("excluded") or ()
     skip = {(x[0] if isinstance(x, (list, tuple)) else x) for x in raw_excl}
+    one_per_res = not bool(c.get("allow_same_residue"))
     found = []
     for i, a in enumerate(rec):
         if a["el"] == "H" or a["name"] in skip:
@@ -163,28 +201,42 @@ def contacts_picked(rec, lig, c):
     found.sort()
     out, seen = [], set()
     for d, i, j in found:
-        if rec[i]["resid"] in seen:
+        rk = (rec[i]["chain"], rec[i]["rescode"])
+        if one_per_res and rk in seen:
             continue
-        seen.add(rec[i]["resid"])
+        seen.add(rk)
         out.append((i, j, c["pair_cutoff"], d))
         if len(out) >= c["n_pairs"]:
             break
     return out
 
 
-def contacts_for_targets(rec, lig, target_specs, lig_atom_specs, atom_filter, pair_cutoff):
-    keep = keeper(atom_filter)
-    r_list = []
-    for spec in target_specs:
-        parts = [p.strip() for p in spec.split(":") if p.strip()]
-        if len(parts) != 3:
-            sys.exit(f"ERROR: --receptor-targets entry {spec!r} must be RESID:ATOM:RESNAME")
-        resid, aname, resn = int(parts[0]), parts[1], parts[2].upper()
-        hit = next((i for i, a in enumerate(rec)
-                    if a["resid"] == resid and a["name"] == aname and _resname_match(a["resname"], resn)), None)
-        if hit is None:
-            sys.exit(f"ERROR: receptor target {resn}{resid} {aname} absent from receptor structure")
-        r_list.append(hit)
+def _match_spec_atom(atoms, spec, label):
+    parts = [p.strip() for p in spec.split(":") if p.strip()]
+    if len(parts) == 1:
+        hits = [k for k, a in enumerate(atoms) if a["name"] == parts[0]]
+        if len(hits) != 1:
+            sys.exit(f"ERROR: {'no' if not hits else 'ambiguous'} {label} atom {spec!r}; specify RESID:ATOM:RESNAME")
+        return hits[0]
+    if len(parts) == 3:
+        ch, resid, aname, resn = None, int(parts[0]), parts[1], parts[2].upper()
+    elif len(parts) == 4:
+        ch, resid, aname, resn = parts[0], int(parts[1]), parts[2], parts[3].upper()
+    else:
+        sys.exit(f"ERROR: {label} entry {spec!r} must be ATOM, RESID:ATOM:RESNAME, or CHAIN:RESID:ATOM:RESNAME")
+    hits = [k for k, a in enumerate(atoms)
+            if (ch is None or a["chain"] == ch) and a["resid"] == resid
+            and a["name"] == aname and _resname_match(a["resname"], resn)]
+    if not hits:
+        sys.exit(f"ERROR: {label} target {spec!r} absent from structure")
+    if len(hits) > 1:
+        sys.exit(f"ERROR: {label} target {spec!r} matches multiple chains; specify CHAIN:RESID:ATOM:RESNAME")
+    return hits[0]
+
+
+def contacts_for_targets(rec, lig, target_specs, lig_atom_specs, atom_filter, custom_elements, pair_cutoff):
+    keep = keeper(atom_filter, custom_elements)
+    r_list = [_match_spec_atom(rec, spec, "receptor") for spec in target_specs]
 
     if lig_atom_specs:
         if len(lig_atom_specs) == 1 and len(r_list) > 1:
@@ -193,15 +245,7 @@ def contacts_for_targets(rec, lig, target_specs, lig_atom_specs, atom_filter, pa
             sys.exit(f"ERROR: {len(r_list)} --receptor-targets against {len(lig_atom_specs)} --ligand-atoms")
         out = []
         for i, lspec in zip(r_list, lig_atom_specs):
-            parts = [p.strip() for p in lspec.split(":") if p.strip()]
-            if len(parts) == 3:
-                lrid, lan, lrn = int(parts[0]), parts[1], parts[2].upper()
-                j = next((k for k, b in enumerate(lig)
-                          if b["resid"] == lrid and b["name"] == lan and _resname_match(b["resname"], lrn)), None)
-            else:
-                j = next((k for k, b in enumerate(lig) if b["name"] == lspec.strip()), None)
-            if j is None:
-                sys.exit(f"ERROR: ligand atom {lspec!r} absent from ligand structure")
+            j = _match_spec_atom(lig, lspec, "ligand")
             d = float(np.linalg.norm(rec[i]["xyz"] - lig[j]["xyz"]))
             out.append((i, j, pair_cutoff, d))
         return out
@@ -212,7 +256,7 @@ def contacts_for_targets(rec, lig, target_specs, lig_atom_specs, atom_filter, pa
         cands = [(float(np.linalg.norm(a["xyz"] - b["xyz"])), j)
                  for j, b in enumerate(lig) if b["el"] != "H" and keep(a["el"], b["el"])]
         if not cands:
-            sys.exit(f"ERROR: no ligand atom permitted by --atom-filter {atom_filter!r} for {a['resname']}{a['resid']}")
+            sys.exit(f"ERROR: no ligand atom permitted by filter for {a['resname']}{a['resid']}")
         d, j = min(cands)
         out.append((i, j, pair_cutoff, d))
     return out
@@ -221,9 +265,10 @@ def contacts_for_targets(rec, lig, target_specs, lig_atom_specs, atom_filter, pa
 def _seq_residues(atoms):
     out, cur = [], None
     for a in atoms:
-        if cur != a["resid"]:
-            cur = a["resid"]
-            out.append({"seq_pos": len(out), "resname": a["resname"], "resid_native": cur, "atoms": []})
+        rk = (a.get("chain", ""), a["resid"])
+        if cur != rk:
+            cur = rk
+            out.append({"seq_pos": len(out), "resname": a["resname"], "chain": rk[0], "resid_native": a["resid"], "atoms": []})
         out[-1]["atoms"].append(a)
     return out
 
@@ -238,10 +283,12 @@ def _parse_pdb_heavy_chain(path):
             el = l[76:78].strip() if len(l) >= 78 else ""
             if _is_h_atom(aname, el):
                 continue
-            chains.add(l[21])
+            ch = l[21].strip()
+            chains.add(ch)
             atoms.append({
                 "atom_name": aname,
                 "resname": l[17:20].strip(),
+                "chain": ch,
                 "resid": int(l[22:26]),
                 "xyz": np.array([float(l[30:38]), float(l[38:46]), float(l[46:54])], dtype=float),
             })
@@ -250,17 +297,22 @@ def _parse_pdb_heavy_chain(path):
 
 def _parameterize_receptor_pdb_to_pqr(pdb_src, tmp_dir):
     prot, metals = [], []
+    prev_ch = None
     with open(pdb_src) as fh:
         for l in fh:
             if l.startswith("ATOM"):
                 a = l[12:16].strip()
                 if a == "OXT" or _is_h_atom(a):
                     continue
-                prot.append(l)
+                ch = l[21]
+                if prev_ch is not None and ch != prev_ch:
+                    prot.append("TER\n")
+                prev_ch = ch
+                prot.append(l if l.endswith("\n") else l + "\n")
             elif l.startswith("HETATM"):
                 rn = l[17:20].strip()
                 if rn in RETAINED_METALS:
-                    metals.append(l)
+                    metals.append(l if l.endswith("\n") else l + "\n")
                 elif rn not in SKIP_SOLVENT:
                     sys.exit(f"ERROR: receptor PDB {pdb_src} holds non-metal HETATM {rn!r}")
     with open(os.path.join(tmp_dir, "protein.pdb"), "w") as fh:
@@ -323,20 +375,18 @@ def build_chain_reaction_pairs(rec_path, lig_path, search_cutoff, pair_cutoff, n
     if rec_ext == ".pqr":
         raw_pqr = [r for r in _parse_pqr_records_standalone(rec_path) if r[0] == "ATOM"]
         rec_heavy = [
-            {"atom_idx": i, "atom_name": r[1], "resname": r[2], "resid": r[3],
-             "xyz": np.array([r[4], r[5], r[6]], dtype=float)}
-            for i, r in enumerate(raw_pqr) if not _is_h_atom(r[1], r[7])
+            {"atom_idx": i, "atom_name": r[1], "resname": r[2], "chain": r[3], "resid": r[4],
+             "xyz": np.array([r[6], r[7], r[8]], dtype=float)}
+            for i, r in enumerate(raw_pqr) if not _is_h_atom(r[1], r[9])
         ]
     else:
-        rec_pdb_atoms, rec_chains = _parse_pdb_heavy_chain(rec_path)
-        if len(rec_chains) > 1:
-            sys.exit(f"ERROR: {rec_path} contains multiple chains {rec_chains}")
+        rec_pdb_atoms, _rec_chains = _parse_pdb_heavy_chain(rec_path)
         rec_res_pdb = _seq_residues(rec_pdb_atoms)
         with tempfile.TemporaryDirectory() as tmp:
             pqr_path = _parameterize_receptor_pdb_to_pqr(rec_path, tmp)
             pqr_raw = [r for r in _parse_pqr_records_standalone(pqr_path) if r[0] == "ATOM"]
-        pqr_atoms = [{"atom_idx": i, "atom_name": r[1], "resname": r[2], "resid": r[3],
-                      "xyz": np.array([r[4], r[5], r[6]], dtype=float)}
+        pqr_atoms = [{"atom_idx": i, "atom_name": r[1], "resname": r[2], "chain": r[3], "resid": r[4],
+                      "xyz": np.array([r[6], r[7], r[8]], dtype=float)}
                      for i, r in enumerate(pqr_raw)]
         rec_res_pqr = _seq_residues(pqr_atoms)
         if len(rec_res_pdb) != len(rec_res_pqr):
@@ -350,7 +400,7 @@ def build_chain_reaction_pairs(rec_path, lig_path, search_cutoff, pair_cutoff, n
 
     lig_pdb, lig_chains = _parse_pdb_heavy_chain(lig_path)
     if len(lig_chains) > 1:
-        sys.exit(f"ERROR: {lig_path} contains multiple chains {lig_chains}")
+        sys.exit(f"ERROR: {lig_path} contains multiple chains {lig_chains}; extract a single diffusing chain")
     lig_res_pdb = sorted(_seq_residues(lig_pdb), key=lambda r: r["resid_native"])
     bead_atoms, sidechain_order = _load_coffdrop_map(coffdrop_dir)
 
@@ -412,8 +462,10 @@ def main(argv=None):
     ap.add_argument("--search-cutoff", type=float, default=6.0, help="Bound-pose contact search cutoff in A")
     ap.add_argument("--n-pairs", type=int, default=6, help="Maximum number of contact pairs")
     ap.add_argument("--atom-filter", choices=sorted(ATOM_FILTERS), default="polar", help="Element filter")
+    ap.add_argument("--elements", default="", help="Custom element pair filter REC_ELS:LIG_ELS (for example ZN,O,N:N,O)")
+    ap.add_argument("--allow-same-residue", action="store_true", help="Allow multiple pairs on one receptor residue")
     ap.add_argument("--exclude", default="", help="Comma-separated atom names omitted from contact search")
-    ap.add_argument("--receptor-targets", default="", help="Comma-separated RESID:ATOM:RESNAME receptor targets")
+    ap.add_argument("--receptor-targets", default="", help="Comma-separated RESID:ATOM:RESNAME (or CHAIN:RESID:ATOM:RESNAME) targets")
     ap.add_argument("--ligand-atoms", default="", help="Comma-separated ligand atom names (or RESID:ATOM:RESNAME) paired with --receptor-targets")
     ap.add_argument("--pair-cutoff", type=float, default=7.0, help="Reaction distance per pair in A")
     ap.add_argument("--n-needed", type=int, default=None, help="Explicit n_needed override (default: half of even pair count, or 1)")
@@ -470,41 +522,51 @@ def main(argv=None):
     if args.receptor_targets:
         picked = contacts_for_targets(
             rec, lig, _csv(args.receptor_targets), _csv(args.ligand_atoms),
-            args.atom_filter, args.pair_cutoff,
+            args.atom_filter, args.elements, args.pair_cutoff,
         )
     else:
         picked = contacts_picked(rec, lig, dict(
             atom_filter=args.atom_filter,
+            custom_elements=args.elements,
+            allow_same_residue=args.allow_same_residue,
             search_cutoff=args.search_cutoff,
             n_pairs=args.n_pairs,
             pair_cutoff=args.pair_cutoff,
             excluded=_csv(args.exclude),
         ))
-        if len(picked) > 1 and len(picked) % 2 == 1:
+        if len(picked) > 1 and len(picked) % 2 == 1 and args.n_needed is None:
             picked = picked[:-1]
 
     if not picked:
-        sys.exit(f"ERROR: zero contact pairs found within {args.search_cutoff} A for filter {args.atom_filter!r}")
+        sys.exit(f"ERROR: zero contact pairs found within {args.search_cutoff} A")
     n_needed = args.n_needed if args.n_needed is not None else (1 if len(picked) == 1 else len(picked) // 2)
-    multi_res_lig = len({b["resid"] for b in lig}) > 1
+    multi_res_lig = len({(b["chain"], b["rescode"]) for b in lig}) > 1
+    dup_rec_resid = rec_ext == ".pdb" and _has_duplicate_resid_across_chains(rec)
+    dup_lig_resid = lig_ext == ".pdb" and multi_res_lig and _has_duplicate_resid_across_chains(lig)
+    if dup_rec_resid or dup_lig_resid:
+        print("# Multi-chain duplicate PDB residue numbers mapped to sequential 1-based PQR residue numbers",
+              file=sys.stderr)
 
     for k, (i, j, _cut, dist) in enumerate(picked, 1):
         a, b = rec[i], lig[j]
-        print(f"# Pair {k}: {a['resname']}{a['resid']} {a['name']} <-> {b['resname']}{b['resid']} {b['name']}  ({dist:.2f} A)",
-              file=sys.stderr)
+        rc_lbl = f"{a['chain']}:{a['resname']}{a['rescode']}" if a["chain"] else f"{a['resname']}{a['rescode']}"
+        lc_lbl = f"{b['chain']}:{b['resname']}{b['rescode']}" if b["chain"] else f"{b['resname']}{b['rescode']}"
+        print(f"# Pair {k}: {rc_lbl} {a['name']} <-> {lc_lbl} {b['name']}  ({dist:.2f} A)", file=sys.stderr)
 
     print("  <criterion>")
     print("    <mode>contacts</mode>")
     print("    <receptor>")
     for i, _j, _cut, _d in picked:
         a = rec[i]
-        print(f'      <target resid="{a["resid"]}" atom="{a["name"]}" resname="{a["resname"]}"/>')
+        rid = a["seq_resid"] if dup_rec_resid else a["resid"]
+        print(f'      <target resid="{rid}" atom="{a["name"]}" resname="{a["resname"]}"/>')
     print("    </receptor>")
     print("    <ligand>")
     for _i, j, _cut, _d in picked:
         b = lig[j]
         if multi_res_lig:
-            print(f'      <target resid="{b["resid"]}" atom="{b["name"]}" resname="{b["resname"]}"/>')
+            lrid = b["seq_resid"] if dup_lig_resid else b["resid"]
+            print(f'      <target resid="{lrid}" atom="{b["name"]}" resname="{b["resname"]}"/>')
         else:
             print(f'      <atom name="{b["name"]}"/>')
     print("    </ligand>")

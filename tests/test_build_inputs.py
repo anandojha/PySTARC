@@ -217,6 +217,60 @@ def test_prepare_pdb_metal_his_cyx_mutate_and_chain_charge(tmp_path, capsys):
     assert "<ligand_net_charge>-1</ligand_net_charge>" in out_stdout
 
 
+def test_prepare_pdb_multichain_ter_and_mse_to_met(tmp_path):
+    mod = _load_script("prepare_pdb")
+    raw = tmp_path / "dimer.pdb"
+    rec_out = tmp_path / "receptor.pdb"
+    lig_out = tmp_path / "ligand.pdb"
+    raw.write_text(
+        "HETATM    1  CA  MSE H  10       0.000   0.000   0.000  1.00  0.00           C\n"
+        "HETATM    2  SE  MSE H  10       1.800   0.000   0.000  1.00  0.00          SE\n"
+        "ATOM      3  CA  ALA L  10       0.000   8.000   0.000  1.00  0.00           C\n"
+        "ATOM      4  CA  GLY C   1      12.000   0.000   0.000  1.00  0.00           C\n"
+        "END\n"
+    )
+    mod.main([
+        "--pdb", str(raw), "--chain", "H,L", "--ligand-chain", "C",
+        "--mse-to-met", "--receptor-out", str(rec_out), "--ligand-out", str(lig_out),
+    ])
+    lines = rec_out.read_text().splitlines()
+    assert any("SD  MET H  10" in l for l in lines)
+    ter_idx = [i for i, l in enumerate(lines) if l == "TER"]
+    assert len(ter_idx) == 2 and ter_idx[0] < ter_idx[1]
+
+    comb = tmp_path / "pp.pdb"
+    comb.write_text(rec_out.read_text().replace("END\n", "") + lig_out.read_text())
+    r2, l2 = tmp_path / "r2.pdb", tmp_path / "l2.pdb"
+    mod.split_complex_pdb(str(comb), str(r2), str(l2), ligand_chains=("C",))
+    assert "GLY C   1" in l2.read_text() and "GLY C   1" not in r2.read_text()
+
+
+def test_find_reaction_criteria_multichain_and_custom_elements(tmp_path, capsys):
+    frc = _load_script("find_reaction_criteria")
+    rec = tmp_path / "rec.pdb"
+    lig = tmp_path / "lig.pdb"
+    rec.write_text(
+        "ATOM      1  O   TYR H  50       0.000   0.000   0.000  1.00  0.00           O\n"
+        "TER\n"
+        "ATOM      2  O   TYR L  50       0.000   3.000   0.000  1.00  0.00           O\n"
+        "HETATM    3 ZN    ZN H 200       0.000   6.000   0.000  1.00  0.00          ZN\n"
+        "END\n"
+    )
+    lig.write_text(
+        "HETATM    1  N1  LIG A   1       0.000   2.900   0.000  1.00  0.00           N\n"
+        "HETATM    2  O1  LIG A   1       0.000   5.800   0.000  1.00  0.00           O\n"
+        "END\n"
+    )
+    frc.main([
+        "--receptor", str(rec), "--ligand", str(lig),
+        "--elements", "ZN,O:N,O", "--search-cutoff", "4.0", "--n-pairs", "4", "--pair-cutoff", "7.0",
+    ])
+    out = capsys.readouterr().out
+    # Duplicate resid 50 across H and L maps to sequential 1-based PQR residue numbers (2 and 3)
+    assert '<target resid="2" atom="O" resname="TYR"/>' in out
+    assert '<target resid="3" atom="ZN" resname="ZN"/>' in out
+
+
 def test_find_reaction_criteria_contacts_targets_centroid_and_chain(tmp_path, capsys):
     frc = _load_script("find_reaction_criteria")
     assert "closest_approach" not in dir(frc) and "write_site_atom" not in dir(frc)
