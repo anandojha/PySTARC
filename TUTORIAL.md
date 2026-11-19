@@ -72,7 +72,7 @@ A new protein-ligand complex starts from prepared `receptor.pdb` and `ligand.pdb
 </structure>
 ```
 
-`run_pystarc.py` parameterizes `receptor.pdb` with `tleap` (`ff14SB`). RDKit assigns the ligand bond orders from the coordinates, explicit hydrogens and `ligand_net_charge` in `ligand.pdb`, and `antechamber` assigns `AM1-BCC` partial charges and `GAFF2` atom types. Raw RCSB entries, SMILES conformers, or AMBER `.prmtop` topologies can be prepared beforehand with the standalone helper `scripts/prepare_pdb.py`.
+`run_pystarc.py` parameterizes `receptor.pdb` with `tleap` (`ff14SB`). RDKit assigns the ligand bond orders from the coordinates, explicit hydrogens and `ligand_net_charge` in `ligand.pdb`, and `antechamber` assigns `AM1-BCC` partial charges and `GAFF2` atom types. Raw RCSB entries, docked poses, SMILES conformers, or AMBER `.prmtop` topologies can be prepared beforehand with the standalone script `scripts/prepare_pdb.py` (documented in `scripts/README.md`).
 
 | file | requirement |
 |---|---|

@@ -1,6 +1,7 @@
 """pystarc.pipeline.build_inputs, scripts/prepare_pdb.py and scripts/find_reaction_criteria.py:
 criterion modes contacts and centroid, the pair-count rule, the rxns.xml layout,
-strict .pdb+.pdb or .pqr+.pqr two-solute structure schema, and standalone helpers."""
+strict .pdb+.pdb or .pqr+.pqr two-solute structure schema, and standalone pre-config scripts."""
+import hashlib
 import importlib.util
 import os
 import shutil
@@ -15,20 +16,11 @@ TRYPSIN_PAIRS = [(2766, 8), (2742, 8), (2496, 7), (2923, 8), (2497, 7), (2767, 8
 
 
 def _load_script(name):
-    spec = importlib.util.spec_from_file_location(
-        name,
-        os.path.join(os.path.dirname(__file__), "..", "scripts", f"{name}.py"),
-    )
+    path = os.path.join(os.path.dirname(__file__), "..", "scripts", f"{name}.py")
+    spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
-
-
-@pytest.mark.parametrize("x,want", [(9.24, 9.25), (9.12, 9.0), (9.13, 9.25), (5.631, 5.75), (9.97, 10.0),
-                                    (12.42, 12.5), (9.125, 9.25), (9.0, 9.0), (0.1, 0.0), (0.13, 0.25)])
-def test_round_quarter(x, want):
-    mod = _load_script("find_reaction_criteria")
-    assert mod.round_quarter(x) == want
 
 
 @pytest.mark.parametrize("n,need,ok", [(1, 1, True), (6, 3, True), (4, 2, True), (2, 1, True), (3, 3, False),
@@ -128,15 +120,6 @@ def test_prepare_pdb_deposited_centroid_and_split(tmp_path):
     assert "LIG L   1" in lig_out.read_text() and "ALA" not in lig_out.read_text()
 
 
-def test_closest_approach_of_two_spheres():
-    closest_approach = _load_script("find_reaction_criteria").closest_approach
-    want = 0.9345 * 2.0 * 2.0 ** (-1.0 / 12.0)
-    res = closest_approach([[0.0, 0.0, 0.0]], [1.0], [[0.3, 0.2, 0.1]], [1.0], [0.0, 0.0, 0.0], bound=True,
-                           ball=4.0, n_coarse=40_000, n_dense=40_000, n_starts=64, n_steps=400)
-    assert res["closest"] is not None and abs(res["closest"] - want) < 0.02
-    assert res["descent"] is not None and abs(res["descent"] - want) < 0.06
-
-
 def _atoms(rows):
     return [dict(name=n, el=n[:1], resname=rn, resid=ri, xyz=np.array(x, float), q=0.0, r=1.5) for n, rn, ri, x in rows]
 
@@ -181,78 +164,7 @@ def test_mixed_pdb_and_pqr_formats_rejected(tmp_path):
         )
 
 
-def test_closest_approach_of_an_anchor_atom():
-    closest_approach = _load_script("find_reaction_criteria").closest_approach
-    want = 0.9345 * 2.0 * 2.0 ** (-1.0 / 12.0)
-    lig = [[0.3, 0.2, 0.1], [0.3, 0.2, 6.1]]
-    kw = dict(bound=True, ball=4.0, n_coarse=40_000, n_dense=40_000, n_starts=64, n_steps=400)
-    res = closest_approach([[0.0, 0.0, 0.0]], [1.0], lig, [1.0, 1.0], [0.0, 0.0, 0.0], anchor=0, **kw)
-    assert res["anchor"] == 0 and abs(res["closest"] - want) < 0.02
-    assert res["descent"] is not None and abs(res["descent"] - want) < 0.15
-    assert closest_approach([[0.0, 0.0, 0.0]], [1.0], lig, [1.0, 1.0], [0.0, 0.0, 0.0], **kw)["closest"] < 0.5
-
-
-def test_anchor_at_the_centroid_gives_the_centroid_scan():
-    closest_approach = _load_script("find_reaction_criteria").closest_approach
-    rec = [[0.0, 0.0, 0.0], [3.0, 0.0, 0.0], [0.0, 3.0, 0.0]]
-    lig = [[-1.25, 0.5, 0.75], [0.25, 0.5, 0.75], [1.75, 0.5, 0.75]]
-    kw = dict(bound=True, ball=6.0, n_coarse=20_000, n_dense=20_000, n_starts=32, n_steps=200)
-    a = closest_approach(rec, [1.5] * 3, lig, [1.2] * 3, [0.5, 0.5, 0.5], anchor=1, **kw)
-    b = closest_approach(rec, [1.5] * 3, lig, [1.2] * 3, [0.5, 0.5, 0.5], **kw)
-    keys = ("closest", "coarse", "dense", "descent", "accessible_coarse", "accessible_dense", "descent_reached")
-    assert b["descent"] is not None and [a[k] for k in keys] == [b[k] for k in keys]
-
-
-CA_DIR = os.path.join(os.path.dirname(__file__), "..", "examples", "carbonic_anhydrase_inhibitors", "ca13_azm")
-RADII = {"C": 1.7, "N": 1.55, "O": 1.5, "S": 1.8, "ZN": 1.5}
-
-
-def test_anchor_scan_on_a_carbonic_anhydrase_complex():
-    closest_approach = _load_script("find_reaction_criteria").closest_approach
-    from pystarc.forces.soft_repulsion import repulsion_reference
-    rec, lig = [], []
-    with open(os.path.join(CA_DIR, "receptor.pdb")) as fh:
-        for line in fh:
-            if not line.startswith(("ATOM", "HETATM")):
-                continue
-            el = line[76:78].strip().upper()
-            x = [float(line[30:38]), float(line[38:46]), float(line[46:54])]
-            if (line.startswith("ATOM") and el != "H") or (line.startswith("HETATM") and line[17:20] == " ZN"):
-                rec.append((line[12:16].strip(), x, RADII[el]))
-    with open(os.path.join(CA_DIR, "ligand.pdb")) as fh:
-        for line in fh:
-            if not line.startswith(("ATOM", "HETATM")):
-                continue
-            el = line[76:78].strip().upper()
-            if el != "H":
-                x = [float(line[30:38]), float(line[38:46]), float(line[46:54])]
-                lig.append((line[12:16].strip(), x, RADII[el]))
-    R, rr = np.array([x for n, x, r in rec]), np.array([r for n, x, r in rec])
-    L, lr = np.array([x for n, x, r in lig]), np.array([r for n, x, r in lig])
-    zn = next(np.array(x) for n, x, r in rec if n == "ZN")
-    j = next(k for k, (n, x, r) in enumerate(lig) if n == "N1")
-    res = closest_approach(R, rr, L, lr, zn, anchor=j, bound=True, ball=8.0, n_coarse=4_000, n_dense=4_000,
-                           n_starts=32, n_steps=300)
-    pose = np.array(res["pose"])
-    _, e, _ = repulsion_reference(pose[None], lr, R, rr)
-    pairs = lambda x: np.linalg.norm(x[:, None] - x[None], axis=-1)
-    floor = 0.9345 * (1.5 + 1.55) * 2.0 ** (-1.0 / 12.0)
-    assert len(lig) == 13 and abs(np.linalg.norm(L[j] - zn) - 2.01) < 0.01 and res["descent"] is not None
-    assert res["closest"] >= floor - 0.005 and float(e.sum()) <= 2.0 + 1e-9
-    assert np.allclose(pairs(pose), pairs(L), atol=1e-9) and abs(np.linalg.norm(pose[j] - zn) - res["closest"]) <= 0.005
-
-
-def test_closest_approach_runs_descent_above_eight_angstroms():
-    closest_approach = _load_script("find_reaction_criteria").closest_approach
-
-    rec = [[0.0, 0.0, 0.0]]
-    lig = [[0.0, 0.0, 9.5]]
-    res = closest_approach(rec, [5.5], lig, [5.5], [0.0, 0.0, 0.0], bound=True,
-                           ball=16.0, n_coarse=4_000, n_dense=4_000, n_starts=16, n_steps=100)
-    assert res["closest"] >= 8.0 and res["descent"] is not None
-
-
-def test_two_solute_schema_and_single_conformer_guard(tmp_path):
+def test_two_solute_schema_and_single_conformer_guard():
     assert sorted(bi.MODELS) == ["chain", "rigid"]
     assert bi.STRUCTURE == ("receptor", "ligand", "ligand_net_charge", "model")
     assert "names" not in dict(bi.SECTIONS)
@@ -271,19 +183,81 @@ def test_two_solute_schema_and_single_conformer_guard(tmp_path):
         bi._check_single_conformer(multi, "multi.pdb")
 
 
-def test_prepare_pdb_script_metal_his_and_altloc(tmp_path):
+def test_prepare_pdb_metal_his_cyx_mutate_and_chain_charge(tmp_path, capsys):
     mod = _load_script("prepare_pdb")
     raw = tmp_path / "raw.pdb"
-    out = tmp_path / "receptor.pdb"
+    rec_out = tmp_path / "receptor.pdb"
+    lig_out = tmp_path / "ligand.pdb"
     raw.write_text(
         "ATOM      1  ND1 HIS A  94       3.500   0.000   0.000  1.00  0.00           N\n"
         "ATOM      2  NE2AHIS A  94       2.000   0.000   0.000  0.50  0.00           N\n"
         "ATOM      3  NE2BHIS A  94       2.100   0.000   0.000  0.50  0.00           N\n"
         "ATOM      4  ND1 HIS A 119       0.000   2.050   0.000  1.00  0.00           N\n"
-        "HETATM    5 ZN    ZN A 301       0.000   0.000   0.000  1.00  0.00          ZN\n"
+        "ATOM      5  SG  CYS A  10       0.000  10.000   0.000  1.00  0.00           S\n"
+        "ATOM      6  SG  CYS A  20       2.030  10.000   0.000  1.00  0.00           S\n"
+        "ATOM      7  CA  TYR A 604       5.000   5.000   0.000  1.00  0.00           C\n"
+        "ATOM      8  CB  TYR A 604       5.500   5.000   0.000  1.00  0.00           C\n"
+        "ATOM      9  OH  TYR A 604       8.000   5.000   0.000  1.00  0.00           O\n"
+        "ATOM     10  CA  ASP D   1       0.000   0.000  20.000  1.00  0.00           C\n"
+        "ATOM     11  CA  GLU D   2       3.800   0.000  20.000  1.00  0.00           C\n"
+        "ATOM     12  CA  LYS D   3       7.600   0.000  20.000  1.00  0.00           C\n"
+        "HETATM   13 ZN    ZN A 301       0.000   0.000   0.000  1.00  0.00          ZN\n"
         "END\n"
     )
-    mod.main(["--pdb", str(raw), "--chain", "A", "--altloc", "B",
-              "--keep-hetatm", "ZN", "--metal-his", "-o", str(out)])
-    txt = out.read_text()
+    mod.main([
+        "--pdb", str(raw), "--chain", "A", "--ligand-chain", "D", "--model", "chain",
+        "--altloc", "B", "--keep-hetatm", "ZN", "--metal-his", "--auto-cyx",
+        "--mutate", "604:CYS", "--receptor-out", str(rec_out), "--ligand-out", str(lig_out),
+    ])
+    txt = rec_out.read_text()
+    out_stdout = capsys.readouterr().out
     assert "HID A  94" in txt and "HIE A 119" in txt and "2.100" in txt and "2.000" not in txt
+    assert "CYX A  10" in txt and "CYX A  20" in txt
+    assert "CYS A 604" in txt and "OH " not in txt
+    assert "<ligand_net_charge>-1</ligand_net_charge>" in out_stdout
+
+
+def test_find_reaction_criteria_contacts_targets_centroid_and_chain(tmp_path, capsys):
+    frc = _load_script("find_reaction_criteria")
+    assert "closest_approach" not in dir(frc) and "write_site_atom" not in dir(frc)
+
+    ex_trypsin = os.path.join(os.path.dirname(__file__), "..", "examples", "trypsin_benzamidine")
+    frc.main([
+        "--receptor", os.path.join(ex_trypsin, "receptor.pqr"),
+        "--ligand", os.path.join(ex_trypsin, "ligand.pqr"),
+        "--atom-filter", "polar", "--n-pairs", "6", "--pair-cutoff", "7.0",
+    ])
+    xml_contacts = capsys.readouterr().out
+    assert '<target resid="193" atom="O" resname="TRP"/>' in xml_contacts
+    assert "<n_needed>3</n_needed>" in xml_contacts
+
+    ex_ca = os.path.join(os.path.dirname(__file__), "..", "examples", "carbonic_anhydrase_inhibitors", "ca13_azm")
+    frc.main([
+        "--receptor", os.path.join(ex_ca, "receptor.pdb"),
+        "--ligand", os.path.join(ex_ca, "ligand.pdb"),
+        "--receptor-targets", "199:OG1:THR,94:NE2:HID,96:NE2:HID,119:ND1:HIE",
+        "--ligand-atoms", "N1", "--pair-cutoff", "7.0",
+    ])
+    xml_targets = capsys.readouterr().out
+    assert xml_targets.count('<atom name="N1"/>') == 4 and "<n_needed>2</n_needed>" in xml_targets
+
+    frc.main([
+        "--receptor", os.path.join(ex_trypsin, "receptor.pqr"),
+        "--ligand", os.path.join(ex_trypsin, "ligand.pqr"),
+        "--mode", "centroid", "--pair-cutoff", "8.0",
+    ])
+    xml_cen = capsys.readouterr().out
+    assert "<mode>centroid</mode>" in xml_cen and "<n_needed>0</n_needed>" in xml_cen
+
+    if shutil.which("tleap") is not None:
+        ex_bb = os.path.join(os.path.dirname(__file__), "..", "examples", "barnase_barstar")
+        rp_out = tmp_path / "reaction_pairs.json"
+        frc.main([
+            "--receptor", os.path.join(ex_bb, "receptor.pdb"),
+            "--ligand", os.path.join(ex_bb, "ligand.pdb"),
+            "--search-cutoff", "6.0", "--pair-cutoff", "8.0", "--n-needed", "3",
+            "--chain-pairs-out", str(rp_out),
+        ])
+        want_md5 = hashlib.md5(open(os.path.join(ex_bb, "reaction_pairs.json"), "rb").read()).hexdigest()
+        got_md5 = hashlib.md5(rp_out.read_bytes()).hexdigest()
+        assert got_md5 == want_md5
