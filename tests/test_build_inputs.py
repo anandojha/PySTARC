@@ -315,3 +315,50 @@ def test_find_reaction_criteria_contacts_targets_centroid_and_chain(tmp_path, ca
         want_md5 = hashlib.md5(open(os.path.join(ex_bb, "reaction_pairs.json"), "rb").read()).hexdigest()
         got_md5 = hashlib.md5(rp_out.read_bytes()).hexdigest()
         assert got_md5 == want_md5
+
+
+def test_prepare_pdb_sphere_pqr_pair_and_split_skips_bulk_ions(tmp_path, capsys):
+    mod = _load_script("prepare_pdb")
+
+    # 1. Analytical charged sphere pair
+    s_rec = tmp_path / "s_rec.pqr"
+    s_lig = tmp_path / "s_lig.pqr"
+    mod.main(["--sphere-pair", "1.0:1.0,-1.0:1.0", "--receptor-out", str(s_rec), "--ligand-out", str(s_lig)])
+    out_s = capsys.readouterr().out
+    assert "<receptor>s_rec.pqr</receptor>" in out_s
+    assert "<ligand_net_charge>-1</ligand_net_charge>" in out_s
+    assert s_rec.read_text().split()[-2:] == ["1.0", "1.0"]
+    assert s_lig.read_text().split()[-2:] == ["-1.0", "1.0"]
+
+    # 2. Pre-parameterized PQR pair
+    p_rec = tmp_path / "p_rec.pqr"
+    p_lig = tmp_path / "p_lig.pqr"
+    mod.main([
+        "--receptor-pqr", str(s_rec), "--ligand-pqr", str(s_lig),
+        "--receptor-out", str(p_rec), "--ligand-out", str(p_lig),
+    ])
+    out_p = capsys.readouterr().out
+    assert "<ligand_net_charge>-1</ligand_net_charge>" in out_p
+    assert p_rec.read_bytes() == s_rec.read_bytes() and p_lig.read_bytes() == s_lig.read_bytes()
+
+    # 3. --split-complex strips bulk NA/CL solvent ions while retaining structural ZN and printing <structure>
+    comb = tmp_path / "solvated.pdb"
+    comb.write_text(
+        "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00  0.00           C\n"
+        "HETATM    2 ZN    ZN A 301       1.000   0.000   0.000  1.00  0.00          ZN\n"
+        "HETATM    3 NA    NA C   1      20.000   0.000   0.000  1.00  0.00          NA\n"
+        "HETATM    4 CL    CL C   2      22.000   0.000   0.000  1.00  0.00          CL\n"
+        "HETATM    5  C1  UNK B   1       4.000   0.000   0.000  1.00  0.00           C\n"
+        "END\n"
+    )
+    r_out = tmp_path / "rec.pdb"
+    l_out = tmp_path / "lig.pdb"
+    mod.main([
+        "--split-complex", str(comb), "--ligand", "UNK", "--ligand-charge", "0",
+        "--receptor-out", str(r_out), "--ligand-out", str(l_out),
+    ])
+    out_c = capsys.readouterr().out
+    r_txt = r_out.read_text()
+    assert "ZN A 301" in r_txt and "NA C" not in r_txt and "CL C" not in r_txt
+    assert "UNK B   1" in l_out.read_text()
+    assert "<ligand_net_charge>0</ligand_net_charge>" in out_c

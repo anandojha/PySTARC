@@ -20,3 +20,4 @@ bd_sims_*/
 # Build artifacts (CI builds from source, not from committed wheel)
 dist/
 .ipynb_checkpoints/
+scripts/**/prepared/

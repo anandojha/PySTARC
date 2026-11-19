@@ -16,9 +16,13 @@ Workflows:
   4. Receptor PDB plus 3D ligand embedded from SMILES:
      python scripts/prepare_pdb.py --pdb 3CZV.pdb --chain A --keep-hetatm ZN --metal-his --smiles "CC(=O)NC1=NN=C(S1)S([NH-])(=O)=O" --pocket-ligand AZM --pocket-ligand-resid 263 --receptor-out receptor.pdb --ligand-out ligand.pdb
   5. Split an existing complex PDB (small-molecule HETATM or --ligand-chain):
-     python scripts/prepare_pdb.py --split-complex complex.pdb --receptor-out receptor.pdb --ligand-out ligand.pdb
+     python scripts/prepare_pdb.py --split-complex complex.pdb --ligand UNK --receptor-out receptor.pdb --ligand-out ligand.pdb
   6. Export receptor.pqr + ligand.pqr from AMBER prmtop + coordinate PDB:
      python scripts/prepare_pdb.py --prmtop complex.prmtop --pdb complex.pdb --ligand BEN --receptor-out receptor.pqr --ligand-out ligand.pqr
+  7. Validate and export pre-parameterized receptor + ligand PQR files:
+     python scripts/prepare_pdb.py --receptor-pqr t.pqr --ligand-pqr m.pqr --receptor-out receptor.pqr --ligand-out ligand.pqr
+  8. Generate analytical charged-sphere receptor.pqr + ligand.pqr:
+     python scripts/prepare_pdb.py --sphere-pair 1.0:1.0,-1.0:1.0 --receptor-out receptor.pqr --ligand-out ligand.pqr
 """
 
 import argparse
@@ -34,7 +38,7 @@ import numpy as np
 
 
 ORDERS = {"SING": 1, "DOUB": 2, "TRIP": 3, "AROM": 4, "DELO": 4}
-METALS = {"ZN", "MG", "MN", "FE", "FE2", "CU", "CU1", "CO", "NI", "CA", "CAL", "CD", "HG", "NA", "K", "SR", "BA", "AL"}
+METALS = {"ZN", "MG", "MN", "FE", "FE2", "CU", "CU1", "CO", "NI", "CA", "CAL", "CD", "HG", "SR", "BA", "AL"}
 SKIP_HET = {"HOH", "WAT", "TIP3", "SPC", "NA", "CL", "K", "MG", "ZN", "CA", "CAL", "ACE", "NME", "Na+", "Cl-", "K+"}
 RESIDUE_CHARGES = {"ARG": 1, "LYS": 1, "HIP": 1, "ASP": -1, "GLU": -1, "CYM": -1}
 BACKBONE_KEEP = {"N", "CA", "C", "O", "CB"}
@@ -634,11 +638,13 @@ def _write_receptor_pdb(path, prot_lines, kept_het_lines):
         out.write("END\n")
 
 
-def split_complex_pdb(complex_path, receptor_out, ligand_out, ligand_resname="", ligand_chains=()):
+def split_complex_pdb(complex_path, receptor_out, ligand_out, ligand_resname="", ligand_chains=(),
+                      keep_hetatm=(), ligand_charge=None, model="rigid"):
     """Split an existing complex PDB into receptor.pdb and ligand.pdb (small molecule or --ligand-chain)."""
     if not os.path.exists(complex_path):
         sys.exit(f"ERROR: {complex_path} not found")
     lchain_set = set(ligand_chains)
+    keep_set = {x.upper() for x in keep_hetatm}
     prot, lig_prot, metals, het = [], [], [], []
     with open(complex_path) as fh:
         for line in fh:
@@ -651,7 +657,7 @@ def split_complex_pdb(complex_path, receptor_out, ligand_out, ligand_resname="",
             elif line.startswith("HETATM"):
                 resn = line[17:20].strip()
                 row = line if line.endswith("\n") else line + "\n"
-                if resn.upper() in METALS and resn != ligand_resname:
+                if resn.upper() in keep_set or (resn.upper() in METALS and resn != ligand_resname):
                     metals.append(row)
                 elif resn not in SKIP_HET:
                     het.append(row)
@@ -681,8 +687,74 @@ def split_complex_pdb(complex_path, receptor_out, ligand_out, ligand_resname="",
         else:
             fh.writelines(lig)
         fh.write("END\n")
-    print(f"Split {complex_path} -> {receptor_out} ({len(prot)} protein + {len(metals)} metal atoms), "
-          f"{ligand_out} ({len(lig)} ligand atoms)")
+    if ligand_charge is not None:
+        q_net = int(ligand_charge)
+    elif lchain_set:
+        q_net = _chain_net_charge(lig)
+    else:
+        q_net = 0
+    print(f"# Split {complex_path} -> {receptor_out} ({len(prot)} protein + {len(metals)} metal atoms), "
+          f"{ligand_out} ({len(lig)} ligand atoms)", file=sys.stderr)
+    _print_structure_snippet(receptor_out, ligand_out, q_net, model)
+
+
+def _pqr_atom_charge(line):
+    """Extract partial charge from a fixed-width or whitespace-delimited PQR ATOM/HETATM line."""
+    if len(line) >= 54:
+        try:
+            float(line[30:38])
+            float(line[38:46])
+            float(line[46:54])
+            tail = line[54:].split()
+            if len(tail) >= 2:
+                return float(tail[0])
+        except ValueError:
+            pass
+    toks = line.split()
+    if len(toks) < 9:
+        sys.exit(f"ERROR: malformed PQR record: {line!r}")
+    idx = -3 if toks[-1].isalpha() else -2
+    return float(toks[idx])
+
+
+def prepare_pqr_pair(rec_in, lig_in, receptor_out, ligand_out, model="rigid"):
+    """Validate and export a pre-parameterized receptor + ligand PQR pair and print <structure>."""
+    for p in (rec_in, lig_in):
+        if not os.path.exists(p):
+            sys.exit(f"ERROR: {p} not found")
+        if not p.lower().endswith(".pqr"):
+            sys.exit(f"ERROR: expected a .pqr input, got {p}")
+    q_lig = 0.0
+    for src, dst in ((rec_in, receptor_out), (lig_in, ligand_out)):
+        with open(src) as fh:
+            raw = fh.read()
+        rows = [l for l in raw.splitlines() if l.startswith(("ATOM", "HETATM"))]
+        if not rows:
+            sys.exit(f"ERROR: {src} contains zero ATOM/HETATM records")
+        q = sum(_pqr_atom_charge(l) for l in rows)
+        if dst == ligand_out:
+            q_lig = q
+        os.makedirs(os.path.dirname(os.path.abspath(dst)) or ".", exist_ok=True)
+        if os.path.abspath(src) != os.path.abspath(dst):
+            shutil.copyfile(src, dst)
+        print(f"# Prepared {dst}: {len(rows)} atoms, Q={q:+.2f} e", file=sys.stderr)
+    _print_structure_snippet(receptor_out, ligand_out, round(q_lig), model)
+
+
+def write_sphere_pair(spec, receptor_out, ligand_out):
+    """Write single-atom charged-sphere receptor.pqr and ligand.pqr from Q_REC:R_REC,Q_LIG:R_LIG."""
+    parts = [p.strip() for p in spec.split(",") if p.strip()]
+    if len(parts) != 2 or any(":" not in p for p in parts):
+        sys.exit(f"ERROR: --sphere-pair expects Q_REC:R_REC,Q_LIG:R_LIG (for example 1.0:1.0,-1.0:1.0), got {spec!r}")
+    (q_rec, r_rec), (q_lig, r_lig) = (tuple(float(x) for x in p.split(":", 1)) for p in parts)
+    if r_rec <= 0.0 or r_lig <= 0.0:
+        sys.exit("ERROR: sphere radii must exceed zero")
+    for dst, q, r in ((receptor_out, q_rec, r_rec), (ligand_out, q_lig, r_lig)):
+        os.makedirs(os.path.dirname(os.path.abspath(dst)) or ".", exist_ok=True)
+        with open(dst, "w") as fh:
+            fh.write(f"ATOM      1  U   FOO    1     0.0  0.0  0.0  {q:4.1f} {r:3.1f}\n")
+        print(f"# Wrote {dst}: 1 atom, Q={q:+.2f} e, R={r:.2f} A", file=sys.stderr)
+    _print_structure_snippet(receptor_out, ligand_out, round(q_lig), "rigid")
 
 
 def _parse_resid_set(spec):
@@ -739,10 +811,10 @@ def prmtop_to_pqrs(prmtop_path, pdb_path, ligand_resname, ligand_residues, recep
         os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
         with open(out_path, "w") as fh:
             fh.write("\n".join(rows) + "\nEND\n")
-        q = sum(float(l.split()[8]) for l in rows)
+        q = sum(_pqr_atom_charge(l) for l in rows)
         if out_path == ligand_out:
             q_lig = q
-        print(f"Wrote {out_path}: {len(rows)} atoms, Q={q:+.2f} e")
+        print(f"# Wrote {out_path}: {len(rows)} atoms, Q={q:+.2f} e", file=sys.stderr)
     _print_structure_snippet(receptor_out, ligand_out, round(q_lig), "rigid")
 
 
@@ -771,6 +843,9 @@ def main(argv=None):
     ap.add_argument("--pdb-id", help="4-character RCSB PDB identifier to download when --pdb is omitted")
     ap.add_argument("--prmtop", default="", help="AMBER topology (.prmtop/.parm7) to export into receptor and ligand PQRs")
     ap.add_argument("--split-complex", default="", help="Existing prepared complex PDB to split into receptor and ligand PDBs")
+    ap.add_argument("--receptor-pqr", default="", help="Existing pre-parameterized receptor PQR paired with --ligand-pqr")
+    ap.add_argument("--ligand-pqr", default="", help="Existing pre-parameterized ligand PQR paired with --receptor-pqr")
+    ap.add_argument("--sphere-pair", default="", help="Generate charged-sphere PQRs from Q_REC:R_REC,Q_LIG:R_LIG (for example 1.0:1.0,-1.0:1.0)")
     ap.add_argument("--receptor-out", default="", help="Output path for the prepared receptor (.pdb or .pqr)")
     ap.add_argument("--ligand-out", default="", help="Output path for the prepared ligand (.pdb or .pqr)")
     ap.add_argument("--chain", default="", help="Comma-separated receptor chain IDs to retain (blank keeps all chains)")
@@ -810,10 +885,27 @@ def main(argv=None):
     rec_chains = set(_csv_list(args.chain))
     lig_chains = set(_csv_list(args.ligand_chain))
 
+    if args.sphere_pair:
+        rec_out = args.receptor_out or "receptor.pqr"
+        lig_out = args.ligand_out or "ligand.pqr"
+        write_sphere_pair(args.sphere_pair, rec_out, lig_out)
+        return
+
+    if args.receptor_pqr or args.ligand_pqr:
+        if not (args.receptor_pqr and args.ligand_pqr):
+            ap.error("--receptor-pqr and --ligand-pqr must be passed together")
+        rec_out = args.receptor_out or "receptor.pqr"
+        lig_out = args.ligand_out or "ligand.pqr"
+        prepare_pqr_pair(args.receptor_pqr, args.ligand_pqr, rec_out, lig_out, args.model)
+        return
+
     if args.split_complex:
         rec_out = args.receptor_out or "receptor.pdb"
         lig_out = args.ligand_out or "ligand.pdb"
-        split_complex_pdb(args.split_complex, rec_out, lig_out, args.ligand, lig_chains)
+        split_complex_pdb(
+            args.split_complex, rec_out, lig_out, args.ligand, lig_chains,
+            keep_hetatm=_csv_list(args.keep_hetatm), ligand_charge=args.ligand_charge, model=args.model,
+        )
         return
 
     if args.prmtop:
@@ -825,7 +917,7 @@ def main(argv=None):
         return
 
     if not args.pdb and not args.pdb_id and not args.ligand_file and not args.smiles:
-        ap.error("Specify --pdb, --pdb-id, --ligand-file, --smiles, --split-complex, or --prmtop")
+        ap.error("Specify --pdb, --pdb-id, --ligand-file, --smiles, --split-complex, --prmtop, --receptor-pqr/--ligand-pqr, or --sphere-pair")
 
     ref_out = args.receptor_out or args.ligand_out or "receptor.pdb"
     out_dir = os.path.dirname(os.path.abspath(ref_out)) or "."
@@ -975,8 +1067,8 @@ def main(argv=None):
     n_res = len({(l[21], l[22:27]) for l in prot_lines})
     his_str = ", ".join(f"{c.strip()}{r}:{t}" for (c, r), t in sorted(his_applied.items())) or "unchanged"
     mut_str = f", mutations {', '.join(mut_applied)}" if mut_applied else ""
-    print(f"Prepared {target_desc} -> {n_res} receptor residues ({len(prot_lines)} protein atoms, "
-          f"states {his_str}{mut_str}), kept HETATM {len(kept_het_lines)} atoms, ligand {lig_msg}")
+    print(f"# Prepared {target_desc} -> {n_res} receptor residues ({len(prot_lines)} protein atoms, "
+          f"states {his_str}{mut_str}), kept HETATM {len(kept_het_lines)} atoms, ligand {lig_msg}", file=sys.stderr)
     _print_structure_snippet(rec_out, lig_out, q_net, args.model)
 
 
