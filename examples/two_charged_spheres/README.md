@@ -10,7 +10,7 @@ ligand.pqr                  PQR file for ligand charges and radii
 analytical.py               Compares the rate against the exact Smoluchowski solution
 convergence.py              Reports the rate against trajectory count
 run.sh                      Script to run PySTARC simulations on the workstation
-submit.sh                   Unified SLURM script (1 GPU, 1-node multi-GPU, or multi-node GPUs)
+submit.sh                   Unified SLURM script (1 GPU, 1-node multi-GPU, or multi-node GPUs) plus analytical.py
 ```
 
 ## To run Brownian dynamics simulations on the workstation
@@ -135,5 +135,5 @@ bd_sims/
 k_b     64.68 Å³/ps
 P_rxn   0.451
 k_on    1.76e10 M⁻¹s⁻¹
-analytical.py compares P_rxn against the exact Smoluchowski solution and reports Pass when |z| < 3
+analytical.py runs automatically at the end of both run.sh and submit.sh, comparing P_rxn against the exact Smoluchowski solution and reporting Pass when |z| < 3 (run.sh also runs convergence.py)
 ```

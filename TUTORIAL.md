@@ -466,7 +466,7 @@ The last line ends with OK for b + lmax < fglen/2 and with WARNING for b + lmax 
 | `sbatch --nodes=1 --ntasks-per-node=1 submit.sh` | 1 node, 1 GPU | deletes `bd_sims`, runs `run_pystarc.py config.xml --n-gpus 1` |
 | `sbatch --nodes=2 --ntasks-per-node=4 submit.sh` | 2 nodes, 4 GPUs per node (8 total) | deletes `bd_sims`, splits into 8 shards across nodes via `srun`, pools into `bd_sims/results.json` |
 
-Submit `submit.sh` from the run folder. The `#SBATCH` lines set the job name, partition, node/GPU count, memory, and time limit of the local cluster. Both `run.sh` and `submit.sh` delete `bd_sims` with every earlier result and checkpoint.
+Submit `submit.sh` from the run folder. The `#SBATCH` lines set the job name, partition, node/GPU count, memory (`--mem-per-gpu=64G`), and time limit of the local cluster. When `conda` is absent in a non-login compute-node shell, `submit.sh` sources `~/.bashrc` or probes `$CONDA_BASE` and standard conda install directories before activating `PySTARC`. Both `run.sh` and `submit.sh` delete `bd_sims` with every earlier result and checkpoint.
 
 In a four GPU run (`--n-gpus 4` or `<n_gpus>4</n_gpus>`), `run_pystarc.py` builds the inputs and grids once in `bd_sims` and starts four shards in `bd_sims/bd_1` to `bd_sims/bd_4`. Each shard runs a quarter of `n_trajectories` with a seed of its own (step 8). `pystarc/multi_GPU/combine_data.py` then pools the counts of the finished shards into `bd_sims/results.json` and `bd_sims/convergence.json`. A shard without `results.json` stays out of the pool.
 
