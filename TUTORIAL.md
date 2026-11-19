@@ -24,7 +24,7 @@ cp ../trypsin_benzamidine/{receptor.pqr,ligand.pqr,run.sh,submit.sh} .
 python ../../run_pystarc.py --template > config.xml
 ```
 
-The last command writes a `config.xml` template with the nine sections `structure`, `criterion`, `geometry`, `electrostatics`, `physics`, `simulation`, `compute`, `outputs` and `chain`. `run.sh` and `submit.sh` find PySTARC in a parent folder of the run folder. A run folder outside the PySTARC folder needs `export PYSTARC_ROOT=/path/to/PySTARC`.
+The last command writes a `config.xml` template with the nine sections `structure`, `criterion`, `geometry`, `electrostatics`, `physics`, `simulation`, `compute`, `outputs` and `chain`. `run.sh` and `submit.sh` locate PySTARC in a parent folder or through the installed `pystarc` package automatically (export `PYSTARC_ROOT=/path/to/PySTARC` to point at another checkout).
 
 | file | content |
 |---|---|
@@ -319,7 +319,7 @@ After N trajectories the relative standard error of P<sub>rxn</sub> is √((1 �
 
 ### Checkpoints
 
-With `checkpoint_interval` above 0 the run writes `bd_sims/checkpoint.npz` each time `checkpoint_interval` more trajectories have finished. A stopped run resumes with `python /path/to/PySTARC/run_pystarc.py bd_sims/input.xml` in the run folder. `run.sh` and the SLURM scripts delete `bd_sims` and start over. The resumed run needs the same input files and the same simulation settings; `gpu_force_batch`, `n_threads`, `convergence_interval`, the `outputs` tags and a positive `checkpoint_interval` may change. A checkpoint of another run stops the run with an error. With `save_interval` above 0 the files `paths.npz` and `energetics.npz` of a resumed run hold the records written after the resume. A finished run deletes the checkpoint. The trypsin run writes no checkpoint.
+With `checkpoint_interval` above 0 the run writes `bd_sims/checkpoint.npz` each time `checkpoint_interval` more trajectories have finished. A stopped run resumes with `python /path/to/PySTARC/run_pystarc.py bd_sims/input.xml` in the run folder. `run.sh` and `submit.sh` delete `bd_sims` and start over. The resumed run needs the same input files and the same simulation settings; `gpu_force_batch`, `n_threads`, `convergence_interval`, the `outputs` tags and a positive `checkpoint_interval` may change. A checkpoint of another run stops the run with an error. With `save_interval` above 0 the files `paths.npz` and `energetics.npz` of a resumed run hold the records written after the resume. A finished run deletes the checkpoint. The trypsin run writes no checkpoint.
 
 ### Temperature and seed
 
@@ -375,7 +375,7 @@ The trypsin example runs on the GPU. `n_threads` 32 has no effect on the trypsin
 
 ```xml
 <outputs>
-  <save_interval>100</save_interval>
+  <save_interval>1000</save_interval>
   <full_paths>true</full_paths>
   <energetics>true</energetics>
 </outputs>
@@ -394,7 +394,7 @@ Every `save_interval` steps the GPU run adds one record per running trajectory t
 | `paths.npz` | traj_id, step, x, y, z, q0, q1, q2, q3, with the ligand center (Å) and the orientation quaternion |
 | `energetics.npz` | traj_id, step, fx, fy, fz, dt, with the force on the ligand (kT/Å) and the time step (ps) |
 
-`energetics.npz` holds no energies. With `save_interval` 0 the file `paths.npz` holds the start pose and the last pose of every trajectory, and no `energetics.npz` is written. The trypsin run records every 100 steps.
+`energetics.npz` holds no energies. With `save_interval` 0 the file `paths.npz` holds the start pose and the last pose of every trajectory, and no `energetics.npz` is written. The trypsin run records every 1000 steps.
 
 ## 11. Flexible chain settings (`chain`)
 
@@ -563,7 +563,7 @@ A multi GPU run writes each shard into `bd_sims/bd_1` to `bd_sims/bd_N` with a s
 ```xml
   <confidence_interval>0.99</confidence_interval>
   <outputs>
-    <save_interval>100</save_interval>
+    <save_interval>1000</save_interval>
     <full_paths>true</full_paths>
     <energetics>true</energetics>
     <near_misses_csv>false</near_misses_csv>
