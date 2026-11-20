@@ -16,8 +16,8 @@ STRUCT_XML="$(python "$SCRIPTS/prepare_pdb.py" \
 CRIT_XML="$(python "$SCRIPTS/find_reaction_criteria.py" \
   --receptor "$OUT/receptor.pdb" \
   --ligand "$OUT/ligand.pdb" \
-  --receptor-targets 35:CB:ASN,38:CB:ASP,86:CB:ASP,91:CB:LEU,122:CB:PHE,123:CB:TYR \
-  --ligand-atoms O2x \
-  --pair-cutoff 8.0)"
+  --receptor-targets 35:ND2:ASN,38:OD1:ASP,42:NZ:LYS,82:SD:MET,86:OD1:ASP,91:CG:LEU \
+  --atom-filter all \
+  --pair-cutoff 7.0)"
 
 printf '%s\n\n%s\n' "$STRUCT_XML" "$CRIT_XML" | tee "$OUT/config_snippet.xml"

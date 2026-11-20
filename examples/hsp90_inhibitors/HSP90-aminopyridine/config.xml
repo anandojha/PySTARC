@@ -9,22 +9,22 @@
   <criterion>
     <mode>contacts</mode>                                        <!-- How the reaction criterion is defined. Options: contacts and centroid. -->
     <receptor>                                                   <!-- Receptor atom of each contact pair (<target resid="..." atom="..." resname="..."/>). -->
-      <target resid="51" atom="CB" resname="ASN"/>
-      <target resid="54" atom="CB" resname="ASP"/>
-      <target resid="102" atom="CB" resname="ASP"/>
-      <target resid="107" atom="CB" resname="LEU"/>
-      <target resid="138" atom="CB" resname="PHE"/>
-      <target resid="139" atom="CB" resname="TYR"/>
+      <target resid="51" atom="ND2" resname="ASN"/>
+      <target resid="54" atom="OD1" resname="ASP"/>
+      <target resid="58" atom="NZ" resname="LYS"/>
+      <target resid="98" atom="SD" resname="MET"/>
+      <target resid="102" atom="OD1" resname="ASP"/>
+      <target resid="107" atom="CG" resname="LEU"/>
     </receptor>
     <ligand>                                                     <!-- Ligand atom of each contact pair (<atom name="..."/> or <target resid="..." atom="..." resname="..."/>). -->
-      <atom name="N6"/>
-      <atom name="N6"/>
-      <atom name="N6"/>
-      <atom name="N6"/>
-      <atom name="N6"/>
-      <atom name="N6"/>
+      <atom name="O13"/>
+      <atom name="C26"/>
+      <atom name="C15"/>
+      <atom name="C14"/>
+      <atom name="C14"/>
+      <atom name="C20"/>
     </ligand>
-    <pair_cutoff>8.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
+    <pair_cutoff>7.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
     <n_needed>3</n_needed>                                       <!-- Mode contacts pairs inside cutoff at once (1 for one pair, half of an even pair count, or positive count for model chain); 0 in mode centroid (rxns.xml writes 1). -->
   </criterion>
   <geometry>
@@ -57,7 +57,7 @@
     <multipole_fallback>true</multipole_fallback>                <!-- Extend the electrostatics beyond the grid by multipole expansion. Options: true and false. -->
   </physics>
   <simulation>
-    <n_trajectories>10000000</n_trajectories>                    <!-- Number of Brownian dynamics trajectories. -->
+    <n_trajectories>20000000</n_trajectories>                    <!-- Number of Brownian dynamics trajectories. -->
     <max_steps>10000000</max_steps>                              <!-- Step limit per trajectory. -->
     <dt>0.2</dt>                                                 <!-- Outer time step of the flexible chain model (in picoseconds). No effect on rigid body runs. -->
     <minimum_core_dt>0.2</minimum_core_dt>                       <!-- Smallest permitted time step. 0 imposes no floor. -->
