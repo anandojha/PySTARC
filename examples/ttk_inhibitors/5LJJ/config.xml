@@ -17,12 +17,12 @@
       <target resid="663" atom="CB" resname="ILE"/>
     </receptor>
     <ligand>                                                     <!-- Ligand atom of each contact pair (<atom name="..."/> or <target resid="..." atom="..." resname="..."/>). -->
-      <atom name="N9"/>
-      <atom name="N9"/>
-      <atom name="N9"/>
-      <atom name="N9"/>
-      <atom name="N9"/>
-      <atom name="N9"/>
+      <atom name="N3"/>
+      <atom name="N3"/>
+      <atom name="N3"/>
+      <atom name="N3"/>
+      <atom name="N3"/>
+      <atom name="N3"/>
     </ligand>
     <pair_cutoff>9.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
     <n_needed>3</n_needed>                                       <!-- Mode contacts pairs inside cutoff at once (1 for one pair, half of an even pair count, or positive count for model chain); 0 in mode centroid (rxns.xml writes 1). -->
