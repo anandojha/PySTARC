@@ -129,11 +129,3 @@ bd_sims/
 ├── paths.npz                         Samples of the reactive paths
 └── transition_matrix.npz             Markov transition matrix between the concentric shells
 ```
-
-## Expected results
-```
-k_b     64.68 Å³/ps
-P_rxn   0.451
-k_on    1.76e10 M⁻¹s⁻¹
-analytical.py runs automatically at the end of both run.sh and submit.sh, comparing P_rxn against the exact Smoluchowski solution and reporting Pass when |z| < 3 (run.sh also runs convergence.py)
-```

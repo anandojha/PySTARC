@@ -137,17 +137,3 @@ bd_sims/
 ├── paths.npz                         Samples of the reactive paths
 └── transition_matrix.npz             Markov transition matrix between the concentric shells
 ```
-
-## Expected results
-The values below are from the published runs, before the soft wall, the one reaction distance and the criteria now in config.xml. They will be replaced when the revised runs finish.
-```
-Complex                 Experimental k_on (M⁻¹s⁻¹)  PySTARC k_on (M⁻¹s⁻¹)
-HSP90-aminopyridine     1.04e4                      (5.36 ± 1.29)e4
-HSP90-indazole_5LNZ     3.43e5                      (3.21 ± 0.32)e5
-HSP90-indazole_5OCI     8.38e4                      (6.60 ± 0.45)e5
-HSP90-quinazoline       2.08e5                      (2.50 ± 0.28)e5
-HSP90-quinazoline_6EI5  1.21e5                      (1.57 ± 0.22)e5
-HSP90-resorcinol        1.00e6                      (9.65 ± 0.59)e5
-
-k_on for each complex is printed in its run summary and written to its bd_sims/results.json
-```

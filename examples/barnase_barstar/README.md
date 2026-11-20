@@ -44,5 +44,5 @@ logs/                         One log file per shard
 ```
 Total trajectories  n_trajectories times 25, here 200 times 25 gives 5000
 Each shard          Writes its own bd_sims/results.json
-Pooled rate         combine_shards.py prints k_on near 8e8 M⁻¹s⁻¹ against the experimental 6.0e8 M⁻¹s⁻¹
+Pooled rate         combine_shards.py prints the pooled k_on
 ```

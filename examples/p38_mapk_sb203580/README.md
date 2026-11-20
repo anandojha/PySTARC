@@ -126,11 +126,3 @@ bd_sims/
 ├── paths.npz                         Samples of the reactive paths
 └── transition_matrix.npz             Markov transition matrix between the concentric shells
 ```
-
-## Expected results
-The values below are from the published runs, before the soft wall, the one reaction distance and the criteria now in config.xml. They will be replaced when the revised runs finish.
-```
-Experimental k_on  1.50e7 M⁻¹s⁻¹
-PySTARC k_on       (1.52 ± 0.04)e7 M⁻¹s⁻¹
-k_on is printed in the run summary and written to bd_sims/results.json
-```

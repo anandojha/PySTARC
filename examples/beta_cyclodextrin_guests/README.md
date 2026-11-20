@@ -138,18 +138,3 @@ bd_sims/
 ├── paths.npz                         Samples of the reactive paths
 └── transition_matrix.npz             Markov transition matrix between the concentric shells
 ```
-
-## Expected results
-The values below are from the published runs, before the soft wall, the one reaction distance and the criteria now in config.xml. They will be replaced when the revised runs finish.
-```
-Complex                 Experimental k_on (M⁻¹s⁻¹)  PySTARC k_on (M⁻¹s⁻¹)
-BCD_1-butanol           2.80e8                      (2.67 ± 0.04)e8
-BCD_1-naphthylethanol   4.70e8                      (3.46 ± 0.14)e7
-BCD_1-propanol          5.10e8                      (1.84 ± 0.03)e8
-BCD_2-naphthylethanol   2.90e8                      (2.79 ± 0.04)e8
-BCD_aspirin             7.20e8                      (1.42 ± 0.03)e8
-BCD_methyl_butyrate     3.70e8                      (1.77 ± 0.03)e8
-BCD_tertbutanol         3.60e8                      (2.53 ± 0.04)e8
-
-k_on for each complex is printed in its run summary and written to its bd_sims/results.json
-```
