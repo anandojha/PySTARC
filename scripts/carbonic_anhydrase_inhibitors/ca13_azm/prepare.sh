@@ -21,8 +21,8 @@ STRUCT_XML="$(python "$SCRIPTS/prepare_pdb.py" \
 CRIT_XML="$(python "$SCRIPTS/find_reaction_criteria.py" \
   --receptor "$OUT/receptor.pdb" \
   --ligand "$OUT/ligand.pdb" \
-  --receptor-targets 64:CB:HIS,67:CB:ASN,92:CB:GLN,131:CB:PHE,200:CB:VAL,201:CB:PRO \
-  --ligand-atoms N1 \
+  --atom-filter polar \
+  --n-pairs 6 \
   --pair-cutoff 7.0)"
 
 printf '%s\n\n%s\n' "$STRUCT_XML" "$CRIT_XML" | tee "$OUT/config_snippet.xml"
