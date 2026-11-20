@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Criterion tier: Tier 1 (centroid), symmetric macrocyclic host-guest cavity (N_rec_heavy < 120).
+# Rule: uniform centroid capture at 8.0 A across all seven beta-cyclodextrin guests.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"

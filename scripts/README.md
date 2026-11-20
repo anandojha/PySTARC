@@ -5,7 +5,8 @@
 ```
 scripts/
 ├── prepare_pdb.py                   Prepares receptor + ligand .pdb or .pqr files and prints <structure>
-├── find_reaction_criteria.py        Inspects prepared structures and prints <criterion> (or reaction_pairs.json)
+├── find_reaction_criteria.py        Diagnoses pocket geometry, verifies rigid clearance, and prints <criterion> (or reaction_pairs.json)
+├── verify_criteria.py               Audits all 32 rigid prepare.sh scripts against examples/*/config.xml (0 mismatches)
 ├── prepare_all.sh                   Runs every complex prepare.sh across all 33 benchmark complexes
 ├── README.md                        Documentation, input inventory, and workflow commands
 ├── two_charged_spheres/             prepare.sh (analytical charged spheres, zero raw files needed)
@@ -145,7 +146,19 @@ python scripts/prepare_pdb.py \
 
 ## 3. `find_reaction_criteria.py` Reaction Criterion Selection
 
-Reads prepared `receptor` and `ligand` files (`.pdb + .pdb` or `.pqr + .pqr`), prints candidate contact distances or centroid geometry to `stderr`, and prints a ready-to-paste `<criterion>` XML block to `stdout` (or writes `reaction_pairs.json` for `model = chain`).
+Reads prepared `receptor` and `ligand` files (`.pdb + .pdb` or `.pqr + .pqr`), prints geometric diagnostics, contact distances, or centroid geometry to `stderr`, and prints a ready-to-paste `<criterion>` XML block to `stdout` (or writes `reaction_pairs.json` for `model = chain`).
+
+### Default Three-Tier Structural Protocol (Zero Kinetic Fitting)
+
+When configuring a brand-new complex without a measured $k_{\mathrm{on}}$, run `find_reaction_criteria.py --diagnose` to classify the complex from 3D coordinates alone into one of three structural tiers (with `n_needed = 3` fixed across all `3`-of-`6` contact criteria):
+
+| Tier | Geometric Condition | Default Criterion Rule | Benchmark Complexes (`32` rigid) |
+|---|---|---|---|
+| **Tier 1 (`centroid`)** | `N_rec_heavy < 120` (symmetric sphere pair or macrocyclic host cavity) | `mode = centroid` (`2.5 Å` analytical sphere contact; `8.0 Å` host cavity capture) | `two_charged_spheres` (`1`), `beta_cyclodextrin_guests` (`7`) |
+| **Tier 2 (`open-site polar`)** | Solid-angle pocket enclosure `f_enclosed < 0.70` or compact ligand `N_lig_heavy <= 15` | Automatic `3`-of-`6` shortest bound polar contacts (`N, O, S`, one per receptor residue, `search_cutoff = 6.0 Å`) at **`7.0 Å`** | `thrombin_thrombomodulin` (`1`), `trypsin_benzamidine` (`1`), `ca13_azm` (`1`) |
+| **Tier 3 (`pocket-rim`)** | Deep enclosed pocket (`f_enclosed >= 0.70`) and bulky ligand (`N_lig_heavy > 15`) | `3`-of-`6` conserved solvent-exposed pocket-mouth rim contacts (`Cβ` mouth ring paired with the conserved pharmacophore anchor for single-scaffold pockets, or outer-mouth sidechain tips paired automatically via `--atom-filter all` with nearest bound heavy atoms across multi-scaffold series) | `CA-VD` (`6`, `7.0 Å`), `HSP90` (`6`, `7.0 Å`), `p38 MAPK` (`1`, `8.0 Å`), `TTK` (`8`, `9.0 Å`) |
+
+For Tier 3 pockets, `pair_cutoff` starts at the universal default **`7.0 Å`** and steps up in `1.0 Å` increments (`8.0 Å`, `9.0 Å`) to the smallest whole integer that clears rigid-body steric exclusion (`--check-accessibility`) across every complex in the structural family. Across all `32` rigid complexes, running `python scripts/verify_criteria.py` confirms that every `scripts/*/prepare.sh` reproduces the exact `<criterion>` block in `examples/*/config.xml` (`0` mismatches). Flexible-chain `barnase_barstar` (`model = chain`) constructs `reaction_pairs.json` independently via `--chain-pairs-out`.
 
 ### Supported Options
 
@@ -156,35 +169,45 @@ Reads prepared `receptor` and `ligand` files (`.pdb + .pdb` or `.pqr + .pqr`), p
 | `--atom-filter <KIND>` | `polar` (`N, O, S`), `hetero` (any non-C heavy atom), `all`, `nonpolar`, `any_polar`, or `receptor_polar` |
 | `--elements <REC:LIG>` | Custom element filter overriding `--atom-filter` (for example `ZN,O,N:N,O`) |
 | `--search-cutoff <Å>` | Bound-pose contact search cutoff in Å (default `6.0`) |
-| `--n-pairs <INT>` | Maximum contact pairs kept (default `6`, trimmed to even count `2k` with `n_needed = k`, or `1`) |
+| `--n-pairs <INT>` | Maximum contact pairs retained (default `6`, trimmed to even count `2k` with `n_needed = k`, or `1`) |
 | `--allow-same-residue` | Permit multiple contact pairs on the same receptor residue |
 | `--exclude <NAMES>` | Comma-separated atom names excluded from contact picking |
-| `--receptor-targets <SPECS>` | Explicit pocket atoms (`RESID:ATOM:RESNAME` or `CHAIN:RESID:ATOM:RESNAME`) |
+| `--receptor-targets <SPECS>` | Explicit pocket-rim atoms (`RESID:ATOM:RESNAME` or `CHAIN:RESID:ATOM:RESNAME`) |
 | `--ligand-atoms <SPECS>` | Ligand atom names (or `RESID:ATOM:RESNAME`) paired with `--receptor-targets` (omit to auto-pick closest partner) |
 | `--pair-cutoff <Å>` | Reaction distance written into `<pair_cutoff>` (default `7.0`) |
 | `--n-needed <INT>` | Override `<n_needed>` explicitly |
+| `--diagnose` | Print solute heavy-atom counts, solid-angle pocket enclosure `f_enclosed`, and recommended structural tier |
+| `--suggest-rim` | Rank solvent-exposed pocket-mouth rim residues by outward exit-vector projection and azimuthal spread |
+| `--rim-atom <CB\|tip>` | Atom type evaluated by `--suggest-rim` (default `CB`) |
+| `--check-accessibility` | Fast NumPy rigid-body steric clearance audit across `7.0`, `8.0`, and `9.0 Å` |
 | `--chain-pairs-out <JSON>` | Write COFFDROP `[rec_pqr_idx, bead_idx, pair_cutoff]` JSON for `model = chain` |
 
 ### Examples
 
 ```bash
-# 1. Pick up to 6 polar contact pairs from a bound pose (1 per receptor residue)
+# 0. Diagnose a new complex from 3D coordinates and suggest pocket-rim targets if enclosed
+python scripts/find_reaction_criteria.py \
+  --receptor receptor.pdb --ligand ligand.pdb --diagnose --suggest-rim
+
+# 1. Tier 2 default: pick 6 shortest bound polar contacts (1 per receptor residue) at 7.0 A
 python scripts/find_reaction_criteria.py \
   --receptor receptor.pdb --ligand ligand.pdb \
-  --atom-filter polar --search-cutoff 6.0 --n-pairs 6 --pair-cutoff 7.0
+  --atom-filter polar --search-cutoff 6.0 --n-pairs 6 --pair-cutoff 7.0 \
+  --check-accessibility
 
-# 2. Pick up to 6 heavy-atom contact pairs (for example hydrophobic + polar pockets such as HSP90)
+# 2. Tier 3 multi-scaffold pocket: conserved outer-mouth targets paired automatically with nearest heavy atoms
 python scripts/find_reaction_criteria.py \
   --receptor receptor.pdb --ligand ligand.pdb \
-  --atom-filter all --search-cutoff 6.0 --n-pairs 6 --pair-cutoff 7.0
+  --receptor-targets 51:ND2:ASN,54:OD1:ASP,58:NZ:LYS,98:SD:MET,102:OD1:ASP,107:CG:LEU \
+  --atom-filter all --pair-cutoff 7.0 --check-accessibility
 
-# 3. Pair named active-site residues with a specific ligand atom (or omit --ligand-atoms to auto-pick)
+# 3. Tier 3 conserved-pharmacophore pocket: mouth CB ring paired with the conserved anchor atom
 python scripts/find_reaction_criteria.py \
   --receptor receptor.pdb --ligand ligand.pdb \
-  --receptor-targets 199:OG1:THR,94:NE2:HID,96:NE2:HID,119:ND1:HIE \
-  --ligand-atoms N1 --pair-cutoff 7.0
+  --receptor-targets 529:CB:LYS,531:CB:ILE,606:CB:ASN,611:CB:SER,651:CB:ALA,663:CB:ILE \
+  --ligand-atoms N1 --pair-cutoff 9.0 --check-accessibility
 
-# 4. Centroid criterion (writes <n_needed>0</n_needed>)
+# 4. Tier 1 centroid criterion (writes <n_needed>0</n_needed>)
 python scripts/find_reaction_criteria.py \
   --receptor receptor.pqr --ligand ligand.pqr \
   --mode centroid --pair-cutoff 8.0
@@ -194,4 +217,7 @@ python scripts/find_reaction_criteria.py \
   --receptor receptor.pdb --ligand ligand.pdb \
   --search-cutoff 6.0 --pair-cutoff 8.0 --n-needed 3 \
   --chain-pairs-out reaction_pairs.json
+
+# 6. Audit all 32 rigid benchmark scripts against examples/*/config.xml
+python scripts/verify_criteria.py
 ```

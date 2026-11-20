@@ -5,14 +5,29 @@ Inspects prepared receptor and ligand structures (.pdb + .pdb or .pqr + .pqr)
 and prints a ready-to-paste <criterion> block (or writes reaction_pairs.json
 when --chain-pairs-out is set). Independent of PySTARC runtime code.
 
+Default three-tier structural protocol (pure 3D geometry, zero kinetic fitting):
+  Tier 1 (centroid): symmetric sphere pairs or macrocyclic host cavities
+      (receptor heavy-atom count < 120).
+  Tier 2 (open-site polar): open interfaces (pocket enclosure < 0.70) or
+      compact fragments (ligand heavy-atom count <= 15); 3-of-6 shortest
+      bound polar contacts (N, O, S, one per receptor residue) at 7.0 A.
+  Tier 3 (pocket-rim): bulky ligands in deep enclosed pockets
+      (enclosure >= 0.70 and ligand heavy atoms > 15); 3-of-6 conserved
+      solvent-exposed pocket-mouth rim contacts at the smallest integer
+      cutoff in {7.0, 8.0, 9.0} A clearing rigid-body steric exclusion.
+
 Workflows:
-  1. Bound-pose contact pairs (polar, hetero, all, nonpolar, or custom --elements):
+  1. Diagnose pocket geometry and recommend a tier (--diagnose / --suggest-rim):
+     python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --diagnose --suggest-rim
+  2. Bound-pose contact pairs (polar, hetero, all, nonpolar, or custom --elements):
      python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --atom-filter polar --n-pairs 6 --pair-cutoff 7.0
-  2. Named active-site receptor targets (with explicit or auto-picked ligand atoms):
-     python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --receptor-targets 199:OG1:THR,94:NE2:HID,96:NE2:HID,119:ND1:HIE --ligand-atoms N1 --pair-cutoff 7.0
-  3. Centroid reaction criterion:
+  3. Named pocket-rim receptor targets (explicit anchor or auto-picked nearest heavy atoms):
+     python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --receptor-targets 51:ND2:ASN,54:OD1:ASP,58:NZ:LYS,98:SD:MET,102:OD1:ASP,107:CG:LEU --atom-filter all --pair-cutoff 7.0
+  4. Verify rigid-body steric accessibility of a candidate criterion:
+     python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --atom-filter polar --pair-cutoff 7.0 --check-accessibility
+  5. Centroid reaction criterion:
      python scripts/find_reaction_criteria.py --receptor receptor.pqr --ligand ligand.pqr --mode centroid --pair-cutoff 8.0
-  4. Flexible-chain COFFDROP reaction_pairs.json (single or multi-chain receptor):
+  6. Flexible-chain COFFDROP reaction_pairs.json (single or multi-chain receptor):
      python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --search-cutoff 6.0 --pair-cutoff 8.0 --n-needed 3 --chain-pairs-out reaction_pairs.json
 """
 
@@ -450,6 +465,273 @@ def build_chain_reaction_pairs(rec_path, lig_path, search_cutoff, pair_cutoff, n
     return rp_list, len(body_positions)
 
 
+VDW_RADII = {
+    "C": 1.70, "N": 1.55, "O": 1.52, "S": 1.80, "P": 1.80,
+    "F": 1.47, "CL": 1.75, "BR": 1.85, "I": 1.98, "SE": 1.90,
+    "ZN": 1.39, "MG": 1.73, "CA": 1.97, "FE": 1.40, "MN": 1.40,
+    "CU": 1.40, "CO": 1.40, "NI": 1.63,
+}
+
+SIDECHAIN_TIP_ATOMS = {
+    "ALA": "CB", "ARG": "CZ", "ASN": "ND2", "ASP": "OD1", "ASH": "OD1",
+    "CYS": "SG", "CYX": "SG", "CYM": "SG", "GLN": "NE2", "GLU": "OE1",
+    "GLH": "OE1", "GLY": "CA", "HIS": "NE2", "HID": "ND1", "HIE": "NE2",
+    "HIP": "NE2", "ILE": "CD1", "LEU": "CG", "LYS": "NZ", "LYN": "NZ",
+    "MET": "SD", "PHE": "CZ", "PRO": "CG", "SER": "OG", "THR": "OG1",
+    "TRP": "CH2", "TYR": "OH", "VAL": "CB",
+}
+
+
+def _fibonacci_sphere(n=100):
+    idx = np.arange(n, dtype=float) + 0.5
+    phi = np.arccos(1.0 - 2.0 * idx / n)
+    theta = np.pi * (1.0 + 5.0 ** 0.5) * idx
+    return np.stack([np.sin(phi) * np.cos(theta), np.sin(phi) * np.sin(theta), np.cos(phi)], axis=-1)
+
+
+def compute_pocket_geometry(rec, lig):
+    """Compute purely geometric enclosure and solute size descriptors from coordinates."""
+    r_xyz = np.array([a["xyz"] for a in rec if a["el"] != "H"], dtype=float)
+    l_xyz = np.array([b["xyz"] for b in lig if b["el"] != "H"], dtype=float)
+    if not len(r_xyz):
+        r_xyz = np.array([a["xyz"] for a in rec], dtype=float)
+    if not len(l_xyz):
+        l_xyz = np.array([b["xyz"] for b in lig], dtype=float)
+
+    n_rec = len(r_xyz)
+    n_lig = len(l_xyz)
+    rc = r_xyz.mean(axis=0)
+    lc = l_xyz.mean(axis=0)
+    d_com = float(np.linalg.norm(lc - rc))
+    r_rec_max = float(np.max(np.linalg.norm(r_xyz - rc, axis=1)))
+    r_lig_max = float(np.max(np.linalg.norm(l_xyz - lc, axis=1)))
+
+    # Mean receptor heavy-atom coordination around ligand heavy atoms
+    dmat = np.linalg.norm(l_xyz[:, None, :] - r_xyz[None, :, :], axis=-1)
+    mean_n6 = float((dmat < 6.0).sum(axis=1).mean())
+    mean_n8 = float((dmat < 8.0).sum(axis=1).mean())
+
+    # Solid-angle pocket enclosure via 100 Fibonacci rays from the ligand centroid
+    dirs = _fibonacci_sphere(100)
+    near_r = r_xyz[np.linalg.norm(r_xyz - lc, axis=1) < 12.0]
+    if len(near_r):
+        v = near_r - lc
+        proj = dirs @ v.T
+        v2 = np.sum(v * v, axis=1)[None, :]
+        perp2 = np.maximum(0.0, v2 - proj * proj)
+        occluded = np.any((proj > 0.0) & (perp2 < 9.0), axis=1)
+        f_enclosed = float(occluded.mean())
+        open_dirs = dirs[~occluded]
+    else:
+        f_enclosed = 0.0
+        open_dirs = dirs
+
+    if len(open_dirs) and float(np.linalg.norm(open_dirs.mean(axis=0))) > 1e-6:
+        exit_vec = open_dirs.mean(axis=0)
+        exit_vec = exit_vec / np.linalg.norm(exit_vec)
+    else:
+        diff = lc - rc
+        nrm = float(np.linalg.norm(diff))
+        exit_vec = diff / nrm if nrm > 1e-6 else np.array([0.0, 0.0, 1.0])
+
+    if n_rec < 120:
+        tier = "Tier 1 (centroid)"
+        rec_rule = "mode=centroid (symmetric sphere or macrocyclic host cavity)"
+    elif f_enclosed < 0.70 or n_lig <= 15:
+        tier = "Tier 2 (open-site polar)"
+        rec_rule = "mode=contacts, --atom-filter polar --search-cutoff 6.0 --n-pairs 6 --pair-cutoff 7.0"
+    else:
+        tier = "Tier 3 (pocket-rim)"
+        rec_rule = "mode=contacts, 3-of-6 conserved pocket-mouth rim targets at smallest accessible cutoff in {7.0, 8.0, 9.0} A"
+
+    return {
+        "n_rec_heavy": n_rec,
+        "n_lig_heavy": n_lig,
+        "d_com": d_com,
+        "r_rec_max": r_rec_max,
+        "r_lig_max": r_lig_max,
+        "mean_n6": mean_n6,
+        "mean_n8": mean_n8,
+        "f_enclosed": f_enclosed,
+        "exit_vec": exit_vec,
+        "tier": tier,
+        "recommendation": rec_rule,
+    }
+
+
+def suggest_pocket_rim_targets(rec, lig, n_targets=6, rim_atom="CB"):
+    """Select n_targets solvent-exposed pocket-mouth rim atoms by pure 3D geometry."""
+    geom = compute_pocket_geometry(rec, lig)
+    exit_vec = geom["exit_vec"]
+    r_heavy_xyz = np.array([a["xyz"] for a in rec if a["el"] != "H"], dtype=float)
+    l_heavy_xyz = np.array([b["xyz"] for b in lig if b["el"] != "H"], dtype=float)
+    lc = l_heavy_xyz.mean(axis=0)
+
+    # Orthonormal basis perpendicular to the pocket exit vector for azimuthal spread
+    ref = np.array([1.0, 0.0, 0.0]) if abs(exit_vec[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    e1 = np.cross(exit_vec, ref)
+    e1 = e1 / np.linalg.norm(e1)
+    e2 = np.cross(exit_vec, e1)
+
+    cands = []
+    seen_res = set()
+    for i, a in enumerate(rec):
+        if a["resname"] not in PROTEIN_RESIDUES:
+            continue
+        wanted = SIDECHAIN_TIP_ATOMS.get(a["resname"], "CB") if rim_atom == "tip" else rim_atom
+        if a["name"] != wanted:
+            continue
+        rk = (a["chain"], a["rescode"])
+        if rk in seen_res:
+            continue
+        v = a["xyz"] - lc
+        d_lc = float(np.linalg.norm(v))
+        if d_lc < 3.5 or d_lc > 14.0:
+            continue
+        seen_res.add(rk)
+        # Receptor heavy-atom coordination measures local exposure (lower = more exposed)
+        n8_rec = int((np.linalg.norm(r_heavy_xyz - a["xyz"], axis=1) < 8.0).sum())
+        outward = float(np.dot(v, exit_vec))
+        azim = float(np.arctan2(np.dot(v, e2), np.dot(v, e1)))
+        d_lig_min = float(np.min(np.linalg.norm(l_heavy_xyz - a["xyz"], axis=1)))
+        cands.append({
+            "idx": i, "atom": a, "d_lc": d_lc, "d_lig_min": d_lig_min,
+            "n8_rec": n8_rec, "outward": outward, "azim": azim,
+        })
+
+    if not cands:
+        return []
+
+    # Score outward-facing solvent-exposed rim residues (higher outward, lower crowding, closer to mouth)
+    out_vals = np.array([c["outward"] for c in cands])
+    n8_vals = np.array([c["n8_rec"] for c in cands], dtype=float)
+    d_vals = np.array([c["d_lig_min"] for c in cands])
+    out_z = (out_vals - out_vals.mean()) / max(float(out_vals.std()), 1e-6)
+    n8_z = (n8_vals - n8_vals.mean()) / max(float(n8_vals.std()), 1e-6)
+    d_z = (d_vals - d_vals.mean()) / max(float(d_vals.std()), 1e-6)
+    for k, c in enumerate(cands):
+        c["score"] = float(1.2 * out_z[k] - 1.0 * n8_z[k] - 0.6 * d_z[k])
+
+    pool = sorted(cands, key=lambda c: c["score"], reverse=True)[:max(18, n_targets * 3)]
+    selected = [pool[0]]
+    while len(selected) < min(n_targets, len(pool)):
+        best = None
+        best_obj = -1e9
+        for c in pool:
+            if any(c["idx"] == s["idx"] for s in selected):
+                continue
+            min_ang = min(abs(((c["azim"] - s["azim"] + np.pi) % (2 * np.pi)) - np.pi) for s in selected)
+            min_sep = min(float(np.linalg.norm(c["atom"]["xyz"] - s["atom"]["xyz"])) for s in selected)
+            obj = 0.5 * c["score"] + 1.5 * min_ang + 0.15 * min(min_sep, 10.0)
+            if obj > best_obj:
+                best_obj = obj
+                best = c
+        if best is None:
+            break
+        selected.append(best)
+
+    selected.sort(key=lambda c: (c["atom"]["chain"], c["atom"]["resid"]))
+    return selected
+
+
+def check_rigid_accessibility(rec, lig, picked, n_needed, cutoffs=(7.0, 8.0, 9.0), n_samples=12000, seed=0):
+    """Fast NumPy rigid-body steric clearance audit across candidate integer cutoffs."""
+    r_heavy = [a for a in rec if a["el"] != "H"]
+    l_heavy = [b for b in lig if b["el"] != "H"]
+    if not r_heavy or not l_heavy or not picked:
+        return {}
+
+    l_xyz = np.array([b["xyz"] for b in l_heavy], dtype=float)
+    l_rad = np.array([VDW_RADII.get(b["el"], 1.70) for b in l_heavy], dtype=float)
+    lc = l_xyz.mean(axis=0)
+    l_rel = l_xyz - lc
+
+    # Retain receptor heavy atoms within 18 A of the bound ligand centroid
+    r_xyz_all = np.array([a["xyz"] for a in r_heavy], dtype=float)
+    r_rad_all = np.array([VDW_RADII.get(a["el"], 1.70) for a in r_heavy], dtype=float)
+    near_mask = np.linalg.norm(r_xyz_all - lc, axis=1) < 18.0
+    r_xyz = r_xyz_all[near_mask]
+    r_rad = r_rad_all[near_mask]
+    if not len(r_xyz):
+        return {float(c): n_samples for c in cutoffs}
+
+    # Map reaction pair atoms into receptor coordinates and ligand relative vectors
+    rec_targ = np.array([rec[i]["xyz"] for i, _j, _c, _d in picked], dtype=float)
+    lig_targ_rel = np.array([lig[j]["xyz"] - lc for _i, j, _c, _d in picked], dtype=float)
+    geom = compute_pocket_geometry(rec, lig)
+    exit_vec = geom["exit_vec"]
+
+    rng = np.random.default_rng(seed)
+    # Sample rigid translations around the bound pose and outward along the pocket mouth
+    n_half = n_samples // 2
+    t_local = rng.normal(0.0, 2.2, size=(n_half, 3))
+    t_exit = rng.uniform(0.0, 7.5, size=(n_samples - n_half, 1)) * exit_vec[None, :] + rng.normal(0.0, 1.8, size=(n_samples - n_half, 3))
+    trans = np.vstack([t_local, t_exit])
+
+    # Small and moderate random rigid rotations
+    axes = rng.normal(0.0, 1.0, size=(n_samples, 3))
+    axes /= np.maximum(np.linalg.norm(axes, axis=1, keepdims=True), 1e-12)
+    angles = np.concatenate([
+        rng.uniform(0.0, np.deg2rad(35.0), size=n_half),
+        rng.uniform(0.0, np.deg2rad(120.0), size=n_samples - n_half),
+    ])
+
+    # Evaluate in chunks to stay memory-light
+    sum_rad = l_rad[:, None] + r_rad[None, :]
+    clash_cut2 = (0.72 * sum_rad) ** 2
+    k_idx = max(0, int(n_needed) - 1)
+
+    d_clear_min = float("inf")
+    counts = {float(c): 0 for c in cutoffs}
+    chunk = 1000
+    for i0 in range(0, n_samples, chunk):
+        i1 = min(i0 + chunk, n_samples)
+        ax = axes[i0:i1]
+        ang = angles[i0:i1]
+        c_a = np.cos(ang)[:, None, None]
+        s_a = np.sin(ang)[:, None, None]
+        ux, uy, uz = ax[:, 0], ax[:, 1], ax[:, 2]
+        K = np.zeros((i1 - i0, 3, 3), dtype=float)
+        K[:, 0, 1] = -uz; K[:, 0, 2] = uy
+        K[:, 1, 0] = uz;  K[:, 1, 2] = -ux
+        K[:, 2, 0] = -uy; K[:, 2, 1] = ux
+        I3 = np.broadcast_to(np.eye(3), (i1 - i0, 3, 3))
+        R = I3 + s_a * K + (1.0 - c_a) * (K @ K)
+
+        shift = lc[None, :] + trans[i0:i1]
+        # Pair distances first so poses far outside max(cutoffs) skip full clash check
+        lt_pos = np.einsum("nij,pj->npi", R, lig_targ_rel) + shift[:, None, :]
+        d_pairs = np.linalg.norm(lt_pos - rec_targ[None, :, :], axis=-1)
+        d_k = np.sort(d_pairs, axis=1)[:, k_idx]
+        cand_idx = np.where(d_k <= max(cutoffs) + 1.0)[0]
+        if not len(cand_idx):
+            continue
+
+        # Rigid steric overlap check on candidate poses
+        poses = np.einsum("nij,mj->nmi", R[cand_idx], l_rel) + shift[cand_idx, None, :]
+        diff = poses[:, :, None, :] - r_xyz[None, None, :, :]
+        dist2 = np.sum(diff * diff, axis=-1)
+        n_clash = np.sum(dist2 < clash_cut2[None, :, :], axis=(1, 2))
+        clear = n_clash == 0
+        if np.any(clear):
+            dk_clear = d_k[cand_idx[clear]]
+            d_clear_min = min(d_clear_min, float(dk_clear.min()))
+            for cut in cutoffs:
+                counts[float(cut)] += int(np.sum(dk_clear <= cut))
+
+    min_hits = max(1, int(0.002 * n_samples))
+    rec_cut = next((float(c) for c in sorted(cutoffs) if counts[float(c)] >= min_hits), None)
+    if rec_cut is None:
+        rec_cut = next((float(c) for c in sorted(cutoffs) if counts[float(c)] > 0), None)
+    return {
+        "d_clear_min": d_clear_min,
+        "counts": counts,
+        "recommended_cutoff": rec_cut,
+        "min_hits": min_hits,
+        "n_samples": n_samples,
+    }
+
+
 def _csv(val):
     return [x.strip() for x in val.split(",") if x.strip()] if val else []
 
@@ -471,6 +753,10 @@ def main(argv=None):
     ap.add_argument("--n-needed", type=int, default=None, help="Explicit n_needed override (default: half of even pair count, or 1)")
     ap.add_argument("--chain-pairs-out", default="", help="Output JSON path for flexible-chain COFFDROP reaction pairs")
     ap.add_argument("--coffdrop-dir", default="", help="Optional path to pystarc/coffdrop_data directory")
+    ap.add_argument("--diagnose", action="store_true", help="Print purely geometric pocket classification and recommended tier")
+    ap.add_argument("--suggest-rim", action="store_true", help="Rank solvent-exposed pocket-mouth rim targets from 3D geometry")
+    ap.add_argument("--rim-atom", default="CB", help="Atom type for --suggest-rim (CB or tip, default CB)")
+    ap.add_argument("--check-accessibility", action="store_true", help="Run rigid-body steric clearance audit across 7.0, 8.0, and 9.0 A")
     args = ap.parse_args(argv)
 
     rec_ext = os.path.splitext(args.receptor)[1].lower()
@@ -501,6 +787,29 @@ def main(argv=None):
     lig = parse_structure_atoms(args.ligand)
     if not rec or not lig:
         sys.exit("ERROR: empty receptor or ligand structure")
+
+    if args.diagnose or args.suggest_rim:
+        geom = compute_pocket_geometry(rec, lig)
+        print(f"# Receptor heavy atoms   : {geom['n_rec_heavy']}", file=sys.stderr)
+        print(f"# Ligand heavy atoms     : {geom['n_lig_heavy']}", file=sys.stderr)
+        print(f"# Centroid separation    : {geom['d_com']:.2f} A", file=sys.stderr)
+        print(f"# Pocket enclosure frac  : {geom['f_enclosed']:.2f}  (mean rec heavy atoms <6A: {geom['mean_n6']:.1f}, <8A: {geom['mean_n8']:.1f})", file=sys.stderr)
+        print(f"# Geometric tier         : {geom['tier']}", file=sys.stderr)
+        print(f"# Default protocol       : {geom['recommendation']}", file=sys.stderr)
+        if args.suggest_rim or geom["tier"].startswith("Tier 3"):
+            rim = suggest_pocket_rim_targets(rec, lig, n_targets=args.n_pairs, rim_atom=args.rim_atom)
+            if rim:
+                spec_str = ",".join(f"{c['atom']['resid']}:{c['atom']['name']}:{c['atom']['resname']}" for c in rim)
+                print(f"# Suggested {len(rim)} rim atoms ({args.rim_atom}): {spec_str}", file=sys.stderr)
+                for k, c in enumerate(rim, 1):
+                    a = c["atom"]
+                    print(
+                        f"#   Rim {k}: {a['resname']}{a['resid']}:{a['name']}  "
+                        f"d_lig={c['d_lig_min']:.2f} A  n8_rec={c['n8_rec']}  outward={c['outward']:+.2f} A",
+                        file=sys.stderr,
+                    )
+        if not args.check_accessibility and not args.receptor_targets and args.mode == "contacts" and not args.ligand_atoms:
+            return
 
     if args.mode == "centroid":
         r_xyz = np.array([a["xyz"] for a in rec])
@@ -552,6 +861,21 @@ def main(argv=None):
         rc_lbl = f"{a['chain']}:{a['resname']}{a['rescode']}" if a["chain"] else f"{a['resname']}{a['rescode']}"
         lc_lbl = f"{b['chain']}:{b['resname']}{b['rescode']}" if b["chain"] else f"{b['resname']}{b['rescode']}"
         print(f"# Pair {k}: {rc_lbl} {a['name']} <-> {lc_lbl} {b['name']}  ({dist:.2f} A)", file=sys.stderr)
+
+    if args.check_accessibility:
+        acc = check_rigid_accessibility(rec, lig, picked, n_needed)
+        dmin = acc.get("d_clear_min", float("inf"))
+        cnts = acc.get("counts", {})
+        rec_cut = acc.get("recommended_cutoff")
+        dmin_str = f"{dmin:.2f} A" if np.isfinite(dmin) else ">10.0 A"
+        rec_str = f"{rec_cut:.1f} A" if rec_cut is not None else ">9.0 A"
+        print(
+            f"# Rigid accessibility ({acc.get('n_samples', 0)} poses): "
+            f"d_min(clash-free)={dmin_str}  "
+            f"hits(7.0A={cnts.get(7.0, 0)}, 8.0A={cnts.get(8.0, 0)}, 9.0A={cnts.get(9.0, 0)})  "
+            f"smallest accessible integer cutoff={rec_str}",
+            file=sys.stderr,
+        )
 
     print("  <criterion>")
     print("    <mode>contacts</mode>")

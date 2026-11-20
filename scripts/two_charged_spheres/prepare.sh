@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Criterion tier: Tier 1 (centroid), analytical charged-sphere pair.
+# Rule: centroid capture at 2.5 A (sum of sphere radii plus 0.5 A contact shell).
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"

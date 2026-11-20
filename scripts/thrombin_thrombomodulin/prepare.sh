@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Criterion tier: Tier 2 (open-site polar), open protein-protein interface (enclosure = 0.00 < 0.70).
+# Rule: automatic 3-of-6 shortest bound polar contacts (N, O, S; one per receptor residue) at 7.0 A.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"

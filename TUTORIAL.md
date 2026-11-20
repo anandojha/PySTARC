@@ -152,6 +152,20 @@ The simulation places a ghost atom GHO without charge or radius at the centroid 
 | `pair_cutoff` | `contacts` and `centroid` | reaction distance of every pair (Å) |
 | `n_needed` | `contacts` and `centroid` | pairs closer than `pair_cutoff` at one time (`0` in `centroid`, where `rxns.xml` writes `1`) |
 
+### Default reaction criterion for a new complex
+
+For a new complex without a measured k<sub>on</sub>, run the standalone geometry tool `scripts/find_reaction_criteria.py` on the prepared receptor and ligand structures (`--diagnose` classifies the site from 3D coordinates alone):
+
+```bash
+python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --diagnose --suggest-rim
+```
+
+1. **Symmetric sphere pairs or macrocyclic host cavities** (`N_rec_heavy < 120`): select `mode` `centroid` (`2.5 Å` for analytical spheres, `8.0 Å` for β-cyclodextrin host-guest cavities).
+2. **Open interfaces or compact ligands** (solid-angle pocket enclosure `< 0.70`, or `N_lig_heavy <= 15`): select the automatic default `3`-of-`6` shortest bound polar contacts (`N, O, S`, one per receptor residue) at **`7.0 Å`** (`--atom-filter polar --search-cutoff 6.0 --n-pairs 6 --pair-cutoff 7.0`).
+3. **Bulky ligands in deep enclosed pockets** (enclosure `>= 0.70` and `N_lig_heavy > 15`): select `3`-of-`6` conserved solvent-exposed pocket-mouth rim contacts (`--suggest-rim` ranks rim residues by outward exit projection and azimuthal spread), paired with the conserved pharmacophore anchor (`Cβ` mouth ring for kinase or carbonic anhydrase series) or automatically with nearest bound ligand heavy atoms (`--atom-filter all` for multi-scaffold series such as HSP90). Start at `pair_cutoff` **`7.0 Å`** and step up in `1.0 Å` increments (`8.0 Å`, `9.0 Å`) to the smallest whole integer that passes rigid-body steric clearance (`--check-accessibility`) across the receptor family.
+
+Running `python scripts/verify_criteria.py` audits all 32 rigid benchmark preparation scripts in `scripts/` against `examples/*/config.xml` (see `scripts/README.md`).
+
 ## 5. Start sphere and hydrodynamic radii (`geometry`)
 
 Every tag of steps 5 to 10 is required in `config.xml`, except `r_escape` (default `0`), `debye_length` (derived from `ion_concentration` when blank), `soft_repulsion` (default `false`), `minimum_core_reaction_dt` (default `0`), `n_gpus` (default `1`), `work_dir` (default `bd_sims`), `full_paths` (default `true`) and `energetics` (default `true`). Rigid body runs leave the tags of `<chain>` (step 11) blank. The build stops with an error for a missing required tag.

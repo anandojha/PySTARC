@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Criterion tier: Tier 3 (pocket-rim), bulky inhibitor in deep enclosed pocket (enclosure >= 0.91, N_lig_heavy >= 24).
+# Rule: 3-of-6 conserved mouth-ring CB targets (64, 67, 92, 131, 200, 201) paired with sulfonamide anchor N at 7.0 A.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Criterion tier: Tier 2 (open-site polar), compact fragment (N_lig_heavy = 13 <= 15).
+# Rule: automatic 3-of-6 shortest bound polar contacts (N, O, S; one per receptor residue) at 7.0 A.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Criterion tier: Tier 3 (pocket-rim), bulky kinase inhibitor in deep ATP pocket (enclosure = 0.96, N_lig_heavy = 24).
+# Rule: 3-of-6 conserved ATP-mouth CB targets (529, 531, 606, 611, 651, 663) paired with GLU603:O hinge donor N14 (absent GLY605:N H-bond) at 9.0 A.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
