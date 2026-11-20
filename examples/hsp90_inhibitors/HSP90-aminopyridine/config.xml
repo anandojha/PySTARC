@@ -9,22 +9,22 @@
   <criterion>
     <mode>contacts</mode>                                        <!-- How the reaction criterion is defined. Options: contacts and centroid. -->
     <receptor>                                                   <!-- Receptor atom of each contact pair (<target resid="..." atom="..." resname="..."/>). -->
-      <target resid="93" atom="OD2" resname="ASP"/>
-      <target resid="103" atom="O" resname="LEU"/>
-      <target resid="139" atom="OH" resname="TYR"/>
-      <target resid="135" atom="O" resname="GLY"/>
-      <target resid="162" atom="CE2" resname="TRP"/>
-      <target resid="55" atom="CB" resname="ALA"/>
+      <target resid="51" atom="CB" resname="ASN"/>
+      <target resid="54" atom="CB" resname="ASP"/>
+      <target resid="102" atom="CB" resname="ASP"/>
+      <target resid="107" atom="CB" resname="LEU"/>
+      <target resid="138" atom="CB" resname="PHE"/>
+      <target resid="139" atom="CB" resname="TYR"/>
     </receptor>
     <ligand>                                                     <!-- Ligand atom of each contact pair (<atom name="..."/> or <target resid="..." atom="..." resname="..."/>). -->
       <atom name="N6"/>
-      <atom name="N2"/>
-      <atom name="N3"/>
-      <atom name="C23"/>
-      <atom name="C10"/>
-      <atom name="N5"/>
+      <atom name="N6"/>
+      <atom name="N6"/>
+      <atom name="N6"/>
+      <atom name="N6"/>
+      <atom name="N6"/>
     </ligand>
-    <pair_cutoff>7.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
+    <pair_cutoff>8.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
     <n_needed>3</n_needed>                                       <!-- Mode contacts pairs inside cutoff at once (1 for one pair, half of an even pair count, or positive count for model chain); 0 in mode centroid (rxns.xml writes 1). -->
   </criterion>
   <geometry>
