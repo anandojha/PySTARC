@@ -20,6 +20,6 @@ CRIT_XML="$(python "$SCRIPTS/find_reaction_criteria.py" \
   --ligand "$OUT/ligand.pdb" \
   --receptor-targets 529:CB:LYS,531:CB:ILE,606:CB:ASN,611:CB:SER,651:CB:ALA,663:CB:ILE \
   --ligand-atoms N9 \
-  --pair-cutoff 8.0)"
+  --pair-cutoff 9.0)"
 
 printf '%s\n\n%s\n' "$STRUCT_XML" "$CRIT_XML" | tee "$OUT/config_snippet.xml"

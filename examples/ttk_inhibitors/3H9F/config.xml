@@ -24,7 +24,7 @@
       <atom name="N1"/>
       <atom name="N1"/>
     </ligand>
-    <pair_cutoff>8.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
+    <pair_cutoff>9.0</pair_cutoff>                               <!-- Reaction distance for every pair (in angstroms). -->
     <n_needed>3</n_needed>                                       <!-- Mode contacts pairs inside cutoff at once (1 for one pair, half of an even pair count, or positive count for model chain); 0 in mode centroid (rxns.xml writes 1). -->
   </criterion>
   <geometry>
