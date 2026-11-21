@@ -163,7 +163,7 @@ def parse_structure_atoms(path):
         for _rt, aname, resname, ch, resid, rescode, x, y, z, col_el in _parse_pqr_records_standalone(path):
             el = _infer_element(aname, col_el, resname)
             atoms.append(dict(name=aname, el=el, resname=resname, chain=ch, resid=resid, rescode=rescode,
-                              xyz=np.array([x, y, z], dtype=float)))
+                              rec_type=_rt, xyz=np.array([x, y, z], dtype=float)))
     else:
         with open(path) as fh:
             for l in fh:
@@ -179,9 +179,17 @@ def parse_structure_atoms(path):
                 col_el = l[76:78].strip() if len(l) >= 78 else ""
                 el = _infer_element(aname, col_el, resname)
                 atoms.append(dict(name=aname, el=el, resname=resname, chain=ch, resid=resid, rescode=rescode,
+                                  rec_type=l[:6].strip(),
                                   xyz=np.array([float(l[30:38]), float(l[38:46]), float(l[46:54])], dtype=float)))
-    # Assign 1-based sequential residue index matching tleap ordering (protein residues then retained metals)
+    # Assign 1-based sequential residue index matching tleap ordering (protein ATOM residues then retained HETATM metals)
     seq_order = []
+    for rec_kind in ("ATOM", "HETATM"):
+        for a in atoms:
+            if a.get("rec_type", "ATOM") != rec_kind:
+                continue
+            rk = (a["chain"], a["rescode"])
+            if rk not in seq_order:
+                seq_order.append(rk)
     for a in atoms:
         rk = (a["chain"], a["rescode"])
         if rk not in seq_order:
@@ -344,15 +352,21 @@ def _parameterize_receptor_pdb_to_pqr(pdb_src, tmp_dir):
     r1 = subprocess.run(["tleap", "-f", "tleap.in"], cwd=tmp_dir, capture_output=True, text=True)
     if r1.returncode != 0 or not os.path.exists(os.path.join(tmp_dir, "protein.prmtop")):
         sys.exit("ERROR: tleap failed while indexing receptor PDB for --chain-pairs-out")
-    subprocess.run(
+    rc = subprocess.run(
         "cpptraj",
         input="parm protein.prmtop\ntrajin protein.rst7\ntrajout _protein.rst7\nrun\n",
         cwd=tmp_dir, capture_output=True, text=True,
     )
+    if rc.returncode != 0 or not os.path.exists(os.path.join(tmp_dir, "_protein.rst7")):
+        sys.exit("ERROR: cpptraj failed while imaging receptor coordinates for --chain-pairs-out")
     r2 = subprocess.run(["ambpdb", "-p", "protein.prmtop", "-c", "_protein.rst7", "-pqr"],
                         cwd=tmp_dir, capture_output=True, text=True)
+    if r2.returncode != 0:
+        sys.exit("ERROR: ambpdb failed while generating receptor PQR for --chain-pairs-out")
     pqr_path = os.path.join(tmp_dir, "receptor.pqr")
     lines = [l for l in r2.stdout.strip().splitlines() if l.startswith("ATOM")]
+    if not lines:
+        sys.exit("ERROR: ambpdb produced zero ATOM records for --chain-pairs-out")
     with open(pqr_path, "w") as fh:
         fh.write("\n".join(lines) + "\nEND\n")
     return pqr_path
@@ -441,6 +455,8 @@ def build_chain_reaction_pairs(rec_path, lig_path, search_cutoff, pair_cutoff, n
                       for a in res["atoms"] if a["atom_name"] == an]
             if not coords:
                 coords = [a["xyz"] for a in res["atoms"] if a["atom_name"] == "CA"]
+            if not coords:
+                sys.exit(f"ERROR: residue {res['resname']}{res['resid_native']} lacks mapped atoms and CA for bead {bname}")
             body_positions.append(np.mean(coords, axis=0))
             beads_by_resid.setdefault(res["resid_native"], []).append((b_idx, f"{mrn}:{bname}"))
     body_positions = np.array(body_positions)
@@ -655,7 +671,13 @@ def check_rigid_accessibility(rec, lig, picked, n_needed, cutoffs=(7.0, 8.0, 9.0
     r_xyz = r_xyz_all[near_mask]
     r_rad = r_rad_all[near_mask]
     if not len(r_xyz):
-        return {float(c): n_samples for c in cutoffs}
+        return {
+            "d_clear_min": 0.0,
+            "counts": {float(c): n_samples for c in cutoffs},
+            "recommended_cutoff": float(min(cutoffs)),
+            "min_hits": max(1, int(0.002 * n_samples)),
+            "n_samples": n_samples,
+        }
 
     # Map reaction pair atoms into receptor coordinates and ligand relative vectors
     rec_targ = np.array([rec[i]["xyz"] for i, _j, _c, _d in picked], dtype=float)
@@ -801,7 +823,12 @@ def main(argv=None):
         if args.suggest_rim or geom["site_class"] == "Deep site (exposed rim)":
             rim = suggest_pocket_rim_targets(rec, lig, n_targets=args.n_pairs, rim_atom=args.rim_atom)
             if rim:
-                spec_str = ",".join(f"{c['atom']['resid']}:{c['atom']['name']}:{c['atom']['resname']}" for c in rim)
+                need_ch = _has_duplicate_resid_across_chains(rec)
+                spec_str = ",".join(
+                    (f"{c['atom']['chain']}:" if need_ch and c['atom']['chain'] else "")
+                    + f"{c['atom']['resid']}:{c['atom']['name']}:{c['atom']['resname']}"
+                    for c in rim
+                )
                 print(f"# Suggested {len(rim)} rim atoms ({args.rim_atom}): {spec_str}", file=sys.stderr)
                 for k, c in enumerate(rim, 1):
                     a = c["atom"]

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Criterion: 3 of 568 heavy-atom to COFFDROP-bead interface contacts at 8.0 A.
+# Flexible-chain barstar (model = chain) diffusing against rigid barnase.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"

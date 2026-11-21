@@ -1,6 +1,6 @@
 # Standalone Pre-Configuration Scripts (`scripts/`)
 
-`scripts/` holds two standalone command-line tools for preparing starting structures and reaction criteria for any molecular complex before filling `config.xml`, together with per-complex preparation folders for all 33 benchmark complexes across the 9 families in `examples/`. Neither script is imported or invoked by PySTARC at runtime.
+`scripts/` holds three standalone command-line tools (`prepare_pdb.py`, `find_reaction_criteria.py`, and `verify_criteria.py`) for preparing starting structures and reaction criteria for any molecular complex before filling `config.xml`, together with per-complex preparation folders for all 33 benchmark complexes across the 9 families in `examples/`. None of these scripts is imported or invoked by PySTARC at runtime.
 
 ```
 scripts/
@@ -74,8 +74,9 @@ Produces matching `receptor.pdb` + `ligand.pdb` (or `receptor.pqr` + `ligand.pqr
 | Option | Purpose |
 |---|---|
 | `--pdb <PATH>` / `--pdb-id <ID>` | Read a local PDB file or download `<ID>.pdb` from RCSB |
-| `--chain <IDS>` | Comma-separated receptor chain IDs (for example `A` or `H,L`), inserting `TER` between chains (blank keeps all chains) |
+| `--chain <IDS>` | Comma-separated receptor chain IDs (for example `A` or `H,L`), inserting `TER` between chains (blank retains all chains) |
 | `--ligand-chain <IDS>` | Comma-separated protein or peptide ligand chain IDs extracted into `--ligand-out` |
+| `--model <rigid\|chain>` | Solute model tag written into the `<structure>` snippet (default `rigid`) |
 | `--resid-min`, `--resid-max` | Receptor residue number window to retain |
 | `--altloc`, `--ligand-altloc` | Preferred alternate conformer indicator (default `A`) |
 | `--mse-to-met` | Convert crystallographic selenomethionine (`HETATM MSE`) to `ATOM MET` |
@@ -88,7 +89,7 @@ Produces matching `receptor.pdb` + `ligand.pdb` (or `receptor.pqr` + `ligand.pqr
 | `--ligand-smiles <SMILES>` | Assign bond orders and formal charges onto a non-CCD docked ligand from a SMILES template |
 | `--ligand-charge <INT>` | Assign bond orders on a non-CCD `.pdb` ligand with explicit hydrogens, or set `<ligand_net_charge>` for `--split-complex` |
 | `--protonate`, `--deprotonate` | Comma-separated ligand heavy-atom names gaining or losing one proton |
-| `--smiles <SMILES>` | Embed and MMFF-optimize a 3D ligand conformer from SMILES (optional `--pocket-ligand` places its centroid in the pocket) |
+| `--smiles <SMILES>` | Embed and MMFF-optimize a 3D ligand conformer from SMILES (`--ligand-resname` sets residue name, `--seed` sets RDKit seed, `--pocket-ligand` / `--pocket-ligand-resid` centers the conformer in the pocket) |
 | `--formula <FORMULA>` | Optional element-count check on the prepared ligand (for example `"C16 H22 F3 N2 O5 S2"`) |
 | `--split-complex <PATH>` | Split an already-prepared complex `.pdb` into `receptor.pdb` + `ligand.pdb`, stripping bulk solvent/ions (`HOH`, `WAT`, `NA`, `CL`, `K`) |
 | `--prmtop <PATH> --pdb <PATH>` | Export `receptor.pqr` + `ligand.pqr` from an AMBER topology (`--ligand <RESNAME>` or `--ligand-residues <START-END>`) |
@@ -180,7 +181,7 @@ For deep binding sites, `pair_cutoff` starts at **`7.0 Å`** and increases to th
 | `--suggest-rim` | Rank solvent-exposed rim residues by outward exit-vector projection and azimuthal spread |
 | `--rim-atom <CB\|tip>` | Atom type evaluated by `--suggest-rim` (default `CB`) |
 | `--check-accessibility` | Fast NumPy rigid-body steric accessibility audit across `7.0`, `8.0`, and `9.0 Å` |
-| `--chain-pairs-out <JSON>` | Write COFFDROP `[rec_pqr_idx, bead_idx, pair_cutoff]` JSON for `model = chain` |
+| `--chain-pairs-out <JSON>` | Write COFFDROP `[rec_pqr_idx, bead_idx, pair_cutoff]` JSON for `model = chain` (`--coffdrop-dir` overrides parameter path) |
 
 ### Examples
 

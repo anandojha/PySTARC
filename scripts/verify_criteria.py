@@ -12,7 +12,6 @@ Usage:
 """
 
 import argparse
-import os
 import re
 import subprocess
 import sys
@@ -129,7 +128,7 @@ def main(argv=None):
         prep_sh = SCRIPTS_DIR / rel / "prepare.sh"
         cli_args = _extract_frc_args(prep_sh, rec_path, lig_path)
         run_args = list(cli_args)
-        if args.check_accessibility and "--mode" not in cli_args:
+        if args.check_accessibility and "centroid" not in cli_args:
             run_args.append("--check-accessibility")
 
         proc = subprocess.run(

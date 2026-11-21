@@ -22,15 +22,15 @@ chain = chain_from_sequence("ARWGL")
 positions = np.zeros((chain.n_atoms, 3))
 # ... fill positions ...
 
-# Compute forces using full COFFDROP physics
+# Compute forces with full COFFDROP physics
 state = ChainState.from_template(chain, positions)
 compute_chain_forces(state)
 # state.forces is an (n_atoms, 3) array in kBT/A units
 ```
 
-See `examples/coffdrop_chain_intro.py` for a complete working example.
+See `examples/barnase_barstar/` for a complete working flexible-chain example.
 
-## What's covered
+## Scope
 
 The chain builder constructs a `ChainCommon` with:
 
@@ -38,41 +38,39 @@ The chain builder constructs a `ChainCommon` with:
 - **Sidechain bonds**: per-residue linear chains (CA-CB, CB-CG, CB-NG, CB-OG, CB-SB, CG-CD)
 - **Backbone angles**: CA(r)-CA(r+1)-CA(r+2) for each consecutive triple
 - **Sidechain-backbone angles**: SC1(r)-CA(r)-CA(r+/-1) where SC1 is the first sidechain bead
-- **Intra-residue angles**: CA-SC1-SC2 and SC1-SC2-SC3 (TRP only)
+- **Intra-residue angles**: CA-SC1-SC2 and SC1-SC2-SC3 (TRP)
 - **Backbone torsions**: CA(r)-CA(r+1)-CA(r+2)-CA(r+3)
 - **Sidechain torsions** (incoming, outgoing): CA-CA-CA-CB and CB-CA-CA-CA
 - **Cross-residue sidechain torsions**: CB(r)-CA(r)-CA(r+1)-CB(r+1)
 - **Sidechain-extending torsions**: SC2-SC1-CA-CA forward and backward
 - **Non-bonded pair forces**: COFFDROP tabulated pair potentials
 
-Each force type uses tabulated potentials from COFFDROP's parameter
+Each force type reads tabulated potentials from COFFDROP's parameter
 files (coffdrop.xml, map.xml, connectivity.xml, charges.xml) when
-the lookup matches; otherwise falls back to harmonic (bonds) or
+the lookup matches; otherwise it falls back to harmonic (bonds) or
 zero contribution.
 
 ## Supported residues
 
 All 20 standard amino acids:
-- 1 bead (CA only): GLY
-- 2 beads (CA + 1 sidechain): ALA, CYS (uses SB), PRO, SER, THR, VAL
+- 1 bead (CA backbone): GLY
+- 2 beads (CA + 1 sidechain): ALA, CYS (SB bead), PRO, SER, THR, VAL
 - 3 beads (CA + CB + second sidechain): ARG, LYS, HIS, HIP (NG); ASN, GLN, ILE, LEU, MET, PHE, TYR (CG); ASP, GLU (OG)
 - 4 beads (CA + CB + CG + CD): TRP
 
-CYS uses SB instead of CB as its first sidechain bead. The lookup
-machinery is generalized to handle this and any future residue
-naming variations.
+CYS assigns SB instead of CB as its first sidechain bead. The lookup
+machinery handles this and other residue naming variations automatically.
 
 ## Limitations
 
 The current implementation does **not** include:
 - Cap residues (ACE, NME) - peptides are assumed uncapped at both ends
-- N-terminal/C-terminal cap atoms (CN, CC, NN, OC, HC) - so terminal modifications are not represented
+- N-terminal/C-terminal cap atoms (CN, CC, NN, OC, HC) - terminal modifications are not represented
 - 47 less-common dihedral types involving caps and termini
 
 These limitations affect peptides with N-acetylation or C-amidation
-modifications. For uncapped peptides (the most common case in BD
-simulations of intrinsically disordered regions and peptide-protein
-binding), the full force field is reachable.
+modifications. For uncapped peptides and proteins (intrinsically disordered regions and protein-protein
+binding), the full force field is supported.
 
 ## API reference
 
@@ -82,8 +80,8 @@ Build a `ChainCommon` from a sequence string.
 
 - `sequence`: single-letter ("ARWGL") or 3-letter ("ALA-ARG-TRP-GLY-LEU" or "ALA ARG TRP GLY LEU")
 - `coffdrop_dir`: path to directory with COFFDROP XML files (default: `pystarc/coffdrop_data`)
-- `name`: optional chain name; auto-generated from sequence if not given
-- `sidechains`: if True (default), build with sidechain beads; if False, CA-only backbone
+- `name`: optional chain name; auto-generated from sequence if omitted
+- `sidechains`: if True (default), build with sidechain beads; if False, CA backbone without sidechains
 - `k_spring`: harmonic spring constant for bonds (kBT/A^2)
 
 Returns: `ChainCommon` ready for `compute_chain_forces`.
@@ -99,7 +97,7 @@ Fill `state.forces` from all force contributions.
 
 ### `build_chain_common_from_coffdrop(residues, params, name=None, k_spring=100.0)`
 
-Lower-level: build a CA-only backbone chain from a list of 3-letter
+Lower-level: build a CA backbone chain from a sequence of 3-letter
 residue codes and pre-loaded COFFDROPParams.
 
 ### `build_chain_common_with_sidechains_from_coffdrop(residues, params, name=None, k_spring=100.0)`

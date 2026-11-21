@@ -5,137 +5,58 @@ Requires a CUDA GPU.
 ## Complexes
 ```
 ttk_inhibitors/
-├── 2X9E/  TTK MPS1 kinase with ligand SVE
-├── 3GFW/  TTK MPS1 kinase with ligand S22
-├── 3H9F/  TTK MPS1 kinase with ligand 92M
-├── 5LJJ/  TTK MPS1 kinase with ligand AD5
-├── 5N7V/  TTK MPS1 kinase with ligand 8PT
-├── 5N84/  TTK MPS1 kinase with ligand 8Q5
-├── 5N93/  TTK MPS1 kinase with ligand 8QE
-└── 5NAD/  TTK MPS1 kinase with ligand 8RH
+├── 2X9E/                   TTK kinase with ligand SVE
+├── 3GFW/                   TTK kinase with ligand S22
+├── 3H9F/                   TTK kinase with ligand 92M
+├── 5LJJ/                   TTK kinase with ligand AD5
+├── 5N7V/                   TTK kinase with ligand 8PT
+├── 5N84/                   TTK kinase with ligand 8Q5
+├── 5N93/                   TTK kinase with ligand 8QE
+├── 5NAD/                   TTK kinase with ligand 8RH
+└── submit.sh               Submits all 8 complex SLURM jobs
 ```
 
 ## Input files for each complex
 ```
-receptor.pdb                Prepared PDB structure of the receptor
-ligand.pdb                  Prepared PDB structure of the ligand
+receptor.pdb                Prepared PDB structure of TTK kinase
+ligand.pdb                  Prepared PDB structure of the inhibitor
 config.xml                  PySTARC configuration file
-run.sh                      Script to run PySTARC simulations on the workstation
+run.sh                      Runs PySTARC on one workstation GPU
 submit.sh                   Unified SLURM script (1 GPU, 1-node multi-GPU, or multi-node GPUs)
 ```
 
-## To run Brownian dynamics simulations on the workstation
-```
-cd ~/PySTARC/examples/ttk_inhibitors  # Navigate to the example directory within PySTARC
-conda activate PySTARC                # Activate the PySTARC environment
-bash 2X9E/run.sh                      # Run one complex
+## Workstation run
+```bash
+cd ~/PySTARC/examples/ttk_inhibitors
+conda activate PySTARC
+bash 2X9E/run.sh
 ```
 
-## To run Brownian dynamics simulations on a SLURM cluster
+## SLURM cluster run
 ```bash
+# Submit all 8 complexes
+cd ~/PySTARC/examples/ttk_inhibitors
+bash submit.sh
+
+# Submit one complex
 cd ~/PySTARC/examples/ttk_inhibitors/2X9E
-conda activate PySTARC
 sbatch submit.sh                                # 1 node, 4 GPUs (default)
 sbatch --nodes=1 --ntasks-per-node=1 submit.sh  # 1 node, 1 GPU
 sbatch --nodes=2 --ntasks-per-node=4 submit.sh  # 2 nodes, 4 GPUs per node (8 total)
 ```
 
-## Once the simulation finishes, the following files will be generated with 1 GPU
-```
-bd_sims/
-├── input.xml                     Generated PySTARC runtime input file
-├── rxns.xml                      Generated reaction criterion file
-├── build_record.json             Build provenance and checksums
-├── receptor.pqr                  PQR file for receptor charges and radii
-├── ligand.pqr                    PQR file for ligand charges and radii
-├── results.json                  Association rate constant, reaction probability, and confidence intervals
-├── convergence.json              Running rate estimate versus the number of trajectories
-├── receptor0.dx                  Coarse APBS electrostatic grid of the receptor
-├── receptor1.dx                  Fine APBS electrostatic grid of the receptor
-├── receptor0_born.dx             Coarse Born desolvation grid of the receptor
-├── receptor1_born.dx             Fine Born desolvation grid of the receptor
-├── ligand0.dx                    Coarse APBS electrostatic grid of the ligand
-├── ligand1.dx                    Fine APBS electrostatic grid of the ligand
-├── ligand0_born.dx               Coarse Born desolvation grid of the ligand
-├── ligand1_born.dx               Fine Born desolvation grid of the ligand
-├── receptor.pqr.r_hydro_*.cache  Cached hydrodynamic radius of the receptor
-├── ligand.pqr.r_hydro_*.cache    Cached hydrodynamic radius of the ligand
-├── pystarc_<timestamp>.log       Run log file
-├── trajectories.csv              Fate and step count of each trajectory
-├── encounters.csv                Records of the encounter events
-├── near_misses.csv               Records of the close approaches
-├── contact_frequency.csv         Frequency of each native contact
-├── pose_clusters.csv             Rotation angles of the encounter poses in 8 bins
-├── milestone_flux.csv            Outward and inward crossings through the concentric shells
-├── radial_density.csv            BD steps and BD time per radial shell
-├── bd_time_to_reaction.csv       BD time inside r_esc of each reacting trajectory
-├── angular_map.npz               BD steps and BD time per angular bin
-├── energetics.npz                Force and time step along the saved paths
-├── paths.npz                     Samples of the reactive paths
-└── transition_matrix.npz         Markov transition matrix between the concentric shells
-```
+## Output files
 
-## Once the simulation finishes, the following files will be generated with multiple GPUs
+Outputs are written inside `bd_sims/` (see [`TUTORIAL.md`](../../TUTORIAL.md#13-results-and-output-files) for column definitions):
+
 ```
 bd_sims/
-├── input.xml                         Generated PySTARC runtime input file
-├── rxns.xml                          Generated reaction criterion file
-├── build_record.json                 Build provenance and checksums
-├── receptor.pqr                      PQR file for receptor charges and radii
-├── ligand.pqr                        PQR file for ligand charges and radii
-├── bd_1/                             One directory per GPU, each running a share of the trajectories
-│   ├── input.xml                     PySTARC input file for this slice
-│   ├── receptor.pqr                  PQR file for receptor charges and radii
-│   ├── ligand.pqr                    PQR file for ligand charges and radii
-│   ├── results.json                  Association rate constant, reaction probability, and confidence intervals
-│   ├── convergence.json              Running rate estimate versus the number of trajectories
-│   ├── receptor0.dx                  Coarse APBS electrostatic grid of the receptor
-│   ├── receptor1.dx                  Fine APBS electrostatic grid of the receptor
-│   ├── receptor0_born.dx             Coarse Born desolvation grid of the receptor
-│   ├── receptor1_born.dx             Fine Born desolvation grid of the receptor
-│   ├── ligand0.dx                    Coarse APBS electrostatic grid of the ligand
-│   ├── ligand1.dx                    Fine APBS electrostatic grid of the ligand
-│   ├── ligand0_born.dx               Coarse Born desolvation grid of the ligand
-│   ├── ligand1_born.dx               Fine Born desolvation grid of the ligand
-│   ├── receptor.pqr.r_hydro_*.cache  Cached hydrodynamic radius of the receptor
-│   ├── ligand.pqr.r_hydro_*.cache    Cached hydrodynamic radius of the ligand
-│   ├── pystarc_<timestamp>.log       Run log file
-│   ├── trajectories.csv              Fate and step count of each trajectory
-│   ├── encounters.csv                Records of the encounter events
-│   ├── near_misses.csv               Records of the close approaches
-│   ├── contact_frequency.csv         Frequency of each native contact
-│   ├── pose_clusters.csv             Rotation angles of the encounter poses in 8 bins
-│   ├── milestone_flux.csv            Outward and inward crossings through the concentric shells
-│   ├── radial_density.csv            BD steps and BD time per radial shell
-│   ├── bd_time_to_reaction.csv       BD time inside r_esc of each reacting trajectory
-│   ├── angular_map.npz               BD steps and BD time per angular bin
-│   ├── energetics.npz                Force and time step along the saved paths
-│   ├── paths.npz                     Samples of the reactive paths
-│   └── transition_matrix.npz         Markov transition matrix between the concentric shells
-├── ...
-├── bd_N/                             Directory from the Nth GPU
-├── results.json                      Association rate pooled across all GPUs, read this file
-├── convergence.json                  Running rate estimate versus the number of trajectories
-├── receptor0.dx                      Coarse APBS electrostatic grid of the receptor
-├── receptor1.dx                      Fine APBS electrostatic grid of the receptor
-├── receptor0_born.dx                 Coarse Born desolvation grid of the receptor
-├── receptor1_born.dx                 Fine Born desolvation grid of the receptor
-├── ligand0.dx                        Coarse APBS electrostatic grid of the ligand
-├── ligand1.dx                        Fine APBS electrostatic grid of the ligand
-├── ligand0_born.dx                   Coarse Born desolvation grid of the ligand
-├── ligand1_born.dx                   Fine Born desolvation grid of the ligand
-├── receptor.pqr.r_hydro_*.cache      Cached hydrodynamic radius of the receptor
-├── ligand.pqr.r_hydro_*.cache        Cached hydrodynamic radius of the ligand
-├── trajectories.csv                  Fate and step count of each trajectory
-├── encounters.csv                    Records of the encounter events
-├── near_misses.csv                   Records of the close approaches
-├── contact_frequency.csv             Frequency of each native contact
-├── pose_clusters.csv                 Rotation angles of the encounter poses in 8 bins
-├── milestone_flux.csv                Outward and inward crossings through the concentric shells
-├── radial_density.csv                BD steps and BD time per radial shell
-├── bd_time_to_reaction.csv           BD time inside r_esc of each reacting trajectory
-├── angular_map.npz                   BD steps and BD time per angular bin
-├── energetics.npz                    Force and time step along the saved paths
-├── paths.npz                         Samples of the reactive paths
-└── transition_matrix.npz             Markov transition matrix between the concentric shells
+├── results.json, convergence.json     Association rate constant, reaction probability, and Wilson intervals
+├── input.xml, rxns.xml, build_record.json
+├── receptor.pqr, ligand.pqr           Centered solute PQRs and cached hydrodynamic radii (*.cache)
+├── receptor*.dx, ligand*.dx           Coarse/fine APBS electrostatic and Born desolvation grids (+ *_grids.key)
+├── trajectories.csv, encounters.csv, near_misses.csv, pose_clusters.csv
+├── bd_time_to_reaction.csv, contact_frequency.csv, milestone_flux.csv, radial_density.csv
+├── angular_map.npz, paths.npz, energetics.npz, transition_matrix.npz
+└── bd_1/ ... bd_N/, split.json        Per-GPU shard outputs and split metadata (multi-GPU runs)
 ```

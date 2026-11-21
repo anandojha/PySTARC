@@ -1,6 +1,6 @@
 # PySTARC tutorial
 
-This tutorial computes the association rate constant k<sub>on</sub> of trypsin and benzamidine with rigid body Brownian dynamics on an NVIDIA GPU. The input files are in `examples/trypsin_benzamidine`. Steps 3 to 11 fill the nine sections of `config.xml` one by one and explain every tag with the accepted entries. Every example shares the same `config.xml` template, with tags unused by a complex left blank (`<tag></tag>`). A new complex repeats the same steps with prepared receptor and ligand PDB or PQR files (step 3). The flexible chain model is described in step 15 (`examples/barnase_barstar`).
+This tutorial computes the association rate constant k<sub>on</sub> of trypsin and benzamidine with rigid body Brownian dynamics on an NVIDIA GPU. The input files are in `examples/trypsin_benzamidine`. Steps 3 to 11 fill the nine sections of `config.xml` one by one and explain every tag with the accepted entries. Every example shares the same `config.xml` template, with unused tags blank (`<tag></tag>`). A new complex repeats the same steps with prepared receptor and ligand PDB or PQR files (step 3). The flexible chain model is described in step 15 (`examples/barnase_barstar`).
 
 ## 1. Install PySTARC
 
@@ -56,7 +56,7 @@ Mixing `.pdb` and `.pqr` in one `config.xml` stops the build with an error. The 
 </structure>
 ```
 
-`run_pystarc.py` copies `receptor.pqr` and `ligand.pqr` into `bd_sims/receptor.pqr` and `bd_sims/ligand.pqr`, removing any ghost atoms left from an earlier run.
+`run_pystarc.py` copies `receptor.pqr` and `ligand.pqr` into `bd_sims/receptor.pqr` and `bd_sims/ligand.pqr`, removing any ghost atoms from an earlier run.
 
 ### Starting from PDB files
 
@@ -140,7 +140,7 @@ For rigid body runs, one pair requires `n_needed` 1, and an even number of pairs
 </criterion>
 ```
 
-The simulation places a ghost atom GHO without charge or radius at the centroid of each molecule. Zero charge, zero radius ghost records are stripped before APBS runs, avoiding any dielectric cavity perturbation in the electrostatic and Born grids. A trajectory reacts when the two centroids are closer than `pair_cutoff` (`n_needed` is set to `0` in `config.xml`, and `rxns.xml` writes `1`). The beta cyclodextrin and two charged spheres examples configure mode `centroid`.
+The simulation inserts a zero-charge, zero-radius ghost atom GHO at the centroid of each molecule. Ghost records are stripped before APBS runs, avoiding any dielectric cavity perturbation in the electrostatic and Born grids. A trajectory reacts when the two centroids are closer than `pair_cutoff` (`n_needed` is set to `0` in `config.xml`, and `rxns.xml` writes `1`). The beta cyclodextrin and two charged spheres examples configure mode `centroid`.
 
 ### Tags of `criterion`
 
@@ -154,21 +154,21 @@ The simulation places a ghost atom GHO without charge or radius at the centroid 
 
 ### Default reaction criterion for a new complex
 
-For a new complex without a measured k<sub>on</sub>, run the standalone geometry tool `scripts/find_reaction_criteria.py` on the prepared receptor and ligand structures (`--diagnose` classifies the site from 3D coordinates alone):
+For a new complex without a measured k<sub>on</sub>, run `scripts/find_reaction_criteria.py` on prepared receptor and ligand structures (`--diagnose --suggest-rim`):
 
 ```bash
 python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --diagnose --suggest-rim
 ```
 
-1. **Symmetric spheres or macrocyclic host cavities** (`N_rec_heavy < 120`): select `mode` `centroid` (`2.5 Å` for analytical spheres, `8.0 Å` for β-cyclodextrin host-guest cavities).
-2. **Solvent-accessible binding sites with a bound complex structure** (solid-angle shielding fraction `< 0.70`, or small ligands with `N_lig_heavy <= 15` outside a deep-pocket family): select the automatic `3`-of-`6` shortest intermolecular polar contacts (`N, O, S`, one per receptor residue) at **`7.0 Å`** (`--atom-filter polar --search-cutoff 6.0 --n-pairs 6 --pair-cutoff 7.0`).
-3. **Deep binding sites or complexes lacking an experimental ligand-bound pose** (shielding fraction `>= 0.70` and `N_lig_heavy > 15`): select `3`-of-`6` conserved solvent-exposed receptor contacts shared across the receptor family (`--suggest-rim` ranks rim residues by outward exit projection and azimuthal spread), paired with a conserved polar ligand atom (`Cβ` targets for carbonic anhydrase, p38 MAPK, and TTK series) or automatically with nearest bound ligand heavy atoms (`--atom-filter all` for multi-scaffold series such as HSP90). Start at `pair_cutoff` **`7.0 Å`** and increase to the smallest cutoff that passes rigid-body steric accessibility (`--check-accessibility`) across the receptor family.
+- **Symmetric spheres or macrocyclic cavities (`N_rec_heavy < 120`):** `mode` `centroid` (`2.5 Å` spheres, `8.0 Å` β-cyclodextrin).
+- **Solvent-accessible sites (`f_shielded < 0.70` or `N_lig_heavy <= 15` outside a deep-pocket family):** `3`-of-`6` shortest intermolecular polar contacts (`N, O, S`, one per receptor residue) at `7.0 Å`.
+- **Deep binding sites or series lacking a bound pose (`f_shielded >= 0.70`, `N_lig_heavy > 15`):** `3`-of-`6` shared solvent-exposed receptor contacts (`Cβ` or exposed sidechain atoms) at the smallest cutoff passing `--check-accessibility` across the family.
 
-Running `python scripts/verify_criteria.py` audits all 32 rigid benchmark preparation scripts in `scripts/` against `examples/*/config.xml` (see `scripts/README.md`).
+See `scripts/README.md` for all options, and run `python scripts/verify_criteria.py` to audit all 32 rigid scripts in `scripts/` against `examples/*/config.xml`.
 
 ## 5. Start sphere and hydrodynamic radii (`geometry`)
 
-Every tag of steps 5 to 10 is required in `config.xml`, except `r_escape` (default `0`), `debye_length` (derived from `ion_concentration` when blank), `soft_repulsion` (default `false`), `minimum_core_reaction_dt` (default `0`), `n_gpus` (default `1`), `work_dir` (default `bd_sims`), `full_paths` (default `true`) and `energetics` (default `true`). Rigid body runs leave the tags of `<chain>` (step 11) blank. The build stops with an error for a missing required tag.
+Every tag of steps 5 to 10 is required in `config.xml`, except `r_escape` (default `0`), `debye_length` (derived from `ion_concentration` when blank), `soft_repulsion` (default `false`), `minimum_core_reaction_dt` (default `0`), `n_gpus` (default `1`), `work_dir` (default `bd_sims`), `full_paths` (default `true`) and `energetics` (default `true`). Rigid body runs hold every `<chain>` tag (step 11) blank. The build stops with an error for a missing required tag.
 
 ```xml
 <geometry>
@@ -181,7 +181,7 @@ Every tag of steps 5 to 10 is required in `config.xml`, except `r_escape` (defau
 
 Each trajectory starts at a random position on the sphere of radius b = `bd_milestone_radius` (Å) around the receptor centroid, with a random orientation of the ligand. `r_escape` sets the escape sphere radius q (Å), with `0` or blank deriving `2b` (custom radii must exceed `1.1b`). A trajectory that reaches the escape sphere goes back to the start sphere with the computed probability of a return from q to b. The remaining trajectories at q escape.
 
-`r_hydro_rec` and `r_hydro_lig` set the hydrodynamic radii a of the receptor and the ligand (Å). The radii fix the diffusion coefficients D<sub>t</sub> = k<sub>B</sub>T/(6πηa) and D<sub>r</sub> = k<sub>B</sub>T/(8πηa³) with the viscosity η = 0.890 mPa s of water at 25 °C. PySTARC computes a by the Monte Carlo method of Hansen (J. Chem. Phys. 121, 9111, 2004) from the PQR file, with every atom radius enlarged by `srad`. The calculation runs inside PySTARC (`pystarc/hydrodynamics/mc_hydro_radius.py`) and needs no external software. A cache file next to each PQR file in `bd_sims` stores the Monte Carlo radius for the next run. An entry of 0 selects the Monte Carlo radius. A positive entry replaces the Monte Carlo radius, and the run log prints both values. The trypsin benzamidine example fixes the radii at 22.3728 Å and 4.9867 Å, computed with BrownDye 2 for a comparison of PySTARC with BrownDye 2. An entry of 0 yields 22.30 Å and 4.90 Å for the same PQR files. Hydrodynamic interactions stay on in both cases. `hydrodynamic_interactions` (step 7) switches the hydrodynamic interactions on and off.
+`r_hydro_rec` and `r_hydro_lig` set the hydrodynamic radii a of the receptor and the ligand (Å). The radii fix the diffusion coefficients D<sub>t</sub> = k<sub>B</sub>T/(6πηa) and D<sub>r</sub> = k<sub>B</sub>T/(8πηa³) with the viscosity η = 0.890 mPa s of water at 25 °C. PySTARC computes a by the Monte Carlo method of Hansen (J. Chem. Phys. 121, 9111, 2004) from the PQR file, with every atom radius enlarged by `srad`. The calculation runs inside PySTARC (`pystarc/hydrodynamics/mc_hydro_radius.py`) and needs no external software. A cache file next to each PQR file in `bd_sims` stores the Monte Carlo radius for the next run. An entry of 0 selects the Monte Carlo radius. A positive entry replaces the Monte Carlo radius, and the run log prints both values. The trypsin benzamidine example fixes the radii at 22.3728 Å and 4.9867 Å, computed with BrownDye 2 for a comparison of PySTARC with BrownDye 2. An entry of 0 computes 22.30 Å and 4.90 Å for the same PQR files. Hydrodynamic interactions stay on in both cases. `hydrodynamic_interactions` (step 7) switches the hydrodynamic interactions on and off.
 
 ## 6. Salt, dielectrics and electrostatic grids (`electrostatics`)
 
@@ -224,11 +224,11 @@ APBS solves the linearized Poisson Boltzmann equation of the receptor on two nes
 
 The derived fine edge is max[(L + 2(r<sub>max</sub> + srad)) × 1.05, 4(r<sub>max</sub> + srad) × 1.025], with L the longest extent of the atom centers and r<sub>max</sub> the largest atom radius. `apbs_cglen` must exceed `apbs_fglen`. `apbs_dime` sets the points per axis of the receptor desolvation grids as well.
 
-During the simulation the force on each ligand atom comes from the finest grid that holds the atom at least three grid spacings inside the faces. Outside both grids the receptor field is a screened multipole expansion (`multipole_fallback`, step 7). For trypsin the fine grid spans 96 Å with 257 points (spacing 0.375 Å), and the coarse grid spans 192 Å (spacing 0.75 Å). The build step prints a warning when b plus the ligand radius reaches past the fine grid (b + ligand radius ≥ `apbs_fglen`/2). Trypsin triggers this warning (45 Å + 3.7 Å > 48 Å), and the ligand atoms outside the fine grid read the coarse grid.
+During the simulation the force on each ligand atom is interpolated from the finest grid that holds the atom at least three grid spacings inside the faces. Outside both grids the receptor field is a screened multipole expansion (`multipole_fallback`, step 7). For trypsin the fine grid spans 96 Å with 257 points (spacing 0.375 Å), and the coarse grid spans 192 Å (spacing 0.75 Å). The build step prints a warning when b plus the ligand radius reaches past the fine grid (b + ligand radius ≥ `apbs_fglen`/2). Trypsin triggers this warning (45 Å + 3.7 Å > 48 Å), and the ligand atoms outside the fine grid read the coarse grid.
 
 ### Grid points per axis
 
-The multigrid solver of APBS needs d = c·2<sup>l+1</sup> + 1 points per axis, with integers c ≥ 1 and l ≥ 1 for l multigrid levels. APBS keeps every d = 4k + 1 up to 65, for example 5, 9, 13, 33 and 65. Above 65 APBS accepts d = 32c + 1, for example 97, 129, 161, 193, 225 and 257. APBS lowers any other d above 65 to the next smaller 32c + 1, for example 101 to 97. PySTARC checks `apbs_dime`, `apbs_coarse_dime` and `apbs_fine_dime` before APBS runs and stops for any other number, without rounding.
+The multigrid solver of APBS needs d = c·2<sup>l+1</sup> + 1 points per axis, with integers c ≥ 1 and l ≥ 1 for l multigrid levels. APBS accepts every d = 4k + 1 up to 65, for example 5, 9, 13, 33 and 65. Above 65 APBS accepts d = 32c + 1, for example 97, 129, 161, 193, 225 and 257. APBS lowers any other d above 65 to the next smaller 32c + 1, for example 101 to 97. PySTARC checks `apbs_dime`, `apbs_coarse_dime` and `apbs_fine_dime` before APBS runs and stops for any other number, without rounding.
 
 ## 7. Forces and excluded volume (`physics`)
 
@@ -258,7 +258,7 @@ Every flag accepts `true`, `false`, `yes`, `no`, `1` and `0` with any capitaliza
 
 ### Excluded volume
 
-The soft wall adds the energy V = kT (a/r)<sup>12</sup> with a = 0.9345 (r<sub>i</sub> + r<sub>j</sub>) for every receptor atom i and ligand atom j closer than 2a. The radii come from the PQR files. Atoms of radius 0 do not participate. The overlap check rejects a move bringing a ligand atom closer than 0.5 (r<sub>i</sub> + r<sub>j</sub>) to a receptor atom. The trajectory keeps the old pose and the clock still advances. The WCA repulsion is the force of the potential 4ε[(σ/r)<sup>12</sup> − (σ/r)<sup>6</sup>] below r = 2<sup>1/6</sup>σ, with σ = r<sub>i</sub> + r<sub>j</sub> and ε = 0.1 kcal/mol. The soft wall and the overlap check shorten the time step near the receptor (step 8).
+The soft wall adds the energy V = kT (a/r)<sup>12</sup> with a = 0.9345 (r<sub>i</sub> + r<sub>j</sub>) for every receptor atom i and ligand atom j closer than 2a. The radii are read from the PQR files. Atoms of radius 0 do not participate. The overlap check rejects a move bringing a ligand atom closer than 0.5 (r<sub>i</sub> + r<sub>j</sub>) to a receptor atom. The trajectory retains the old pose and the clock still advances. The WCA repulsion is the force of the potential 4ε[(σ/r)<sup>12</sup> − (σ/r)<sup>6</sup>] below r = 2<sup>1/6</sup>σ, with σ = r<sub>i</sub> + r<sub>j</sub> and ε = 0.1 kcal/mol. The soft wall and the overlap check shorten the time step near the receptor (step 8).
 
 | `soft_repulsion` | `overlap_check` | `lj_forces` | excluded volume |
 |---|---|---|---|
@@ -275,9 +275,9 @@ With `hydrodynamic_interactions` true the relative diffusion coefficient D(r) of
 
 The Born desolvation energy of a charge q in the Born field φ<sub>Born</sub> of the other molecule is α q<sup>2</sup> φ<sub>Born</sub> with α = `desolvation_alpha`. The value 1.0 is the base model. The value 0 switches desolvation off. A negative value stops the run at start. With α above 0 the desolvation acts on the ligand charges in the receptor Born field. `enable_born2_torque` true adds the receptor charges in the ligand Born field as a force and a torque on the ligand.
 
-With `multipole_fallback` true the receptor field outside every electrostatic grid comes from a screened expansion of the receptor charges with monopole, dipole and quadrupole terms. The k<sub>b</sub> integral then holds the orientation average of the squared dipole and quadrupole terms for a charged ligand. With `false` the field outside the grids comes from the net receptor charge alone, leaving a neutral receptor without field outside the grids.
+With `multipole_fallback` true the receptor field outside every electrostatic grid is evaluated from a screened expansion of the receptor charges with monopole, dipole and quadrupole terms. The k<sub>b</sub> integral then holds the orientation average of the squared dipole and quadrupole terms for a charged ligand. With `false` the field outside the grids is evaluated from the net receptor charge alone, giving zero exterior field for a neutral receptor.
 
-The trypsin example enables the soft wall, hydrodynamic interactions, the base desolvation in both directions and the multipole field. `overlap_check` false has no effect with the soft wall on.
+The trypsin example activates the soft wall, hydrodynamic interactions, base desolvation in both directions and the multipole field. `overlap_check` false has no effect with the soft wall on.
 
 ## 8. Trajectories, time step and convergence (`simulation`)
 
@@ -319,7 +319,7 @@ The trypsin run starts 20,000,000 trajectories with a step limit of 10,000,000. 
 
 Rigid body runs apply an adaptive time step and ignore `dt`. At every step the GPU engine sets the step of each trajectory from the center distance and the net charges. Beyond 1.1b the distance to the start and escape spheres limits the step as well. The soft wall or the overlap check shortens the step near the receptor surface. `max_dt` then caps the step. `minimum_core_dt` comes last and raises the step to the floor over every other rule. The trypsin run has the floor 0.2 ps and no ceiling. No trypsin step is shorter than 0.2 ps, even at the receptor surface.
 
-`minimum_core_reaction_dt` acts in state machine runs, with `state_machine_reactions` true in `bd_sims/input.xml` (default false, step 14). In a state machine run the step shrinks near an active reaction surface without dropping below `minimum_core_reaction_dt`. The trypsin run keeps `state_machine_reactions` false, leaving the trypsin value 0.05 inactive.
+`minimum_core_reaction_dt` acts in state machine runs, with `state_machine_reactions` true in `bd_sims/input.xml` (default false, step 14). In a state machine run the step shrinks near an active reaction surface without dropping below `minimum_core_reaction_dt`. The trypsin run holds `state_machine_reactions` false, so the trypsin value 0.05 stays inactive.
 
 ### Step limit
 
@@ -339,7 +339,7 @@ With `checkpoint_interval` above 0 the run writes `bd_sims/checkpoint.npz` each 
 
 `temperature` sets kT in APBS, the desolvation grids, the diffusion coefficients and the forces. The viscosity stays at 0.890 mPa s of water at 25 °C. The run prints a warning for a temperature other than 298.15 K. A new `temperature` needs a matching `debye_length` (step 6).
 
-The random numbers of a trajectory depend on `seed`, the trajectory number and the step count. `gpu_force_batch` and a resume leave the random numbers unchanged.
+The random numbers of a trajectory depend on `seed`, the trajectory number and the step count. `gpu_force_batch` and a resume do not alter the random numbers.
 
 ## 9. Hardware (`compute`)
 
@@ -412,7 +412,7 @@ Every `save_interval` steps the GPU run adds one record per running trajectory t
 
 ## 11. Flexible chain settings (`chain`)
 
-Rigid body examples keep every tag inside `<chain>` blank:
+Rigid body examples hold every tag inside `<chain>` blank:
 
 ```xml
 <chain>
@@ -447,7 +447,7 @@ Passing `--setup` runs the input preparation step alone and stops before APBS an
 python /path/to/PySTARC/run_pystarc.py config.xml --setup
 ```
 
-During the build step `run_pystarc.py` reads `config.xml` and writes five files into `work_dir` (`bd_sims` by default). A blank required tag, an incompatible tag for the chosen `model` or `mode`, or an unknown tag stops the build before any file is written. The build prepares `receptor.pqr` and `ligand.pqr` (step 3), picks the reaction pairs (step 4), and writes `input.xml` and `build_record.json` inside `bd_sims`. Intermediate files from AmberTools (`protein.pdb`, `protein.prmtop`, `ligand.mol2`, `leap.log`) are created and cleaned up inside `bd_sims`, leaving the run folder untouched. For the trypsin benzamidine example the build step prints four lines:
+During the build step `run_pystarc.py` reads `config.xml` and writes five files into `work_dir` (`bd_sims` by default): `receptor.pqr`, `ligand.pqr`, `rxns.xml`, `input.xml`, and `build_record.json`. A blank required tag, an incompatible tag for the chosen `model` or `mode`, or an unknown tag stops the build before any file is written. Intermediate AmberTools files (`protein.pdb`, `protein.prmtop`, `ligand.mol2`, `leap.log`) are created and cleaned up inside `bd_sims`, without modifying the run folder. For the trypsin benzamidine example the build step prints:
 
 ```
   receptor.pqr: 3220 atoms from receptor.pqr
@@ -456,14 +456,7 @@ During the build step `run_pystarc.py` reads `config.xml` and writes five files 
   rmax=28.4 lmax=3.7 b=45 fglen=96  WARNING, b-surface outside the grid
 ```
 
-| line | content |
-|---|---|
-| `receptor.pqr`, `ligand.pqr` | atom count of each PQR file (plus net charge Q when parameterized from `.pdb`) |
-| `6 pairs, n_needed 3` | pairs in `rxns.xml` and `n_needed` |
-| `rmax`, `lmax` | largest distance of a receptor atom and of a ligand atom from the centroid of the molecule (Å) |
-| `b`, `fglen` | `bd_milestone_radius` and the edge of the fine grid (Å) |
-
-The last line ends with OK for b + lmax < fglen/2 and with WARNING for b + lmax ≥ fglen/2 (step 6). The warning does not stop the build. For `apbs_fglen` 0 the build derives the fine edge with the formula of step 6. PDB parameterization prints additional lines.
+`rmax` and `lmax` are the largest distances from each solute centroid (Å); the final line ends with `OK` for b + lmax < fglen/2 and `WARNING` otherwise (the warning does not stop the build). PDB parameterization prints additional lines including net charge Q.
 
 | file in `bd_sims` | content |
 |---|---|
@@ -498,7 +491,7 @@ The run resumes from `bd_sims/checkpoint.npz` when present (step 8) and reuses t
 
 ## 13. Results and output files
 
-`run_pystarc.py` writes every output into `bd_sims`. Each start writes a log `bd_sims/pystarc_<date>_<time>.log` with the printout of the run. The log ends with the run summary and, with `convergence_check` `true`, the convergence analysis. An error during the run ends the log with the error message. An invalid entry of `config.xml` or `input.xml` stops the run before the log starts. A four GPU run keeps the per shard logs in `bd_sims/bd_1` to `bd_sims/bd_4`. The expected results of the trypsin benzamidine example are in `examples/trypsin_benzamidine/README.md`.
+`run_pystarc.py` writes every output into `bd_sims`. Each start writes a log `bd_sims/pystarc_<date>_<time>.log` with the printout of the run. The log ends with the run summary and, with `convergence_check` `true`, the convergence analysis. An error during the run ends the log with the error message. An invalid entry of `config.xml` or `input.xml` stops the run before the log starts. A four GPU run stores the per shard logs in `bd_sims/bd_1` to `bd_sims/bd_4`.
 
 ### results.json
 
@@ -588,7 +581,7 @@ A multi GPU run writes each shard into `bd_sims/bd_1` to `bd_sims/bd_N` with a s
 
 | tag in `<pystarc>` | entries | effect |
 |---|---|---|
-| `apbs_ligand_dime` | 4k + 1 with k ≥ 1, default 129 | grid points per axis of the ligand grids |
+| `apbs_ligand_dime` | `4k + 1` up to `65`, `32c + 1` above `65`, default `129` | grid points per axis of the ligand grids |
 | `brownian_bridge` | `true` or `false`, default `true` | `true` evaluates reactions along sub step bridges as well as step endpoints |
 | `confidence_interval` | number between 0 and 1, default 0.95 | confidence level of the Wilson intervals |
 | `state_machine_reactions` | `true` or `false`, default `false` | `true` fires each one pair reaction of `rxns.xml` from `state_before` to `state_after`, `false` reads one reaction with every pair |
@@ -632,13 +625,13 @@ The flexible chain model treats the ligand as a chain of coarse grained COFFDROP
   </chain>
 ```
 
-On a single workstation, `bash run.sh` (or `python ../../run_pystarc.py config.xml` once `apbs_output` exists, or with `target_grid_dx` and `born_grid_dx` left blank so APBS runs inside `bd_sims`) builds the chain inputs and runs the simulation. On a SLURM cluster, `submit.sh` runs the entire `10,000`-trajectory multi-node CPU workflow in one command (default `2` Rome nodes × `125` CPUs = `250` CPUs total):
+On a single workstation, `bash run.sh` (or `python ../../run_pystarc.py config.xml` once `apbs_output` exists, or with `target_grid_dx` and `born_grid_dx` blank so APBS runs inside `bd_sims`) builds the chain inputs and runs the simulation. On a SLURM cluster, `submit.sh` runs the `10,000`-trajectory multi-node CPU workflow pinned to `16`-core Rome NUMA domains (default `2` Rome nodes × `8` tasks × `16` CPUs = `256` CPUs total):
 
 ```bash
 cd examples/barnase_barstar
-sbatch submit.sh                    # 2 Rome nodes, 125 CPUs per node (default)
-sbatch --nodes=1 submit.sh          # 1 Rome node, 125 CPUs total
-sbatch --nodes=20 submit.sh         # 20 Rome nodes, 125 CPUs per node (2,500 CPUs total)
+sbatch submit.sh                    # 2 Rome nodes x 8 tasks x 16 CPUs (256 CPUs total, default)
+sbatch --nodes=1 submit.sh          # 1 Rome node x 8 tasks x 16 CPUs (128 CPUs total)
+sbatch --nodes=10 submit.sh         # 10 Rome nodes x 8 tasks x 16 CPUs (1,280 CPUs total)
 ```
 
 Alternatively, the three stages can be submitted separately with `python make_grids.py`, `./submit_shards.sh`, and `python combine_shards.py`.
@@ -647,16 +640,16 @@ During the build step (`python ../../run_pystarc.py config.xml --setup`, called 
 
 `make_grids.py` builds `bd_sims/receptor.pqr` from `config.xml`, runs APBS with the `<electrostatics>` settings (`srad` 1.5 Å, `apbs_fglen` 140.0 Å, `apbs_dime` 449), and writes `barnase0.dx`, `barnase1.dx`, `barnase0_born.dx` and `barnase1_born.dx` into `apbs_output`.
 
-`submit.sh` splits the `10,000` trajectories evenly across SLURM tasks (`shards/shard_01` to `shards/shard_N`) with seed `11111111 * i + 1` per shard, launches one `125`-CPU pool per node via `srun`, and calls `combine_shards.py` on completion. `submit_shards.sh` stages independent single-node shard jobs instead. Each shard writes `results.json`, `trajectories.csv`, saved paths and a log into `bd_sims` of that shard.
+`submit.sh` splits the `10,000` trajectories evenly across `16`-CPU NUMA-pinned SLURM tasks (`shards/shard_01` to `shards/shard_N`) with seed `11111111 * i + 1` per shard, launches each shard under `numactl --localalloc`, and calls `combine_shards.py` on completion. `submit_shards.sh` stages independent single-node shard jobs (`125` CPUs per node) instead. Each shard writes `results.json`, `trajectories.csv`, saved paths and a log into `bd_sims` of that shard.
 
-`combine_shards.py` reads `results.json` from every finished shard, prints the counts per shard, and prints the pooled k<sub>on</sub> = k<sub>b</sub> P<sub>rxn</sub> with a Wilson 95% interval, where P<sub>rxn</sub> = n<sub>reacted</sub>/(n<sub>reacted</sub> + n<sub>escaped</sub>) summed across shards.
+`combine_shards.py` reads `results.json` from every finished shard, prints the counts per shard, and prints the pooled k<sub>on</sub> = k<sub>b</sub> P<sub>rxn</sub> with a Wilson 95% interval, where P<sub>rxn</sub> = n<sub>reacted</sub>/(n<sub>reacted</sub> + n<sub>escaped</sub> + n<sub>max_steps</sub>) summed across shards (plus upper bounds when n<sub>max_steps</sub> > 0).
 
 Each trajectory starts with the chain centroid on the sphere of radius b = `bd_milestone_radius` around the receptor centroid in a random orientation. Each outer step of `dt` moves the chain as a rigid body, while `chain_steps_per_outer` internal steps of `dt_chain` move the beads within the chain. Beyond 1.1 b an outer propagator returns the chain to the b sphere or ends the trajectory as escaped.
 
 | tag in `<chain>` (and companion sections) | entries | effect |
 |---|---|---|
 | `receptor`, `ligand`, `model` (`<structure>`) | `.pdb` receptor and `.pdb` protein chain, `chain` | receptor charges and radii, chain sequence and bead positions |
-| `mode`, `receptor`, `ligand`, `pair_cutoff`, `n_needed` (`<criterion>`) | `contacts`, optional target lists, distance (Å) and count | reaction distance per pair and simultaneous pairs needed |
+| `mode`, `receptor`, `ligand`, `pair_cutoff`, `n_needed` (`<criterion>`) | `contacts`, optional target specs, distance (Å) and count | reaction distance per pair and simultaneous pairs needed |
 | `reaction_pairs_json` | JSON path, blank to build from `<criterion>` | pre-built `[rec_atom_idx, bead_idx, cutoff]` pairs |
 | `dt` (`<simulation>`) | `chain_steps_per_outer` × `dt_chain` (ps) | outer step, shortened to 0.05 ps when a pair is closer than 1.5 × `pair_cutoff` |
 | `dt_chain` | time > 0 (ps) | internal step of the beads |

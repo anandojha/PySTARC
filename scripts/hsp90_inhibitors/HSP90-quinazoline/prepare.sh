@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Criterion: 3 of 6 exposed sidechain contacts shared across all HSP90 complexes at 7.5 A.
-# Receptor atoms ASN51:ND2, ASP54:OD1, LYS58:NZ, MET98:SD, ASP102:OD1, LEU107:CG paired with nearest bound ligand heavy atoms.
+# Receptor atoms ASN51:ND2, ASP54:OD1, LYS58:NZ, MET98:SD, ASP102:OD1, LEU107:CG (canonical numbering; 1-based complex.pdb offset -15) paired with nearest bound ligand heavy atoms.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"

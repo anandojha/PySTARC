@@ -39,7 +39,8 @@ import numpy as np
 
 ORDERS = {"SING": 1, "DOUB": 2, "TRIP": 3, "AROM": 4, "DELO": 4}
 METALS = {"ZN", "MG", "MN", "FE", "FE2", "CU", "CU1", "CO", "NI", "CA", "CAL", "CD", "HG", "SR", "BA", "AL"}
-SKIP_HET = {"HOH", "WAT", "TIP3", "SPC", "NA", "CL", "K", "MG", "ZN", "CA", "CAL", "ACE", "NME", "Na+", "Cl-", "K+"}
+SKIP_SOLVENT = {"HOH", "WAT", "TIP3", "SPC", "NA", "CL", "K", "Na+", "Cl-", "K+"}
+SKIP_HET = SKIP_SOLVENT | {"MG", "ZN", "CA", "CAL", "ACE", "NME"}
 RESIDUE_CHARGES = {"ARG": 1, "LYS": 1, "HIP": 1, "ASP": -1, "GLU": -1, "CYM": -1}
 BACKBONE_KEEP = {"N", "CA", "C", "O", "CB"}
 BACKBONE_GLY = {"N", "CA", "C", "O"}
@@ -249,16 +250,23 @@ def _apply_mutations(prot_lines, mut_specs):
             sys.exit(f"ERROR: --mutate expects RESID:RESNAME or CHAIN:RESID:RESNAME, got {spec!r}")
     out, applied = [], []
     seen = set()
+    matched_specs = set()
     for l in prot_lines:
         ch = l[21]
         rcode = l[22:27].strip()
         rnum = l[22:26].strip()
         old_res = l[17:20].strip()
-        new_res = (parsed.get((ch, rcode)) or parsed.get((ch, rnum))
-                   or parsed.get((None, rcode)) or parsed.get((None, rnum)))
+        spec_key = None
+        new_res = None
+        for cand in ((ch, rcode), (ch, rnum), (None, rcode), (None, rnum)):
+            if cand in parsed:
+                spec_key = cand
+                new_res = parsed[cand]
+                break
         if new_res is None:
             out.append(l)
             continue
+        matched_specs.add(spec_key)
         aname = l[12:16].strip()
         keep_atoms = BACKBONE_GLY if new_res == "GLY" else BACKBONE_KEEP
         if aname not in keep_atoms:
@@ -268,7 +276,7 @@ def _apply_mutations(prot_lines, mut_specs):
         if tag not in seen:
             seen.add(tag)
             applied.append(f"{ch.strip()}{rcode}:{old_res}->{new_res}")
-    if len(seen) < len(parsed):
+    if len(matched_specs) < len(parsed):
         sys.exit(f"ERROR: one or more --mutate targets {mut_specs} were absent from receptor ATOM records")
     if shutil.which("tleap") is not None:
         out = _complete_mutated_sidechains(out, {(t[0], t[1]) for t in seen})
@@ -334,9 +342,10 @@ def _complete_mutated_sidechains(prot_lines, mutated_keys):
                 continue
             serial += 1
             el = an[:1]
+            occ_bf = tmpl[54:66].rstrip("\r\n").ljust(12) if len(tmpl) >= 54 else "  1.00  0.00"
             merged.append(
                 f"ATOM  {serial:5d} {ll[12:16]} {tmpl[17:27]}   "
-                f"{ll[30:54]}{tmpl[54:66]}          {el:>2s}\n"
+                f"{ll[30:54]}{occ_bf}          {el:>2s}\n"
             )
     return merged
 
@@ -450,7 +459,7 @@ def _apply_prot_deprot_and_hs(rw, idx, label, prot_atoms, deprot_atoms, expected
             hs = [b.GetIdx() for b in a.GetNeighbors() if b.GetAtomicNum() == 1]
             if step < 0 and hs:
                 gone.append(hs[-1])
-    for k in sorted(gone, reverse=True):
+    for k in sorted(set(gone), reverse=True):
         rw.RemoveAtom(k)
     mol = rw.GetMol()
     for a in mol.GetAtoms():
@@ -671,12 +680,15 @@ def split_complex_pdb(complex_path, receptor_out, ligand_out, ligand_resname="",
             groups.setdefault((l[21], l[22:27].strip(), l[17:20].strip()), []).append(l)
         if not groups:
             sys.exit(f"ERROR: no ligand HETATM in {complex_path} (pass --ligand-chain for protein-protein PDBs)")
-        chosen = next(iter(groups))
-        if len(groups) > 1:
+        if ligand_resname:
             pick = [k for k in groups if k[2] == ligand_resname]
             if len(pick) != 1:
-                sys.exit(f"ERROR: multiple HETATM groups in {complex_path}, pass --ligand <RESNAME>")
+                sys.exit(f"ERROR: ligand {ligand_resname!r} not uniquely matched in {complex_path}")
             chosen = pick[0]
+        elif len(groups) > 1:
+            sys.exit(f"ERROR: multiple HETATM groups in {complex_path}, pass --ligand <RESNAME>")
+        else:
+            chosen = next(iter(groups))
         lig = groups[chosen]
     os.makedirs(os.path.dirname(os.path.abspath(receptor_out)) or ".", exist_ok=True)
     os.makedirs(os.path.dirname(os.path.abspath(ligand_out)) or ".", exist_ok=True)
@@ -800,7 +812,7 @@ def prmtop_to_pqrs(prmtop_path, pdb_path, ligand_resname, ligand_residues, recep
         rid = int(line[22:26])
         if (lig_rset and rid in lig_rset) or (ligand_resname and res == ligand_resname):
             lig.append(line)
-        elif res not in SKIP_HET:
+        elif res not in SKIP_SOLVENT:
             rec.append(line)
     if not lig:
         sys.exit(f"ERROR: no matching ligand atoms in {prmtop_path}")
@@ -848,7 +860,7 @@ def main(argv=None):
     ap.add_argument("--sphere-pair", default="", help="Generate charged-sphere PQRs from Q_REC:R_REC,Q_LIG:R_LIG (for example 1.0:1.0,-1.0:1.0)")
     ap.add_argument("--receptor-out", default="", help="Output path for the prepared receptor (.pdb or .pqr)")
     ap.add_argument("--ligand-out", default="", help="Output path for the prepared ligand (.pdb or .pqr)")
-    ap.add_argument("--chain", default="", help="Comma-separated receptor chain IDs to retain (blank keeps all chains)")
+    ap.add_argument("--chain", default="", help="Comma-separated receptor chain IDs to retain (blank retains all chains)")
     ap.add_argument("--ligand-chain", default="", help="Comma-separated protein ligand chain IDs to extract into --ligand-out")
     ap.add_argument("--model", choices=("rigid", "chain"), default="rigid", help="Model tag printed in <structure> snippet")
     ap.add_argument("--resid-min", type=int, default=None, help="Lowest receptor residue number retained")
@@ -873,7 +885,7 @@ def main(argv=None):
     ap.add_argument("--pocket-ligand", default="", help="Reference HETATM residue name marking the pocket centroid for --smiles")
     ap.add_argument("--pocket-ligand-resid", type=int, default=None, help="Residue number of --pocket-ligand")
     ap.add_argument("--formula", default="", help="Optional expected molecular formula check for the ligand")
-    ap.add_argument("--keep-hetatm", default="", help="Comma-separated HETATM residue names kept with the receptor")
+    ap.add_argument("--keep-hetatm", default="", help="Comma-separated HETATM residue names retained with the receptor")
     ap.add_argument("--hid", default="", help="Comma-separated receptor residue numbers (or CHAIN:RESID) set to HID")
     ap.add_argument("--hie", default="", help="Comma-separated receptor residue numbers (or CHAIN:RESID) set to HIE")
     ap.add_argument("--hip", default="", help="Comma-separated receptor residue numbers (or CHAIN:RESID) set to HIP")
@@ -1068,7 +1080,7 @@ def main(argv=None):
     his_str = ", ".join(f"{c.strip()}{r}:{t}" for (c, r), t in sorted(his_applied.items())) or "unchanged"
     mut_str = f", mutations {', '.join(mut_applied)}" if mut_applied else ""
     print(f"# Prepared {target_desc} -> {n_res} receptor residues ({len(prot_lines)} protein atoms, "
-          f"states {his_str}{mut_str}), kept HETATM {len(kept_het_lines)} atoms, ligand {lig_msg}", file=sys.stderr)
+          f"states {his_str}{mut_str}), retained HETATM {len(kept_het_lines)} atoms, ligand {lig_msg}", file=sys.stderr)
     _print_structure_snippet(rec_out, lig_out, q_net, args.model)
 
 

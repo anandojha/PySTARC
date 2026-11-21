@@ -21,13 +21,13 @@ GPU-accelerated rigid body and flexible chain Brownian dynamics simulations for 
 
 [![PyPI](https://img.shields.io/pypi/v/pystarc.svg)](https://pypi.org/project/pystarc/)
 [![Downloads](https://img.shields.io/pypi/dm/pystarc.svg)](https://pypi.org/project/pystarc/)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![CUDA](https://img.shields.io/badge/CUDA-12%2B-green.svg)](https://developer.nvidia.com/cuda-toolkit)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Dependabot](https://img.shields.io/badge/dependabot-enabled-blue.svg?logo=dependabot)](https://github.com/anandojha/PySTARC/network/updates)
-[![Lines of Code](https://img.shields.io/badge/lines_of_code-51k-blue.svg)](https://github.com/anandojha/PySTARC)
+[![Lines of Code](https://img.shields.io/badge/lines_of_code-60k-blue.svg)](https://github.com/anandojha/PySTARC)
 
 </div>
 
@@ -61,8 +61,7 @@ cd PySTARC
 conda create -n PySTARC python=3.11 -y
 conda activate PySTARC
 conda install -c conda-forge ambertools=24.8 apbs rdkit openbabel -y
-pip install matplotlib
-pip install pystarc --force-reinstall
+pip install .
 ```
 
 ## Testing
@@ -102,7 +101,7 @@ examples/
 ## Requirements
 
 ```
-Python 3.11+
+Python 3.10+
 AmberTools 24.8
 APBS
 OpenBabel
@@ -121,6 +120,6 @@ MIT
 
 ## Citation
 
-When using PySTARC, please cite
+Please cite:
 
 > Anupam Anand Ojha, Gary Huber, Shiksha Dutta, Sonya M. Hanson. PySTARC: GPU-accelerated Brownian dynamics for bimolecular association rate constants (2026). https://doi.org/10.64898/2026.09.28.754770
