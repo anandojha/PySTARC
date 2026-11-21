@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Criterion tier: Tier 3 (pocket-rim), multi-scaffold inhibitor in deep enclosed pocket (enclosure >= 0.93, N_lig_heavy >= 21).
-# Rule: 3-of-6 conserved outer-mouth sidechain tips (ASN51:ND2, ASP54:OD1, LYS58:NZ, MET98:SD, ASP102:OD1, LEU107:CG; sequence-aligned) paired automatically (--atom-filter all) with nearest bound ligand heavy atoms at 7.0 A.
+# Rule: 3-of-6 conserved outer-mouth sidechain tips (ASN51:ND2, ASP54:OD1, LYS58:NZ, MET98:SD, ASP102:OD1, LEU107:CG; sequence-aligned) paired automatically (--atom-filter all) with nearest bound ligand heavy atoms at 8.0 A.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -20,6 +20,6 @@ CRIT_XML="$(python "$SCRIPTS/find_reaction_criteria.py" \
   --ligand "$OUT/ligand.pdb" \
   --receptor-targets 35:ND2:ASN,38:OD1:ASP,42:NZ:LYS,82:SD:MET,86:OD1:ASP,91:CG:LEU \
   --atom-filter all \
-  --pair-cutoff 7.0)"
+  --pair-cutoff 8.0)"
 
 printf '%s\n\n%s\n' "$STRUCT_XML" "$CRIT_XML" | tee "$OUT/config_snippet.xml"

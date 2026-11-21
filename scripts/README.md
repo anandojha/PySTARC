@@ -156,7 +156,7 @@ When configuring a brand-new complex without a measured $k_{\mathrm{on}}$, run `
 |---|---|---|---|
 | **Tier 1 (`centroid`)** | `N_rec_heavy < 120` (symmetric sphere pair or macrocyclic host cavity) | `mode = centroid` (`2.5 Å` analytical sphere contact; `8.0 Å` host cavity capture) | `two_charged_spheres` (`1`), `beta_cyclodextrin_guests` (`7`) |
 | **Tier 2 (`open-site polar`)** | Solid-angle pocket enclosure `f_enclosed < 0.70` or compact ligand `N_lig_heavy <= 15` | Automatic `3`-of-`6` shortest bound polar contacts (`N, O, S`, one per receptor residue, `search_cutoff = 6.0 Å`) at **`7.0 Å`** | `thrombin_thrombomodulin` (`1`), `trypsin_benzamidine` (`1`), `ca13_azm` (`1`) |
-| **Tier 3 (`pocket-rim`)** | Deep enclosed pocket (`f_enclosed >= 0.70`) and bulky ligand (`N_lig_heavy > 15`) | `3`-of-`6` conserved solvent-exposed pocket-mouth rim contacts (`Cβ` mouth ring paired with the conserved pharmacophore anchor for single-scaffold pockets, or outer-mouth sidechain tips paired automatically via `--atom-filter all` with nearest bound heavy atoms across multi-scaffold series) | `CA-VD` (`6`, `7.0 Å`), `HSP90` (`6`, `7.0 Å`), `p38 MAPK` (`1`, `8.0 Å`), `TTK` (`8`, `9.0 Å`) |
+| **Tier 3 (`pocket-rim`)** | Deep enclosed pocket (`f_enclosed >= 0.70`) and bulky ligand (`N_lig_heavy > 15`) | `3`-of-`6` conserved solvent-exposed pocket-mouth rim contacts (`Cβ` mouth ring paired with the conserved pharmacophore anchor for single-scaffold pockets, or outer-mouth sidechain tips paired automatically via `--atom-filter all` with nearest bound heavy atoms across multi-scaffold series) | `CA-VD` (`6`, `7.0 Å`), `HSP90` (`6`, `8.0 Å`), `p38 MAPK` (`1`, `8.0 Å`), `TTK` (`8`, `9.0 Å`) |
 
 For Tier 3 pockets, `pair_cutoff` starts at the universal default **`7.0 Å`** and steps up in `1.0 Å` increments (`8.0 Å`, `9.0 Å`) to the smallest whole integer that clears rigid-body steric exclusion (`--check-accessibility`) across every complex in the structural family. Across all `32` rigid complexes, running `python scripts/verify_criteria.py` confirms that every `scripts/*/prepare.sh` reproduces the exact `<criterion>` block in `examples/*/config.xml` (`0` mismatches). Flexible-chain `barnase_barstar` (`model = chain`) constructs `reaction_pairs.json` independently via `--chain-pairs-out`.
 
@@ -199,7 +199,7 @@ python scripts/find_reaction_criteria.py \
 python scripts/find_reaction_criteria.py \
   --receptor receptor.pdb --ligand ligand.pdb \
   --receptor-targets 51:ND2:ASN,54:OD1:ASP,58:NZ:LYS,98:SD:MET,102:OD1:ASP,107:CG:LEU \
-  --atom-filter all --pair-cutoff 7.0 --check-accessibility
+  --atom-filter all --pair-cutoff 8.0 --check-accessibility
 
 # 3. Tier 3 conserved-pharmacophore pocket: mouth CB ring paired with the conserved anchor atom
 python scripts/find_reaction_criteria.py \
