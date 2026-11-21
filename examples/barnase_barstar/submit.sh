@@ -2,15 +2,15 @@
 #SBATCH --job-name=barnase_barstar
 #SBATCH --partition=ccb
 #SBATCH --nodes=2
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=125
+#SBATCH --ntasks-per-node=8
+#SBATCH --cpus-per-task=16
 #SBATCH --mem=600G
 #SBATCH --constraint=rome
 #SBATCH --time=7-00:00:00
-# Unified SLURM submission script for multi-node CPU flexible-chain BD.
-# sbatch submit.sh                   # 2 Rome nodes x 125 CPUs (250 CPUs total, default)
-# sbatch --nodes=1 submit.sh         # 1 Rome node x 125 CPUs (125 CPUs total)
-# sbatch --nodes=20 submit.sh        # 20 Rome nodes x 125 CPUs (2,500 CPUs total)
+# Multi-node CPU SLURM script for flexible-chain BD pinned to 16-core Rome NUMA domains.
+# sbatch submit.sh                   # 2 Rome nodes x 8 tasks x 16 CPUs (256 CPUs total, default)
+# sbatch --nodes=1 submit.sh         # 1 Rome node x 8 tasks x 16 CPUs (128 CPUs total)
+# sbatch --nodes=10 submit.sh        # 10 Rome nodes x 8 tasks x 16 CPUs (1,280 CPUs total)
 
 if ! command -v conda >/dev/null 2>&1; then
   [ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc" 2>/dev/null || true
@@ -39,8 +39,8 @@ export PYTHONUNBUFFERED=1
 
 cd "$BASE"
 
-N_TASKS="${SLURM_NTASKS:-1}"
-CPUS="${SLURM_CPUS_PER_TASK:-125}"
+N_TASKS="${SLURM_NTASKS:-8}"
+CPUS="${SLURM_CPUS_PER_TASK:-16}"
 
 rm -rf bd_sims shards
 python "$ROOT/run_pystarc.py" config.xml --setup
@@ -48,7 +48,10 @@ python "$ROOT/run_pystarc.py" config.xml --setup
 # Build APBS electrostatic and Born grids once on the head node if absent.
 OMP_NUM_THREADS=16 python "$BASE/make_grids.py" bd_sims/input.xml
 
-# Split total trajectories evenly across SLURM tasks (one worker pool of $CPUS per node).
+# Populate target hydrodynamic radius cache once before launching parallel shards.
+python -c 'from pathlib import Path; from pystarc.pipeline.input_parser import parse; from pystarc.pipeline.geometry import analyse_molecule; c = parse("bd_sims/input.xml"); analyse_molecule(Path(c.receptor_pqr), srad=c.srad)'
+
+# Split total trajectories evenly across SLURM tasks (one NUMA-local worker pool per task).
 python - "$BASE" "$BASE/bd_sims/input.xml" "$N_TASKS" "$CPUS" <<'PY'
 import os
 import re
@@ -67,7 +70,7 @@ per_task, rem = divmod(total_traj, n_tasks)
 
 shards_dir = os.path.join(base, "shards")
 os.makedirs(shards_dir, exist_ok=True)
-print(f"Staging {total_traj} trajectories across {n_tasks} nodes x {cpus} CPUs ({n_tasks * cpus} CPUs total)")
+print(f"Staging {total_traj} trajectories across {n_tasks} tasks x {cpus} CPUs ({n_tasks * cpus} CPUs total)")
 
 for i in range(1, n_tasks + 1):
     n_i = per_task + (1 if i <= rem else 0)
@@ -86,7 +89,7 @@ for i in range(1, n_tasks + 1):
     print(f"  shard_{i:02d}: n_trajectories={n_i} n_workers={cpus} seed={seed_i}")
 PY
 
-srun --ntasks="$N_TASKS" --cpus-per-task="$CPUS" --kill-on-bad-exit=1 \
+srun --ntasks="$N_TASKS" --cpus-per-task="$CPUS" --cpu-bind=cores --kill-on-bad-exit=1 \
   bash -c '
     set -eo pipefail
     SHARD=$(printf "shard_%02d" $((SLURM_PROCID + 1)))
@@ -96,7 +99,11 @@ srun --ntasks="$N_TASKS" --cpus-per-task="$CPUS" --kill-on-bad-exit=1 \
     export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 NUMBA_NUM_THREADS=1
     export PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
     cd "$1/shards/$SHARD"
-    python "$2/run_pystarc.py" input.xml
+    if command -v numactl >/dev/null 2>&1; then
+      numactl --localalloc python "$2/run_pystarc.py" input.xml
+    else
+      python "$2/run_pystarc.py" input.xml
+    fi
   ' _ "$BASE" "$ROOT"
 
 python "$BASE/combine_shards.py"

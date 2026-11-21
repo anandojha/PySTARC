@@ -1,6 +1,6 @@
 # barnase_barstar
 
-Runs on CPUs and needs no GPU. Total trajectories split evenly across nodes in `submit.sh` (default `2` Rome nodes × `125` CPUs = `250` CPUs total).
+Runs on CPUs and needs no GPU. Total trajectories split evenly across NUMA-local tasks in `submit.sh` (default `2` Rome nodes × `8` tasks × `16` CPUs = `256` CPUs total).
 
 ## Input files
 ```
@@ -10,7 +10,7 @@ reaction_pairs.json  Receptor atom and chain bead contact pairs
 config.xml           PySTARC configuration file
 run.sh               Script to run a single simulation on the workstation
 make_grids.py        Builds the APBS electrostatic and Born grids
-submit.sh            Unified multi-node CPU SLURM script (builds grids, runs shards, pools rate)
+submit.sh            Multi-node CPU SLURM script (builds grids, runs NUMA-pinned shards, pools rate)
 submit_shards.sh     Stages and submits independent single-node CPU shard jobs
 combine_shards.py    Pools the shards into one rate
 ```
@@ -19,9 +19,9 @@ combine_shards.py    Pools the shards into one rate
 ```bash
 cd ~/PySTARC/examples/barnase_barstar
 conda activate PySTARC
-sbatch submit.sh                    # 2 Rome nodes, 125 CPUs per node (250 CPUs total, default)
-sbatch --nodes=1 submit.sh          # 1 Rome node, 125 CPUs total
-sbatch --nodes=20 submit.sh         # 20 Rome nodes, 125 CPUs per node (2,500 CPUs total)
+sbatch submit.sh                    # 2 Rome nodes, 8 tasks x 16 CPUs per node (256 CPUs total, default)
+sbatch --nodes=1 submit.sh          # 1 Rome node, 8 tasks x 16 CPUs (128 CPUs total)
+sbatch --nodes=10 submit.sh         # 10 Rome nodes, 8 tasks x 16 CPUs per node (1,280 CPUs total)
 ```
 
 ## Generated output files
@@ -34,8 +34,8 @@ bd_sims/
 └── build_record.json         Build provenance and checksums
 apbs_output/                  APBS electrostatic and Born grids of the receptor
 shards/
-├── shard_01/                 First node shard with independent seed
+├── shard_01/                 First NUMA-local shard with independent seed
 │   └── bd_sims/results.json  Association rate from shard 1
-└── shard_02/                 Second node shard with independent seed
-    └── bd_sims/results.json  Association rate from shard 2
+└── shard_16/                 Sixteenth NUMA-local shard with independent seed
+    └── bd_sims/results.json  Association rate from shard 16
 ```
