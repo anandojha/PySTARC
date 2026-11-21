@@ -424,6 +424,8 @@ Rigid body examples keep every tag inside `<chain>` blank:
   <d_trans></d_trans>
   <d_rot></d_rot>
   <soft_repulsion_eps></soft_repulsion_eps>
+  <elastic_network_cutoff></elastic_network_cutoff>
+  <elastic_network_k></elastic_network_k>
   <target_grid_dx></target_grid_dx>
   <born_grid_dx></born_grid_dx>
 </chain>
@@ -623,25 +625,29 @@ The flexible chain model treats the ligand as a chain of coarse grained COFFDROP
     <d_trans>0.015</d_trans>
     <d_rot>0.00005</d_rot>
     <soft_repulsion_eps>1.0</soft_repulsion_eps>
+    <elastic_network_cutoff>9.0</elastic_network_cutoff>
+    <elastic_network_k>2.0</elastic_network_k>
     <target_grid_dx>apbs_output/barnase1.dx</target_grid_dx>
     <born_grid_dx>apbs_output/barnase0_born.dx</born_grid_dx>
   </chain>
 ```
 
-On a single workstation, `bash run.sh` (or `python ../../run_pystarc.py config.xml` once `apbs_output` exists, or with `target_grid_dx` and `born_grid_dx` left blank so APBS runs inside `bd_sims`) builds the chain inputs and runs the simulation. On a SLURM cluster, three commands run the 25 shard production workflow in order:
+On a single workstation, `bash run.sh` (or `python ../../run_pystarc.py config.xml` once `apbs_output` exists, or with `target_grid_dx` and `born_grid_dx` left blank so APBS runs inside `bd_sims`) builds the chain inputs and runs the simulation. On a SLURM cluster, `submit.sh` runs the entire `10,000`-trajectory multi-node CPU workflow in one command (default `2` Rome nodes × `125` CPUs = `250` CPUs total):
 
 ```bash
 cd examples/barnase_barstar
-python make_grids.py
-./submit_shards.sh
-python combine_shards.py
+sbatch submit.sh                    # 2 Rome nodes, 125 CPUs per node (default)
+sbatch --nodes=1 submit.sh          # 1 Rome node, 125 CPUs total
+sbatch --nodes=20 submit.sh         # 20 Rome nodes, 125 CPUs per node (2,500 CPUs total)
 ```
 
-During the build step (`python ../../run_pystarc.py config.xml --setup`, called inside `submit_shards.sh`), `run_pystarc.py` parameterizes `receptor.pdb` with `tleap` (`ff14SB`) and writes a centered receptor PQR to `bd_sims/receptor.pqr`, builds `ligand.pdb` as 230 COFFDROP beads across 87 residues in `bd_sims/chain.json`, copies the 568 receptor atom and bead pairs of `reaction_pairs.json` into `bd_sims/reaction_pairs.json` (or builds `bd_sims/reaction_pairs.json` from `<criterion>` when `reaction_pairs_json` is blank), and writes `bd_sims/input.xml` and `bd_sims/build_record.json`.
+Alternatively, the three stages can be submitted separately with `python make_grids.py`, `./submit_shards.sh`, and `python combine_shards.py`.
 
-`make_grids.py` builds `bd_sims/receptor.pqr` from `config.xml`, runs APBS with the `<electrostatics>` settings (`srad` 1.5 Å, `apbs_fglen` 140.0 Å, `apbs_dime` 449), and writes `barnase0.dx`, `barnase1.dx`, `barnase0_born.dx` and `barnase1_born.dx` into `apbs_output`. `examples/barnase_barstar/README.md` submits `make_grids.py` as a SLURM job with 128 GB of memory.
+During the build step (`python ../../run_pystarc.py config.xml --setup`, called inside `submit.sh` and `submit_shards.sh`), `run_pystarc.py` parameterizes `receptor.pdb` with `tleap` (`ff14SB`) and writes a centered receptor PQR to `bd_sims/receptor.pqr`, builds `ligand.pdb` as 230 COFFDROP beads across 87 residues in `bd_sims/chain.json`, copies the 568 receptor atom and bead pairs of `reaction_pairs.json` into `bd_sims/reaction_pairs.json` (or builds `bd_sims/reaction_pairs.json` from `<criterion>` when `reaction_pairs_json` is blank), and writes `bd_sims/input.xml` and `bd_sims/build_record.json`.
 
-`submit_shards.sh` creates `shards/shard_01` to `shards/shard_25` (`NSHARD=25` by default), links `apbs_output`, copies `bd_sims/input.xml` into each shard folder with seed `11111111 * i + 1`, and submits one 96 CPU SLURM job per shard running `python $RUNNER input.xml`. Each shard writes `results.json`, `trajectories.csv`, saved paths and a log into `bd_sims` of that shard.
+`make_grids.py` builds `bd_sims/receptor.pqr` from `config.xml`, runs APBS with the `<electrostatics>` settings (`srad` 1.5 Å, `apbs_fglen` 140.0 Å, `apbs_dime` 449), and writes `barnase0.dx`, `barnase1.dx`, `barnase0_born.dx` and `barnase1_born.dx` into `apbs_output`.
+
+`submit.sh` splits the `10,000` trajectories evenly across SLURM tasks (`shards/shard_01` to `shards/shard_N`) with seed `11111111 * i + 1` per shard, launches one `125`-CPU pool per node via `srun`, and calls `combine_shards.py` on completion. `submit_shards.sh` stages independent single-node shard jobs instead. Each shard writes `results.json`, `trajectories.csv`, saved paths and a log into `bd_sims` of that shard.
 
 `combine_shards.py` reads `results.json` from every finished shard, prints the counts per shard, and prints the pooled k<sub>on</sub> = k<sub>b</sub> P<sub>rxn</sub> with a Wilson 95% interval, where P<sub>rxn</sub> = n<sub>reacted</sub>/(n<sub>reacted</sub> + n<sub>escaped</sub>) summed across shards.
 
@@ -659,6 +665,8 @@ Each trajectory starts with the chain centroid on the sphere of radius b = `bd_m
 | `auto_diffusion` | `true` or `false` | `true` rebuilds chain diffusion tensors from bead geometry every 10 outer steps, `false` reads `d_trans` and `d_rot` |
 | `d_trans`, `d_rot` | > 0 (Å<sup>2</sup>/ps), > 0 (rad<sup>2</sup>/ps) | chain diffusion coefficients when `auto_diffusion` is `false` |
 | `soft_repulsion` (`<physics>`), `soft_repulsion_eps` | `true` or `false`, energy ≥ 0 (kT) | repulsion 4ε[(σ/r)<sup>12</sup> − (σ/r)<sup>6</sup>] + ε for r < 2<sup>1/6</sup>σ between beads and receptor atoms and nonbonded bead pairs |
+| `elastic_network_cutoff` | distance ≥ 0 (Å), blank or `0` for none | backbone Cα elastic network cutoff distance preserving native tertiary fold |
+| `elastic_network_k` | spring constant ≥ 0 (kT/Å<sup>2</sup>) | harmonic force constant of the backbone Cα elastic network |
 | `target_grid_dx` | DX path, blank to build in `work_dir` | receptor APBS fine potential grid acting on bead charges |
 | `born_grid_dx` | DX path, blank to build in `work_dir` | receptor Born desolvation grid acting on bead charges, scaled by `desolvation_alpha` |
 | `n_threads` (`<compute>`) | integer ≥ 1 | worker processes per run or shard |
