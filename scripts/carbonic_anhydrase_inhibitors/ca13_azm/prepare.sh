@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Criterion tier: Tier 2 (open-site polar), compact fragment (N_lig_heavy = 13 <= 15).
-# Rule: automatic 3-of-6 shortest bound polar contacts (N, O, S; one per receptor residue) at 7.0 A.
+# Criterion: 3 of 6 exposed CB contacts shared across all carbonic anhydrase complexes at 7.0 A.
+# Receptor residues 64, 67, 92, 131, 200, 201 paired with sulfonamide N1.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -23,8 +23,8 @@ STRUCT_XML="$(python "$SCRIPTS/prepare_pdb.py" \
 CRIT_XML="$(python "$SCRIPTS/find_reaction_criteria.py" \
   --receptor "$OUT/receptor.pdb" \
   --ligand "$OUT/ligand.pdb" \
-  --atom-filter polar \
-  --n-pairs 6 \
+  --receptor-targets 64:CB:HIS,67:CB:ASN,92:CB:GLN,131:CB:PHE,200:CB:VAL,201:CB:PRO \
+  --ligand-atoms N1 \
   --pair-cutoff 7.0)"
 
 printf '%s\n\n%s\n' "$STRUCT_XML" "$CRIT_XML" | tee "$OUT/config_snippet.xml"
