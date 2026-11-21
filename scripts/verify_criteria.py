@@ -3,7 +3,7 @@
 
 Runs scripts/find_reaction_criteria.py with the exact flags written in each
 rigid complex prepare.sh script, checks exact equality against the <criterion>
-block in examples/*/config.xml, and prints the geometric three-tier audit
+block in examples/*/config.xml, and prints the binding-site geometry audit
 table across all 32 rigid benchmark complexes (plus the flexible-chain entry).
 
 Usage:
@@ -62,14 +62,22 @@ def _extract_frc_args(prepare_sh, rec_path, lig_path):
     return args
 
 
+def _site_category(mode, cli_args):
+    if mode == "centroid":
+        return "Centroid (host/sphere)"
+    if "--receptor-targets" in cli_args:
+        return "Deep site (exposed rim)"
+    return "Accessible site (polar)"
+
+
 def _criterion_summary(rel, mode, cutoff, n_needed, args):
     if mode == "centroid":
         return f"Centroid ({cutoff:.1f} A)"
     if "--receptor-targets" not in args:
         return f"{n_needed}-of-6 polar ({cutoff:.1f} A)"
     if "hsp90_inhibitors" in rel:
-        return f"{n_needed}-of-6 outer-mouth ({cutoff:.1f} A)"
-    return f"{n_needed}-of-6 mouth CB ({cutoff:.1f} A)"
+        return f"{n_needed}-of-6 exposed tips ({cutoff:.1f} A)"
+    return f"{n_needed}-of-6 exposed CB ({cutoff:.1f} A)"
 
 
 def main(argv=None):
@@ -77,7 +85,7 @@ def main(argv=None):
     ap.add_argument(
         "--check-accessibility",
         action="store_true",
-        help="Also run the NumPy rigid-body steric clearance audit on each contact complex",
+        help="Run the NumPy rigid-body steric accessibility audit on each contact complex",
     )
     args = ap.parse_args(argv)
 
@@ -85,8 +93,8 @@ def main(argv=None):
     configs = sorted((REPO_DIR / "examples").rglob("config.xml"))
 
     header = (
-        f"{'Complex':47s} | {'Tier':24s} | {'N_rec':>5s} | {'N_lig':>5s} | "
-        f"{'Encl':>4s} | {'Criterion':26s} | {'N_traj':>10s} | {'Status'}"
+        f"{'Complex':47s} | {'Category':24s} | {'N_rec':>5s} | {'N_lig':>5s} | "
+        f"{'Shld':>4s} | {'Criterion':27s} | {'N_traj':>10s} | {'Status'}"
     )
     print(header)
     print("-" * len(header))
@@ -112,8 +120,8 @@ def main(argv=None):
             geom = frc.compute_pocket_geometry(rec, lig)
             print(
                 f"{rel:47s} | {'Chain (COFFDROP CPU)':24s} | {geom['n_rec_heavy']:5d} | "
-                f"{geom['n_lig_heavy']:5d} | {geom['f_enclosed']:4.2f} | "
-                f"{f'Chain contacts ({cutoff:.1f} A)':26s} | {n_traj:10,d} | CHAIN"
+                f"{geom['n_lig_heavy']:5d} | {geom['f_shielded']:4.2f} | "
+                f"{f'Chain contacts ({cutoff:.1f} A)':27s} | {n_traj:10,d} | CHAIN"
             )
             continue
 
@@ -140,6 +148,7 @@ def main(argv=None):
         lig = frc.parse_structure_atoms(str(lig_path))
         geom = frc.compute_pocket_geometry(rec, lig)
         mode = cfg_norm[0]
+        cat_label = _site_category(mode, cli_args)
         crit_label = _criterion_summary(rel, mode, cutoff, n_needed, cli_args)
         status = "OK" if ok else "MISMATCH"
         if args.check_accessibility and mode == "contacts":
@@ -150,9 +159,9 @@ def main(argv=None):
                     status = f"{status} (acc: {m_cut.group(1)})"
 
         print(
-            f"{rel:47s} | {geom['tier']:24s} | {geom['n_rec_heavy']:5d} | "
-            f"{geom['n_lig_heavy']:5d} | {geom['f_enclosed']:4.2f} | "
-            f"{crit_label:26s} | {n_traj:10,d} | {status}"
+            f"{rel:47s} | {cat_label:24s} | {geom['n_rec_heavy']:5d} | "
+            f"{geom['n_lig_heavy']:5d} | {geom['f_shielded']:4.2f} | "
+            f"{crit_label:27s} | {n_traj:10,d} | {status}"
         )
 
     print("-" * len(header))

@@ -5,24 +5,26 @@ Inspects prepared receptor and ligand structures (.pdb + .pdb or .pqr + .pqr)
 and prints a ready-to-paste <criterion> block (or writes reaction_pairs.json
 when --chain-pairs-out is set). Independent of PySTARC runtime code.
 
-Default three-tier structural protocol (pure 3D geometry, zero kinetic fitting):
-  Tier 1 (centroid): symmetric sphere pairs or macrocyclic host cavities
-      (receptor heavy-atom count < 120).
-  Tier 2 (open-site polar): open interfaces (pocket enclosure < 0.70) or
-      compact fragments (ligand heavy-atom count <= 15); 3-of-6 shortest
-      bound polar contacts (N, O, S, one per receptor residue) at 7.0 A.
-  Tier 3 (pocket-rim): bulky ligands in deep enclosed pockets
-      (enclosure >= 0.70 and ligand heavy atoms > 15); 3-of-6 conserved
-      solvent-exposed pocket-mouth rim contacts at the smallest integer
-      cutoff in {7.0, 8.0, 9.0} A clearing rigid-body steric exclusion.
+Coordinate-based criterion selection (from atomic coordinates alone):
+  - Geometric centers (centroid): symmetric sphere pairs or macrocyclic
+      host cavities (receptor heavy-atom count < 120).
+  - Solvent-accessible binding sites (polar contacts): exposed interfaces
+      (solid-angle shielding fraction < 0.70) or small ligands (ligand
+      heavy-atom count <= 15); 3-of-6 shortest bound polar contacts
+      (N, O, S, one per receptor residue) at 7.0 A.
+  - Deep binding sites (exposed rim contacts): deep pockets
+      (shielding fraction >= 0.70 and ligand heavy atoms > 15) or series
+      lacking an experimental bound pose; 3-of-6 conserved solvent-exposed
+      receptor targets shared across the receptor family at a rigid-body
+      sterically accessible cutoff.
 
 Workflows:
-  1. Diagnose pocket geometry and recommend a tier (--diagnose / --suggest-rim):
+  1. Diagnose binding-site geometry and rank solvent-exposed rim residues:
      python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --diagnose --suggest-rim
   2. Bound-pose contact pairs (polar, hetero, all, nonpolar, or custom --elements):
      python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --atom-filter polar --n-pairs 6 --pair-cutoff 7.0
-  3. Named pocket-rim receptor targets (explicit anchor or auto-picked nearest heavy atoms):
-     python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --receptor-targets 51:ND2:ASN,54:OD1:ASP,58:NZ:LYS,98:SD:MET,102:OD1:ASP,107:CG:LEU --atom-filter all --pair-cutoff 7.0
+  3. Shared solvent-exposed receptor targets (explicit anchor or nearest heavy atoms):
+     python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --receptor-targets 51:ND2:ASN,54:OD1:ASP,58:NZ:LYS,98:SD:MET,102:OD1:ASP,107:CG:LEU --atom-filter all --pair-cutoff 7.5
   4. Verify rigid-body steric accessibility of a candidate criterion:
      python scripts/find_reaction_criteria.py --receptor receptor.pdb --ligand ligand.pdb --atom-filter polar --pair-cutoff 7.0 --check-accessibility
   5. Centroid reaction criterion:
@@ -490,7 +492,7 @@ def _fibonacci_sphere(n=100):
 
 
 def compute_pocket_geometry(rec, lig):
-    """Compute purely geometric enclosure and solute size descriptors from coordinates."""
+    """Compute solid-angle shielding and solute size descriptors from coordinates."""
     r_xyz = np.array([a["xyz"] for a in rec if a["el"] != "H"], dtype=float)
     l_xyz = np.array([b["xyz"] for b in lig if b["el"] != "H"], dtype=float)
     if not len(r_xyz):
@@ -511,7 +513,7 @@ def compute_pocket_geometry(rec, lig):
     mean_n6 = float((dmat < 6.0).sum(axis=1).mean())
     mean_n8 = float((dmat < 8.0).sum(axis=1).mean())
 
-    # Solid-angle pocket enclosure via 100 Fibonacci rays from the ligand centroid
+    # Solid-angle shielding fraction via 100 Fibonacci rays from the ligand centroid
     dirs = _fibonacci_sphere(100)
     near_r = r_xyz[np.linalg.norm(r_xyz - lc, axis=1) < 12.0]
     if len(near_r):
@@ -519,11 +521,11 @@ def compute_pocket_geometry(rec, lig):
         proj = dirs @ v.T
         v2 = np.sum(v * v, axis=1)[None, :]
         perp2 = np.maximum(0.0, v2 - proj * proj)
-        occluded = np.any((proj > 0.0) & (perp2 < 9.0), axis=1)
-        f_enclosed = float(occluded.mean())
-        open_dirs = dirs[~occluded]
+        blocked = np.any((proj > 0.0) & (perp2 < 9.0), axis=1)
+        f_shielded = float(blocked.mean())
+        open_dirs = dirs[~blocked]
     else:
-        f_enclosed = 0.0
+        f_shielded = 0.0
         open_dirs = dirs
 
     if len(open_dirs) and float(np.linalg.norm(open_dirs.mean(axis=0))) > 1e-6:
@@ -535,14 +537,14 @@ def compute_pocket_geometry(rec, lig):
         exit_vec = diff / nrm if nrm > 1e-6 else np.array([0.0, 0.0, 1.0])
 
     if n_rec < 120:
-        tier = "Tier 1 (centroid)"
-        rec_rule = "mode=centroid (symmetric sphere or macrocyclic host cavity)"
-    elif f_enclosed < 0.70 or n_lig <= 15:
-        tier = "Tier 2 (open-site polar)"
+        site_class = "Centroid (host/sphere)"
+        rec_rule = "mode=centroid (symmetric sphere pair or macrocyclic host cavity)"
+    elif f_shielded < 0.70 or n_lig <= 15:
+        site_class = "Accessible site (polar)"
         rec_rule = "mode=contacts, --atom-filter polar --search-cutoff 6.0 --n-pairs 6 --pair-cutoff 7.0"
     else:
-        tier = "Tier 3 (pocket-rim)"
-        rec_rule = "mode=contacts, 3-of-6 conserved pocket-mouth rim targets at smallest accessible cutoff in {7.0, 8.0, 9.0} A"
+        site_class = "Deep site (exposed rim)"
+        rec_rule = "mode=contacts, 3-of-6 shared solvent-exposed receptor targets at a sterically accessible cutoff"
 
     return {
         "n_rec_heavy": n_rec,
@@ -552,15 +554,15 @@ def compute_pocket_geometry(rec, lig):
         "r_lig_max": r_lig_max,
         "mean_n6": mean_n6,
         "mean_n8": mean_n8,
-        "f_enclosed": f_enclosed,
+        "f_shielded": f_shielded,
         "exit_vec": exit_vec,
-        "tier": tier,
+        "site_class": site_class,
         "recommendation": rec_rule,
     }
 
 
 def suggest_pocket_rim_targets(rec, lig, n_targets=6, rim_atom="CB"):
-    """Select n_targets solvent-exposed pocket-mouth rim atoms by pure 3D geometry."""
+    """Select n_targets solvent-exposed binding-site rim atoms from 3D geometry."""
     geom = compute_pocket_geometry(rec, lig)
     exit_vec = geom["exit_vec"]
     r_heavy_xyz = np.array([a["xyz"] for a in rec if a["el"] != "H"], dtype=float)
@@ -602,7 +604,7 @@ def suggest_pocket_rim_targets(rec, lig, n_targets=6, rim_atom="CB"):
     if not cands:
         return []
 
-    # Score outward-facing solvent-exposed rim residues (higher outward, lower crowding, closer to mouth)
+    # Score outward-facing solvent-exposed rim residues (higher outward, lower crowding, closer to ligand)
     out_vals = np.array([c["outward"] for c in cands])
     n8_vals = np.array([c["n8_rec"] for c in cands], dtype=float)
     d_vals = np.array([c["d_lig_min"] for c in cands])
@@ -635,7 +637,7 @@ def suggest_pocket_rim_targets(rec, lig, n_targets=6, rim_atom="CB"):
 
 
 def check_rigid_accessibility(rec, lig, picked, n_needed, cutoffs=(7.0, 8.0, 9.0), n_samples=12000, seed=0):
-    """Fast NumPy rigid-body steric clearance audit across candidate integer cutoffs."""
+    """Fast NumPy rigid-body steric accessibility audit across candidate cutoffs."""
     r_heavy = [a for a in rec if a["el"] != "H"]
     l_heavy = [b for b in lig if b["el"] != "H"]
     if not r_heavy or not l_heavy or not picked:
@@ -662,7 +664,7 @@ def check_rigid_accessibility(rec, lig, picked, n_needed, cutoffs=(7.0, 8.0, 9.0
     exit_vec = geom["exit_vec"]
 
     rng = np.random.default_rng(seed)
-    # Sample rigid translations around the bound pose and outward along the pocket mouth
+    # Sample rigid translations around the bound pose and outward along the exit vector
     n_half = n_samples // 2
     t_local = rng.normal(0.0, 2.2, size=(n_half, 3))
     t_exit = rng.uniform(0.0, 7.5, size=(n_samples - n_half, 1)) * exit_vec[None, :] + rng.normal(0.0, 1.8, size=(n_samples - n_half, 3))
@@ -753,10 +755,10 @@ def main(argv=None):
     ap.add_argument("--n-needed", type=int, default=None, help="Explicit n_needed override (default: half of even pair count, or 1)")
     ap.add_argument("--chain-pairs-out", default="", help="Output JSON path for flexible-chain COFFDROP reaction pairs")
     ap.add_argument("--coffdrop-dir", default="", help="Optional path to pystarc/coffdrop_data directory")
-    ap.add_argument("--diagnose", action="store_true", help="Print purely geometric pocket classification and recommended tier")
-    ap.add_argument("--suggest-rim", action="store_true", help="Rank solvent-exposed pocket-mouth rim targets from 3D geometry")
+    ap.add_argument("--diagnose", action="store_true", help="Print geometric binding-site classification and default criterion")
+    ap.add_argument("--suggest-rim", action="store_true", help="Rank solvent-exposed binding-site rim targets from 3D geometry")
     ap.add_argument("--rim-atom", default="CB", help="Atom type for --suggest-rim (CB or tip, default CB)")
-    ap.add_argument("--check-accessibility", action="store_true", help="Run rigid-body steric clearance audit across 7.0, 8.0, and 9.0 A")
+    ap.add_argument("--check-accessibility", action="store_true", help="Run rigid-body steric accessibility audit across 7.0, 8.0, and 9.0 A")
     args = ap.parse_args(argv)
 
     rec_ext = os.path.splitext(args.receptor)[1].lower()
@@ -793,10 +795,10 @@ def main(argv=None):
         print(f"# Receptor heavy atoms   : {geom['n_rec_heavy']}", file=sys.stderr)
         print(f"# Ligand heavy atoms     : {geom['n_lig_heavy']}", file=sys.stderr)
         print(f"# Centroid separation    : {geom['d_com']:.2f} A", file=sys.stderr)
-        print(f"# Pocket enclosure frac  : {geom['f_enclosed']:.2f}  (mean rec heavy atoms <6A: {geom['mean_n6']:.1f}, <8A: {geom['mean_n8']:.1f})", file=sys.stderr)
-        print(f"# Geometric tier         : {geom['tier']}", file=sys.stderr)
-        print(f"# Default protocol       : {geom['recommendation']}", file=sys.stderr)
-        if args.suggest_rim or geom["tier"].startswith("Tier 3"):
+        print(f"# Solid-angle shielding  : {geom['f_shielded']:.2f}  (mean rec heavy atoms <6A: {geom['mean_n6']:.1f}, <8A: {geom['mean_n8']:.1f})", file=sys.stderr)
+        print(f"# Site geometry          : {geom['site_class']}", file=sys.stderr)
+        print(f"# Default criterion      : {geom['recommendation']}", file=sys.stderr)
+        if args.suggest_rim or geom["site_class"] == "Deep site (exposed rim)":
             rim = suggest_pocket_rim_targets(rec, lig, n_targets=args.n_pairs, rim_atom=args.rim_atom)
             if rim:
                 spec_str = ",".join(f"{c['atom']['resid']}:{c['atom']['name']}:{c['atom']['resname']}" for c in rim)

@@ -5,7 +5,7 @@
 ```
 scripts/
 ├── prepare_pdb.py                   Prepares receptor + ligand .pdb or .pqr files and prints <structure>
-├── find_reaction_criteria.py        Diagnoses pocket geometry, verifies rigid clearance, and prints <criterion> (or reaction_pairs.json)
+├── find_reaction_criteria.py        Diagnoses site geometry, checks rigid steric accessibility, and prints <criterion> (or reaction_pairs.json)
 ├── verify_criteria.py               Audits all 32 rigid prepare.sh scripts against examples/*/config.xml (0 mismatches)
 ├── prepare_all.sh                   Runs every complex prepare.sh across all 33 benchmark complexes
 ├── README.md                        Documentation, input inventory, and workflow commands
@@ -148,17 +148,17 @@ python scripts/prepare_pdb.py \
 
 Reads prepared `receptor` and `ligand` files (`.pdb + .pdb` or `.pqr + .pqr`), prints geometric diagnostics, contact distances, or centroid geometry to `stderr`, and prints a ready-to-paste `<criterion>` XML block to `stdout` (or writes `reaction_pairs.json` for `model = chain`).
 
-### Default Three-Tier Structural Protocol (Zero Kinetic Fitting)
+### Coordinate-Based Criterion Selection (No Per-Complex Fitting)
 
-When configuring a brand-new complex without a measured $k_{\mathrm{on}}$, run `find_reaction_criteria.py --diagnose` to classify the complex from 3D coordinates alone into one of three structural tiers (with `n_needed = 3` fixed across all `3`-of-`6` contact criteria):
+When configuring a new complex without a measured $k_{\mathrm{on}}$, run `find_reaction_criteria.py --diagnose` to inspect the 3D coordinates of the receptor and ligand and select a reaction criterion (with `n_needed = 3` across all `3`-of-`6` contact criteria and one shared set of receptor residues within each receptor family):
 
-| Tier | Geometric Condition | Default Criterion Rule | Benchmark Complexes (`32` rigid) |
+| Site Category | Geometric Condition | Default Criterion Rule | Benchmark Complexes (`32` rigid) |
 |---|---|---|---|
-| **Tier 1 (`centroid`)** | `N_rec_heavy < 120` (symmetric sphere pair or macrocyclic host cavity) | `mode = centroid` (`2.5 Å` analytical sphere contact; `8.0 Å` host cavity capture) | `two_charged_spheres` (`1`), `beta_cyclodextrin_guests` (`7`) |
-| **Tier 2 (`open-site polar`)** | Solid-angle pocket enclosure `f_enclosed < 0.70` or compact ligand `N_lig_heavy <= 15` | Automatic `3`-of-`6` shortest bound polar contacts (`N, O, S`, one per receptor residue, `search_cutoff = 6.0 Å`) at **`7.0 Å`** | `thrombin_thrombomodulin` (`1`), `trypsin_benzamidine` (`1`), `ca13_azm` (`1`) |
-| **Tier 3 (`pocket-rim`)** | Deep enclosed pocket (`f_enclosed >= 0.70`) and bulky ligand (`N_lig_heavy > 15`) | `3`-of-`6` conserved solvent-exposed pocket-mouth rim contacts (`Cβ` mouth ring paired with the conserved pharmacophore anchor for single-scaffold pockets, or outer-mouth sidechain tips paired automatically via `--atom-filter all` with nearest bound heavy atoms across multi-scaffold series) | `CA-VD` (`6`, `7.0 Å`), `HSP90` (`6`, `7.5 Å`), `p38 MAPK` (`1`, `8.0 Å`), `TTK` (`8`, `9.0 Å`) |
+| **Geometric centers (`centroid`)** | `N_rec_heavy < 120` (symmetric sphere pair or macrocyclic host cavity) | `mode = centroid` (`2.5 Å` analytical sphere contact; `8.0 Å` host cavity capture) | `two_charged_spheres` (`1`), `beta_cyclodextrin_guests` (`7`) |
+| **Solvent-accessible site (`polar contacts`)** | Bound complex with solvent-accessible binding site (`f_shielded < 0.70` or small ligand `N_lig_heavy <= 15` outside a deep-pocket family) | Automatic `3`-of-`6` shortest bound polar contacts (`N, O, S`, one per receptor residue, `search_cutoff = 6.0 Å`) at **`7.0 Å`** | `thrombin_thrombomodulin` (`1`), `trypsin_benzamidine` (`1`) |
+| **Deep binding site (`exposed rim`)** | Deep binding site (`f_shielded >= 0.70` and `N_lig_heavy > 15`) or family lacking an experimental ligand-bound pose | `3`-of-`6` conserved solvent-exposed receptor targets shared across the family (`Cβ` rim targets paired with a conserved polar ligand atom, or exposed sidechain atoms paired automatically via `--atom-filter all` with nearest bound ligand heavy atoms across multi-scaffold series) | `Carbonic anhydrase` (`7`, `7.0 Å`), `HSP90` (`6`, `7.5 Å`), `p38 MAPK` (`1`, `8.0 Å`), `TTK` (`8`, `9.0 Å`) |
 
-For Tier 3 pockets, `pair_cutoff` starts at the universal default **`7.0 Å`** and steps up in `1.0 Å` increments (`8.0 Å`, `9.0 Å`) to the smallest whole integer that clears rigid-body steric exclusion (`--check-accessibility`) across every complex in the structural family. Across all `32` rigid complexes, running `python scripts/verify_criteria.py` confirms that every `scripts/*/prepare.sh` reproduces the exact `<criterion>` block in `examples/*/config.xml` (`0` mismatches). Flexible-chain `barnase_barstar` (`model = chain`) constructs `reaction_pairs.json` independently via `--chain-pairs-out`.
+For deep binding sites, `pair_cutoff` starts at **`7.0 Å`** and increases to the smallest cutoff that passes rigid-body steric accessibility (`--check-accessibility`) across every complex in the receptor family. Across all `32` rigid complexes, running `python scripts/verify_criteria.py` confirms that every `scripts/*/prepare.sh` reproduces the exact `<criterion>` block in `examples/*/config.xml` (`0` mismatches). Flexible-chain `barnase_barstar` (`model = chain`) constructs `reaction_pairs.json` independently via `--chain-pairs-out`.
 
 ### Supported Options
 
@@ -172,42 +172,42 @@ For Tier 3 pockets, `pair_cutoff` starts at the universal default **`7.0 Å`** a
 | `--n-pairs <INT>` | Maximum contact pairs retained (default `6`, trimmed to even count `2k` with `n_needed = k`, or `1`) |
 | `--allow-same-residue` | Permit multiple contact pairs on the same receptor residue |
 | `--exclude <NAMES>` | Comma-separated atom names excluded from contact picking |
-| `--receptor-targets <SPECS>` | Explicit pocket-rim atoms (`RESID:ATOM:RESNAME` or `CHAIN:RESID:ATOM:RESNAME`) |
+| `--receptor-targets <SPECS>` | Explicit solvent-exposed receptor targets (`RESID:ATOM:RESNAME` or `CHAIN:RESID:ATOM:RESNAME`) |
 | `--ligand-atoms <SPECS>` | Ligand atom names (or `RESID:ATOM:RESNAME`) paired with `--receptor-targets` (omit to auto-pick closest partner) |
 | `--pair-cutoff <Å>` | Reaction distance written into `<pair_cutoff>` (default `7.0`) |
 | `--n-needed <INT>` | Override `<n_needed>` explicitly |
-| `--diagnose` | Print solute heavy-atom counts, solid-angle pocket enclosure `f_enclosed`, and recommended structural tier |
-| `--suggest-rim` | Rank solvent-exposed pocket-mouth rim residues by outward exit-vector projection and azimuthal spread |
+| `--diagnose` | Print solute heavy-atom counts, solid-angle shielding fraction `f_shielded`, and site geometry category |
+| `--suggest-rim` | Rank solvent-exposed rim residues by outward exit-vector projection and azimuthal spread |
 | `--rim-atom <CB\|tip>` | Atom type evaluated by `--suggest-rim` (default `CB`) |
-| `--check-accessibility` | Fast NumPy rigid-body steric clearance audit across `7.0`, `8.0`, and `9.0 Å` |
+| `--check-accessibility` | Fast NumPy rigid-body steric accessibility audit across `7.0`, `8.0`, and `9.0 Å` |
 | `--chain-pairs-out <JSON>` | Write COFFDROP `[rec_pqr_idx, bead_idx, pair_cutoff]` JSON for `model = chain` |
 
 ### Examples
 
 ```bash
-# 0. Diagnose a new complex from 3D coordinates and suggest pocket-rim targets if enclosed
+# 0. Diagnose a new complex from 3D coordinates and rank solvent-exposed rim targets
 python scripts/find_reaction_criteria.py \
   --receptor receptor.pdb --ligand ligand.pdb --diagnose --suggest-rim
 
-# 1. Tier 2 default: pick 6 shortest bound polar contacts (1 per receptor residue) at 7.0 A
+# 1. Solvent-accessible site: pick 6 shortest bound polar contacts (1 per receptor residue) at 7.0 A
 python scripts/find_reaction_criteria.py \
   --receptor receptor.pdb --ligand ligand.pdb \
   --atom-filter polar --search-cutoff 6.0 --n-pairs 6 --pair-cutoff 7.0 \
   --check-accessibility
 
-# 2. Tier 3 multi-scaffold pocket: conserved outer-mouth targets paired automatically with nearest heavy atoms
+# 2. Deep binding site (multi-scaffold series): shared exposed receptor targets paired with nearest heavy atoms
 python scripts/find_reaction_criteria.py \
   --receptor receptor.pdb --ligand ligand.pdb \
   --receptor-targets 51:ND2:ASN,54:OD1:ASP,58:NZ:LYS,98:SD:MET,102:OD1:ASP,107:CG:LEU \
   --atom-filter all --pair-cutoff 7.5 --check-accessibility
 
-# 3. Tier 3 conserved-pharmacophore pocket: mouth CB ring paired with the conserved anchor atom
+# 3. Deep binding site (conserved polar anchor): shared exposed CB targets paired with the anchor atom
 python scripts/find_reaction_criteria.py \
   --receptor receptor.pdb --ligand ligand.pdb \
   --receptor-targets 529:CB:LYS,531:CB:ILE,606:CB:ASN,611:CB:SER,651:CB:ALA,663:CB:ILE \
   --ligand-atoms N1 --pair-cutoff 9.0 --check-accessibility
 
-# 4. Tier 1 centroid criterion (writes <n_needed>0</n_needed>)
+# 4. Geometric-center criterion (writes <n_needed>0</n_needed>)
 python scripts/find_reaction_criteria.py \
   --receptor receptor.pqr --ligand ligand.pqr \
   --mode centroid --pair-cutoff 8.0

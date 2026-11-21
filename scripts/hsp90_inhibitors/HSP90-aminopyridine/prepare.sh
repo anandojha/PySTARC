@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Criterion tier: Tier 3 (pocket-rim), multi-scaffold inhibitor in deep enclosed pocket (enclosure >= 0.93, N_lig_heavy >= 21).
-# Rule: 3-of-6 conserved outer-mouth sidechain tips (ASN51:ND2, ASP54:OD1, LYS58:NZ, MET98:SD, ASP102:OD1, LEU107:CG; sequence-aligned) paired automatically (--atom-filter all) with nearest bound ligand heavy atoms at 7.5 A.
+# Criterion: 3 of 6 exposed sidechain contacts shared across all HSP90 complexes at 7.5 A.
+# Receptor atoms ASN51:ND2, ASP54:OD1, LYS58:NZ, MET98:SD, ASP102:OD1, LEU107:CG paired with nearest bound ligand heavy atoms.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
