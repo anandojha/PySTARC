@@ -43,7 +43,7 @@
     <multipole_fallback>true</multipole_fallback>                   <!-- Extend the electrostatics beyond the grid by multipole expansion. Options: true and false. -->
   </physics>
   <simulation>
-    <n_trajectories>200</n_trajectories>                            <!-- Number of Brownian dynamics trajectories. -->
+    <n_trajectories>10000</n_trajectories>                            <!-- Number of Brownian dynamics trajectories. -->
     <max_steps>500000</max_steps>                                   <!-- Step limit per trajectory. -->
     <dt>0.2</dt>                                                    <!-- Outer time step of the flexible chain model (in picoseconds). No effect on rigid body runs. -->
     <minimum_core_dt>0</minimum_core_dt>                            <!-- Smallest permitted time step. 0 imposes no floor. -->
@@ -60,7 +60,7 @@
     <gpu>false</gpu>                                                <!-- Evaluate forces on the GPU. Options: true and false. -->
     <n_gpus>0</n_gpus>                                              <!-- Number of GPUs for parallel trajectory splitting. 1 runs a single worker. -->
     <gpu_force_batch>0</gpu_force_batch>                            <!-- Trajectories per GPU force evaluation. 0 selects automatically. -->
-    <n_threads>96</n_threads>                                       <!-- Number of CPU threads. -->
+    <n_threads>125</n_threads>                                       <!-- Number of CPU threads. -->
     <work_dir>bd_sims</work_dir>                                    <!-- Output directory for grids, generated inputs and trajectory data. -->
   </compute>
   <outputs>
@@ -77,6 +77,8 @@
     <d_trans>0.015</d_trans>                                        <!-- Explicit chain translational diffusion when auto_diffusion is false (in A^2/ps). -->
     <d_rot>0.00005</d_rot>                                          <!-- Explicit chain rotational diffusion when auto_diffusion is false (in rad^2/ps). -->
     <soft_repulsion_eps>1.0</soft_repulsion_eps>                    <!-- Chain soft repulsion strength (in units of kT). -->
+    <elastic_network_cutoff>9.0</elastic_network_cutoff>            <!-- Backbone CA elastic network cutoff distance for model chain (in angstroms). Blank or 0 disables it. -->
+    <elastic_network_k>2.0</elastic_network_k>                      <!-- Backbone CA elastic network spring constant for model chain (in kT/A^2). -->
     <target_grid_dx>apbs_output/barnase1.dx</target_grid_dx>        <!-- Optional receptor electrostatic DX grid path for model chain. Blank builds in work_dir. -->
     <born_grid_dx>apbs_output/barnase0_born.dx</born_grid_dx>       <!-- Optional receptor Born DX grid path for model chain. Blank builds in work_dir. -->
   </chain>

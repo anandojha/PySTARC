@@ -77,6 +77,8 @@
     <d_trans></d_trans>                                          <!-- Explicit chain translational diffusion when auto_diffusion is false (in A^2/ps). -->
     <d_rot></d_rot>                                              <!-- Explicit chain rotational diffusion when auto_diffusion is false (in rad^2/ps). -->
     <soft_repulsion_eps></soft_repulsion_eps>                    <!-- Chain soft repulsion strength (in units of kT). -->
+    <elastic_network_cutoff></elastic_network_cutoff>            <!-- Backbone CA elastic network cutoff distance for model chain (in angstroms). Blank or 0 disables it. -->
+    <elastic_network_k></elastic_network_k>                      <!-- Backbone CA elastic network spring constant for model chain (in kT/A^2). -->
     <target_grid_dx></target_grid_dx>                            <!-- Optional receptor electrostatic DX grid path for model chain. Blank builds in work_dir. -->
     <born_grid_dx></born_grid_dx>                                <!-- Optional receptor Born DX grid path for model chain. Blank builds in work_dir. -->
   </chain>

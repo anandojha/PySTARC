@@ -5,10 +5,11 @@ import sys
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-_root = HERE
+_root = os.environ.get("PYSTARC_ROOT") or HERE
 while _root != "/" and not os.path.isfile(os.path.join(_root, "run_pystarc.py")):
     _root = os.path.dirname(_root)
-sys.path.insert(0, _root)
+if os.path.isfile(os.path.join(_root, "run_pystarc.py")):
+    sys.path.insert(0, _root)
 from pystarc.pipeline.input_parser import parse
 from pystarc.pipeline.chain_pipeline import _ensure_chain_apbs_grids, parse_pqr
 

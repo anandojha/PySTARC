@@ -91,6 +91,8 @@ KEYS = {
     "d_trans":                   "Explicit chain translational diffusion when auto_diffusion is false (in A^2/ps).",
     "d_rot":                     "Explicit chain rotational diffusion when auto_diffusion is false (in rad^2/ps).",
     "soft_repulsion_eps":        "Chain soft repulsion strength (in units of kT).",
+    "elastic_network_cutoff":    "Backbone CA elastic network cutoff distance for model chain (in angstroms). Blank or 0 disables it.",
+    "elastic_network_k":         "Backbone CA elastic network spring constant for model chain (in kT/A^2).",
     "target_grid_dx":            "Optional receptor electrostatic DX grid path for model chain. Blank builds in work_dir.",
     "born_grid_dx":              "Optional receptor Born DX grid path for model chain. Blank builds in work_dir.",
 }
@@ -123,7 +125,8 @@ OUTPUTS = ("save_interval", "full_paths", "energetics")
 CHAIN = (
     "reaction_pairs_json", "dt_chain", "chain_steps_per_outer",
     "n_equilibration_steps", "auto_diffusion", "d_trans", "d_rot",
-    "soft_repulsion_eps", "target_grid_dx", "born_grid_dx",
+    "soft_repulsion_eps", "elastic_network_cutoff", "elastic_network_k",
+    "target_grid_dx", "born_grid_dx",
 )
 INPUT_COMPUTE = ("gpu", "gpu_force_batch", "n_threads")
 BD_PARAMS = GEOMETRY + ELECTROSTATICS + PHYSICS + SIMULATION + INPUT_COMPUTE + OUTPUTS
@@ -875,6 +878,13 @@ def write_chain_input(path, cfg, W):
         f"\n    <D_trans>{cc.get('d_trans', '0.015')}</D_trans>"
         f"\n    <D_rot>{cc.get('d_rot', '0.00005')}</D_rot>"
     )
+    en_cut = str(cc.get("elastic_network_cutoff", "")).strip()
+    en_k = str(cc.get("elastic_network_k", "")).strip()
+    en_xml = (
+        f'\n    <elastic_network_cutoff>{en_cut}</elastic_network_cutoff>'
+        f'\n    <elastic_network_k>{en_k}</elastic_network_k>'
+        if en_cut or en_k else ""
+    )
     debye_line = (f"  <debye_length>{cfg['debye_length']}</debye_length>\n"
                   if cfg.get("debye_length") not in (None, "") else "")
     bd_wdir = cfg.get("bd_work_dir", "bd_sims")
@@ -924,7 +934,7 @@ def write_chain_input(path, cfg, W):
         f'    <n_workers>{cfg.get("n_threads", "1")}</n_workers>\n'
         f'    <dt_chain>{cc.get("dt_chain", "0.05")}</dt_chain>\n'
         f'    <chain_steps_per_outer>{cc.get("chain_steps_per_outer", "4")}</chain_steps_per_outer>\n'
-        f'    <n_equilibration_steps>{cc.get("n_equilibration_steps", "0")}</n_equilibration_steps>\n'
+        f'    <n_equilibration_steps>{cc.get("n_equilibration_steps", "0")}</n_equilibration_steps>{en_xml}\n'
         '  </chain>\n'
         '</pystarc>\n'
     )
