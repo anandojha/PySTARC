@@ -22,7 +22,7 @@ bash run.sh                                    # Run the simulation
 ```bash
 cd ~/PySTARC/examples/thrombin_thrombomodulin
 conda activate PySTARC
-sbatch submit.sh                                # 1 node, 4 GPUs (default)
+sbatch submit.sh                                # 4 nodes, 2 H100 GPUs per node (8 total, default)
 sbatch --nodes=1 --ntasks-per-node=1 submit.sh  # 1 node, 1 GPU
 sbatch --nodes=2 --ntasks-per-node=4 submit.sh  # 2 nodes, 4 GPUs per node (8 total)
 ```

@@ -1,14 +1,15 @@
 #!/bin/bash
 #SBATCH --job-name=thrombin_thrombomodulin
 #SBATCH --partition=gpu
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4
+#SBATCH --nodes=4
+#SBATCH --ntasks-per-node=2
 #SBATCH --gpus-per-task=1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=4
 #SBATCH --mem-per-gpu=64G
-#SBATCH --time=24:00:00
+#SBATCH --constraint=h100
+#SBATCH --time=7-00:00:00
 # Unified SLURM submission script (1 GPU, 1-node multi-GPU, or multi-node multi-GPUs).
-# sbatch submit.sh                                   # 1 node with 4 GPUs (default)
+# sbatch submit.sh                                   # 4 nodes with 2 H100 GPUs/node (8 GPUs total, default)
 # sbatch --nodes=1 --ntasks-per-node=1 submit.sh     # 1 node with 1 GPU
 # sbatch --nodes=2 --ntasks-per-node=4 submit.sh     # 2 nodes with 4 GPUs/node (8 GPUs total)
 
