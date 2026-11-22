@@ -38,4 +38,4 @@ def test_hydro_radii_show_their_own_source_and_hi():
     assert "receptor 22.0000 Å (XML), ligand 4.9877 Å (MC)" in text
     assert "HI in k_b integral             (enabled)" in text
     assert "Isotropic D(r) with HI" in text and "Isotropic D_rel" in _run(hi=False)
-    assert "k_b Romberg integral           (k_b=64.6763 ų/ps)" in text
+    assert "k_b Romberg integral           (k_b=64.6763 Å³/ps)" in text

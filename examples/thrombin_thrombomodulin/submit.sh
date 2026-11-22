@@ -9,7 +9,8 @@
 #SBATCH --constraint=h100
 #SBATCH --time=7-00:00:00
 # Unified SLURM submission script (1 GPU, 1-node multi-GPU, or multi-node multi-GPUs).
-# sbatch submit.sh                                   # 4 nodes with 2 H100 GPUs/node (8 GPUs total, default)
+# Adjust --partition, --constraint, and --mem-per-gpu above for your cluster.
+# sbatch submit.sh                                   # 4 nodes with 2 GPUs/node (8 GPUs total, default)
 # sbatch --nodes=1 --ntasks-per-node=1 submit.sh     # 1 node with 1 GPU
 # sbatch --nodes=2 --ntasks-per-node=4 submit.sh     # 2 nodes with 4 GPUs/node (8 GPUs total)
 
@@ -22,7 +23,6 @@ if ! command -v conda >/dev/null 2>&1; then
   done
 fi
 set -eo pipefail
-module load cuda 2>/dev/null || true
 command -v conda >/dev/null 2>&1 || { echo "conda not found. Load conda or set CONDA_BASE." >&2; exit 1; }
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate PySTARC
@@ -35,7 +35,7 @@ fi
 [ -f "$ROOT/run_pystarc.py" ] || { echo "PySTARC not found. Set PYSTARC_ROOT to the PySTARC folder" >&2; exit 1; }
 export PYTHONPATH="$ROOT"
 export PYSTARC_ROOT="$ROOT"
-THREADS="${SLURM_CPUS_PER_TASK:-16}"
+THREADS="${SLURM_CPUS_PER_TASK:-4}"
 export OMP_NUM_THREADS="$THREADS" MKL_NUM_THREADS="$THREADS" OPENBLAS_NUM_THREADS="$THREADS" NUMBA_NUM_THREADS="$THREADS"
 cd "$BASE"
 WORK_DIR="$(python -c 'import os, xml.etree.ElementTree as ET; w=(ET.parse("config.xml").getroot().findtext("compute/work_dir") or "bd_sims").strip(); print(os.path.abspath(w))')"
@@ -66,6 +66,7 @@ if [ -n "${SLURM_CPUS_PER_TASK:-}" ]; then
 fi
 srun "${SRUN_ARGS[@]}" \
   bash -c '
+    set -eo pipefail
     sleep $(( ${SLURM_LOCALID:-0} * 2 ))
     T="/tmp/pystarc_${SLURM_JOB_ID:-local}_${SLURM_PROCID:-0}"
     trap "rm -rf \"$T\"" EXIT

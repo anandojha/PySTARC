@@ -242,7 +242,7 @@ def recommend_max_steps(
         warnings.append(
             f"the target survival {target:.2e} is below the resolution of a "
             f"pilot of {N:,} trajectories (about {resolution:.1e}); the "
-            "recommendation rests on the exponential tail fit "
+            "recommendation depends on the exponential tail fit "
             f"(tau = {fit['tau_steps']:,.0f} steps from {fit['n_points']} points)"
         )
     return {

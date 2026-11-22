@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 """
-Analytical verification for charged_spheres
-Exact Smoluchowski solution vs PySTARC simulation vs analytical reference.
+Analytical verification for two_charged_spheres
+Exact Debye-Smoluchowski solution vs PySTARC simulation vs analytical reference.
 """
 
 from scipy.integrate import quad
@@ -111,8 +111,8 @@ for r in [2.5, 3, 5, 7, 10, 15, 20]:
     )
 print()
 hdr("Step 3: k_b, RETURN_PROB, P_rxn")
-print(f"  k_b             = {k_b:.4f} ų/ps")
-print(f"  k_b(q_esc)      = {k_q:.4f} ų/ps")
+print(f"  k_b             = {k_b:.4f} Å³/ps")
+print(f"  k_b(q_esc)      = {k_q:.4f} Å³/ps")
 print(f"  return_prob     = {rp:.6f}")
 print(f"  P_single        = {Ps:.6f}  (Smoluchowski, absorbing at a={a} and q={q_esc})")
 print(f"  P_rxn (w/return)= {Prxn:.6f}")
@@ -120,7 +120,7 @@ print(f"  k_on analytical = {kon:.4e} M⁻¹s⁻¹")
 print(f"  Reference k_on  = {k_ref:.4e} M⁻¹s⁻¹")
 print(f"  Potential diff   -> k_on diff = {abs(kon-k_ref)/k_ref:.2%}")
 print()
-hdr("Step 4: Adpative dt at kep separations")
+hdr("Step 4: Adaptive dt at selected separations")
 print(
     f"  {'r':>6s}  {'dt_pair':>10s}  {'dt_force':>10s}  {'dt_final':>10s}  {'σ':>8s}  {'σ/r':>8s}"
 )
@@ -197,7 +197,7 @@ def cmp(label, exact, sim, ref_str):
     print(f"  {label:<28s}  {exact:14.6f}  {sv:>14s}  {ref_str:>14s}")
 
 
-cmp("k_b (ų/ps)", k_b, sim_kb, f"{k_b:.3f}")
+cmp("k_b (Å³/ps)", k_b, sim_kb, f"{k_b:.3f}")
 cmp("return_prob", rp, sim_rp, "-")
 cmp("P_rxn", Prxn, sim_prxn, f"{Prxn:.6f}")
 

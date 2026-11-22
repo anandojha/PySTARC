@@ -141,11 +141,13 @@ def main():
     cfg = parse(xml_path)
     if n_gpus_override is not None:
         cfg.n_gpus = n_gpus_override
-    # Set up log file in work_dir
+    # Resolve work_dir relative to the input XML and update cfg in place so
+    # both rigid and chain runs execute inside the shard directory.
     work_dir = Path(cfg.work_dir)
     if not work_dir.is_absolute():
         work_dir = xml_path.resolve().parent / work_dir
     work_dir.mkdir(parents=True, exist_ok=True)
+    cfg.work_dir = work_dir
     if setup_mode:
         print(f"  Setup complete -> {work_dir.resolve()}")
         return
@@ -191,13 +193,11 @@ def main():
         _wall_t0 = time.time()
         try:
             if cfg.chain is not None:
-                # Chain BD mode: invoke chain BD orchestrator and print
-                # a minimal summary. Stage 2 will expand the chain output
-                # writer to produce convergence/k_on metrics matching the
-                # rigid-body footer below.
+                # Chain BD mode: invoke chain BD orchestrator and print summary.
                 from pystarc.pipeline.chain_pipeline import run_chain
 
-                run_chain(cfg, input_xml_path=xml_path)
+                chain_xml = (work_dir / "input.xml") if is_config_root else xml_path
+                run_chain(cfg, input_xml_path=chain_xml)
                 _wall_elapsed = time.time() - _wall_t0
                 _footer = [
                     "",
@@ -208,7 +208,7 @@ def main():
                     f"  GPU            : {_gpu_name}",
                     f"  Trajectories   : {cfg.n_trajectories:,}",
                     f"  Total wall time: {_wall_elapsed:.1f} s",
-                    f"  Output dir     : {(Path(cfg.work_dir) / 'bd_1').resolve()}",
+                    f"  Output dir     : {Path(cfg.work_dir).resolve()}",
                     f"  Finished       : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                     "=" * 64,
                 ]

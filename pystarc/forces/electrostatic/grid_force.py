@@ -313,7 +313,7 @@ class DXGrid:
         # non-physical states that the caller rejects on the next step. We
         # pre-filter the non-finite entries so the cast below is clean and does
         # not flood the SLURM logs with RuntimeWarnings. The valid mask further
-        # down additionally catches out-of-bounds indices.
+        # down also catches out-of-bounds indices.
         finite_mask = np.isfinite(idx).all(axis=1)
         idx_safe = np.where(finite_mask[:, None], idx, 0.0)
         with np.errstate(invalid="ignore"):

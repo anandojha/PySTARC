@@ -13,11 +13,10 @@ For a protein it is an effective radius that accounts for the irregular
 shape and the solvent layer.
 
 The Hansen algorithm (J. Chem. Phys. 121, 9111, 2004) computes a by Monte
-Carlo. It first generates the solvent-excluded surface from the atom
-centers plus a probe radius, launches random walkers from that surface,
-records the trajectory of each walker as it diffuses outward, and forms the
-mean inverse chord length <1/L> between pairs of surface points. The
-hydrodynamic radius is then
+Carlo. It generates exposed surface patches around each atom (atomic radius
+plus solvent probe radius), samples random pairs of surface patches, and
+evaluates the area-weighted inverse chord average <1/r> = sum(a_0 a_1 / r) /
+sum(a_0 a_1). The hydrodynamic radius is then
 
     a = 1 / <1/L>
 

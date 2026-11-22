@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Convergence test: charged_spheres - 4 seeds vs exact analytical.
-Run from examples/two_charged_spheres && python test_convergence.py
+Convergence check: two_charged_spheres - 4 seeds vs exact analytical rate.
+Run from examples/two_charged_spheres: python convergence.py
 """
 
 from pystarc.pipeline.pipeline import run as run_pipeline
@@ -32,7 +32,8 @@ class _Tee:
         self._log.flush()
 
 
-# Set up log
+# Set up log and run from script directory so config.xml resolves from any CWD
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bd_sims")
 os.makedirs(log_dir, exist_ok=True)
 _ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -104,7 +105,7 @@ for seed in [11111111, 22222222, 33333333, 44444444]:
     print(f"  -> P_rxn={p:.4f}±{se:.4f} ({nr} reacted, {elapsed:.0f}s)")
 
 print("\n" + "=" * 70)
-print("  Summary: charged_spheres 4-seed test")
+print("  Summary: two_charged_spheres 4-seed check")
 print("=" * 70)
 print(f"  Exact P_rxn = {Pexact:.6f}")
 print(f"  {'Seed':>12s}  {'P_rxn':>10s}  {'Error':>8s}  {'Reacted':>8s}")

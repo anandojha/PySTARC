@@ -18,9 +18,8 @@ import numpy as np
 chain = chain_from_sequence("ARWGL")
 # Or: chain_from_sequence("ALA-ARG-TRP-GLY-LEU")
 
-# Place atoms (here at relaxed geometry)
-positions = np.zeros((chain.n_atoms, 3))
-# ... fill positions ...
+# Initialize non-overlapping bead positions
+positions = np.arange(chain.n_atoms, dtype=float)[:, None] * np.array([3.8, 0.0, 0.0])
 
 # Compute forces with full COFFDROP physics
 state = ChainState.from_template(chain, positions)
@@ -61,20 +60,13 @@ All 20 standard amino acids:
 CYS assigns SB instead of CB as its first sidechain bead. The lookup
 machinery handles this and other residue naming variations automatically.
 
-## Limitations
+## Terminal caps
 
-The current implementation does **not** include:
-- Cap residues (ACE, NME) - peptides are assumed uncapped at both ends
-- N-terminal/C-terminal cap atoms (CN, CC, NN, OC, HC) - terminal modifications are not represented
-- 47 less-common dihedral types involving caps and termini
-
-These limitations affect peptides with N-acetylation or C-amidation
-modifications. For uncapped peptides and proteins (intrinsically disordered regions and protein-protein
-binding), the full force field is supported.
+ACE and NME terminal caps are supported via `caps=("ACE", "NME")` (or `("ACE", None)` / `(None, "NME")`) in `chain_from_sequence` and `build_chain_common_with_sidechains_from_coffdrop`.
 
 ## API reference
 
-### `chain_from_sequence(sequence, coffdrop_dir=..., name=None, sidechains=True, k_spring=100.0)`
+### `chain_from_sequence(sequence, coffdrop_dir=..., name=None, sidechains=True, k_spring=100.0, caps=None)`
 
 Build a `ChainCommon` from a sequence string.
 
@@ -83,24 +75,26 @@ Build a `ChainCommon` from a sequence string.
 - `name`: optional chain name; auto-generated from sequence if omitted
 - `sidechains`: if True (default), build with sidechain beads; if False, CA backbone without sidechains
 - `k_spring`: harmonic spring constant for bonds (kBT/A^2)
+- `caps`: optional `(n_cap, c_cap)` tuple such as `("ACE", "NME")`
 
 Returns: `ChainCommon` ready for `compute_chain_forces`.
 
-### `compute_chain_forces(state, kT=1.0, soft_repulsion=False, soft_repulsion_eps=1.0)`
+### `compute_chain_forces(state, kT=1.0, soft_repulsion=False, soft_repulsion_eps=1.0, target_grids=None)`
 
 Fill `state.forces` from all force contributions.
 
-- Bond forces (harmonic; tabulated when type_idx assigned)
+- Bond forces (harmonic)
 - Angle forces (tabulated COFFDROP angle potentials)
 - Torsion forces (tabulated COFFDROP dihedral potentials, all 6 types)
 - Pair forces (tabulated COFFDROP pair potentials, vectorized via `deriv_array`)
+- Optional target electrostatic and Born grid forces via `target_grids`
 
 ### `build_chain_common_from_coffdrop(residues, params, name=None, k_spring=100.0)`
 
 Lower-level: build a CA backbone chain from a sequence of 3-letter
 residue codes and pre-loaded COFFDROPParams.
 
-### `build_chain_common_with_sidechains_from_coffdrop(residues, params, name=None, k_spring=100.0)`
+### `build_chain_common_with_sidechains_from_coffdrop(residues, params, name=None, k_spring=100.0, caps=None)`
 
 Lower-level: build a chain with sidechain beads. Same args as above.
 

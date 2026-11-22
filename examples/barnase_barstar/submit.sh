@@ -7,10 +7,11 @@
 #SBATCH --mem=600G
 #SBATCH --constraint=rome
 #SBATCH --time=7-00:00:00
-# Multi-node CPU SLURM script for flexible-chain BD pinned to 16-core Rome NUMA domains.
-# sbatch submit.sh                   # 2 Rome nodes x 8 tasks x 16 CPUs (256 CPUs total, default)
-# sbatch --nodes=1 submit.sh         # 1 Rome node x 8 tasks x 16 CPUs (128 CPUs total)
-# sbatch --nodes=10 submit.sh        # 10 Rome nodes x 8 tasks x 16 CPUs (1,280 CPUs total)
+# Multi-node CPU SLURM script for flexible-chain BD pinned to 16-core NUMA domains.
+# Adjust --partition, --constraint, and --mem above for your cluster.
+# sbatch submit.sh                   # 2 nodes x 8 tasks x 16 CPUs (256 CPUs total, default)
+# sbatch --nodes=1 submit.sh         # 1 node x 8 tasks x 16 CPUs (128 CPUs total)
+# sbatch --nodes=10 submit.sh        # 10 nodes x 8 tasks x 16 CPUs (1,280 CPUs total)
 
 if ! command -v conda >/dev/null 2>&1; then
   [ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc" 2>/dev/null || true
@@ -46,7 +47,7 @@ rm -rf bd_sims shards
 python "$ROOT/run_pystarc.py" config.xml --setup
 
 # Build APBS electrostatic and Born grids once on the head node if absent.
-OMP_NUM_THREADS=16 python "$BASE/make_grids.py" bd_sims/input.xml
+OMP_NUM_THREADS="$CPUS" python "$BASE/make_grids.py" bd_sims/input.xml
 
 # Populate target hydrodynamic radius cache once before launching parallel shards.
 python -c 'from pathlib import Path; from pystarc.pipeline.input_parser import parse; from pystarc.pipeline.geometry import analyse_molecule; c = parse("bd_sims/input.xml"); analyse_molecule(Path(c.receptor_pqr), srad=c.srad)'

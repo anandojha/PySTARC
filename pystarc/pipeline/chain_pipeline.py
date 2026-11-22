@@ -7,9 +7,9 @@ pystarc.pipeline.pipeline.run() for rigid-body BD. It loads the chain topology,
 the target structure, the reaction pairs, and the APBS grids, constructs a
 ChainBDSimulator, runs the trajectories, and writes outputs to the work_dir.
 
-In Stage 1 the output is the minimal set written by write_chain_results, namely
-results.json and trajectories.csv. Stage 2 will extend the writer to produce
-the same comprehensive set of files as the rigid-body work_dir.
+Outputs are written to work_dir via write_chain_results (results.json,
+trajectories.csv, encounters, near misses, radial/angular distributions,
+contact frequencies, milestone fluxes, paths, and energetics).
 """
 
 from __future__ import annotations
@@ -141,7 +141,7 @@ def _ensure_chain_apbs_grids(config: PySTARCConfig) -> None:
     # is the requested stem with its trailing level digit removed. A
     # target_grid_dx whose filename lacks that trailing digit (for example
     # "target.dx" rather than "target1.dx") therefore names a file APBS will
-    # never produce: the APBS run would succeed yet leave the requested path
+    # never produce: the APBS run would succeed while leaving the requested path
     # absent, and the later DXGrid.from_file(cc.target_grid_dx) would fail with
     # a bare FileNotFoundError that does not explain the naming mismatch.
     # Validate the expected pattern up front and raise a clear error instead.
@@ -162,7 +162,8 @@ def _ensure_chain_apbs_grids(config: PySTARCConfig) -> None:
     if not src_pqr.exists():
         raise FileNotFoundError(f"receptor_pqr not found: {src_pqr} (needed for APBS)")
     dst_pqr = apbs_work_dir / src_pqr.name
-    shutil.copy(str(src_pqr), str(dst_pqr))
+    if src_pqr.resolve() != dst_pqr.resolve():
+        shutil.copy(str(src_pqr), str(dst_pqr))
 
     print(f"APBS DX grids missing; generating in {apbs_work_dir}/ ...")
     from pystarc.pipeline.run_apbs import run_apbs

@@ -22,13 +22,11 @@ Its spacing is about 0.5 Å for proteins and about 0.1 Å for small
 molecules, and it takes its boundary conditions from the coarse grid
 (bcfl map).
 
-Four APBS calculations are run per molecule. The first two are
-electrostatic, solving the LPBE with ions on the coarse domain and then
-on the fine domain at the molecular surface. The remaining two are Born
-calculations run in vacuum (ε = 1, no ions), again on the coarse and
-fine domains. The Born grids give the desolvation penalty, that is the
-energy cost of moving a charged atom from bulk solvent into the
-low-dielectric environment near the other molecule.
+Two APBS electrostatic calculations are run per molecule, solving the
+linearized Poisson-Boltzmann equation with ions on the coarse domain and then
+on the fine domain at the molecular surface. The coarse and fine Born
+desolvation grids are evaluated analytically from atomic cavity sums in
+``desolvation_grid.py`` rather than via vacuum APBS solves.
 
 The grids are sized differently for the two partners. The receptor
 electrostatic grid extends to cover the b-surface radius, which may
@@ -178,7 +176,7 @@ def _compute_grid_params(
     number of levels is chosen by a boundary-potential criterion. At
     physiological ionic strength (Debye length ≈ 8 Å), the boundary
     potential at the coarse box edge (about twice the molecular extent)
-    is essentially zero, so two levels are sufficient and give k_on
+    is nearly zero, so two levels are sufficient and produce k_on
     values consistent with BrownDye2. For very low ionic strength or very
     highly charged complexes, this design may need revisiting.
 
@@ -538,7 +536,7 @@ def run_apbs(
                 )
             )
             continue
-        print(f"  [4] APBS - {mol_name} {label} (2-level two-level) ...")
+        print(f"  [4] APBS - {mol_name} {label} (2-level) ...")
         apbs_pqr = work_dir / f"_apbs_{mol_name}.pqr"
         apbs_pqr.write_bytes(_strip_ghost_pqr_bytes(pqr_path))
         try:

@@ -19,10 +19,10 @@ typically D ≈ 0.01 to 1 Å²/ps.
 
 To convert a computed rate to SI units, use
 
-    k_on [M⁻¹s⁻¹] = MOLAR_RATE_CONV × k_b [ų/ps] × P_rxn
+    k_on [M⁻¹s⁻¹] = MOLAR_RATE_CONV × k_b [Å³/ps] × P_rxn
 
 where MOLAR_RATE_CONV = 6.02214076 × 10⁸ is N_A × (10⁻¹⁰)³ / (10⁻¹² × 10⁻³).
-Here k_b is the rate in internal units of ų/ps and P_rxn is the reaction
+Here k_b is the rate in internal units of Å³/ps and P_rxn is the reaction
 probability.
 """
 
@@ -64,7 +64,7 @@ EPS_WATER: float = 78.0
 # Conversion factors
 ANG_TO_M: float = 1.0e-10  # Å to m
 PS_TO_S: float = 1.0e-12  # ps to s
-# Rate from ų/ps to M⁻¹ s⁻¹, N_A × 1e-27 L/ų × 1e12 ps/s.
+# Rate from Å³/ps to M⁻¹ s⁻¹, N_A × 1e-27 L/Å³ × 1e12 ps/s.
 MOLAR_RATE_CONV: float = AVOGADRO * 1.0e-27 * 1.0e12
 KCAL_PER_MOL_TO_KBT: float = 1.0 / KBT_KCAL  # kcal/mol to kBT
 # Ion properties (default NaCl)

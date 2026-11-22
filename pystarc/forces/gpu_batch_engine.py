@@ -20,8 +20,9 @@ The second contribution is the Born desolvation force,
 
 When a charged atom approaches the receptor it partially displaces the
 high-dielectric solvent and pays an energetic penalty. The Born potential
-φ_born is the vacuum electrostatic potential (ε = 1 everywhere, no ions) and
-α = 1/(4π) ≈ 0.0796. This term is computed in both directions unless
+φ_born is evaluated analytically on coarse and fine grids in
+``desolvation_grid.py`` as a screened atomic cavity sum, scaled by α (1.0 by
+default). This term is computed in both directions unless
 enable_born2_torque is false. Direction 1 evaluates the receptor Born grid at
 the ligand atom positions. Direction 2 evaluates the ligand Born grid at the
 receptor atom positions.

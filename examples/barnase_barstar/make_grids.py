@@ -55,7 +55,8 @@ if os.path.exists(cc.target_grid_dx):
 
 if stale:
     print("  stale grids: " + "; ".join(stale))
-    for p in glob.glob("apbs_output/*.dx"):
+    grid_dir = os.path.dirname(os.path.abspath(cc.target_grid_dx))
+    for p in glob.glob(os.path.join(grid_dir, "*.dx")):
         os.remove(p)
     print("  cleared, rebuilding")
     print()

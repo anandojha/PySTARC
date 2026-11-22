@@ -5,19 +5,21 @@
 #    1. Deactivates any active conda env
 #    2. Removes existing PySTARC env (if any)
 #    3. Creates a fresh PySTARC env
-#    4. Installs all dependencies (conda + pip; CuPy with the CUDA toolkit from PyPI)
-#    5. Installs PySTARC from the source folder (editable)
-#    6. Runs tests to verify
-set -e
+#    4. Installs conda dependencies (AmberTools 24.8, APBS, RDKit, OpenBabel)
+#    5. Installs GPU and pip dependencies (CuPy with CUDA 12 toolkit from PyPI)
+#    6. Installs PySTARC from the source folder (editable)
+#    7. Verifies imports, GPU kernel execution, external tools, and unit tests
+set -euo pipefail
 ENV_NAME="PySTARC"
 PYTHON_VERSION="3.11"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# --- GPU check ---
+# --- GPU and conda check ---
 # PySTARC runs on NVIDIA GPUs, so the install stops here, before anything is
 # removed or installed, when no NVIDIA GPU is visible (macOS, a login node, a job
-# without a GPU) or when the driver is older than CUDA 12. cupy-cuda12x[ctk]
-# brings the CUDA 12 runtime and NVRTC from PyPI, so no CUDA module has to be loaded.
+# without a GPU), when the driver is older than CUDA 12, or when conda is absent.
+# cupy-cuda12x[ctk] brings the CUDA 12 runtime and NVRTC from PyPI, so no CUDA
+# module has to be loaded.
 OS_KIND="$(uname -s)"
 if [ "$OS_KIND" != "Linux" ] || ! command -v nvidia-smi >/dev/null 2>&1 || ! nvidia-smi -L >/dev/null 2>&1; then
     echo "ERROR: no NVIDIA GPU visible on $(uname -n) ($OS_KIND). PySTARC needs an NVIDIA GPU with CUDA."
@@ -26,9 +28,13 @@ if [ "$OS_KIND" != "Linux" ] || ! command -v nvidia-smi >/dev/null 2>&1 || ! nvi
 fi
 GPU_NAME="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
 CUDA_MAJOR="$(nvidia-smi 2>/dev/null | sed -n 's/.*CUDA Version: *\([0-9][0-9]*\).*/\1/p' | head -1)"
-if [ -n "$CUDA_MAJOR" ] && [ "$CUDA_MAJOR" -lt 12 ]; then
-    echo "ERROR: the NVIDIA driver on $(uname -n) supports CUDA $CUDA_MAJOR. PySTARC needs a driver for CUDA 12 or newer."
+if [ -z "$CUDA_MAJOR" ] || [ "$CUDA_MAJOR" -lt 12 ]; then
+    echo "ERROR: the NVIDIA driver on $(uname -n) reports CUDA ${CUDA_MAJOR:-unknown}. PySTARC needs a driver for CUDA 12 or newer."
     echo "  Nothing was removed or installed."
+    exit 1
+fi
+if ! command -v conda >/dev/null 2>&1; then
+    echo "ERROR: conda not found in PATH. Load conda before running install.sh. Nothing was removed or installed."
     exit 1
 fi
 CUPY_PKG="cupy-cuda12x[ctk]>=14"   # the ctk extra exists from CuPy 14 on
@@ -37,6 +43,7 @@ echo ""
 echo "  PySTARC - Clean install"
 echo "  Date: $(date)"
 echo "  GPU: $GPU_NAME    CuPy: $CUPY_PKG"
+eval "$(conda shell.bash hook)"
 # 1. Deactivate current env
 echo ""
 echo "[1/7] Deactivating current conda environment."
@@ -54,10 +61,9 @@ echo "Clean slate"
 echo ""
 echo "[3/7] Creating fresh conda env: $ENV_NAME (Python $PYTHON_VERSION)."
 conda create -n "$ENV_NAME" python="$PYTHON_VERSION" -y
-eval "$(conda shell.bash hook)"
 conda activate "$ENV_NAME"
-# Pin to the env's interpreter by absolute path so PATH/activation quirks
-# (Flatiron module Python sitting ahead on PATH) can't redirect us.
+# Pin to the env's interpreter by absolute path so cluster module Python
+# sitting ahead on PATH cannot redirect commands.
 ENV_PY="$CONDA_PREFIX/bin/python"
 echo "Created and activated: $("$ENV_PY" --version)"
 echo "Using interpreter: $ENV_PY"
@@ -89,7 +95,7 @@ echo ""
 "$ENV_PY" -c "import matplotlib; print(f'Matplotlib {matplotlib.__version__}')"
 # CuPy imports even when CUDA does not work, so compile and run one kernel. If
 # that fails PySTARC cannot run, so the environment is removed.
-if ! "$ENV_PY" -c "import cupy as cp; cp.arange(3).sum(); print(f'CuPy {cp.__version__} (GPU ready)')"; then
+if ! "$ENV_PY" -c "import cupy as cp; int(cp.arange(3).sum()); print(f'CuPy {cp.__version__} (GPU ready)')"; then
     echo "ERROR: CuPy ($CUPY_PKG) cannot run a kernel on the GPU (error above). The driver reports CUDA ${CUDA_MAJOR:-unknown}."
     echo "  Removing the $ENV_NAME environment."
     conda deactivate 2>/dev/null || true
@@ -106,14 +112,16 @@ which obabel   >/dev/null 2>&1 && echo "obabel"   || echo "obabel not found"
 echo ""
 echo "Running tests."
 cd "$SCRIPT_DIR"
-"$ENV_PY" -m pytest tests/ --tb=short || true
+if ! "$ENV_PY" -m pytest tests/ --tb=short; then
+    echo "WARNING: some unit tests failed (see output above)."
+fi
 echo ""
 echo "  Installation complete!"
 echo ""
-echo "  To use PySTARC:"
+echo "  To run PySTARC:"
 echo "    conda activate $ENV_NAME"
 echo "    cd examples/two_charged_spheres"
-echo "    python ../../run_pystarc.py input.xml"
+echo "    python ../../run_pystarc.py config.xml"
 echo ""
 echo "  To run all examples:"
 echo "    cd examples && cat README.md"

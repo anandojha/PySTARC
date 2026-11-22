@@ -37,7 +37,7 @@ def _check_tool(name: str):
     if not shutil.which(name):
         raise EnvironmentError(
             f"'{name}' not found in PATH.\n"
-            f"Install AmberTools:  conda install -c conda-forge ambertools -y"
+            f"Install AmberTools:  conda install -c conda-forge ambertools=24.8 -y"
         )
 
 

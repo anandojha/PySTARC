@@ -156,7 +156,7 @@ class MultipoleExpansion:
         """
         Compute the screened force at position r_vec (in Å, measured from the
         centroid) and return F = -∇V in kBT/Å units as a (3,) array. The
-        gradient is evaluated by central difference for robustness.
+        gradient is evaluated by central difference for numerical stability.
         """
         h = 0.001  # finite-difference step in Å
         F = np.zeros(3)

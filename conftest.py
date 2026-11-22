@@ -19,16 +19,15 @@ def pytest_sessionfinish(session, exitstatus):
     source (e.g. pystarc/pipeline/bd_sims/). Walk the tree recursively
     to catch them, skipping vendored and build paths.
 
-    __pycache__ is cleaned only at the top-level: Python regenerates these
-    on import, and recursive removal would slow subsequent sessions.
+    __pycache__ is cleaned at the top level so Python regenerates bytecode
+    without slowing subsequent sessions.
     """
     runtime_targets = {"bd_sims", "chain_bd_results"}
-    skip_path_parts = {".git", "build", "dist", "pystarc.egg-info", ".github"}
+    skip_path_parts = {".git", "build", "dist", "pystarc.egg-info", ".github", "examples"}
 
-    # Safety: only walk inside the project root. Without this guard,
-    # invoking pytest from outside the project (e.g. cd ~ && pytest tests/)
-    # would walk the user's home tree and rmtree any directory named
-    # 'bd_sims' or 'chain_bd_results' it encountered, regardless of owner.
+    # Safety: restrict tree walk to the project root (skipping examples/).
+    # Without this guard, invoking pytest from outside the project would walk
+    # the user's home tree and rmtree unrelated simulation directories.
     project_root = _PROJECT_ROOT.resolve()
     bases = {project_root}
     cwd = Path.cwd().resolve()

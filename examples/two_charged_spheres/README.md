@@ -4,11 +4,11 @@ Requires a CUDA GPU.
 
 ## Input files
 ```
-config.xml                  PySTARC configuration file
 receptor.pqr                Receptor sphere charges and radii
 ligand.pqr                  Ligand sphere charges and radii
+config.xml                  PySTARC configuration file
 analytical.py               Compares the rate against the exact Debye-Smoluchowski solution
-convergence.py              Reports the rate against trajectory count
+convergence.py              Checks mean P_rxn across four 10,000-trajectory seeds against exact rate
 run.sh                      Runs PySTARC on one workstation GPU (plus analytical.py and convergence.py)
 submit.sh                   Unified SLURM script (1 GPU, 1-node multi-GPU, or multi-node GPUs) plus analytical.py
 ```

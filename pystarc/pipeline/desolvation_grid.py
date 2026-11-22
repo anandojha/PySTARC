@@ -12,8 +12,8 @@ desolvation field is strictly positive and decays as 1/r^4.
 
 Form implemented:
 
-    dG_i = alpha * C * D * q_i^2 *
-           SUM_j  a_j^3 (1 + k r_ij)^2 exp(-2 k r_ij) / ( r_ij^2 - a_j^2 )^2
+    dG_i = alpha * (C / 2) * D * q_i^2 *
+           SUM_{j: r_ij < 15 A}  a_j^3 (1 + k r_ij)^2 exp(-2 k r_ij) / [ max(r_ij^2, a_j^2, 0.5) ]^2
 
     D = (eps_s - eps_p) / [ eps_s * (2*eps_s + eps_p) ]   Kirkwood n=1 image factor
     C = e^2/(4 pi eps_0) divided by kT, i.e. kBT.Angstrom/e^2 (560.46 at 298.15 K)
@@ -151,7 +151,7 @@ def desolvation_field_on_grid(
 
 def read_pqr_geometry(pqr_path):
     """
-    Atom centres and radii from a PQR (charges deliberately ignored).
+    Atom centres and radii from a PQR (charges ignored).
 
     PQR has no fixed standard for a trailing element column or a chain column,
     and a negative coordinate can run into the field before it, so the records

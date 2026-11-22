@@ -25,7 +25,6 @@ GPU-accelerated rigid body and flexible chain Brownian dynamics simulations for 
 [![CUDA](https://img.shields.io/badge/CUDA-12%2B-green.svg)](https://developer.nvidia.com/cuda-toolkit)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Dependabot](https://img.shields.io/badge/dependabot-enabled-blue.svg?logo=dependabot)](https://github.com/anandojha/PySTARC/network/updates)
 [![Lines of Code](https://img.shields.io/badge/lines_of_code-60k-blue.svg)](https://github.com/anandojha/PySTARC)
 
@@ -45,13 +44,15 @@ PySTARC computes the bimolecular association rate constants by implementing rigi
 
 ## Installation
 
-**GPU (Linux / HPC):**
+**GPU (Linux / HPC GPU node):**
 
 ```bash
 git clone https://github.com/anandojha/PySTARC.git
 cd PySTARC
 bash install.sh
 ```
+
+`install.sh` creates a fresh `PySTARC` conda environment (replacing any existing `PySTARC` environment) and stops before changing anything if no NVIDIA GPU with CUDA 12+ is visible. On a GPU-less HPC login node, run the CPU commands below plus `pip install "cupy-cuda12x[ctk]>=14"`.
 
 **CPU (flexible chain BD):**
 
@@ -60,8 +61,8 @@ git clone https://github.com/anandojha/PySTARC.git
 cd PySTARC
 conda create -n PySTARC python=3.11 -y
 conda activate PySTARC
-conda install -c conda-forge ambertools=24.8 apbs rdkit openbabel -y
-pip install .
+conda install -c conda-forge "numpy>=2.0,<2.6" ambertools=24.8 apbs rdkit openbabel -y
+pip install -e .
 ```
 
 ## Testing
@@ -79,9 +80,11 @@ cd examples/two_charged_spheres
 bash run.sh
 ```
 
+For a short smoke check on one GPU, lower `<n_trajectories>` in `config.xml` from `20000000` to `10000` (`k_on ≈ 1.75 × 10¹⁰ M⁻¹ s⁻¹`, exact Debye-Smoluchowski limit).
+
 ## Tutorials
 
-[`TUTORIAL.md`](TUTORIAL.md) works through the trypsin benzamidine example step by step and explains every tag of `config.xml`.
+[`TUTORIAL.md`](TUTORIAL.md) works through the trypsin-benzamidine example step by step and explains every tag of `config.xml`. [`scripts/README.md`](scripts/README.md) documents `prepare_pdb.py`, `find_reaction_criteria.py`, and `verify_criteria.py` for preparing raw PDB structures and reaction criteria. [`pystarc/CHAINS.md`](pystarc/CHAINS.md) documents the COFFDROP flexible chain API.
 
 See [`examples/`](examples/) for the tutorials. Each complex has its own README listing the inputs, run commands, and outputs. Start with `two_charged_spheres` to validate the installation against the analytical rate. The `barnase_barstar` tutorial demonstrates the flexible chain workflow.
 

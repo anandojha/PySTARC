@@ -164,9 +164,7 @@ REFERENCE_DEFAULTS: Dict[str, Any] = {
 REFERENCE_LOCAL_TAGS = frozenset(REFERENCE_DEFAULTS)
 
 # Names that must carry the same default wherever they appear, including in
-# dataclass fields, function signatures and getattr fallbacks. The regression
-# test in tests/test_config_defaults.py enforces this by walking the syntax tree
-# of the whole package.
+# dataclass fields, function signatures, and getattr fallbacks across the package.
 PHYSICS_DEFAULT_NAMES = frozenset(INPUT_DEFAULTS) | {
     "temperature_kT",
     "dielectric",

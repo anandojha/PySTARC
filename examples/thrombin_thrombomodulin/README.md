@@ -4,11 +4,11 @@ Requires a CUDA GPU.
 
 ## Input files
 ```
-config.xml                  PySTARC configuration file
 receptor.pqr                Prepared thrombin PQR (charges and radii)
 ligand.pqr                  Prepared thrombomodulin PQR (charges and radii)
+config.xml                  PySTARC configuration file
 run.sh                      Runs PySTARC on one workstation GPU
-submit.sh                   Unified SLURM script (4 nodes x 2 H100 GPUs default, scalable via sbatch flags)
+submit.sh                   Unified SLURM script (4 nodes x 2 GPUs default, scalable via sbatch flags)
 ```
 
 ## Workstation run
@@ -22,7 +22,7 @@ bash run.sh
 ```bash
 cd ~/PySTARC/examples/thrombin_thrombomodulin
 conda activate PySTARC
-sbatch submit.sh                                # 4 nodes, 2 H100 GPUs per node (8 total, default)
+sbatch submit.sh                                # 4 nodes, 2 GPUs per node (8 total, default; adjust #SBATCH flags for your cluster)
 sbatch --nodes=1 --ntasks-per-node=1 submit.sh  # 1 node, 1 GPU
 sbatch --nodes=2 --ntasks-per-node=4 submit.sh  # 2 nodes, 4 GPUs per node (8 total)
 ```

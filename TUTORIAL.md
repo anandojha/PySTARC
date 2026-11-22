@@ -21,7 +21,7 @@ conda activate PySTARC
 mkdir examples/my_trypsin
 cd examples/my_trypsin
 cp ../trypsin_benzamidine/{receptor.pqr,ligand.pqr,run.sh,submit.sh} .
-python ../../run_pystarc.py --template > config.xml
+python ../../run_pystarc.py --template
 ```
 
 The last command writes a `config.xml` template with the nine sections `structure`, `criterion`, `geometry`, `electrostatics`, `physics`, `simulation`, `compute`, `outputs` and `chain`. `run.sh` and `submit.sh` locate PySTARC in a parent folder or through the installed `pystarc` package automatically (export `PYSTARC_ROOT=/path/to/PySTARC` to point at another checkout).
@@ -60,7 +60,7 @@ Mixing `.pdb` and `.pqr` in one `config.xml` stops the build with an error. The 
 
 ### Starting from PDB files
 
-A new protein-ligand complex starts from prepared `receptor.pdb` and `ligand.pdb` files. For example, `examples/hsp90_inhibitors/HSP90-aminopyridine` configures:
+A new protein-ligand complex starts from prepared `receptor.pdb` and `ligand.pdb` files. To split a raw RCSB PDB complex, protonate the ligand, and emit `<structure>` and `<criterion>` blocks automatically, run `scripts/prepare_pdb.py` and `scripts/find_reaction_criteria.py` (see [`scripts/README.md`](scripts/README.md)). For example, `examples/hsp90_inhibitors/HSP90-aminopyridine` configures:
 
 ```xml
 <structure>
@@ -219,7 +219,7 @@ APBS solves the linearized Poisson Boltzmann equation of the receptor on two nes
 
 | grid | file in `bd_sims` | edge (Å) | points per axis | boundary condition |
 |---|---|---|---|---|
-| coarse | `receptor0.dx` | `apbs_cglen`, 0 for twice the fine edge | `apbs_coarse_dime`, 0 for `apbs_dime` | Debye Hückel potential of one sphere with the charge, dipole and quadrupole of the receptor (APBS `bcfl sdh`) |
+| coarse | `receptor0.dx` | `apbs_cglen`, 0 for twice the fine edge | `apbs_coarse_dime`, 0 for `apbs_dime` | single-sphere Debye Hückel potential of the receptor (APBS `bcfl sdh`) |
 | fine | `receptor1.dx` | `apbs_fglen`, 0 for the derived edge | `apbs_fine_dime`, 0 for `apbs_dime` | potential of the coarse grid (APBS `bcfl map`) |
 
 The derived fine edge is max[(L + 2(r<sub>max</sub> + srad)) × 1.05, 4(r<sub>max</sub> + srad) × 1.025], with L the longest extent of the atom centers and r<sub>max</sub> the largest atom radius. `apbs_cglen` must exceed `apbs_fglen`. `apbs_dime` sets the points per axis of the receptor desolvation grids as well.
@@ -372,16 +372,19 @@ With `gpu` false on a rigid body system, the CPU model runs the trajectories in 
 | tag | CPU model |
 |---|---|
 | `soft_repulsion` | `true` stops a rigid body CPU run before the first step |
-| `overlap_check`, `lj_forces` | no effect, a move with a ligand atom closer than r<sub>i</sub> + r<sub>j</sub> to a receptor atom is drawn again up to five times and the old pose stays after five failures |
-| `enable_born2_torque` | no effect, both desolvation directions in every run |
+| `overlap_check` | `true` rejects moves bringing any receptor-ligand atom pair below 0.5(r<sub>i</sub> + r<sub>j</sub>), redrawing up to five times |
+| `lj_forces` | `true` activates Weeks Chandler Andersen (WCA) repulsion at close contact |
+| `enable_born2_torque` | no effect, both desolvation directions active |
 | `multipole_fallback` | no effect, no receptor field outside the grids |
-| `minimum_core_dt`, `max_dt` | no effect |
-| `minimum_core_reaction_dt` | floor of the time step (0.05 ps for 0), a quarter of the floor at a center distance below 1.5 times the smallest reaction distance |
+| `r_escape` | bypassed when the outer propagator handles excursions beyond 1.1 b |
+| `minimum_core_dt` | lower bound on the time step (ps) when positive |
+| `max_dt` | no effect |
+| `minimum_core_reaction_dt` | time-step floor near the reaction surface (ps; 0 falls back to 0.05 ps, quartered when the smallest contact pair distance falls below 1.5 times its cutoff) |
 | `seed` | seed `seed` + i for trajectory i |
 | `convergence_interval`, `checkpoint_interval` | no effect |
 | `save_interval`, `full_paths`, `energetics` | no effect |
 
-The rigid body CPU model prints P<sub>rxn</sub> and k<sub>on</sub> in the log and writes `bd_sims/convergence.json`, without writing `results.json`, `trajectories.csv`, `paths.npz` or `energetics.npz`.
+The rigid body CPU model writes `bd_sims/results.json`, `bd_sims/trajectories.csv` and `bd_sims/convergence.json`, without writing `paths.npz` or `energetics.npz`.
 
 The trypsin example runs on the GPU. `n_threads` 32 has no effect on the trypsin run.
 
@@ -589,7 +592,7 @@ A multi GPU run writes each shard into `bd_sims/bd_1` to `bd_sims/bd_N` with a s
 | `trajectories_csv`, `encounters_csv`, `near_misses_csv`, `radial_density`, `angular_map`, `bd_time_to_reaction`, `contact_frequency`, `milestone_flux`, `transition_matrix`, `pose_clusters` | `true` or `false`, default `true` | `false` skips writing that output file in `bd_sims` |
 | `results_json` | `true` or `false`, default `true` | `false` skips `results.json`, sets k<sub>on</sub> to 0 in `convergence.json` and skips multi GPU pooling |
 
-`run_pystarc.py --template input.xml` prints a standalone `<pystarc>` template for low level engine runs without `config.xml`.
+`run_pystarc.py --template input.xml` writes a standalone `<pystarc_input>` template file for low level engine runs without `config.xml`.
 
 ## 15. Flexible chain model (barnase and barstar)
 
@@ -625,13 +628,13 @@ The flexible chain model treats the ligand as a chain of coarse grained COFFDROP
   </chain>
 ```
 
-On a single workstation, `bash run.sh` (or `python ../../run_pystarc.py config.xml` once `apbs_output` exists, or with `target_grid_dx` and `born_grid_dx` blank so APBS runs inside `bd_sims`) builds the chain inputs and runs the simulation. On a SLURM cluster, `submit.sh` runs the `10,000`-trajectory multi-node CPU workflow pinned to `16`-core Rome NUMA domains (default `2` Rome nodes × `8` tasks × `16` CPUs = `256` CPUs total):
+On a single workstation, `bash run.sh` (or `python ../../run_pystarc.py config.xml` once `apbs_output` exists, or with `target_grid_dx` and `born_grid_dx` blank so APBS runs inside `bd_sims`) builds the chain inputs and runs the simulation; lower `n_threads` and `n_trajectories` locally to fit workstation cores. On a SLURM cluster, adjust `--partition`, `--constraint`, and `--mem` in `submit.sh` for your cluster to run the `10,000`-trajectory multi-node CPU workflow pinned to `16`-core NUMA domains (default `2` nodes × `8` tasks × `16` CPUs = `256` CPUs total):
 
 ```bash
 cd examples/barnase_barstar
-sbatch submit.sh                    # 2 Rome nodes x 8 tasks x 16 CPUs (256 CPUs total, default)
-sbatch --nodes=1 submit.sh          # 1 Rome node x 8 tasks x 16 CPUs (128 CPUs total)
-sbatch --nodes=10 submit.sh         # 10 Rome nodes x 8 tasks x 16 CPUs (1,280 CPUs total)
+sbatch submit.sh                    # 2 nodes x 8 tasks x 16 CPUs (256 CPUs total, default)
+sbatch --nodes=1 submit.sh          # 1 node x 8 tasks x 16 CPUs (128 CPUs total)
+sbatch --nodes=10 submit.sh         # 10 nodes x 8 tasks x 16 CPUs (1,280 CPUs total)
 ```
 
 Alternatively, the three stages can be submitted separately with `python make_grids.py`, `./submit_shards.sh`, and `python combine_shards.py`.
@@ -640,7 +643,7 @@ During the build step (`python ../../run_pystarc.py config.xml --setup`, called 
 
 `make_grids.py` builds `bd_sims/receptor.pqr` from `config.xml`, runs APBS with the `<electrostatics>` settings (`srad` 1.5 Å, `apbs_fglen` 140.0 Å, `apbs_dime` 449), and writes `barnase0.dx`, `barnase1.dx`, `barnase0_born.dx` and `barnase1_born.dx` into `apbs_output`.
 
-`submit.sh` splits the `10,000` trajectories evenly across `16`-CPU NUMA-pinned SLURM tasks (`shards/shard_01` to `shards/shard_N`) with seed `11111111 * i + 1` per shard, launches each shard under `numactl --localalloc`, and calls `combine_shards.py` on completion. `submit_shards.sh` stages independent single-node shard jobs (`125` CPUs per node) instead. Each shard writes `results.json`, `trajectories.csv`, saved paths and a log into `bd_sims` of that shard.
+`submit.sh` splits the `10,000` trajectories evenly across `16`-CPU NUMA-pinned SLURM tasks (`shards/shard_01` to `shards/shard_N`) with seed `11111111 * i + 1` per shard, launches each shard under `numactl --localalloc`, and calls `combine_shards.py` on completion. `submit_shards.sh` stages independent single-node shard jobs (`125` CPUs per node) instead. Each shard writes nested `results.json`, `trajectories.csv`, `fpt_distribution.csv`, `energetics.npz` (storing `total`, `elec`, `born`, `steric` energies), `paths.npz`, and a log into `bd_sims` of that shard (`convergence_check` is skipped in chain mode; `combine_shards.py` reports the pooled rate and Wilson 95% interval).
 
 `combine_shards.py` reads `results.json` from every finished shard, prints the counts per shard, and prints the pooled k<sub>on</sub> = k<sub>b</sub> P<sub>rxn</sub> with a Wilson 95% interval, where P<sub>rxn</sub> = n<sub>reacted</sub>/(n<sub>reacted</sub> + n<sub>escaped</sub> + n<sub>max_steps</sub>) summed across shards (plus upper bounds when n<sub>max_steps</sub> > 0).
 
@@ -663,3 +666,13 @@ Each trajectory starts with the chain centroid on the sphere of radius b = `bd_m
 | `target_grid_dx` | DX path, blank to build in `work_dir` | receptor APBS fine potential grid acting on bead charges |
 | `born_grid_dx` | DX path, blank to build in `work_dir` | receptor Born desolvation grid acting on bead charges, scaled by `desolvation_alpha` |
 | `n_threads` (`<compute>`) | integer ≥ 1 | worker processes per run or shard |
+
+## 16. Troubleshooting
+
+| symptom | resolution |
+|---|---|
+| `install.sh` aborts with no NVIDIA GPU or CUDA < 12 | Run `install.sh` on a Linux GPU node with a CUDA 12+ driver (or install manually on a login node per `README.md`) |
+| `pip` reports `proprep` / `numpy<2` conflicts | Pin `ambertools=24.8` and `"numpy>=2.0,<2.6"` from `conda-forge` |
+| APBS grid-size error | Set `apbs_dime` to `4k + 1` (up to `65`) or `32c + 1` (above `65`, such as `129`, `257`, `449`) |
+| GPU out-of-memory error | Lower `gpu_force_batch` in `<compute>` (for example `100000`) |
+| SLURM rejects partition, constraint, or memory | Edit the `#SBATCH` header lines at the top of `submit.sh` for your cluster |

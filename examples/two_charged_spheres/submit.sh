@@ -21,7 +21,6 @@ if ! command -v conda >/dev/null 2>&1; then
   done
 fi
 set -eo pipefail
-module load cuda 2>/dev/null || true
 command -v conda >/dev/null 2>&1 || { echo "conda not found. Load conda or set CONDA_BASE." >&2; exit 1; }
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate PySTARC

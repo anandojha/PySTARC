@@ -651,7 +651,7 @@ def _indefiniteness_report(M, trace_avg):
     The physical scale of an RPY translational mobility is the mean self
     mobility 1/(6 pi a), which is 1.768e-02 per angstrom for a 3 A bead. An
     absolute eigenvalue threshold carries no meaning against that: -8e-03
-    reads as small yet is a 49 percent violation of the matrix scale, so the
+    reads as small although it is a 49 percent violation of the matrix scale, so the
     ratio is reported alongside.
     """
     if not np.all(np.isfinite(M)):
@@ -671,7 +671,7 @@ def _indefiniteness_report(M, trace_avg):
 
 
 def _build_robust_solver(M):
-    """Build a callable solver(v) for M @ x = v that is robust to a
+    """Build a callable solver(v) for M @ x = v that handles a
     near-singular M.
 
     The function tries three strategies in order. First it attempts a

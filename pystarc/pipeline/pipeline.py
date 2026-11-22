@@ -76,7 +76,7 @@ def _require_gpu():
             "Install PySTARC with install.sh on a GPU node."
         )
     try:
-        cp.arange(3).sum()
+        int(cp.arange(3).sum())
     except Exception as exc:
         raise RuntimeError(
             f"<gpu>true</gpu> but CuPy cannot run a kernel on this host ({exc}). "
@@ -114,9 +114,9 @@ def _checklist(cfg, params, geom, k_b, gpu_engine, cpu_engine, result):
     lines = [
         "Checklist",
         f"  Temperature = {cfg.temperature:.2f} K  (kT = {cfg.temperature / 298.15:.6f})",
-        f"  k_b Romberg integral           (k_b={k_b:.4f} ų/ps)"
+        f"  k_b Romberg integral           (k_b={k_b:.4f} Å³/ps)"
         if e is not None
-        else f"  k_b of the outer propagator    (k_db={getattr(result, 'k_db', 0.0):.4f} ų/ps)",
+        else f"  k_b of the outer propagator    (k_db={getattr(result, 'k_db', 0.0):.4f} Å³/ps)",
         f"  HI in k_b integral             ({'enabled' if params.hydrodynamic_interactions else 'disabled'})",
         f"  Hydro radii  receptor {geom.receptor.hydrodynamic_r:.4f} Å ({src(cfg.r_hydro_rec)}), "
         f"ligand {geom.ligand.hydrodynamic_r:.4f} Å ({src(cfg.r_hydro_lig)})",

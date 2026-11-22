@@ -21,7 +21,6 @@ if ! command -v conda >/dev/null 2>&1; then
   done
 fi
 set -eo pipefail
-module load cuda 2>/dev/null || true
 command -v conda >/dev/null 2>&1 || { echo "conda not found. Load conda or set CONDA_BASE." >&2; exit 1; }
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate PySTARC
@@ -65,6 +64,7 @@ if [ -n "${SLURM_CPUS_PER_TASK:-}" ]; then
 fi
 srun "${SRUN_ARGS[@]}" \
   bash -c '
+    set -eo pipefail
     sleep $(( ${SLURM_LOCALID:-0} * 2 ))
     T="/tmp/pystarc_${SLURM_JOB_ID:-local}_${SLURM_PROCID:-0}"
     trap "rm -rf \"$T\"" EXIT

@@ -24,7 +24,7 @@ scripts/
 
 ## 1. Raw Inputs Needed and Handoff to `config.xml`
 
-Each complex folder under `scripts/` stores the minimal raw starting inputs required for that complex plus a `prepare.sh` wrapper calling `prepare_pdb.py` and `find_reaction_criteria.py`.
+Each complex folder under `scripts/` stores the minimal raw starting inputs required for that complex plus a `prepare.sh` wrapper calling `prepare_pdb.py` and `find_reaction_criteria.py`. Crystal-ligand `prepare.sh` scripts fetch chemical component dictionary (`.cif`) definitions from `files.rcsb.org` when `--cif` is not supplied locally.
 
 | Family (count) | Minimal raw inputs in `scripts/<complex>/` | Preparation workflow | Outputs copied to `examples/<complex>/` |
 |---|---|---|---|
