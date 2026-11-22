@@ -57,8 +57,15 @@ from dataclasses import dataclass, field
 import multiprocessing as mp
 import numpy as np
 import math
+import time
 import warnings
-from pystarc.global_defs.constants import COULOMB_KCAL, KB_KCAL, KBT_KCAL, T_DEFAULT
+from pystarc.global_defs.constants import (
+    COULOMB_KCAL,
+    KB_KCAL,
+    KBT_KCAL,
+    MOLAR_RATE_CONV,
+    T_DEFAULT,
+)
 from pystarc.global_defs.defaults import (
     DESOLVATION_ALPHA,
     HYDRODYNAMIC_INTERACTIONS,
@@ -1019,6 +1026,11 @@ def _run_chain_trajectory_worker(traj_idx: int):
     """Run trajectory traj_idx of the worker's simulator with its own streams."""
     rng, rng_bb = trajectory_rngs(_WORKER_SIM.params.seed, traj_idx)
     return _WORKER_SIM.run_one(rng=rng, rng_bb=rng_bb)
+
+
+def _run_chain_trajectory_indexed(traj_idx: int):
+    """Return (traj_idx, TrajectoryResult) for unordered pool collection."""
+    return traj_idx, _run_chain_trajectory_worker(traj_idx)
 
 
 def _build_chain_diagnostics(
@@ -2185,9 +2197,7 @@ class ChainBDSimulator:
             self._run_serial(n)
         return self.results
 
-    def _record(self, result: TrajectoryResult) -> None:
-        """Append a result and update reacted/escaped counters."""
-        self.results.append(result)
+    def _count_fate(self, result: TrajectoryResult) -> None:
         if result.fate == Fate.REACTED:
             self.n_reacted += 1
         elif result.fate == Fate.ESCAPED:
@@ -2195,36 +2205,68 @@ class ChainBDSimulator:
         elif result.fate == Fate.MAX_STEPS:
             self.n_max_steps += 1
 
+    def _record(self, result: TrajectoryResult) -> None:
+        """Append one trajectory outcome and update fate counters."""
+        self.results.append(result)
+        self._count_fate(result)
+
+    def _log_progress(self, done: int, total: int, t0: float) -> None:
+        elapsed = time.monotonic() - t0
+        pct = 100.0 * done / total if total else 0.0
+        kb = float(getattr(self._outer_prop, "k_b", 0.0) or 0.0)
+        p_live = self.n_reacted / done if done else 0.0
+        k_live = MOLAR_RATE_CONV * kb * p_live if kb > 0.0 else 0.0
+        if k_live > 0.0:
+            exp = int(math.floor(math.log10(k_live)))
+            man = k_live / (10.0**exp)
+            print(
+                f"  [T] {elapsed:6.0f}s  "
+                f"done={done:,}/{total:,} ({pct:.1f}%)  "
+                f"reacted={self.n_reacted:,}  escaped={self.n_escaped:,}  "
+                f"P_rxn={p_live:.5f}  k_on={man:.2f}e{exp}  "
+                f"max_steps={self.n_max_steps:,}",
+                flush=True,
+            )
+        else:
+            print(
+                f"  [T] {elapsed:6.0f}s  "
+                f"done={done:,}/{total:,} ({pct:.1f}%)  "
+                f"reacted={self.n_reacted:,}  escaped={self.n_escaped:,}  "
+                f"max_steps={self.n_max_steps:,}",
+                flush=True,
+            )
+
     def _run_serial(self, n: int) -> None:
-        """Run n trajectories one after the other."""
+        """Run n trajectories sequentially."""
+        t0 = time.monotonic()
+        report_every = max(1, n // 100)
         for i in range(n):
-            if self.params.verbose:
-                print(
-                    f"  Trajectory {i + 1}/{n}  "
-                    f"(reacted={self.n_reacted}, escaped={self.n_escaped})"
-                )
             rng, rng_bb = trajectory_rngs(self.params.seed, i)
             self._record(self.run_one(rng=rng, rng_bb=rng_bb))
+            done = i + 1
+            if self.params.verbose and (done % report_every == 0 or done == n):
+                self._log_progress(done, n, t0)
 
     def _run_parallel(self, n: int) -> None:
         """Run n trajectories across a multiprocessing pool.
 
-        The initializer hands each worker the simulator once, and the tasks are
-        trajectory indices. imap returns the results in submission order.
+        Workers stream completed outcomes via imap_unordered for live counts,
+        while self.results preserves deterministic trajectory index order.
         """
         n_workers = min(self.params.n_threads, n, mp.cpu_count())
         if self.params.verbose:
-            print(f"  Parallel: {n_workers} workers, {n} trajectories")
-        report_every = max(1, n // 20)  # report progress every 5 percent
+            print(f"  Parallel: {n_workers} workers, {n} trajectories", flush=True)
+        t0 = time.monotonic()
+        report_every = max(1, n // 100)
+        ordered: List[Optional[TrajectoryResult]] = [None] * n
         with mp.Pool(
             n_workers, initializer=_chain_worker_init, initargs=(self,)
         ) as pool:
-            for i, result in enumerate(
-                pool.imap(_run_chain_trajectory_worker, range(n)), 1
+            for done, (idx, result) in enumerate(
+                pool.imap_unordered(_run_chain_trajectory_indexed, range(n)), 1
             ):
-                self._record(result)
-                if self.params.verbose and (i % report_every == 0 or i == n):
-                    print(
-                        f"  Progress: {i}/{n} trajectories " f"({100*i/n:.0f}%)",
-                        flush=True,
-                    )
+                ordered[idx] = result
+                self._count_fate(result)
+                if self.params.verbose and (done % report_every == 0 or done == n):
+                    self._log_progress(done, n, t0)
+        self.results.extend(ordered)

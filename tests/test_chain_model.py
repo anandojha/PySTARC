@@ -324,3 +324,17 @@ def test_nearby_target_atoms_give_the_same_steric_force():
         assert _check_chain_overlap(
             near, world, sim._chain_radii
         ) == _check_chain_overlap(full, world, sim._chain_radii)
+
+
+def test_chain_live_progress_logs_counts_and_rate(capsys):
+    sim = _small_sim(n_trajectories=2, max_steps=0, r_start=1.0, verbose=True)
+    sim._outer_prop = type("_Prop", (), {"k_b": 10.0})()
+    sim.run()
+    out = capsys.readouterr().out
+    assert "[T]" in out
+    assert "done=2/2 (100.0%)" in out
+    assert "reacted=2" in out
+    assert "escaped=0" in out
+    assert "P_rxn=1.00000" in out
+    assert "k_on=6.02e9" in out
+    assert "max_steps=0" in out
