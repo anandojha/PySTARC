@@ -16,8 +16,15 @@ EPS = 0.17
 
 
 def _engine(rec, rec_r, lig_r):
-    return GPUBatchForceEngine([], [], alpha=0.0, rec_positions=rec, rec_radii=rec_r,
-                               lig_radii=lig_r, use_lj=True)
+    return GPUBatchForceEngine(
+        [],
+        [],
+        alpha=0.0,
+        rec_positions=rec,
+        rec_radii=rec_r,
+        lig_radii=lig_r,
+        use_lj=True,
+    )
 
 
 def _pairs(rec, rec_r, lig, lig_r, cen):
@@ -29,7 +36,11 @@ def _pairs(rec, rec_r, lig, lig_r, cen):
             r2 = (d * d).sum(axis=1)
             s = lig_r[j] + rec_r[rec_r > 0]
             sr6 = (s * s / r2) ** 3
-            f = np.where(np.sqrt(r2) < 2 ** (1 / 6) * s, 4 * EPS * (12 * sr6 * sr6 - 6 * sr6) / r2, 0.0)
+            f = np.where(
+                np.sqrt(r2) < 2 ** (1 / 6) * s,
+                4 * EPS * (12 * sr6 * sr6 - 6 * sr6) / r2,
+                0.0,
+            )
             fj = (f[:, None] * d).sum(axis=0)
             F[n] += fj
             T[n] += np.cross(lig[n, j] - cen[n], fj)
@@ -46,13 +57,19 @@ def test_wca_equals_the_pair_sum_over_real_atoms():
     q = g.normal(size=(100, 4))
     q /= np.linalg.norm(q, axis=1, keepdims=True)
     w, x, y, z = q.T
-    R = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
-                  [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
-                  [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]]).transpose(2, 0, 1)
+    R = np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+            [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+            [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+        ]
+    ).transpose(2, 0, 1)
     u = g.normal(size=(100, 3))
     cen = u / np.linalg.norm(u, axis=1, keepdims=True) * g.uniform(6.0, 12.0, (100, 1))
     lig = np.einsum("nij,kj->nki", R, lig0) + cen[:, None]
-    F, T, _ = _engine(rec, rec_r, lig_r)._wca_forces_gpu(cp.asarray(lig), cp.asarray(cen))
+    F, T, _ = _engine(rec, rec_r, lig_r)._wca_forces_gpu(
+        cp.asarray(lig), cp.asarray(cen)
+    )
     F_ref, T_ref = _pairs(rec, rec_r, lig, lig_r, cen)
     hit = np.linalg.norm(F_ref, axis=1) > 0
     assert hit.sum() > 20
@@ -62,7 +79,12 @@ def test_wca_equals_the_pair_sum_over_real_atoms():
 
 def test_ghost_atoms_take_no_part_and_radii_are_needed():
     th = 2.0 * np.pi * np.arange(7) / 7.0
-    rec = np.vstack([np.stack([4.5 * np.cos(th), 4.5 * np.sin(th), np.zeros(7)], axis=1), np.zeros((1, 3))])
+    rec = np.vstack(
+        [
+            np.stack([4.5 * np.cos(th), 4.5 * np.sin(th), np.zeros(7)], axis=1),
+            np.zeros((1, 3)),
+        ]
+    )
     eng = _engine(rec, np.array([1.7] * 7 + [0.0]), np.array([1.7, 0.0]))
     lig = cp.asarray([[[0.5, 0.0, 0.0], [0.0, 0.0, 0.0]]])
     F, T, E = eng._wca_forces_gpu(lig, lig[:, 1])

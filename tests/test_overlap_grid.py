@@ -62,7 +62,9 @@ def system():
     d = rng.standard_normal((n, 3))
     d /= np.linalg.norm(d, axis=1, keepdims=True)
     centres = d * rng.uniform(6.0, 18.0, (n, 1))
-    lig_pos = np.einsum("nij,kj->nki", _random_rotations(rng, n), lig0) + centres[:, None]
+    lig_pos = (
+        np.einsum("nij,kj->nki", _random_rotations(rng, n), lig0) + centres[:, None]
+    )
     return rec_pos, rec_radii, lig_pos, lig_radii
 
 

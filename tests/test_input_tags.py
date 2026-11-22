@@ -16,11 +16,21 @@ EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 
 
 def _write(tmp_path, body="", **tags):
-    t = {"receptor_pqr": "r.pqr", "ligand_pqr": "l.pqr", "rxns_xml": "rxns.xml",
-         "soft_repulsion": "true", "work_dir": str(tmp_path / "bd"), **tags}
+    t = {
+        "receptor_pqr": "r.pqr",
+        "ligand_pqr": "l.pqr",
+        "rxns_xml": "rxns.xml",
+        "soft_repulsion": "true",
+        "work_dir": str(tmp_path / "bd"),
+        **tags,
+    }
     p = tmp_path / "input.xml"
-    p.write_text("<pystarc>" + "".join(f"<{k}>{v}</{k}>" for k, v in t.items() if v is not None)
-                 + body + "</pystarc>")
+    p.write_text(
+        "<pystarc>"
+        + "".join(f"<{k}>{v}</{k}>" for k, v in t.items() if v is not None)
+        + body
+        + "</pystarc>"
+    )
     return p
 
 
@@ -30,15 +40,26 @@ def _quiet(path):
         return parse(path)
 
 
-@pytest.mark.parametrize("text,value", [("TRUE", True), ("Yes", True), ("1", True),
-                                        ("false", False), ("NO", False), (" 0 ", False)])
+@pytest.mark.parametrize(
+    "text,value",
+    [
+        ("TRUE", True),
+        ("Yes", True),
+        ("1", True),
+        ("false", False),
+        ("NO", False),
+        (" 0 ", False),
+    ],
+)
 def test_flags_accept_true_yes_1_false_no_0(tmp_path, text, value):
     assert _quiet(_write(tmp_path, gpu=text)).gpu is value
 
 
 @pytest.mark.parametrize("text", ["ture", "on", "2", "y"])
 def test_other_flag_values_raise_naming_the_tag(tmp_path, text):
-    with pytest.raises(ValueError, match="<hydrodynamic_interactions> must be true or false"):
+    with pytest.raises(
+        ValueError, match="<hydrodynamic_interactions> must be true or false"
+    ):
         parse(_write(tmp_path, hydrodynamic_interactions=text))
 
 
@@ -53,13 +74,22 @@ def test_blank_element_counts_as_omitted(tmp_path):
 
 
 def test_unknown_tag_raises_with_a_close_match(tmp_path):
-    with pytest.raises(ValueError, match="<n_trajectorys>.*did you mean <n_trajectories>"):
+    with pytest.raises(
+        ValueError, match="<n_trajectorys>.*did you mean <n_trajectories>"
+    ):
         parse(_write(tmp_path, n_trajectorys="10"))
     assert not (tmp_path / "bd").exists()
 
 
-@pytest.mark.parametrize("tag,home", [("save_interval", "<outputs>"), ("full_paths", "<outputs>"),
-                                      ("dt_chain", "<chain>"), ("chain_json", "<chain>")])
+@pytest.mark.parametrize(
+    "tag,home",
+    [
+        ("save_interval", "<outputs>"),
+        ("full_paths", "<outputs>"),
+        ("dt_chain", "<chain>"),
+        ("chain_json", "<chain>"),
+    ],
+)
 def test_block_field_at_the_root_names_its_block(tmp_path, tag, home):
     with pytest.raises(ValueError, match=f"<{tag}>.*belongs inside {home}"):
         parse(_write(tmp_path, **{tag: "1"}))
@@ -68,10 +98,17 @@ def test_block_field_at_the_root_names_its_block(tmp_path, tag, home):
 def test_unknown_tags_inside_outputs_and_chain_raise(tmp_path):
     with pytest.raises(ValueError, match="<paths> in <outputs>"):
         parse(_write(tmp_path, "<outputs><paths>true</paths></outputs>"))
-    with pytest.raises(ValueError, match="<seed> in <outputs>: it belongs at the top level"):
+    with pytest.raises(
+        ValueError, match="<seed> in <outputs>: it belongs at the top level"
+    ):
         parse(_write(tmp_path, "<outputs><seed>3</seed></outputs>"))
     with pytest.raises(ValueError, match="<dt_chian> in <chain>"):
-        parse(_write(tmp_path, "<chain><chain_json>c.json</chain_json><dt_chian>0.1</dt_chian></chain>"))
+        parse(
+            _write(
+                tmp_path,
+                "<chain><chain_json>c.json</chain_json><dt_chian>0.1</dt_chian></chain>",
+            )
+        )
 
 
 def test_receptor_resname_passes_silently(tmp_path):
@@ -79,12 +116,16 @@ def test_receptor_resname_passes_silently(tmp_path):
 
 
 def test_tags_of_prepare_bd_surface_warn_once(tmp_path):
-    with pytest.warns(UserWarning, match="<parm7>, <ion_type> are read by prepare_bd_surface only"):
+    with pytest.warns(
+        UserWarning, match="<parm7>, <ion_type> are read by prepare_bd_surface only"
+    ):
         parse(_write(tmp_path, parm7="x.parm7", ion_type="NaCl"))
 
 
-@pytest.mark.parametrize("tag", ["stall_check", "unfinished_in_p_rxn", "apbs_grid_spacing",
-                                 "apbs_coarse_spacing"])
+@pytest.mark.parametrize(
+    "tag",
+    ["stall_check", "unfinished_in_p_rxn", "apbs_grid_spacing", "apbs_coarse_spacing"],
+)
 def test_retired_tags_warn(tmp_path, tag):
     with pytest.warns(UserWarning, match=f"<{tag}> is no longer used"):
         parse(_write(tmp_path, **{tag: "1"}))
@@ -92,10 +133,23 @@ def test_retired_tags_warn(tmp_path, tag):
 
 def test_p_commit_is_retired_and_fpt_distribution_is_an_alias(tmp_path):
     with pytest.warns(UserWarning, match="<p_commit> is no longer used"):
-        cfg = parse(_write(tmp_path, "<outputs><p_commit>true</p_commit>"
-                                     "<fpt_distribution>false</fpt_distribution></outputs>"))
-    assert cfg.outputs.bd_time_to_reaction is False and cfg.outputs.fpt_distribution is False
-    cfg = _quiet(_write(tmp_path, "<outputs><bd_time_to_reaction>false</bd_time_to_reaction></outputs>"))
+        cfg = parse(
+            _write(
+                tmp_path,
+                "<outputs><p_commit>true</p_commit>"
+                "<fpt_distribution>false</fpt_distribution></outputs>",
+            )
+        )
+    assert (
+        cfg.outputs.bd_time_to_reaction is False
+        and cfg.outputs.fpt_distribution is False
+    )
+    cfg = _quiet(
+        _write(
+            tmp_path,
+            "<outputs><bd_time_to_reaction>false</bd_time_to_reaction></outputs>",
+        )
+    )
     assert cfg.outputs.bd_time_to_reaction is False
 
 
@@ -110,13 +164,16 @@ def test_prepare_bd_surface_flags_are_strict(tmp_path):
 def test_rigid_input_must_name_the_excluded_volume(tmp_path):
     with pytest.raises(ValueError, match="soft_repulsion.*overlap_check"):
         parse(_write(tmp_path, soft_repulsion=None))
-    assert _quiet(_write(tmp_path, soft_repulsion=None, overlap_check="true")).overlap_check
+    assert _quiet(
+        _write(tmp_path, soft_repulsion=None, overlap_check="true")
+    ).overlap_check
     chain = "<chain><chain_json>c.json</chain_json></chain>"
     _quiet(_write(tmp_path, chain, soft_repulsion=None, ligand_pqr=None, rxns_xml=None))
 
 
-@pytest.mark.parametrize("cfg_path", sorted(EXAMPLES.glob("**/config.xml")),
-                         ids=lambda p: p.parent.name)
+@pytest.mark.parametrize(
+    "cfg_path", sorted(EXAMPLES.glob("**/config.xml")), ids=lambda p: p.parent.name
+)
 def test_every_example_config_follows_the_universal_template(cfg_path):
     """Every example config.xml has the same 9 sections and tag order, with no setup.py left."""
     from pystarc.pipeline import build_inputs as bi
@@ -129,10 +186,18 @@ def test_every_example_config_follows_the_universal_template(cfg_path):
         assert [el.tag for el in sec] == list(expected_tags)
 
 
-@pytest.mark.parametrize("cfg_path", [p for p in sorted(EXAMPLES.glob("**/config.xml"))
-                                      if p.parent.name != "barnase_barstar"],
-                         ids=lambda p: p.parent.name)
-def test_input_written_from_an_example_config_parses_without_warning(tmp_path, cfg_path):
+@pytest.mark.parametrize(
+    "cfg_path",
+    [
+        p
+        for p in sorted(EXAMPLES.glob("**/config.xml"))
+        if p.parent.name != "barnase_barstar"
+    ],
+    ids=lambda p: p.parent.name,
+)
+def test_input_written_from_an_example_config_parses_without_warning(
+    tmp_path, cfg_path
+):
     """write_input of build_inputs produces an input.xml that parses without warning."""
     from pystarc.pipeline import build_inputs as bi
 
@@ -158,13 +223,18 @@ def test_ligand_dime_is_read_and_checked(tmp_path):
         parse(_write(tmp_path, apbs_ligand_dime="128"))
 
 
-@pytest.mark.parametrize("sub,want_pairs", [
-    ("two_charged_spheres", 1),
-    ("trypsin_benzamidine", 6),
-    ("thrombin_thrombomodulin", 6),
-    ("barnase_barstar", 568),
-])
-def test_example_configs_with_local_files_build_and_parse_cleanly(tmp_path, sub, want_pairs):
+@pytest.mark.parametrize(
+    "sub,want_pairs",
+    [
+        ("two_charged_spheres", 1),
+        ("trypsin_benzamidine", 6),
+        ("thrombin_thrombomodulin", 6),
+        ("barnase_barstar", 568),
+    ],
+)
+def test_example_configs_with_local_files_build_and_parse_cleanly(
+    tmp_path, sub, want_pairs
+):
     import json
 
     if sub == "barnase_barstar" and shutil.which("tleap") is None:
@@ -186,11 +256,17 @@ def test_config_strict_tag_and_section_validation(tmp_path):
         parse(p)
     p2 = tmp_path / "misplaced.xml"
     p2.write_text("<config><outputs><seed>1</seed></outputs></config>")
-    with pytest.raises(ValueError, match="<seed> in <outputs>: place it inside <simulation>"):
+    with pytest.raises(
+        ValueError, match="<seed> in <outputs>: place it inside <simulation>"
+    ):
         parse(p2)
     p3 = tmp_path / "typo.xml"
-    p3.write_text("<config><structure><recpetor>receptor.pdb</recpetor></structure></config>")
-    with pytest.raises(ValueError, match="Unknown tag <recpetor>.*did you mean <receptor>"):
+    p3.write_text(
+        "<config><structure><recpetor>receptor.pdb</recpetor></structure></config>"
+    )
+    with pytest.raises(
+        ValueError, match="Unknown tag <recpetor>.*did you mean <receptor>"
+    ):
         parse(p3)
     blank = tmp_path / "template.xml"
     blank.write_text(bi.config_xml({}, full_template=True))
@@ -203,9 +279,17 @@ def test_run_pystarc_template_and_setup_cli(tmp_path):
 
     runner = EXAMPLES.parent / "run_pystarc.py"
     tpl = tmp_path / "config.xml"
-    r1 = subprocess.run([sys.executable, str(runner), "--template", str(tpl)], capture_output=True, text=True)
+    r1 = subprocess.run(
+        [sys.executable, str(runner), "--template", str(tpl)],
+        capture_output=True,
+        text=True,
+    )
     assert r1.returncode == 0 and tpl.exists()
     dst = tmp_path / "tcs"
     shutil.copytree(EXAMPLES / "two_charged_spheres", dst)
-    r2 = subprocess.run([sys.executable, str(runner), str(dst / "config.xml"), "--setup"], capture_output=True, text=True)
+    r2 = subprocess.run(
+        [sys.executable, str(runner), str(dst / "config.xml"), "--setup"],
+        capture_output=True,
+        text=True,
+    )
     assert r2.returncode == 0 and (dst / "bd_sims" / "rxns.xml").exists()

@@ -25,6 +25,7 @@ GPU-accelerated rigid body and flexible chain Brownian dynamics simulations for 
 [![CUDA](https://img.shields.io/badge/CUDA-12%2B-green.svg)](https://developer.nvidia.com/cuda-toolkit)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Dependabot](https://img.shields.io/badge/dependabot-enabled-blue.svg?logo=dependabot)](https://github.com/anandojha/PySTARC/network/updates)
 [![Lines of Code](https://img.shields.io/badge/lines_of_code-60k-blue.svg)](https://github.com/anandojha/PySTARC)
 

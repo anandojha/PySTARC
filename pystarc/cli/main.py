@@ -107,6 +107,28 @@ def nam_simulation(mol1, mol2, rxn, n, dt, r_start, dx, seed, verbose, output):
     k = result.rate_constant(D_rel)
     click.echo(f"  k_assoc : {k:.3e} M⁻¹s⁻¹")
     click.echo(f"{'-'*50}")
+    if output:
+        res_root = ET.Element("results")
+        for tag, val in (
+            ("n_trajectories", str(result.n_trajectories)),
+            ("n_reacted", str(result.n_reacted)),
+            ("n_escaped", str(result.n_escaped)),
+            ("n_max_steps", str(result.n_max_steps)),
+            ("P_rxn", f"{result.reaction_probability:.8g}"),
+            ("k_on", f"{k:.8e}"),
+            ("k_on_units", "M-1 s-1"),
+            ("D_rel", f"{D_rel:.8g}"),
+            ("r_start", f"{result.r_start:.8g}"),
+            ("r_escape", f"{result.r_escape:.8g}"),
+        ):
+            el = ET.SubElement(res_root, tag)
+            el.text = val
+        tree = ET.ElementTree(res_root)
+        ET.indent(tree, space="  ")
+        out_path = Path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        tree.write(out_path, encoding="unicode", xml_declaration=True)
+        click.echo(f"Written: {out_path}")
 
 
 # Print the bounding box of a PQR molecule.
@@ -157,8 +179,12 @@ def pqr_to_xml(pqr_file, output):
 # Draw the figures of a finished run from its analysis files.
 @cli.command("plot")
 @click.argument("run_dir")
-@click.option("--out", "-o", default=None, help="Output directory (default <run_dir>/figures)")
-@click.option("--dpi", default=500, show_default=True, help="Resolution of the PNG files")
+@click.option(
+    "--out", "-o", default=None, help="Output directory (default <run_dir>/figures)"
+)
+@click.option(
+    "--dpi", default=500, show_default=True, help="Resolution of the PNG files"
+)
 @click.option(
     "--only",
     default=None,
@@ -171,7 +197,9 @@ def plot_cmd(run_dir, out, dpi, only):
     which = tuple(w.strip() for w in only.split(",") if w.strip()) if only else FIGURES
     unknown = [w for w in which if w not in FIGURES]
     if unknown:
-        raise click.BadParameter(f"unknown figure(s): {', '.join(unknown)}; choose from {', '.join(FIGURES)}")
+        raise click.BadParameter(
+            f"unknown figure(s): {', '.join(unknown)}; choose from {', '.join(FIGURES)}"
+        )
     status = plot_run(run_dir, out, dpi=dpi, which=which)
     for name, note in status.items():
         click.echo(f"  {name}: {note}")
@@ -400,12 +428,16 @@ def chain_simulation(
     for name, _ in written:
         click.echo(f"  {name}")
 
+    n_max = len(results) - sim.n_reacted - sim.n_escaped
     click.echo(f"\n{'-' * 50}")
     click.echo("Results:")
     click.echo(f"  Reacted : {sim.n_reacted}")
     click.echo(f"  Escaped : {sim.n_escaped}")
-    if (sim.n_reacted + sim.n_escaped) > 0:
-        p_rxn = sim.n_reacted / (sim.n_reacted + sim.n_escaped)
+    if n_max > 0:
+        click.echo(f"  Max-steps: {n_max}")
+    n_total = len(results)
+    if n_total > 0:
+        p_rxn = sim.n_reacted / n_total
         click.echo(f"  P(rxn)  : {p_rxn:.4f}")
     click.echo(f"{'-' * 50}")
 

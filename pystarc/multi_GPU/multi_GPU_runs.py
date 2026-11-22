@@ -30,7 +30,12 @@ def _set_or_create(root, tag, value):
     return el
 
 
-KEEP_SETUP_FILES = {"rxns.xml", "build_record.json", "chain.json", "reaction_pairs.json"}
+KEEP_SETUP_FILES = {
+    "rxns.xml",
+    "build_record.json",
+    "chain.json",
+    "reaction_pairs.json",
+}
 
 
 def split_multi_gpu(xml_path: str, n_splits: int = 4) -> int:
@@ -56,9 +61,16 @@ def split_multi_gpu(xml_path: str, n_splits: int = 4) -> int:
         src_dir = os.path.dirname(abs_xml)
         raw_bd = raw_cfg.get("bd_work_dir", str(defaults["work_dir"]))
         bd_check = raw_bd if os.path.isabs(raw_bd) else os.path.join(src_dir, raw_bd)
-        for d in [bd_check] + [os.path.join(bd_check, f"bd_{i}") for i in range(1, n_splits + 1)]:
-            if any(os.path.exists(os.path.join(d, f)) for f in ("results.json", "checkpoint.npz")):
-                print(f"  Error: {d} holds an earlier run. Remove it or set another work_dir.")
+        for d in [bd_check] + [
+            os.path.join(bd_check, f"bd_{i}") for i in range(1, n_splits + 1)
+        ]:
+            if any(
+                os.path.exists(os.path.join(d, f))
+                for f in ("results.json", "checkpoint.npz")
+            ):
+                print(
+                    f"  Error: {d} holds an earlier run. Remove it or set another work_dir."
+                )
                 return 1
         abs_xml, _ = build_from_config(abs_xml)
         tree = ET.parse(abs_xml)
@@ -68,14 +80,23 @@ def split_multi_gpu(xml_path: str, n_splits: int = 4) -> int:
     total_traj = int(text("n_trajectories") or defaults["n_trajectories"])
     base_seed = int(text("seed") or defaults["seed"])
     if not 1 <= n_splits <= total_traj:
-        raise ValueError(f"--n-splits must be between 1 and n_trajectories ({total_traj})")
+        raise ValueError(
+            f"--n-splits must be between 1 and n_trajectories ({total_traj})"
+        )
     per_split, extra = divmod(total_traj, n_splits)
     base_dir = os.path.dirname(abs_xml)
     w_txt = text("work_dir") or str(defaults["work_dir"])
     bd_sims = w_txt if os.path.isabs(w_txt) else os.path.join(base_dir, w_txt)
-    for d in [bd_sims] + [os.path.join(bd_sims, f"bd_{i}") for i in range(1, n_splits + 1)]:
-        if any(os.path.exists(os.path.join(d, f)) for f in ("results.json", "checkpoint.npz")):
-            print(f"  Error: {d} holds an earlier run. Remove it or set another work_dir.")
+    for d in [bd_sims] + [
+        os.path.join(bd_sims, f"bd_{i}") for i in range(1, n_splits + 1)
+    ]:
+        if any(
+            os.path.exists(os.path.join(d, f))
+            for f in ("results.json", "checkpoint.npz")
+        ):
+            print(
+                f"  Error: {d} holds an earlier run. Remove it or set another work_dir."
+            )
             return 1
     # One trajectory in <work_dir> builds the grids, or reuses them by their key.
     print("  Building or reusing the APBS grids (1 trajectory) ...")
@@ -94,7 +115,9 @@ def split_multi_gpu(xml_path: str, n_splits: int = 4) -> int:
         print(f"  Error: grid generation did not create {bd_sims}.")
         return 1
     # Keep the grid, key, cache, structure and setup files of the grid pass.
-    keep_input = os.path.abspath(abs_xml) == os.path.abspath(os.path.join(bd_sims, "input.xml"))
+    keep_input = os.path.abspath(abs_xml) == os.path.abspath(
+        os.path.join(bd_sims, "input.xml")
+    )
     for f in os.listdir(bd_sims):
         fpath = os.path.join(bd_sims, f)
         if not os.path.isfile(fpath):
@@ -111,7 +134,8 @@ def split_multi_gpu(xml_path: str, n_splits: int = 4) -> int:
     link_files = [
         f
         for f in os.listdir(bd_sims)
-        if os.path.isfile(os.path.join(bd_sims, f)) and f.endswith((".dx", ".key", ".cache"))
+        if os.path.isfile(os.path.join(bd_sims, f))
+        and f.endswith((".dx", ".key", ".cache"))
     ]
     shards = []
     for i in range(1, n_splits + 1):
@@ -134,9 +158,16 @@ def split_multi_gpu(xml_path: str, n_splits: int = 4) -> int:
         # cleanly when the run executes from inside the shard folder.
         for tag in ["pdb", "rxns_xml", "receptor_pqr", "ligand_pqr"]:
             el = root.find(tag)
-            if el is not None and el.text and el.text.strip() and not os.path.isabs(el.text.strip()):
+            if (
+                el is not None
+                and el.text
+                and el.text.strip()
+                and not os.path.isabs(el.text.strip())
+            ):
                 el.text = os.path.join(base_dir, el.text.strip())
-        tree.write(os.path.join(run_dir, "input.xml"), xml_declaration=True, encoding="UTF-8")
+        tree.write(
+            os.path.join(run_dir, "input.xml"), xml_declaration=True, encoding="UTF-8"
+        )
         shards.append({"dir": f"bd_{i}", "seed": seed_i, "n_trajectories": n_i})
         print(f"  {run_dir}: {n_i:,} trajectories, seed={seed_i}")
     with open(os.path.join(bd_sims, "split.json"), "w") as f:

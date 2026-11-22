@@ -78,7 +78,9 @@ def _strip_ghost_pqr_bytes(pqr_path: Path) -> bytes:
 
 def _grid_key(pqr_path: Path, settings: dict) -> str:
     h = hashlib.sha1(_strip_ghost_pqr_bytes(pqr_path))
-    h.update(json.dumps({**settings, "grid_format": GRID_FORMAT}, sort_keys=True).encode())
+    h.update(
+        json.dumps({**settings, "grid_format": GRID_FORMAT}, sort_keys=True).encode()
+    )
     return h.hexdigest()
 
 
@@ -461,10 +463,18 @@ def run_apbs(
     key = _grid_key(
         pqr_path,
         dict(
-            ion_conc=ion_conc, debye_length=debye_length, pdie=dielectric_in,
-            sdie=dielectric_out, srad=srad, temp=temp, dime=dime,
-            coarse_dime=coarse_dime, fine_dime=fine_dime, cglen=cglen_override,
-            fglen=fglen_override, ion_radius_pos=ion_radius_pos,
+            ion_conc=ion_conc,
+            debye_length=debye_length,
+            pdie=dielectric_in,
+            sdie=dielectric_out,
+            srad=srad,
+            temp=temp,
+            dime=dime,
+            coarse_dime=coarse_dime,
+            fine_dime=fine_dime,
+            cglen=cglen_override,
+            fglen=fglen_override,
+            ion_radius_pos=ion_radius_pos,
             ion_radius_neg=ion_radius_neg,
         ),
     )

@@ -80,7 +80,9 @@ def _criterion_summary(rel, mode, cutoff, n_needed, args):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument(
         "--check-accessibility",
         action="store_true",
@@ -151,9 +153,13 @@ def main(argv=None):
         crit_label = _criterion_summary(rel, mode, cutoff, n_needed, cli_args)
         status = "OK" if ok else "MISMATCH"
         if args.check_accessibility and mode == "contacts":
-            acc_lines = [l for l in proc.stderr.splitlines() if "Rigid accessibility" in l]
+            acc_lines = [
+                l for l in proc.stderr.splitlines() if "Rigid accessibility" in l
+            ]
             if acc_lines:
-                m_cut = re.search(r"smallest accessible integer cutoff=([^ ]+ A)", acc_lines[0])
+                m_cut = re.search(
+                    r"smallest accessible integer cutoff=([^ ]+ A)", acc_lines[0]
+                )
                 if m_cut:
                     status = f"{status} (acc: {m_cut.group(1)})"
 
@@ -164,7 +170,9 @@ def main(argv=None):
         )
 
     print("-" * len(header))
-    print(f"Verified {n_rigid} rigid complexes ({mismatches} mismatches) and {n_chain} flexible-chain complex.")
+    print(
+        f"Verified {n_rigid} rigid complexes ({mismatches} mismatches) and {n_chain} flexible-chain complex."
+    )
     if mismatches:
         sys.exit(1)
 

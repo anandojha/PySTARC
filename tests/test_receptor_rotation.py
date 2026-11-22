@@ -231,7 +231,9 @@ class TestGPUReceptorRotation:
         v = rng.standard_normal((64, 3))
         out = gbs_numpy.GPUBatchSimulator._rotate_vectors_gpu(None, v, omega)
         for i in range(64):
-            assert np.allclose(out[i], quat_rotate_vector(quat_of_rotvec(omega[i]), v[i]))
+            assert np.allclose(
+                out[i], quat_rotate_vector(quat_of_rotvec(omega[i]), v[i])
+            )
 
     def test_rotate_vectors_consistent_with_apply_rotation(self, gbs_numpy):
         """Rotating a vector and rotating a quaternion by the same omega agree."""
@@ -275,8 +277,14 @@ class TestGPUReceptorRotation:
         q = np.array([[1.0, 0.0, 0.0, 0.0]])
         F = np.array([[0.0, 1.0, 0.0]])
         p, _ = sim._receptor_rotation_gpu(
-            lever.copy(), q, lever, F, np.zeros((1, 3)), np.array([1.0]),
-            np.zeros((1, 3)), 0.01,
+            lever.copy(),
+            q,
+            lever,
+            F,
+            np.zeros((1, 3)),
+            np.array([1.0]),
+            np.zeros((1, 3)),
+            0.01,
         )
         assert p[0, 1] > 0.0
         assert abs(np.linalg.norm(p[0]) - 10.0) < 1e-12
@@ -320,7 +328,9 @@ class TestGPUReceptorRotation:
 
     def test_split_fallback_warns(self, gbs_numpy):
         with pytest.warns(RuntimeWarning, match="D_rot1/D_rot2"):
-            d1, d2 = gbs_numpy._split_rotational_diffusion(types.SimpleNamespace(), 0.04)
+            d1, d2 = gbs_numpy._split_rotational_diffusion(
+                types.SimpleNamespace(), 0.04
+            )
         assert (d1, d2) == (0.0, 0.04)
 
 

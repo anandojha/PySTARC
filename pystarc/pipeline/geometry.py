@@ -447,7 +447,9 @@ def _read_reactions(rxns_path):
         try:
             n_needed = int(nn) if nn else -1
         except ValueError:
-            raise ValueError(f"{where}: <n_needed> must be a whole number, got {nn!r}") from None
+            raise ValueError(
+                f"{where}: <n_needed> must be a whole number, got {nn!r}"
+            ) from None
         needed_pairs(n_needed, len(pairs), where)
         groups.append(
             ReactionGroup(
@@ -558,7 +560,9 @@ def auto_detect_reactions(
         # A relative path is taken from the current working directory.
         rxns_path = Path(rxns_xml.strip()).expanduser()
         if not rxns_path.is_file():
-            raise FileNotFoundError(f"rxns_xml not found: {rxns_path} (cwd {Path.cwd()})")
+            raise FileNotFoundError(
+                f"rxns_xml not found: {rxns_path} (cwd {Path.cwd()})"
+            )
         pairs, n_needed = _parse_rxns_xml_criteria(rxns_path)
         if not pairs:
             raise ValueError(f"rxns file {rxns_path} holds no reaction")
@@ -589,7 +593,9 @@ def auto_detect_reactions(
                     cutoff=float(parts[2]),
                 )
             )
-        print(f"  Reaction criterion from ghost_atoms: {len(pairs)} pair(s), n_needed=all")
+        print(
+            f"  Reaction criterion from ghost_atoms: {len(pairs)} pair(s), n_needed=all"
+        )
         return [pairs], -1
     # Third priority: auto-detect the GHO atoms in the PQR.
     rec_ghosts = geom.receptor.ghost_indices

@@ -40,6 +40,7 @@ def header(path):
                 return n, sp, org
     return n, sp, org
 
+
 stale = []
 if os.path.exists(cc.target_grid_dx):
     rec = parse_pqr(cfg.receptor_pqr)

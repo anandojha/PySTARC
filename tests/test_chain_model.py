@@ -71,7 +71,9 @@ def test_vectorized_forces_match_without_tables(tabled_chain):
         atoms=chain.atoms,
         bonds=chain.bonds,
         angles=[cc.ChainAngle(a.a, a.b, a.c, 1.9, 8.0) for a in chain.angles],
-        torsions=[cc.ChainTorsion(t.a, t.b, t.c, t.d, 0.4, 1.5, 3) for t in chain.torsions],
+        torsions=[
+            cc.ChainTorsion(t.a, t.b, t.c, t.d, 0.4, 1.5, 3) for t in chain.torsions
+        ],
     )
     state = cc.ChainState.from_template(plain, pos.copy())
     cc.compute_chain_forces(state)
@@ -164,7 +166,8 @@ def test_elastic_network_holds_the_reference(tabled_chain):
 def _small_sim(target_radius=1.0, r_start=20.0, **extra):
     common, pos = _three_beads(6.0)
     target = Molecule(
-        name="t", atoms=[Atom(index=0, name="X", x=0.0, y=0.0, z=0.0, radius=target_radius)]
+        name="t",
+        atoms=[Atom(index=0, name="X", x=0.0, y=0.0, z=0.0, radius=target_radius)],
     )
     crit = ReactionCriteria(name="r", pairs=[ContactPair(0, 1, 3.0)], n_needed=1)
     kwargs = dict(
@@ -296,7 +299,9 @@ def test_nearby_target_atoms_give_the_same_steric_force():
     rng = np.random.default_rng(2)
     atoms = [
         Atom(x=x, y=y, z=z, radius=r)
-        for (x, y, z), r in zip(rng.uniform(-15, 15, (400, 3)), rng.uniform(1.0, 2.0, 400))
+        for (x, y, z), r in zip(
+            rng.uniform(-15, 15, (400, 3)), rng.uniform(1.0, 2.0, 400)
+        )
     ]
     sim = _small_sim()
     sim.target = Molecule(name="t", atoms=atoms)
@@ -305,13 +310,17 @@ def test_nearby_target_atoms_give_the_same_steric_force():
     for shift in (8.0, 14.0, 40.0):
         world = sim.body_positions + np.array([shift, 1.0, -2.0])
         near = sim._nearby_spheres(world)
-        F_full = chain_simulator.chain_target_steric_forces(world, sim._chain_radii, full)
+        F_full = chain_simulator.chain_target_steric_forces(
+            world, sim._chain_radii, full
+        )
         if near is None:
             assert np.all(F_full == 0.0)
             continue
         assert len(near[1]) < len(full[1])
-        F_near = chain_simulator.chain_target_steric_forces(world, sim._chain_radii, near)
-        np.testing.assert_array_equal(F_near, F_full)
-        assert _check_chain_overlap(near, world, sim._chain_radii) == _check_chain_overlap(
-            full, world, sim._chain_radii
+        F_near = chain_simulator.chain_target_steric_forces(
+            world, sim._chain_radii, near
         )
+        np.testing.assert_array_equal(F_near, F_full)
+        assert _check_chain_overlap(
+            near, world, sim._chain_radii
+        ) == _check_chain_overlap(full, world, sim._chain_radii)

@@ -1,4 +1,4 @@
-# Standalone Pre-Configuration Scripts (`scripts/`)
+# Standalone Pre-Configuration Scripts
 
 `scripts/` holds three standalone command-line tools (`prepare_pdb.py`, `find_reaction_criteria.py`, and `verify_criteria.py`) for preparing starting structures and reaction criteria for any molecular complex before filling `config.xml`, together with per-complex preparation folders for all 33 benchmark complexes across the 9 families in `examples/`. None of these scripts is imported or invoked by PySTARC at runtime.
 
@@ -149,7 +149,7 @@ python scripts/prepare_pdb.py \
 
 Reads prepared `receptor` and `ligand` files (`.pdb + .pdb` or `.pqr + .pqr`), prints geometric diagnostics, contact distances, or centroid geometry to `stderr`, and prints a ready-to-paste `<criterion>` XML block to `stdout` (or writes `reaction_pairs.json` for `model = chain`).
 
-### Coordinate-Based Criterion Selection (No Per-Complex Fitting)
+### Coordinate-Based Criterion Selection
 
 When configuring a new complex without a measured $k_{\mathrm{on}}$, run `find_reaction_criteria.py --diagnose` to inspect the 3D coordinates of the receptor and ligand and select a reaction criterion (with `n_needed = 3` across all `3`-of-`6` contact criteria and one shared set of receptor residues within each receptor family):
 

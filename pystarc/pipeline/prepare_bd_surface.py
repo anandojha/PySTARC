@@ -335,7 +335,9 @@ def split_receptor_ligand(
 
 
 def centroid(atoms: List[PQRAtom]) -> np.ndarray:
-    coords = np.array([[a.x, a.y, a.z] for a in atoms if a.name.strip().upper() not in GHOST_NAMES])
+    coords = np.array(
+        [[a.x, a.y, a.z] for a in atoms if a.name.strip().upper() not in GHOST_NAMES]
+    )
     return coords.mean(axis=0)
 
 

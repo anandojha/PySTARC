@@ -157,7 +157,11 @@ def read_pqr_geometry(pqr_path):
     and a negative coordinate can run into the field before it, so the records
     are read by parse_pqr_records, which handles every one of these forms.
     """
-    recs = [r for r in parse_pqr_records(pqr_path) if r.name.strip().upper() not in GHOST_NAMES]
+    recs = [
+        r
+        for r in parse_pqr_records(pqr_path)
+        if r.name.strip().upper() not in GHOST_NAMES
+    ]
     xyz = [[r.x, r.y, r.z] for r in recs]
     rad = [r.radius for r in recs]
     return (

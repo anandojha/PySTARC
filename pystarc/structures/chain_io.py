@@ -280,7 +280,9 @@ def save_chain_to_json(
                 k: {"path": str(Path(v).resolve()), "sha256": _sha256(v)}
                 for k, v in files.items()
             },
-            "pairs": [[int(i), int(j), int(t)] for (i, j), t in common.pair_lookups.items()],
+            "pairs": [
+                [int(i), int(j), int(t)] for (i, j), t in common.pair_lookups.items()
+            ],
         }
     with open(path, "w") as fh:
         json.dump(data, fh, indent=indent)

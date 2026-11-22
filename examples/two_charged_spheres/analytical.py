@@ -23,7 +23,7 @@ a = 2.5
 q_esc = 20.0
 kT = 1.0
 pi = math.pi
-CONV = 602.214e6
+CONV = 6.02214076e23 * 1e-27 * 1e12
 eps_s = sdie * eps0
 V_fac = q_rec * q_lig / (4 * pi * eps_s)
 r_h = 1.005  # PySTARC MC hydro radius
@@ -205,7 +205,9 @@ if sim_prxn is not None and sim_kon is not None and sim_n:
     print(f"  {'k_on (M⁻¹s⁻¹)':<28s}  {kon:14.4e}  {sim_kon:14.4e}  {kon:14.4e}")
     se = math.sqrt(Prxn * (1 - Prxn) / sim_n)
     z = (sim_prxn - Prxn) / se
-    print(f"\n  Simulation vs exact analytical: P_rxn z = {z:+.2f}  (SE {se:.6f}, N {sim_n:,})")
+    print(
+        f"\n  Simulation vs exact analytical: P_rxn z = {z:+.2f}  (SE {se:.6f}, N {sim_n:,})"
+    )
     print("  Pass (|z| < 3)" if abs(z) < 3 else "  Fail (|z| >= 3)")
 else:
     print(f"\n  Run simulation first, then re-run this script.")

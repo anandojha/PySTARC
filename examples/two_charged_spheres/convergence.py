@@ -50,7 +50,7 @@ b = 10.0
 a = 2.5
 q_esc = 20.0
 V_fac = 1.0 * (-1.0) / (4 * math.pi * eps_s)
-CONV = 602.214e6
+CONV = 6.02214076e23 * 1e-27 * 1e12
 
 
 def V(r):

@@ -106,8 +106,8 @@ The chain force pipeline has been validated for:
   (strongest physical-correctness check)
 - **Newton's 3rd law**: net force is zero across all atom configurations
 - **Reversal symmetry**: homopolymer forces respect chain reversal
-- **Stable integration**: 100-step Euler integration of 10-residue
-  heteropolymer doesn't blow up
+- **Stable integration**: 100-step Euler integration of a 10-residue
+  heteropolymer remains numerically stable
 
 See the `TestCOFFDROPTabulatedForces` class in `tests/test_pystarc.py` for the
 force-machinery, sidechain-topology, and validation tests.

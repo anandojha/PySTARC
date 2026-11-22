@@ -20,18 +20,33 @@ from pystarc.structures.molecules import Atom, ContactPair, Molecule, ReactionCr
 
 
 def _mol(n):
-    return Molecule(atoms=[Atom(index=i, x=float(i), charge=0.1, radius=1.5) for i in range(n)])
+    return Molecule(
+        atoms=[Atom(index=i, x=float(i), charge=0.1, radius=1.5) for i in range(n)]
+    )
 
 
 def _rxn(name, pairs, n_needed=-1, sb=None, sa=None, p=1.0):
-    crit = ReactionCriteria(name=name, pairs=[ContactPair(i, j, 5.0) for i, j in pairs],
-                            n_needed=n_needed, state_before=sb, state_after=sa)
-    return ReactionInterface(name=name, criteria=crit, probability=p, state_before=sb, state_after=sa)
+    crit = ReactionCriteria(
+        name=name,
+        pairs=[ContactPair(i, j, 5.0) for i, j in pairs],
+        n_needed=n_needed,
+        state_before=sb,
+        state_after=sa,
+    )
+    return ReactionInterface(
+        name=name, criteria=crit, probability=p, state_before=sb, state_after=sa
+    )
 
 
 def _sim(*reactions, first_state=None):
-    return GPUBatchSimulator(_mol(3), _mol(2), MobilityTensor.from_radii(10.0, 2.0),
-                             PathwaySet(list(reactions), first_state=first_state), NAMParameters(), None)
+    return GPUBatchSimulator(
+        _mol(3),
+        _mol(2),
+        MobilityTensor.from_radii(10.0, 2.0),
+        PathwaySet(list(reactions), first_state=first_state),
+        NAMParameters(),
+        None,
+    )
 
 
 @pytest.mark.parametrize("nn,need", [(-1, 2), (1, 1), (2, 2)])
@@ -62,11 +77,21 @@ def _grid():
     return DXGrid(origin=np.full(3, -8.0), delta=np.eye(3), data=np.zeros((17, 17, 17)))
 
 
-@pytest.mark.parametrize("flag,alpha,on", [(True, 1.0, True), (False, 1.0, False), (True, 0.0, False)])
+@pytest.mark.parametrize(
+    "flag,alpha,on", [(True, 1.0, True), (False, 1.0, False), (True, 0.0, False)]
+)
 def test_born_direction_2_is_set_up_only_when_it_runs(capsys, flag, alpha, on):
-    e = GPUBatchForceEngine([_grid()], [_grid()], alpha=alpha, lig_born_grids=[_grid()],
-                            rec_positions=np.zeros((2, 3)), rec_charges=np.ones(2),
-                            enable_born2_torque=flag)
+    e = GPUBatchForceEngine(
+        [_grid()],
+        [_grid()],
+        alpha=alpha,
+        lig_born_grids=[_grid()],
+        rec_positions=np.zeros((2, 3)),
+        rec_charges=np.ones(2),
+        enable_born2_torque=flag,
+    )
     out = capsys.readouterr().out
     assert bool(e._lig_born_grids_gpu) is on and e._enable_born2_torque is flag
-    assert ("Born both-directions" in out) is on and ("Born direction 2 off" in out) is not on
+    assert ("Born both-directions" in out) is on and (
+        "Born direction 2 off" in out
+    ) is not on

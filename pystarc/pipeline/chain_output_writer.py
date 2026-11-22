@@ -153,9 +153,11 @@ def _chain_block(sim) -> Dict[str, Any]:
         "n_torsions": len(template.torsions),
         "n_length_constraints": len(template.length_constraints),
         "n_network_springs": len(getattr(template, "network", [])),
-        "n_pair_tables": len(getattr(template, "pair_lookups", {}))
-        if getattr(template, "coffdrop_params", None) is not None
-        else 0,
+        "n_pair_tables": (
+            len(getattr(template, "pair_lookups", {}))
+            if getattr(template, "coffdrop_params", None) is not None
+            else 0
+        ),
     }
 
 

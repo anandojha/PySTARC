@@ -24,8 +24,25 @@ def _dt(r, force=True, V0=-3.0, debye=7.8, D_t=0.03, D_r1=1e-5):
     dt = cp.empty(len(r))
     outer = cp.empty(len(r), dtype=cp.bool_)
     inv = 1.0 / debye if force else 0.0
-    K["dt"](r, 1.1 * r_b, 0.005, D_t, D_r1, force, V0, debye, inv, debye**2,
-            3.0 * debye, 0.01, r_b, r_esc, 18.0 * D_t, dt, outer)
+    K["dt"](
+        r,
+        1.1 * r_b,
+        0.005,
+        D_t,
+        D_r1,
+        force,
+        V0,
+        debye,
+        inv,
+        debye**2,
+        3.0 * debye,
+        0.01,
+        r_b,
+        r_esc,
+        18.0 * D_t,
+        dt,
+        outer,
+    )
     pair = 0.005 * r * r / (D_t + D_r1 * r * r)
     f = pair
     if force:
@@ -33,8 +50,11 @@ def _dt(r, force=True, V0=-3.0, debye=7.8, D_t=0.03, D_r1=1e-5):
         DF1 = cp.abs(D_t * (-V / debye**2 - 2.0 * V * (1.0 / r + 1.0 / debye) / r))
         f = cp.where((DF1 > 1e-15) & (r < 3.0 * debye), 0.01 / DF1, pair)
     e = cp.minimum(cp.maximum(r - r_b, 1e-3), cp.maximum(r_esc - r, 1e-3))
-    ref = cp.where(r > 1.1 * r_b, cp.minimum(cp.minimum(f, e**2 / (18.0 * D_t)), pair),
-                   cp.minimum(f, pair))
+    ref = cp.where(
+        r > 1.1 * r_b,
+        cp.minimum(cp.minimum(f, e**2 / (18.0 * D_t)), pair),
+        cp.minimum(f, pair),
+    )
     return dt, ref
 
 
@@ -56,8 +76,25 @@ def test_nan_pose_keeps_nan_time_step_through_the_floor():
     assert bool(cp.isnan(dt[1])) and bool(cp.isnan(ref[1]))
     out = cp.empty(2)
     frc = cp.asarray([[0.1, 0.0, 0.0], [np.nan, 0.0, 0.0]])
-    K["surface"](r, dt, frc, cp.zeros((2, 3)), cp.full(2, 2.0), cp.zeros(2), True,
-                 False, 3.0, 30.0, 0.03, 1e-5, 0.04, 0.01, 0.0, 0.2, out)
+    K["surface"](
+        r,
+        dt,
+        frc,
+        cp.zeros((2, 3)),
+        cp.full(2, 2.0),
+        cp.zeros(2),
+        True,
+        False,
+        3.0,
+        30.0,
+        0.03,
+        1e-5,
+        0.04,
+        0.01,
+        0.0,
+        0.2,
+        out,
+    )
     assert bool(cp.isfinite(out[0])) and bool(cp.isnan(out[1]))
 
 
@@ -81,7 +118,9 @@ def test_random_numbers_do_not_depend_on_the_other_trajectories():
     alone = rng.normal(cp.asarray([4]), n_steps, 3, rng.NOISE_T)
     batch = rng.normal(cp.arange(10), n_steps, 3, rng.NOISE_T)
     assert bool(cp.all(alone[0] == batch[4]))
-    assert not bool(cp.all(batch[4] == rng.normal(cp.asarray([4]), n_steps + 1, 3, rng.NOISE_T)[0]))
+    assert not bool(
+        cp.all(batch[4] == rng.normal(cp.asarray([4]), n_steps + 1, 3, rng.NOISE_T)[0])
+    )
 
 
 def test_move_matches_the_reference_chain():
@@ -99,8 +138,28 @@ def test_move_matches_the_reference_chain():
     cen = pos.copy()
     p_k, q_k = pos.copy(), q.copy()
     drift, sig = cp.empty((n, 3)), cp.empty(n)
-    K["move"](idx, dt, D, cen, f, tq, f, nt, nr, nr1, False, True, Dr1, Dr2,
-              2 * Dr1, 2 * Dr2, p_k, q_k, drift, sig)
+    K["move"](
+        idx,
+        dt,
+        D,
+        cen,
+        f,
+        tq,
+        f,
+        nt,
+        nr,
+        nr1,
+        False,
+        True,
+        Dr1,
+        Dr2,
+        2 * Dr1,
+        2 * Dr2,
+        p_k,
+        q_k,
+        drift,
+        sig,
+    )
     p_r = pos + D[:, None] * dt[:, None] * f + cp.sqrt(2 * D * dt)[:, None] * nt
     w = Dr2 * dt[:, None] * tq + cp.sqrt(2 * Dr2 * dt)[:, None] * nr
     q_r = sim._apply_rotation_gpu(q, w)
@@ -119,30 +178,85 @@ def test_book_time_maps_add_dt_at_the_start_pose():
     gho = c0[:, None, :] + g.normal(size=(n, n_pairs, 3))
     rec = g.normal(size=(n_pairs, 3)) * 5.0
     cut = np.array([30.0, 35.0])
-    rad_e, trans_e, ms_r = np.linspace(0, 48, 201), np.linspace(0, 48, 51), np.linspace(20, 40, 11)
+    rad_e, trans_e, ms_r = (
+        np.linspace(0, 48, 201),
+        np.linspace(0, 48, 51),
+        np.linspace(20, 40, 11),
+    )
     u64 = lambda *s: cp.zeros(s, dtype=cp.uint64)
-    out = dict(rad=u64(200), ang=u64(36, 72), ms_out=u64(11), ms_in=u64(11),
-               trans=u64(50, 50), contact=u64(n_pairs), cnt=u64(2), rad_t=u64(200),
-               ang_t=u64(36, 72), con_t=u64(n_pairs))
+    out = dict(
+        rad=u64(200),
+        ang=u64(36, 72),
+        ms_out=u64(11),
+        ms_in=u64(11),
+        trans=u64(50, 50),
+        contact=u64(n_pairs),
+        cnt=u64(2),
+        rad_t=u64(200),
+        ang_t=u64(36, 72),
+        con_t=u64(n_pairs),
+    )
     a = cp.asarray
     gbs.cp.RawKernel(gbs._BOOK_KERNEL_CODE, "book_kernel")(
-        ((n + 255) // 256,), (256,),
-        (a(np.arange(n)), a(np.linalg.norm(pos, axis=1)), a(dt), np.int32(n), a(pos),
-         a(np.tile([1.0, 0, 0, 0], (n, 1))), cp.zeros(n, dtype=cp.int32), np.int64(0),
-         cp.zeros(0, dtype=cp.int64), np.int32(0), a(gho), a(rec), a(cut), np.int32(n_pairs),
-         a(rad_e), np.int32(201), a(trans_e), np.int32(51), a(ms_r), np.int32(11),
-         np.int32(36), np.int32(72), np.float64(gbs._ANGLE_EDGE), cp.zeros(n, dtype=cp.int64),
-         cp.full(n, 1e30), cp.zeros(n, dtype=cp.int64), cp.zeros((n, 3)), cp.zeros((n, 4)),
-         cp.zeros(n), a(r0), out["rad"], out["ang"], out["ms_out"], out["ms_in"],
-         out["trans"], out["contact"], cp.empty((n, 4)), out["cnt"], a(r0), a(c0),
-         np.float64(gbs._TICKS), out["rad_t"], out["ang_t"], out["con_t"]),
+        ((n + 255) // 256,),
+        (256,),
+        (
+            a(np.arange(n)),
+            a(np.linalg.norm(pos, axis=1)),
+            a(dt),
+            np.int32(n),
+            a(pos),
+            a(np.tile([1.0, 0, 0, 0], (n, 1))),
+            cp.zeros(n, dtype=cp.int32),
+            np.int64(0),
+            cp.zeros(0, dtype=cp.int64),
+            np.int32(0),
+            a(gho),
+            a(rec),
+            a(cut),
+            np.int32(n_pairs),
+            a(rad_e),
+            np.int32(201),
+            a(trans_e),
+            np.int32(51),
+            a(ms_r),
+            np.int32(11),
+            np.int32(36),
+            np.int32(72),
+            np.float64(gbs._ANGLE_EDGE),
+            cp.zeros(n, dtype=cp.int64),
+            cp.full(n, 1e30),
+            cp.zeros(n, dtype=cp.int64),
+            cp.zeros((n, 3)),
+            cp.zeros((n, 4)),
+            cp.zeros(n),
+            a(r0),
+            out["rad"],
+            out["ang"],
+            out["ms_out"],
+            out["ms_in"],
+            out["trans"],
+            out["contact"],
+            cp.empty((n, 4)),
+            out["cnt"],
+            a(r0),
+            a(c0),
+            np.float64(gbs._TICKS),
+            out["rad_t"],
+            out["ang_t"],
+            out["con_t"],
+        ),
     )
     w = np.rint(dt * gbs._TICKS).astype(np.uint64)
     rad_t = np.zeros(200, dtype=np.uint64)
     np.add.at(rad_t, np.clip(np.searchsorted(rad_e, r0) - 1, 0, 199), w)
     assert np.array_equal(cp.asnumpy(out["rad_t"]), rad_t)
-    th = np.clip((np.arccos(np.clip(c0[:, 2] / r0, -1, 1)) / np.pi * 36).astype(int), 0, 35)
-    ph = np.clip(((np.arctan2(c0[:, 1], c0[:, 0]) + np.pi) / (2 * np.pi) * 72).astype(int), 0, 71)
+    th = np.clip(
+        (np.arccos(np.clip(c0[:, 2] / r0, -1, 1)) / np.pi * 36).astype(int), 0, 35
+    )
+    ph = np.clip(
+        ((np.arctan2(c0[:, 1], c0[:, 0]) + np.pi) / (2 * np.pi) * 72).astype(int), 0, 71
+    )
     ang_t = np.zeros((36, 72), dtype=np.uint64)
     np.add.at(ang_t, (th, ph), w)
     assert np.array_equal(cp.asnumpy(out["ang_t"]), ang_t)

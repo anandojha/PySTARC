@@ -6,7 +6,8 @@ import os
 import sys
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-CONV = 6.02214076e23 * 1e-27 * 1e12          # A^3/ps to M^-1 s^-1
+CONV = 6.02214076e23 * 1e-27 * 1e12  # A^3/ps to M^-1 s^-1
+
 
 def wilson(reacted, n, z=1.96):
     """Wilson score interval on the reaction probability."""
@@ -18,6 +19,7 @@ def wilson(reacted, n, z=1.96):
     h = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
     return max(0.0, c - h), min(1.0, c + h)
 
+
 def counts(res):
     """Reacted, escaped and step-limited counts, from either schema."""
     r = res.get("rate")
@@ -26,15 +28,19 @@ def counts(res):
     s = res["summary"]
     return s["n_reacted"], s["n_escaped"], s.get("n_max_steps", 0)
 
-paths = sorted(glob.glob(os.path.join(BASE, "shards", "shard_*",
-                                      "bd_sims", "results.json")))
+
+paths = sorted(
+    glob.glob(os.path.join(BASE, "shards", "shard_*", "bd_sims", "results.json"))
+)
 if not paths:
     sys.exit("  no finished shards under shards/")
 
 tot_r = tot_e = tot_c = 0
 k_b = b_rad = None
-print(f"{'shard':<10}{'reacted':>9}{'escaped':>9}{'stepcap':>9}"
-      f"{'%capped':>9}{'k_b':>10}{'hours':>8}")
+print(
+    f"{'shard':<10}{'reacted':>9}{'escaped':>9}{'stepcap':>9}"
+    f"{'%capped':>9}{'k_b':>10}{'hours':>8}"
+)
 for p in paths:
     res = json.load(open(p))
     n_r, n_e, n_c = counts(res)
@@ -50,14 +56,15 @@ for p in paths:
     hours = res["summary"].get("wall_time_sec", 0) / 3600.0
     name = os.path.basename(os.path.dirname(os.path.dirname(p)))
     pct = 100.0 * n_c / max(n_r + n_e + n_c, 1)
-    print(f"{name:<10}{n_r:>9}{n_e:>9}{n_c:>9}{pct:>8.0f}%"
-          f"{(kb if kb is not None else float('nan')):>10.4f}{hours:>8.1f}")
+    print(
+        f"{name:<10}{n_r:>9}{n_e:>9}{n_c:>9}{pct:>8.0f}%"
+        f"{(kb if kb is not None else float('nan')):>10.4f}{hours:>8.1f}"
+    )
 
 # A step-capped trajectory counts as not reacted, as in results.json of each
 # shard, and the bound counts it as reacted.
 n = tot_r + tot_e + tot_c
-print(f"{'total':<10}{tot_r:>9}{tot_e:>9}{tot_c:>9}"
-      f"{100.0*tot_c/max(n,1):>8.0f}%")
+print(f"{'total':<10}{tot_r:>9}{tot_e:>9}{tot_c:>9}" f"{100.0*tot_c/max(n,1):>8.0f}%")
 print()
 
 if n == 0:
@@ -72,7 +79,9 @@ if tot_c:
 if k_b is None:
     sys.exit("  no k_b in any shard, so no rate can be reported")
 print(f"  k_b              {k_b:.4f} A^3/ps")
-print(f"  k_on             {CONV*k_b*p:.3e} M-1 s-1"
-      f"   [{CONV*k_b*lo:.2e}, {CONV*k_b*hi:.2e}]")
+print(
+    f"  k_on             {CONV*k_b*p:.3e} M-1 s-1"
+    f"   [{CONV*k_b*lo:.2e}, {CONV*k_b*hi:.2e}]"
+)
 if tot_c:
     print(f"  k_on bound       {CONV*k_b*p:.2e} to {CONV*k_b*(tot_r + tot_c)/n:.2e}")

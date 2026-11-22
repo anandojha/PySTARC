@@ -444,7 +444,7 @@ def _coplanar_violation(state: "ChainState", c: "CoplanarConstraint") -> float:
 # iterates.
 #
 # If a step does not reduce ||phi||, the solver halves it and retries up to a
-# few times. This handles mild overshoot. For severe cases (a rank-deficient
+# few times. This handles modest overshoot. For severe cases (a rank-deficient
 # Jacobian or a far-from-feasible start), the solver raises rather than
 # silently doing the wrong thing.
 
@@ -745,7 +745,11 @@ def compute_target_grid_forces(
         spacing = np.diag(grid.delta)
         extent = (np.array(grid.data.shape) - 1) * spacing
         n_min = min(grid.data.shape)
-        cells = 0 if g == len(sorted_grids) - 1 else 3 if n_min > 7 else 1 if n_min > 3 else 0
+        cells = (
+            0
+            if g == len(sorted_grids) - 1
+            else 3 if n_min > 7 else 1 if n_min > 3 else 0
+        )
         margin = cells * spacing
         for i in range(n_atoms):
             if assigned[i]:
@@ -1165,7 +1169,10 @@ def elastic_network(
     m = (r0 < cutoff) & ~skip[i, j]
     return [
         ChainBond(
-            a=ChainAtomRef(int(a)), b=ChainAtomRef(int(b)), r0=float(d), k_spring=k_spring
+            a=ChainAtomRef(int(a)),
+            b=ChainAtomRef(int(b)),
+            r0=float(d),
+            k_spring=k_spring,
         )
         for a, b, d in zip(i[m], j[m], r0[m])
     ]
@@ -1571,10 +1578,14 @@ class ChainForceEvaluator:
         F = np.zeros((n, 3))
         bonded = np.zeros((n, n), dtype=bool)
         for b in chain.bonds:
-            bonded[b.a.atom_idx, b.b.atom_idx] = bonded[b.b.atom_idx, b.a.atom_idx] = True
+            bonded[b.a.atom_idx, b.b.atom_idx] = bonded[b.b.atom_idx, b.a.atom_idx] = (
+                True
+            )
         skip = bonded | ((bonded.astype(np.int64) @ bonded.astype(np.int64)) > 0)
         for ang in chain.angles:
-            skip[ang.a.atom_idx, ang.c.atom_idx] = skip[ang.c.atom_idx, ang.a.atom_idx] = True
+            skip[ang.a.atom_idx, ang.c.atom_idx] = skip[
+                ang.c.atom_idx, ang.a.atom_idx
+            ] = True
         wca_cut = 2.0 ** (1.0 / 6.0)
         for i in range(n):
             for j in range(i + 1, n):

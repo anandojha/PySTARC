@@ -1,4 +1,5 @@
 """The pocket ghost atom PKT is left out of the centring and the grid sizing, like GHO."""
+
 import numpy as np
 
 from pystarc.pipeline.prepare_bd_surface import PQRAtom, centroid, compute_grid_params
@@ -6,12 +7,45 @@ from pystarc.pipeline.run_apbs import _grid_key, _read_pqr_atoms, _strip_ghost_p
 
 
 def _atoms():
-    real = [PQRAtom(serial=i + 1, name="CA", resname="ALA", resid=i + 1, x=float(x), y=0.0, z=0.0,
-                    charge=0.1, radius=1.7, record="ATOM") for i, x in enumerate((0.0, 2.0, 4.0))]
-    pkt = PQRAtom(serial=4, name="PKT", resname="PKT", resid=4, x=30.0, y=30.0, z=30.0,
-                  charge=0.0, radius=0.0, record="HETATM")
-    gho = PQRAtom(serial=5, name="GHO", resname="GHO", resid=5, x=-30.0, y=0.0, z=0.0,
-                  charge=0.0, radius=0.0, record="HETATM")
+    real = [
+        PQRAtom(
+            serial=i + 1,
+            name="CA",
+            resname="ALA",
+            resid=i + 1,
+            x=float(x),
+            y=0.0,
+            z=0.0,
+            charge=0.1,
+            radius=1.7,
+            record="ATOM",
+        )
+        for i, x in enumerate((0.0, 2.0, 4.0))
+    ]
+    pkt = PQRAtom(
+        serial=4,
+        name="PKT",
+        resname="PKT",
+        resid=4,
+        x=30.0,
+        y=30.0,
+        z=30.0,
+        charge=0.0,
+        radius=0.0,
+        record="HETATM",
+    )
+    gho = PQRAtom(
+        serial=5,
+        name="GHO",
+        resname="GHO",
+        resid=5,
+        x=-30.0,
+        y=0.0,
+        z=0.0,
+        charge=0.0,
+        radius=0.0,
+        record="HETATM",
+    )
     return real, real + [pkt, gho]
 
 

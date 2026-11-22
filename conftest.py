@@ -23,7 +23,14 @@ def pytest_sessionfinish(session, exitstatus):
     without slowing subsequent sessions.
     """
     runtime_targets = {"bd_sims", "chain_bd_results"}
-    skip_path_parts = {".git", "build", "dist", "pystarc.egg-info", ".github", "examples"}
+    skip_path_parts = {
+        ".git",
+        "build",
+        "dist",
+        "pystarc.egg-info",
+        ".github",
+        "examples",
+    }
 
     # Safety: restrict tree walk to the project root (skipping examples/).
     # Without this guard, invoking pytest from outside the project would walk

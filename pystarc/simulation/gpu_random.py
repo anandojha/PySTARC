@@ -310,8 +310,14 @@ class GPURandom:
                 ((total + 127) // 128,),
                 (128,),
                 (
-                    traj, n_steps, out, np.int64(len(traj)), np.int32(n),
-                    np.uint32(stream), self.key[0], self.key[1],
+                    traj,
+                    n_steps,
+                    out,
+                    np.int64(len(traj)),
+                    np.int32(n),
+                    np.uint32(stream),
+                    self.key[0],
+                    self.key[1],
                 ),
             )
         return out
@@ -342,10 +348,20 @@ class GPURandom:
                 ((n + 127) // 128,),
                 (128,),
                 (
-                    q, pos, traj, n_steps, q_new, pos_new, np.int64(n),
-                    np.float64(tau_lig), np.float64(tau_rec), self._tables,
-                    np.int32(len(_PHIS_ARR)), np.uint32(self.RETURN),
-                    self.key[0], self.key[1],
+                    q,
+                    pos,
+                    traj,
+                    n_steps,
+                    q_new,
+                    pos_new,
+                    np.int64(n),
+                    np.float64(tau_lig),
+                    np.float64(tau_rec),
+                    self._tables,
+                    np.int32(len(_PHIS_ARR)),
+                    np.uint32(self.RETURN),
+                    self.key[0],
+                    self.key[1],
                 ),
             )
         return q_new, pos_new

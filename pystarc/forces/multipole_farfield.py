@@ -264,8 +264,6 @@ def compute_multipole_gpu(
             / (four_pi_eps * r_s**4)
         )
         F_total = (
-            F_total
-            + F_rad[:, None] * r_hat
-            - g2[:, None] * (Qh - rQr[:, None] * r_hat)
+            F_total + F_rad[:, None] * r_hat - g2[:, None] * (Qh - rQr[:, None] * r_hat)
         )
     return F_total

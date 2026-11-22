@@ -163,6 +163,16 @@ class TestCLI:
         assert main([str(p)]) == 2
         assert "expected the columns" in capsys.readouterr().out
 
+    def test_reads_chain_trajectories_csv(self, tmp_path, capsys):
+        n_steps, outcomes = _exponential_pilot(n=2000, seed=9)
+        csv_path = tmp_path / "trajectories.csv"
+        with open(csv_path, "w") as f:
+            f.write("traj_id,fate,steps\n")
+            for i, (o, s) in enumerate(zip(outcomes, n_steps)):
+                f.write(f"{i},{o.upper()},{s}\n")
+        assert main([str(csv_path), "--p-rxn", "0.05"]) == 0
+        assert "max_steps" in capsys.readouterr().out
+
     def test_format_report_mentions_warnings(self):
         n_steps = [100] * 50
         rec = recommend_max_steps(n_steps, ["escaped"] * 50, p_rxn=0.01)

@@ -50,7 +50,9 @@ class OutputConfig:
     radial_density: bool = (
         True  # radial_density.csv stores the BD steps and the BD time per radial shell.
     )
-    angular_map: bool = True  # angular_map.npz stores the BD steps and the BD time per (θ, φ) bin.
+    angular_map: bool = (
+        True  # angular_map.npz stores the BD steps and the BD time per (θ, φ) bin.
+    )
     bd_time_to_reaction: bool = (
         True  # bd_time_to_reaction.csv stores the BD time inside r_esc of each reacting trajectory.
     )
@@ -63,7 +65,9 @@ class OutputConfig:
     transition_matrix: bool = (
         True  # transition_matrix.npz stores Markov state transitions.
     )
-    energetics: bool = True  # energetics.npz stores the force and the time step every save_interval steps.
+    energetics: bool = (
+        True  # energetics.npz stores the force and the time step every save_interval steps.
+    )
     pose_clusters: bool = (
         True  # pose_clusters.csv stores the rotation angle of the encounter poses in 8 fixed bins.
     )
@@ -134,12 +138,20 @@ class ChainConfig:
     )
 
     # Soft repulsion using the WCA potential.
-    use_soft_repulsion: bool = False  # If True, add WCA repulsion between chain and target and between chain pairs without a COFFDROP table.
+    use_soft_repulsion: bool = (
+        False  # If True, add WCA repulsion between chain and target and between chain pairs without a COFFDROP table.
+    )
     soft_repulsion_eps: float = 1.0  # WCA epsilon in units of kBT.
-    use_hard_sphere: bool = True  # If True, reject steps that overlap a chain bead with a target atom.
+    use_hard_sphere: bool = (
+        True  # If True, reject steps that overlap a chain bead with a target atom.
+    )
     # Elastic network that holds the fold of the chain JSON positions.
-    elastic_network_cutoff: float = 0.0  # CA pairs closer than this in angstrom get a spring. A value of 0 means no network.
-    elastic_network_k: float = 0.0  # Spring constant in kBT/A^2. Must be > 0 with a network.
+    elastic_network_cutoff: float = (
+        0.0  # CA pairs closer than this in angstrom get a spring. A value of 0 means no network.
+    )
+    elastic_network_k: float = (
+        0.0  # Spring constant in kBT/A^2. Must be > 0 with a network.
+    )
 
     # Generalized Born self-Born terms.
     use_self_born: bool = False  # If True, add chain-internal generalized Born forces.
@@ -209,7 +221,9 @@ class PySTARCConfig:
         # dG = alpha q^2 a^3 / r^4 and the correct base is unity.
         DESOLVATION_ALPHA
     )
-    max_steps: int = 1000000  # Step limit per trajectory. A trajectory runs until it reacts, escapes or reaches this limit; at the limit it counts as not reacted. Choose it from a pilot run with pystarc.analysis.step_limit.
+    max_steps: int = (
+        1000000  # Step limit per trajectory. A trajectory runs until it reacts, escapes or reaches this limit; at the limit it counts as not reacted. Choose it from a pilot run with pystarc.analysis.step_limit.
+    )
     debye_length: float = (
         7.858  # Debye length in angstrom. parse() derives it from ion_concentration, sdie and temperature when the tag is omitted, and a given value must agree within 1 %.
     )
@@ -241,7 +255,9 @@ class PySTARCConfig:
     sdie: float = 78.0  # Solvent dielectric constant (water at 298 K).
     srad: float = SOLVENT_PROBE_RADIUS  # Solvent probe radius in angstrom.
     temperature: float = TEMPERATURE  # Temperature in kelvin.
-    dt: float = DT  # Fixed outer time step of chain BD in ps. Rigid runs ignore it; their step is bounded by minimum_core_dt and max_dt.
+    dt: float = (
+        DT  # Fixed outer time step of chain BD in ps. Rigid runs ignore it; their step is bounded by minimum_core_dt and max_dt.
+    )
     # Whether the Rotne-Prager-Yamakawa correction to the relative mobility is applied.
     hydrodynamic_interactions: bool = HYDRODYNAMIC_INTERACTIONS
     r_hydro_rec: float = (
@@ -258,7 +274,9 @@ class PySTARCConfig:
     )
     max_dt: float = 0.0  # Ceiling on the timestep. A value of 0 imposes no cap.
     # Physics extensions.
-    overlap_check: bool = True  # Reject a move that brings a ligand atom within 0.5 (r_i + r_j) of a receptor atom; the clock still advances. A rigid input must name overlap_check or soft_repulsion.
+    overlap_check: bool = (
+        True  # Reject a move that brings a ligand atom within 0.5 (r_i + r_j) of a receptor atom; the clock still advances. A rigid input must name overlap_check or soft_repulsion.
+    )
     brownian_bridge: bool = (
         True  # Count crossings of the reaction surface between two steps. False checks the end of each step only.
     )
@@ -394,7 +412,9 @@ class PySTARCConfig:
                 f"and {self.sdie}"
             )
         if not self.ion_concentration >= 0:
-            raise ValueError(f"ion_concentration must be >= 0, got {self.ion_concentration}")
+            raise ValueError(
+                f"ion_concentration must be >= 0, got {self.ion_concentration}"
+            )
         q = QB_FACTOR * self.bd_milestone_radius
         if not (self.r_escape == 0 or self.r_escape > q):
             raise ValueError(
@@ -402,7 +422,9 @@ class PySTARCConfig:
                 f"{QB_FACTOR} x bd_milestone_radius = {q:g} Å, got {self.r_escape}"
             )
         if not self.desolvation_alpha >= 0:
-            raise ValueError(f"desolvation_alpha must be >= 0, got {self.desolvation_alpha}")
+            raise ValueError(
+                f"desolvation_alpha must be >= 0, got {self.desolvation_alpha}"
+            )
         if self.gpu_force_batch < 0:
             raise ValueError(
                 f"gpu_force_batch must be >= 0 (0 chooses automatically), got "
@@ -412,7 +434,9 @@ class PySTARCConfig:
             raise ValueError(f"n_gpus must be >= 0, got {self.n_gpus}")
         for k in ("confidence_interval", "convergence_tol"):
             if not 0 < getattr(self, k) < 1:
-                raise ValueError(f"{k} must lie between 0 and 1, got {getattr(self, k)}")
+                raise ValueError(
+                    f"{k} must lie between 0 and 1, got {getattr(self, k)}"
+                )
         if self.outputs.save_interval < 0:
             raise ValueError(
                 f"save_interval must be >= 0 (0 keeps the start and end poses), got "
@@ -461,9 +485,17 @@ _RETIRED = {
 _RETIRED_OUTPUTS = {"p_commit": "no committor is computed"}
 # Tags that only prepare_bd_surface reads from the same input file.
 _PREPARE_ONLY = (
-    "parm7", "ligand_atom_per_residue", "inject_gho", "apbs_fine_spacing",
-    "apbs_n_grids", "apbs_srfm", "apbs_chgm", "apbs_srad", "ion_type",
-    "max_n_steps", "desolvation_parameter",
+    "parm7",
+    "ligand_atom_per_residue",
+    "inject_gho",
+    "apbs_fine_spacing",
+    "apbs_n_grids",
+    "apbs_srfm",
+    "apbs_chgm",
+    "apbs_srad",
+    "ion_type",
+    "max_n_steps",
+    "desolvation_parameter",
 )
 
 
@@ -518,7 +550,9 @@ def _check_tags(block, seen, retired={}, quiet=(), prepare=()):
         if t in seen or t in quiet:
             continue
         if t in retired:
-            warnings.warn(f"<{t}> is no longer used and is ignored: {retired[t]}.", stacklevel=3)
+            warnings.warn(
+                f"<{t}> is no longer used and is ignored: {retired[t]}.", stacklevel=3
+            )
         elif t in prepare:
             other.append(t)
         else:
@@ -526,9 +560,15 @@ def _check_tags(block, seen, retired={}, quiet=(), prepare=()):
             hint = difflib.get_close_matches(t, seen, n=1)
             raise ValueError(
                 f"Unknown tag <{t}> in {where}"
-                + (f": it belongs inside {home[0]}." if home and home[0] != "the top level"
-                   else ": it belongs at the top level." if home
-                   else f": did you mean <{hint[0]}>?" if hint else ".")
+                + (
+                    f": it belongs inside {home[0]}."
+                    if home and home[0] != "the top level"
+                    else (
+                        ": it belongs at the top level."
+                        if home
+                        else f": did you mean <{hint[0]}>?" if hint else "."
+                    )
+                )
             )
     if other:
         warnings.warn(
@@ -712,8 +752,15 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
             "<relative_viscosity> must be 1: PySTARC uses water at 25 °C "
             "(0.890 mPa·s) at every temperature."
         )
-    _check_tags(root, seen, _RETIRED, quiet=("receptor_resname",), prepare=_PREPARE_ONLY)
-    lam, conc, sdie, T = kw["debye_length"], kw["ion_concentration"], kw["sdie"], kw["temperature"]
+    _check_tags(
+        root, seen, _RETIRED, quiet=("receptor_resname",), prepare=_PREPARE_ONLY
+    )
+    lam, conc, sdie, T = (
+        kw["debye_length"],
+        kw["ion_concentration"],
+        kw["sdie"],
+        kw["temperature"],
+    )
     if sdie > 0 and T > 0 and conc >= 0:
         lam_ions = debye_from_ions(conc, sdie, T)
         if lam is None and chain is None:

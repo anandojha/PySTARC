@@ -1311,8 +1311,8 @@ class ChainBDSimulator:
         # Without it, trajectories that drift past 1.1 b are simply terminated as
         # ESCAPED, which biases the reaction probability roughly ten times too low
         # for typical geometries, because about b/q of the "escaped" trajectories
-        # should have analytically returned to the b-sphere. This mirrors the
-        # NAMSimulator pattern in nam_simulator.py:362-396.
+        # should have analytically returned to the b-sphere. This matches the
+        # NAMSimulator pattern in nam_simulator.py.
         self._outer_prop = None
         try:
             from pystarc.simulation.outer_propagator import (
@@ -2216,7 +2216,9 @@ class ChainBDSimulator:
         if self.params.verbose:
             print(f"  Parallel: {n_workers} workers, {n} trajectories")
         report_every = max(1, n // 20)  # report progress every 5 percent
-        with mp.Pool(n_workers, initializer=_chain_worker_init, initargs=(self,)) as pool:
+        with mp.Pool(
+            n_workers, initializer=_chain_worker_init, initargs=(self,)
+        ) as pool:
             for i, result in enumerate(
                 pool.imap(_run_chain_trajectory_worker, range(n)), 1
             ):

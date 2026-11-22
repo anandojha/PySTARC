@@ -1068,7 +1068,9 @@ def test_bridge_effective_diffusion_includes_the_target(monkeypatch):
     t = sim.target.atoms[0]
     expected = (
         np.trace(sim.D_trans) / 3.0
-        + np.trace(sim.D_rot) / 3.0 * float(sim.body_positions[0] @ sim.body_positions[0])
+        + np.trace(sim.D_rot)
+        / 3.0
+        * float(sim.body_positions[0] @ sim.body_positions[0])
         + sim._D_t_target
         + sim._D_r_target * (t.x**2 + t.y**2 + t.z**2)
     )

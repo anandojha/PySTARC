@@ -155,9 +155,11 @@ class OverlapGrid:
             module = xp.RawModule(code=_KERNELS)
             self._build_map = module.get_function("build_map")
             self._clearance = module.get_function("clearance")
-            self._map_args = tuple(np.float64(v) for v in self.origin.tolist()) + (
-                np.float64(self.spacing),
-            ) + tuple(np.int64(n) for n in self.shape.tolist())
+            self._map_args = (
+                tuple(np.float64(v) for v in self.origin.tolist())
+                + (np.float64(self.spacing),)
+                + tuple(np.int64(n) for n in self.shape.tolist())
+            )
         self.grid = self._build()
 
     def _build(self, budget: int = 1 << 25):
@@ -211,7 +213,9 @@ class OverlapGrid:
         d_in = xp.sqrt((out * out).sum(axis=-1))
         room_off = d_in - fr_max - self.fraction * lig_radii[None, :]
         d_c = xp.sqrt(((lig_pos - c) ** 2).sum(axis=-1))
-        room_off = xp.maximum(room_off, d_c - r_ext - self.fraction * lig_radii[None, :])
+        room_off = xp.maximum(
+            room_off, d_c - r_ext - self.fraction * lig_radii[None, :]
+        )
         room = xp.where(on_grid, room, room_off)
         return xp.maximum(room.min(axis=1), 0.0)
 
@@ -227,15 +231,24 @@ class OverlapGrid:
             lo_in, hi_in, fr_max, c, r_ext = self._clearance_consts()
             self._clr_args = tuple(
                 np.float64(v)
-                for v in [self.slack, self.fraction, *lo_in.tolist(), *hi_in.tolist(),
-                          fr_max, *c.tolist(), r_ext]
+                for v in [
+                    self.slack,
+                    self.fraction,
+                    *lo_in.tolist(),
+                    *hi_in.tolist(),
+                    fr_max,
+                    *c.tolist(),
+                    r_ext,
+                ]
             )
         if n:
             self._clearance(
                 ((n + 127) // 128,),
                 (128,),
                 (lig_pos, lig_radii, self.grid, np.int32(n), np.int32(m))
-                + self._map_args + self._clr_args + (out,),
+                + self._map_args
+                + self._clr_args
+                + (out,),
             )
         return out
 

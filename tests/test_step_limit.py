@@ -133,7 +133,9 @@ class TestChainRateBlock:
     def test_counted_as_not_reacted(self):
         """The flexible-chain rate block uses the same denominator and bound."""
         sim = SimpleNamespace(
-            _outer_prop=SimpleNamespace(k_b=30.0, b_radius=10.0, qradius=20.0, return_prob=0.5),
+            _outer_prop=SimpleNamespace(
+                k_b=30.0, b_radius=10.0, qradius=20.0, return_prob=0.5
+            ),
             params=SimpleNamespace(use_lmz=False),
         )
         results = (

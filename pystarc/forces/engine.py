@@ -641,7 +641,7 @@ class PySTARCEngine:
                 torque += np.cross(p - c2, f_i)
         # Born desolvation term, evaluating the mol2 atoms in the Born field of
         # mol1.
-        if self._born1:
+        if self._born1 and self.alpha != 0.0:
             f, t, e = self._born1.eval_atoms(
                 pos2, chg2, self.alpha, True, self.backend, ref=c2
             )
@@ -649,23 +649,27 @@ class PySTARCEngine:
             torque += t
             energy += e
         # Born desolvation term, evaluating the mol1 atoms in the Born field of
-        # mol2, to match the BD2 reference. This is a distinct physical
-        # contribution and not the Newton's third law conjugate of the born1
-        # term. It has been verified against Browndye2 in
-        # forces_impl.hh:add_core_forces.
-        if self._born2:
-            # The grid evaluation gives the desolvation force and torque on mol1,
-            # the torque taken about mol1's charged-atom centroid c1. The force
-            # and torque on mol2 follow from Newton's third law: the force on
-            # mol2 is minus the force on mol1, and the torque on mol2 about c2 is
-            # minus the torque on mol1 re-expressed about c2. This mirrors the
-            # force_and_torque0 reciprocity in BD2's add_core_forces.
-            c1 = _group_centroid(pos1, chg1)
-            f, t, e = self._born2.eval_atoms(
-                pos1, chg1, self.alpha, True, self.backend, ref=c1
-            )
-            force += -f
-            torque += np.cross(c2 - c1, f) - t
+        # mol2 (stored in the reference frame of mol2 centered at the origin).
+        # Transform mol1 coordinates into the ligand body frame
+        # y = R^T (x - c2), evaluate the ligand Born grids about the ligand
+        # center 0, and transform the reaction force and torque back to the lab
+        # frame by Newton's third law: F_lig = -R f_rec, T_lig = -R t_rec.
+        if self._born2 and self.alpha != 0.0:
+            R = getattr(mol2, "_rotation_matrix", None)
+            if R is not None:
+                pos1_lig = np.ascontiguousarray((pos1 - c2) @ R, dtype=np.float64)
+                f_lig, t_lig, e = self._born2.eval_atoms(
+                    pos1_lig, chg1, self.alpha, True, self.backend, ref=np.zeros(3)
+                )
+                force += -(R @ f_lig)
+                torque += -(R @ t_lig)
+            else:
+                pos1_lig = np.ascontiguousarray(pos1 - c2, dtype=np.float64)
+                f_lig, t_lig, e = self._born2.eval_atoms(
+                    pos1_lig, chg1, self.alpha, True, self.backend, ref=np.zeros(3)
+                )
+                force += -f_lig
+                torque += -t_lig
             energy += e
         # Optional Lennard-Jones and hydrophobic term.
         if self._lj_engine is not None:

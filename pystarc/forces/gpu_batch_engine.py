@@ -511,7 +511,9 @@ class GPUBatchForceEngine:
                 f"{len(rec_charges)} rec atoms"
             )
         else:
-            print("  Born direction 2 off (enable_born2_torque false, alpha 0 or no ligand Born grid)")
+            print(
+                "  Born direction 2 off (enable_born2_torque false, alpha 0 or no ligand Born grid)"
+            )
         print(
             f"  GPUBatchForceEngine: {len(self._elec_grids_gpu)} elec + "
             f"{len(self._born_grids_gpu)} born grids on GPU"
@@ -595,12 +597,20 @@ class GPUBatchForceEngine:
         uploaded.box = cp.stack(
             [
                 cp.concatenate(
-                    (g["origin"], g["inv_sp"], g["sp"], cp.asarray(g["lo"]), cp.asarray(g["hi"]))
+                    (
+                        g["origin"],
+                        g["inv_sp"],
+                        g["sp"],
+                        cp.asarray(g["lo"]),
+                        cp.asarray(g["hi"]),
+                    )
                 )
                 for g in uploaded
             ]
         )
-        uploaded.n = cp.array([(g["nx"], g["ny"], g["nz"]) for g in uploaded], dtype=cp.int32)
+        uploaded.n = cp.array(
+            [(g["nx"], g["ny"], g["nz"]) for g in uploaded], dtype=cp.int32
+        )
         return uploaded
 
     def _eval_batch(
@@ -914,7 +924,9 @@ class GPUBatchForceEngine:
             r2 = (diff * diff).sum(axis=3)  # shape (nc, N_lig, N_rec)
             r = cp.sqrt(cp.maximum(r2, 1e-6))
             # Pair size σ_ij = lig_radius + rec_radius.
-            sig = self._wca_lig_radii[None, :, None] + self._wca_rec_radii[None, None, :]
+            sig = (
+                self._wca_lig_radii[None, :, None] + self._wca_rec_radii[None, None, :]
+            )
             # WCA cutoff at r < 2^(1/6) × σ.
             r_cut = 1.122462 * sig  # 2^(1/6) ≈ 1.122462
             in_range = r < r_cut

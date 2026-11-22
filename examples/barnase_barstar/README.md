@@ -36,7 +36,7 @@ sbatch --nodes=10 submit.sh         # 10 nodes, 8 tasks x 16 CPUs per node (1,28
 
 ## Output files
 
-Outputs are written inside `bd_sims/`, `apbs_output/`, and `shards/` (see [`TUTORIAL.md`](../../TUTORIAL.md#15-flexible-chain-model-barnase-and-barstar)):
+Outputs are written inside `bd_sims/`, `apbs_output/`, and `shards/` (see [`TUTORIAL.md`](../../TUTORIAL.md#15-flexible-chain-model)):
 ```
 bd_sims/
 ├── chain.json                Bead chain definition of the ligand

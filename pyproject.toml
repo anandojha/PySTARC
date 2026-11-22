@@ -25,11 +25,16 @@ Issues = "https://github.com/anandojha/PySTARC/issues"
 
 [project.optional-dependencies]
 dev = [
+    "black>=24.0",
     "pytest>=7.0",
     "pytest-cov",
     "pytest-sugar",
 ]
 notebook = ["jupyter", "matplotlib"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310", "py311"]
 
 [project.scripts]
 pystarc = "pystarc.cli.main:main"

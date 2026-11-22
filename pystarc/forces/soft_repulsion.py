@@ -268,11 +268,18 @@ class SoftRepulsion:
             self._lig_mask_d = xp.asarray(self.lig_mask)
             self._lig_real_d = xp.asarray(np.nonzero(self.lig_mask)[0], dtype=xp.int32)
             self._cells = (
-                self._rec_pos_d, self._rec_rad_d, self._cell_start_d,
-                np.float64(self.origin[0]), np.float64(self.origin[1]),
-                np.float64(self.origin[2]), np.float64(self.h),
-                np.int32(nx), np.int32(ny), np.int32(nz),
-                np.float64(A_FACTOR), np.float64(CUTOFF),
+                self._rec_pos_d,
+                self._rec_rad_d,
+                self._cell_start_d,
+                np.float64(self.origin[0]),
+                np.float64(self.origin[1]),
+                np.float64(self.origin[2]),
+                np.float64(self.h),
+                np.int32(nx),
+                np.int32(ny),
+                np.int32(nz),
+                np.float64(A_FACTOR),
+                np.float64(CUTOFF),
                 np.float64(self.rec_radii.max()),
             )
 
@@ -294,7 +301,8 @@ class SoftRepulsion:
                 self._kernel(
                     (blocks,),
                     (threads,),
-                    (lig_pos, self._lig_rad_d) + self._cells
+                    (lig_pos, self._lig_rad_d)
+                    + self._cells
                     + (np.int32(n), np.int32(m), f, e, k),
                 )
             mask = self._lig_mask_d
@@ -359,9 +367,20 @@ class SoftRepulsion:
             self._poses(
                 ((n + per_block - 1) // per_block,),
                 (per_block * lanes,),
-                (lig_pos, self._lig_rad_d) + self._cells
-                + (np.int32(n), np.int32(m), centroids, self._lig_real_d,
-                   np.int32(n_real), np.int32(lanes), force, torque, energy, stiff),
+                (lig_pos, self._lig_rad_d)
+                + self._cells
+                + (
+                    np.int32(n),
+                    np.int32(m),
+                    centroids,
+                    self._lig_real_d,
+                    np.int32(n_real),
+                    np.int32(lanes),
+                    force,
+                    torque,
+                    energy,
+                    stiff,
+                ),
             )
         return force, torque, energy, stiff
 

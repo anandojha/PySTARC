@@ -23,130 +23,218 @@ from pystarc.structures.pqr_io import parse_pqr_records
 
 
 MODELS = {
-    "rigid": dict(need=("receptor", "ligand", "ligand_net_charge"), opt=(), note="Rigid-body Brownian dynamics"),
-    "chain": dict(need=("receptor", "ligand", "ligand_net_charge"), opt=(), note="Flexible COFFDROP bead chain"),
+    "rigid": dict(
+        need=("receptor", "ligand", "ligand_net_charge"),
+        opt=(),
+        note="Rigid-body Brownian dynamics",
+    ),
+    "chain": dict(
+        need=("receptor", "ligand", "ligand_net_charge"),
+        opt=(),
+        note="Flexible COFFDROP bead chain",
+    ),
 }
 
 MODES = {
-    "contacts": dict(need=("pair_cutoff", "n_needed"), opt=("receptor", "ligand"), note="Explicit atom pairs named in the config"),
-    "centroid": dict(need=("pair_cutoff", "n_needed"), opt=(), note="Pairs the centroid of the receptor with the centroid of the ligand"),
+    "contacts": dict(
+        need=("pair_cutoff", "n_needed"),
+        opt=("receptor", "ligand"),
+        note="Explicit atom pairs named in the config",
+    ),
+    "centroid": dict(
+        need=("pair_cutoff", "n_needed"),
+        opt=(),
+        note="Pairs the centroid of the receptor with the centroid of the ligand",
+    ),
 }
 
 KEYS = {
-    "receptor":                  "Prepared receptor structure (.pdb or .pqr, matching ligand format).",
-    "ligand":                    "Prepared ligand structure (.pdb or .pqr, matching receptor format).",
-    "ligand_net_charge":         "Formal integer charge of the ligand (in elementary charge units).",
-    "model":                     "Solute representation.",
-    "mode":                      "How the reaction criterion is defined.",
-    "pair_cutoff":               "Reaction distance for every pair (in angstroms).",
-    "n_needed":                  "Mode contacts pairs inside cutoff at once (1 for one pair, half of an even pair count, or positive count for model chain). Set 0 in mode centroid (rxns.xml writes 1).",
-    "bd_milestone_radius":       "Radius of the starting sphere (in angstroms).",
-    "r_escape":                  "Escape sphere radius (in angstroms). 0 derives twice bd_milestone_radius.",
-    "n_trajectories":            "Number of Brownian dynamics trajectories.",
-    "apbs_fglen":                "Fine electrostatic grid length (in angstroms). 0 derives it.",
-    "apbs_dime":                 "Grid points per axis of the electrostatic and Born grids (4k+1 up to 65, 32c+1 above 65).",
-    "apbs_cglen":                "Coarse electrostatic grid length (in angstroms). 0 derives it.",
-    "apbs_coarse_dime":          "Grid points per axis of the coarse grid. 0 copies apbs_dime.",
-    "apbs_fine_dime":            "Grid points per axis of the fine grid. 0 copies apbs_dime.",
-    "debye_length":              "Electrostatic screening length of the salt (in angstroms). Blank derives from ion_concentration in rigid mode (7.858 in chain mode).",
-    "ion_concentration":         "Salt concentration (in molar).",
-    "ion_radius_pos":            "Radius of the positive ion (in angstroms).",
-    "ion_radius_neg":            "Radius of the negative ion (in angstroms).",
-    "pdie":                      "Dielectric constant of the solute.",
-    "sdie":                      "Dielectric constant of the solvent.",
-    "srad":                      "Solvent probe radius (in angstroms).",
-    "desolvation_alpha":         "Scaling applied to the desolvation penalty.",
-    "enable_born2_torque":       "Add the desolvation of the receptor charges in the ligand Born field, a force and a torque on the ligand.",
+    "receptor": "Prepared receptor structure (.pdb or .pqr, matching ligand format).",
+    "ligand": "Prepared ligand structure (.pdb or .pqr, matching receptor format).",
+    "ligand_net_charge": "Formal integer charge of the ligand (in elementary charge units).",
+    "model": "Solute representation.",
+    "mode": "How the reaction criterion is defined.",
+    "pair_cutoff": "Reaction distance for every pair (in angstroms).",
+    "n_needed": "Mode contacts pairs inside cutoff at once (1 for one pair, half of an even pair count, or positive count for model chain). Set 0 in mode centroid (rxns.xml writes 1).",
+    "bd_milestone_radius": "Radius of the starting sphere (in angstroms).",
+    "r_escape": "Escape sphere radius (in angstroms). 0 derives twice bd_milestone_radius.",
+    "n_trajectories": "Number of Brownian dynamics trajectories.",
+    "apbs_fglen": "Fine electrostatic grid length (in angstroms). 0 derives it.",
+    "apbs_dime": "Grid points per axis of the electrostatic and Born grids (4k+1 up to 65, 32c+1 above 65).",
+    "apbs_cglen": "Coarse electrostatic grid length (in angstroms). 0 derives it.",
+    "apbs_coarse_dime": "Grid points per axis of the coarse grid. 0 copies apbs_dime.",
+    "apbs_fine_dime": "Grid points per axis of the fine grid. 0 copies apbs_dime.",
+    "debye_length": "Electrostatic screening length of the salt (in angstroms). Blank derives from ion_concentration in rigid mode (7.858 in chain mode).",
+    "ion_concentration": "Salt concentration (in molar).",
+    "ion_radius_pos": "Radius of the positive ion (in angstroms).",
+    "ion_radius_neg": "Radius of the negative ion (in angstroms).",
+    "pdie": "Dielectric constant of the solute.",
+    "sdie": "Dielectric constant of the solvent.",
+    "srad": "Solvent probe radius (in angstroms).",
+    "desolvation_alpha": "Scaling applied to the desolvation penalty.",
+    "enable_born2_torque": "Add the desolvation of the receptor charges in the ligand Born field, a force and a torque on the ligand.",
     "hydrodynamic_interactions": "Include hydrodynamic coupling between the two molecules.",
-    "multipole_fallback":        "Extend the electrostatics beyond the grid by multipole expansion.",
-    "lj_forces":                 "Apply WCA repulsive forces at close contact (mutually exclusive with soft_repulsion).",
-    "overlap_check":             "Forbid the ligand from entering the receptor volume.",
-    "soft_repulsion":            "Soft excluded volume between receptor and ligand atoms (BrownDye 2 wall in rigid mode, WCA in chain mode).",
-    "gpu_force_batch":           "Trajectories per GPU force evaluation. 0 selects automatically.",
-    "max_steps":                 "Step limit per trajectory.",
-    "dt":                        "Outer time step of the flexible chain model (in picoseconds). No effect on rigid body runs.",
-    "minimum_core_dt":           "Smallest permitted time step (in picoseconds). 0 imposes no floor.",
-    "minimum_core_reaction_dt":  "Smallest time step near the reaction surface (in picoseconds, CPU or state-machine mode). 0 imposes no floor on the GPU.",
-    "max_dt":                    "Ceiling on the time step (in picoseconds). 0 imposes no ceiling.",
-    "r_hydro_rec":               "Receptor hydrodynamic radius (in angstroms). 0 derives from the PQR.",
-    "r_hydro_lig":               "Ligand hydrodynamic radius (in angstroms). 0 derives from the PQR.",
-    "temperature":               "Temperature (in kelvin).",
-    "seed":                      "Random number seed.",
-    "gpu":                       "Evaluate forces on the GPU.",
-    "n_gpus":                    "Number of GPUs for parallel trajectory splitting (1 runs a single worker, 0 ignored in chain mode).",
-    "n_threads":                 "Number of CPU threads.",
-    "work_dir":                  "Output directory for grids, generated inputs and trajectory data.",
-    "convergence_check":         "Run convergence analysis after the simulation.",
-    "convergence_interval":      "Reporting interval for the running rate (in percent of trajectories).",
-    "convergence_tol":           "Relative error defining convergence.",
-    "checkpoint_interval":       "Trajectories between checkpoints. 0 disables checkpointing.",
-    "save_interval":             "Steps between saved positions. 0 saves endpoints.",
-    "full_paths":                "Save positions and orientations every save_interval steps.",
-    "energetics":                "Save ligand force and time step (rigid GPU) or energy terms (chain) every save_interval steps.",
-    "reaction_pairs_json":       "Pre-built chain reaction pairs JSON file for model chain. Blank builds from criterion pairs.",
-    "dt_chain":                  "Inner time step of flexible chain internal coordinates (in picoseconds).",
-    "chain_steps_per_outer":     "Inner chain steps per outer step.",
-    "n_equilibration_steps":     "Pre-equilibration chain steps before each trajectory. 0 skips pre-equilibration.",
-    "auto_diffusion":            "Compute chain diffusion tensors from RPY bead geometry.",
-    "d_trans":                   "Explicit chain translational diffusion when auto_diffusion is false (in A^2/ps).",
-    "d_rot":                     "Explicit chain rotational diffusion when auto_diffusion is false (in rad^2/ps).",
-    "soft_repulsion_eps":        "Chain soft repulsion strength (in units of kT).",
-    "elastic_network_cutoff":    "Backbone CA elastic network cutoff distance for model chain (in angstroms). Blank or 0 disables it.",
-    "elastic_network_k":         "Backbone CA elastic network spring constant for model chain (in kT/A^2).",
-    "target_grid_dx":            "Optional receptor electrostatic DX grid path for model chain. Blank builds in work_dir.",
-    "born_grid_dx":              "Optional receptor Born DX grid path for model chain. Blank builds in work_dir.",
+    "multipole_fallback": "Extend the electrostatics beyond the grid by multipole expansion.",
+    "lj_forces": "Apply WCA repulsive forces at close contact (mutually exclusive with soft_repulsion).",
+    "overlap_check": "Forbid the ligand from entering the receptor volume.",
+    "soft_repulsion": "Soft excluded volume between receptor and ligand atoms (BrownDye 2 wall in rigid mode, WCA in chain mode).",
+    "gpu_force_batch": "Trajectories per GPU force evaluation. 0 selects automatically.",
+    "max_steps": "Step limit per trajectory.",
+    "dt": "Outer time step of the flexible chain model (in picoseconds). No effect on rigid body runs.",
+    "minimum_core_dt": "Smallest permitted time step (in picoseconds). 0 imposes no floor.",
+    "minimum_core_reaction_dt": "Smallest time step near the reaction surface (in picoseconds, CPU or state-machine mode). 0 imposes no floor on the GPU.",
+    "max_dt": "Ceiling on the time step (in picoseconds). 0 imposes no ceiling.",
+    "r_hydro_rec": "Receptor hydrodynamic radius (in angstroms). 0 derives from the PQR.",
+    "r_hydro_lig": "Ligand hydrodynamic radius (in angstroms). 0 derives from the PQR.",
+    "temperature": "Temperature (in kelvin).",
+    "seed": "Random number seed.",
+    "gpu": "Evaluate forces on the GPU.",
+    "n_gpus": "Number of GPUs for parallel trajectory splitting (1 runs a single worker, 0 ignored in chain mode).",
+    "n_threads": "Number of CPU threads.",
+    "work_dir": "Output directory for grids, generated inputs and trajectory data.",
+    "convergence_check": "Run convergence analysis after the simulation.",
+    "convergence_interval": "Reporting interval for the running rate (in percent of trajectories).",
+    "convergence_tol": "Relative error defining convergence.",
+    "checkpoint_interval": "Trajectories between checkpoints. 0 disables checkpointing.",
+    "save_interval": "Steps between saved positions. 0 saves endpoints.",
+    "full_paths": "Save positions and orientations every save_interval steps.",
+    "energetics": "Save ligand force and time step (rigid GPU) or energy terms (chain) every save_interval steps.",
+    "reaction_pairs_json": "Pre-built chain reaction pairs JSON file for model chain. Blank builds from criterion pairs.",
+    "dt_chain": "Inner time step of flexible chain internal coordinates (in picoseconds).",
+    "chain_steps_per_outer": "Inner chain steps per outer step.",
+    "n_equilibration_steps": "Pre-equilibration chain steps before each trajectory. 0 skips pre-equilibration.",
+    "auto_diffusion": "Compute chain diffusion tensors from RPY bead geometry.",
+    "d_trans": "Explicit chain translational diffusion when auto_diffusion is false (in A^2/ps).",
+    "d_rot": "Explicit chain rotational diffusion when auto_diffusion is false (in rad^2/ps).",
+    "soft_repulsion_eps": "Chain soft repulsion strength (in units of kT).",
+    "elastic_network_cutoff": "Backbone CA elastic network cutoff distance for model chain (in angstroms). Blank or 0 disables it.",
+    "elastic_network_k": "Backbone CA elastic network spring constant for model chain (in kT/A^2).",
+    "target_grid_dx": "Optional receptor electrostatic DX grid path for model chain. Blank builds in work_dir.",
+    "born_grid_dx": "Optional receptor Born DX grid path for model chain. Blank builds in work_dir.",
 }
 
 CRITERION_KEYS = {
-    "receptor": "Receptor atom of each contact pair (<target resid=\"...\" atom=\"...\" resname=\"...\"/>).",
-    "ligand":   "Ligand atom of each contact pair (<atom name=\"...\"/> or <target resid=\"...\" atom=\"...\" resname=\"...\"/>).",
+    "receptor": 'Receptor atom of each contact pair (<target resid="..." atom="..." resname="..."/>).',
+    "ligand": 'Ligand atom of each contact pair (<atom name="..."/> or <target resid="..." atom="..." resname="..."/>).',
 }
 
 STRUCTURE = ("receptor", "ligand", "ligand_net_charge", "model")
 CRITERION = ("mode", "receptor", "ligand", "pair_cutoff", "n_needed")
 GEOMETRY = ("bd_milestone_radius", "r_escape", "r_hydro_rec", "r_hydro_lig")
 ELECTROSTATICS = (
-    "debye_length", "ion_concentration", "ion_radius_pos", "ion_radius_neg",
-    "pdie", "sdie", "srad", "apbs_fglen", "apbs_dime", "apbs_cglen",
-    "apbs_coarse_dime", "apbs_fine_dime",
+    "debye_length",
+    "ion_concentration",
+    "ion_radius_pos",
+    "ion_radius_neg",
+    "pdie",
+    "sdie",
+    "srad",
+    "apbs_fglen",
+    "apbs_dime",
+    "apbs_cglen",
+    "apbs_coarse_dime",
+    "apbs_fine_dime",
 )
 PHYSICS = (
-    "soft_repulsion", "overlap_check", "lj_forces", "hydrodynamic_interactions",
-    "desolvation_alpha", "enable_born2_torque", "multipole_fallback",
+    "soft_repulsion",
+    "overlap_check",
+    "lj_forces",
+    "hydrodynamic_interactions",
+    "desolvation_alpha",
+    "enable_born2_torque",
+    "multipole_fallback",
 )
 SIMULATION = (
-    "n_trajectories", "max_steps", "dt", "minimum_core_dt",
-    "minimum_core_reaction_dt", "max_dt", "temperature", "seed",
-    "convergence_check", "convergence_interval", "convergence_tol",
+    "n_trajectories",
+    "max_steps",
+    "dt",
+    "minimum_core_dt",
+    "minimum_core_reaction_dt",
+    "max_dt",
+    "temperature",
+    "seed",
+    "convergence_check",
+    "convergence_interval",
+    "convergence_tol",
     "checkpoint_interval",
 )
 COMPUTE = ("gpu", "n_gpus", "gpu_force_batch", "n_threads", "work_dir")
 OUTPUTS = ("save_interval", "full_paths", "energetics")
 CHAIN = (
-    "reaction_pairs_json", "dt_chain", "chain_steps_per_outer",
-    "n_equilibration_steps", "auto_diffusion", "d_trans", "d_rot",
-    "soft_repulsion_eps", "elastic_network_cutoff", "elastic_network_k",
-    "target_grid_dx", "born_grid_dx",
+    "reaction_pairs_json",
+    "dt_chain",
+    "chain_steps_per_outer",
+    "n_equilibration_steps",
+    "auto_diffusion",
+    "d_trans",
+    "d_rot",
+    "soft_repulsion_eps",
+    "elastic_network_cutoff",
+    "elastic_network_k",
+    "target_grid_dx",
+    "born_grid_dx",
 )
 INPUT_COMPUTE = ("gpu", "gpu_force_batch", "n_threads")
 BD_PARAMS = GEOMETRY + ELECTROSTATICS + PHYSICS + SIMULATION + INPUT_COMPUTE + OUTPUTS
 
-OPTIONAL = {"soft_repulsion": "false", "minimum_core_reaction_dt": "0",
-            "full_paths": "true", "energetics": "true", "r_escape": "0",
-            "debye_length": ""}
+OPTIONAL = {
+    "soft_repulsion": "false",
+    "minimum_core_reaction_dt": "0",
+    "full_paths": "true",
+    "energetics": "true",
+    "r_escape": "0",
+    "debye_length": "",
+}
 
-BOOL = ("enable_born2_torque", "hydrodynamic_interactions", "multipole_fallback",
-        "lj_forces", "overlap_check", "soft_repulsion", "gpu", "convergence_check",
-        "full_paths", "energetics", "auto_diffusion")
+BOOL = (
+    "enable_born2_torque",
+    "hydrodynamic_interactions",
+    "multipole_fallback",
+    "lj_forces",
+    "overlap_check",
+    "soft_repulsion",
+    "gpu",
+    "convergence_check",
+    "full_paths",
+    "energetics",
+    "auto_diffusion",
+)
 
 RECORD = "build_record.json"
 
 RETAINED_METALS = {"ZN", "MG", "MN", "FE", "CU", "CO", "NI", "CAL"}
 SKIP_SOLVENT = {"HOH", "WAT", "NA", "CL", "Na+", "Cl-", "K+"}
 PROTEIN_RESIDUES = {
-    "ALA", "ARG", "ASN", "ASP", "ASH", "CYS", "CYX", "CYM", "GLN", "GLU", "GLH",
-    "GLY", "HIS", "HID", "HIE", "HIP", "ILE", "LEU", "LYS", "LYN", "MET", "PHE",
-    "PRO", "SER", "THR", "TRP", "TYR", "VAL", "ACE", "NME",
+    "ALA",
+    "ARG",
+    "ASN",
+    "ASP",
+    "ASH",
+    "CYS",
+    "CYX",
+    "CYM",
+    "GLN",
+    "GLU",
+    "GLH",
+    "GLY",
+    "HIS",
+    "HID",
+    "HIE",
+    "HIP",
+    "ILE",
+    "LEU",
+    "LYS",
+    "LYN",
+    "MET",
+    "PHE",
+    "PRO",
+    "SER",
+    "THR",
+    "TRP",
+    "TYR",
+    "VAL",
+    "ACE",
+    "NME",
 }
 TLEAP_VARIANT_GROUPS = [
     {"HIS", "HIE", "HID", "HIP"},
@@ -156,17 +244,41 @@ TLEAP_VARIANT_GROUPS = [
     {"LYS", "LYN"},
 ]
 
-JUNK = ["_protein.rst7", "_ligand.rst7", "ligand_h.sdf", "sqm.in", "sqm.out",
-        "sqm.pdb", "ANTECHAMBER_AC.AC", "ANTECHAMBER_AC.AC0",
-        "ANTECHAMBER_BOND_TYPE.AC", "ANTECHAMBER_BOND_TYPE.AC0",
-        "ANTECHAMBER_AM1BCC.AC", "ANTECHAMBER_AM1BCC_PRE.AC", "ATOMTYPE.INF",
-        "ligand_obabel.mol2"]
+JUNK = [
+    "_protein.rst7",
+    "_ligand.rst7",
+    "ligand_h.sdf",
+    "sqm.in",
+    "sqm.out",
+    "sqm.pdb",
+    "ANTECHAMBER_AC.AC",
+    "ANTECHAMBER_AC.AC0",
+    "ANTECHAMBER_BOND_TYPE.AC",
+    "ANTECHAMBER_BOND_TYPE.AC0",
+    "ANTECHAMBER_AM1BCC.AC",
+    "ANTECHAMBER_AM1BCC_PRE.AC",
+    "ATOMTYPE.INF",
+    "ligand_obabel.mol2",
+]
 
-LEFTOVER = ["tleap_protein.in", "tleap_ligand.in", "tleap_protein.log",
-            "tleap_ligand.log", "leap.log", "ligand.frcmod", "ligand.mol2",
-            "ligand_raw.pdb", "protein.pdb", "protein_leap.pdb",
-            "ligand_leap.pdb", "protein.prmtop", "protein.rst7",
-            "ligand.prmtop", "ligand.rst7", "_receptor_raw.pqr"]
+LEFTOVER = [
+    "tleap_protein.in",
+    "tleap_ligand.in",
+    "tleap_protein.log",
+    "tleap_ligand.log",
+    "leap.log",
+    "ligand.frcmod",
+    "ligand.mol2",
+    "ligand_raw.pdb",
+    "protein.pdb",
+    "protein_leap.pdb",
+    "ligand_leap.pdb",
+    "protein.prmtop",
+    "protein.rst7",
+    "ligand.prmtop",
+    "ligand.rst7",
+    "_receptor_raw.pqr",
+]
 
 
 def tidy(W, _cfg=None):
@@ -176,7 +288,12 @@ def tidy(W, _cfg=None):
             os.remove(p)
 
 
-NUMBER = {"ligand_net_charge": int, "pair_cutoff": float, "n_needed": int, "n_gpus": int}
+NUMBER = {
+    "ligand_net_charge": int,
+    "pair_cutoff": float,
+    "n_needed": int,
+    "n_gpus": int,
+}
 
 
 def _number(tag, text, kind=None):
@@ -222,10 +339,15 @@ def _src_file(cfg, W, rel_path):
 
 
 SECTIONS = (
-    ("structure", STRUCTURE), ("criterion", CRITERION),
-    ("geometry", GEOMETRY), ("electrostatics", ELECTROSTATICS),
-    ("physics", PHYSICS), ("simulation", SIMULATION), ("compute", COMPUTE),
-    ("outputs", OUTPUTS), ("chain", CHAIN),
+    ("structure", STRUCTURE),
+    ("criterion", CRITERION),
+    ("geometry", GEOMETRY),
+    ("electrostatics", ELECTROSTATICS),
+    ("physics", PHYSICS),
+    ("simulation", SIMULATION),
+    ("compute", COMPUTE),
+    ("outputs", OUTPUTS),
+    ("chain", CHAIN),
 )
 
 
@@ -253,7 +375,9 @@ def read_config(path):
             if el.tag not in allowed:
                 if el.tag in tag_homes:
                     homes = " or ".join(f"<{h}>" for h in tag_homes[el.tag])
-                    raise ValueError(f"<{el.tag}> in <{sec.tag}>: place it inside {homes}.")
+                    raise ValueError(
+                        f"<{el.tag}> in <{sec.tag}>: place it inside {homes}."
+                    )
                 hint = difflib.get_close_matches(el.tag, all_tags, n=1)
                 raise ValueError(
                     f"Unknown tag <{el.tag}> in <{sec.tag}>"
@@ -288,7 +412,9 @@ def _sh(W, cmd, produces):
     if r.returncode != 0 or not os.path.exists(p):
         made = "" if os.path.exists(p) else f" and produced no {produces}"
         tail = (r.stderr or r.stdout).strip()[-600:]
-        sys.exit(f"  ERROR: {cmd.split()[0]} ended with exit {r.returncode}{made}\n{tail}")
+        sys.exit(
+            f"  ERROR: {cmd.split()[0]} ended with exit {r.returncode}{made}\n{tail}"
+        )
     return r
 
 
@@ -297,7 +423,9 @@ def _leap(W, script, body, produces):
     _gone(stem + ".prmtop", stem + ".rst7")
     with open(os.path.join(W, script), "w") as fh:
         fh.write(body)
-    r = subprocess.run(f"tleap -f {script}", shell=True, cwd=W, capture_output=True, text=True)
+    r = subprocess.run(
+        f"tleap -f {script}", shell=True, cwd=W, capture_output=True, text=True
+    )
     with open(os.path.join(W, script.replace(".in", ".log")), "w") as fh:
         fh.write(r.stdout + r.stderr)
     p = os.path.join(W, produces)
@@ -311,12 +439,19 @@ def _pqr(W, stem, out):
     subprocess.run(
         "cpptraj",
         input=f"parm {stem}.prmtop\ntrajin {stem}.rst7\ntrajout _{stem}.rst7\nrun\n",
-        cwd=W, capture_output=True, text=True,
+        cwd=W,
+        capture_output=True,
+        text=True,
     )
     if not os.path.exists(rst):
         sys.exit(f"  ERROR: cpptraj produced no _{stem}.rst7 from {stem}.prmtop")
-    r = subprocess.run(f"ambpdb -p {stem}.prmtop -c _{stem}.rst7 -pqr",
-                       shell=True, cwd=W, capture_output=True, text=True)
+    r = subprocess.run(
+        f"ambpdb -p {stem}.prmtop -c _{stem}.rst7 -pqr",
+        shell=True,
+        cwd=W,
+        capture_output=True,
+        text=True,
+    )
     lines = [l for l in r.stdout.strip().split("\n") if l.startswith("ATOM")]
     if not lines:
         sys.exit(f"  ERROR: ambpdb produced nothing for {stem}")
@@ -334,13 +469,17 @@ def _restore_names(W, mol):
     i1 = next(i for i in range(i0, len(lines)) if lines[i].startswith("@<TRIPOS>"))
     rows = [i for i in range(i0, i1) if lines[i].strip()]
     if len(rows) != mol.GetNumAtoms():
-        sys.exit(f"  ERROR: ligand.mol2 has {len(rows)} atoms, the ligand has {mol.GetNumAtoms()}")
+        sys.exit(
+            f"  ERROR: ligand.mol2 has {len(rows)} atoms, the ligand has {mol.GetNumAtoms()}"
+        )
     given = {}
     for i, a in zip(rows, mol.GetAtoms()):
         f = lines[i].split()
         el = {"cl": "Cl", "br": "Br"}.get(f[5][:2].lower(), f[5][0].upper())
         if el != a.GetSymbol():
-            sys.exit(f"  ERROR: atom {f[0]} of ligand.mol2 is {el} where the ligand has {a.GetSymbol()}")
+            sys.exit(
+                f"  ERROR: atom {f[0]} of ligand.mol2 is {el} where the ligand has {a.GetSymbol()}"
+            )
         info = a.GetPDBResidueInfo()
         if info is not None:
             given[i] = info.GetName().strip()
@@ -356,8 +495,10 @@ def _restore_names(W, mol):
                 nm, k = f"{a.GetSymbol().upper()}{k}", k + 1
             taken.add(nm)
         f[1] = nm
-        lines[i] = (f"{f[0]:>7} {f[1]:<8} {f[2]:>10} {f[3]:>10} {f[4]:>10} "
-                    f"{f[5]:<6} {f[6]:>3} {f[7]:<8} {f[8]:>10}")
+        lines[i] = (
+            f"{f[0]:>7} {f[1]:<8} {f[2]:>10} {f[3]:>10} {f[4]:>10} "
+            f"{f[5]:<6} {f[6]:>3} {f[7]:<8} {f[8]:>10}"
+        )
     with open(path, "w") as fh:
         fh.write("\n".join(lines))
 
@@ -366,11 +507,19 @@ def _check_single_conformer(lines, path):
     seen = {}
     for l in lines:
         if len(l) > 26 and l[16] != " ":
-            seen.setdefault((l[21], l[22:27].strip(), l[17:20].strip()), set()).add(l[16])
-    multi = [f"{k[2]} {k[0].strip()}{k[1]} ({''.join(sorted(v))})" for k, v in seen.items() if len(v) > 1]
+            seen.setdefault((l[21], l[22:27].strip(), l[17:20].strip()), set()).add(
+                l[16]
+            )
+    multi = [
+        f"{k[2]} {k[0].strip()}{k[1]} ({''.join(sorted(v))})"
+        for k, v in seen.items()
+        if len(v) > 1
+    ]
     if multi:
-        sys.exit(f"  ERROR: {path} contains multiple altloc conformers for {', '.join(multi)}. "
-                 f"Select a single conformer before running PySTARC")
+        sys.exit(
+            f"  ERROR: {path} contains multiple altloc conformers for {', '.join(multi)}. "
+            f"Select a single conformer before running PySTARC"
+        )
 
 
 def _ext(path):
@@ -382,21 +531,27 @@ def _ext(path):
 
 def _copy_clean_pqr(src, dst, label):
     if os.path.abspath(src) == os.path.abspath(dst):
-        sys.exit(f"  ERROR: {label} must not overwrite {os.path.basename(dst)} in place")
+        sys.exit(
+            f"  ERROR: {label} must not overwrite {os.path.basename(dst)} in place"
+        )
     with open(src) as fh:
         lines = fh.read().split("\n")
     ghost = lambda l: (
         l.startswith(("ATOM", "HETATM"))
-        and (l[12:16].strip().upper() in ("GHO", "PKT")
-             or (len(l.split()) >= 3 and l.split()[2].upper() in ("GHO", "PKT")))
+        and (
+            l[12:16].strip().upper() in ("GHO", "PKT")
+            or (len(l.split()) >= 3 and l.split()[2].upper() in ("GHO", "PKT"))
+        )
     )
     n_gho = sum(1 for l in lines if ghost(l))
     kept = [l for l in lines if not ghost(l)]
     with open(dst, "w") as fh:
         fh.write("\n".join(kept))
     n = sum(1 for l in kept if l.startswith(("ATOM", "HETATM")))
-    print(f"  {os.path.basename(dst)}: {n} atoms from {label}"
-          + (f", {n_gho} ghost atom removed" if n_gho else ""))
+    print(
+        f"  {os.path.basename(dst)}: {n} atoms from {label}"
+        + (f", {n_gho} ghost atom removed" if n_gho else "")
+    )
 
 
 def _parameterize_protein_pdb(pdb_src, label, W, stem, out_pqr):
@@ -407,7 +562,11 @@ def _parameterize_protein_pdb(pdb_src, label, W, stem, out_pqr):
     for line in raw_lines:
         if line.startswith("ATOM"):
             a = line[12:16].strip()
-            if a == "OXT" or a[0] == "H" or (len(a) > 1 and a[0].isdigit() and a[1] == "H"):
+            if (
+                a == "OXT"
+                or a[0] == "H"
+                or (len(a) > 1 and a[0].isdigit() and a[1] == "H")
+            ):
                 continue
             prot.append(line)
         elif line.startswith("HETATM"):
@@ -417,21 +576,32 @@ def _parameterize_protein_pdb(pdb_src, label, W, stem, out_pqr):
             elif resn not in SKIP_SOLVENT:
                 bad_het.add(resn)
     if bad_het:
-        sys.exit(f"  ERROR: {label} contains non-metal HETATM {sorted(bad_het)}. "
-                 f"Place the diffusing ligand in <ligand> and strip extra heteroatoms from <receptor>")
+        sys.exit(
+            f"  ERROR: {label} contains non-metal HETATM {sorted(bad_het)}. "
+            f"Place the diffusing ligand in <ligand> and strip extra heteroatoms from <receptor>"
+        )
     if not prot and not metals:
         sys.exit(f"  ERROR: no ATOM records in {label}")
     stage_pdb = f"{stem}.pdb"
-    body = "".join(prot) + ("TER\n" if prot else "") + "".join(f"{m}TER\n" for m in metals) + "END\n"
+    body = (
+        "".join(prot)
+        + ("TER\n" if prot else "")
+        + "".join(f"{m}TER\n" for m in metals)
+        + "END\n"
+    )
     with open(os.path.join(W, stage_pdb), "w") as fh:
         fh.write(body)
     print(f"  {stem}: {len(prot)} protein atoms, {len(metals)} metal atoms")
-    _leap(W, f"tleap_{stem}.in",
-          "source leaprc.protein.ff14SB\nsource leaprc.water.tip3p\n"
-          "loadAmberParams frcmod.ions234lm_126_tip3p\n"
-          f"mol = loadpdb {stage_pdb}\ncheck mol\n"
-          f"saveamberparm mol {stem}.prmtop {stem}.rst7\n"
-          f"savepdb mol {stem}_leap.pdb\nquit\n", f"{stem}.prmtop")
+    _leap(
+        W,
+        f"tleap_{stem}.in",
+        "source leaprc.protein.ff14SB\nsource leaprc.water.tip3p\n"
+        "loadAmberParams frcmod.ions234lm_126_tip3p\n"
+        f"mol = loadpdb {stage_pdb}\ncheck mol\n"
+        f"saveamberparm mol {stem}.prmtop {stem}.rst7\n"
+        f"savepdb mol {stem}_leap.pdb\nquit\n",
+        f"{stem}.prmtop",
+    )
     _pqr(W, stem, out_pqr)
 
 
@@ -468,35 +638,48 @@ def _parameterize_small_mol_pdb(lig_src, label, netq, W):
         sys.exit(f"  ERROR: RDKit cannot read {label}")
     has_h = any(a.GetAtomicNum() == 1 for a in m.GetAtoms())
     if not has_h:
-        sys.exit(f"  ERROR: ligand {resn_pdb} has no hydrogens in {label}. "
-                 f"Add explicit hydrogens to the ligand PDB before running PySTARC")
+        sys.exit(
+            f"  ERROR: ligand {resn_pdb} has no hydrogens in {label}. "
+            f"Add explicit hydrogens to the ligand PDB before running PySTARC"
+        )
     try:
         rdDetermineBonds.DetermineBondOrders(m, charge=netq)
     except Exception as e:
-        sys.exit(f"  ERROR: RDKit finds no bond orders for net charge {netq:+d} "
-                 f"({e}). Check ligand_net_charge and the hydrogens of {label}")
+        sys.exit(
+            f"  ERROR: RDKit finds no bond orders for net charge {netq:+d} "
+            f"({e}). Check ligand_net_charge and the hydrogens of {label}"
+        )
     for a in m.GetAtoms():
         a.SetNoImplicit(False)
         a.SetNumExplicitHs(0)
     try:
         Chem.SanitizeMol(m)
     except Exception as e:
-        sys.exit(f"  ERROR: ligand chemistry does not sanitize ({e}). "
-                 f"Check ligand_net_charge and the hydrogens of {label}")
+        sys.exit(
+            f"  ERROR: ligand chemistry does not sanitize ({e}). "
+            f"Check ligand_net_charge and the hydrogens of {label}"
+        )
     m = Chem.AddHs(m, addCoords=True)
     print(f"  ligand net charge {netq:+d} e, {m.GetNumAtoms()} atoms with hydrogens")
     Chem.MolToMolFile(m, os.path.join(W, "ligand_h.sdf"))
     _sh(W, "obabel ligand_h.sdf -o mol2 -O ligand_obabel.mol2", "ligand_obabel.mol2")
-    _sh(W, f"antechamber -i ligand_obabel.mol2 -fi mol2 -o ligand.mol2 -fo mol2 "
-           f"-c bcc -at gaff2 -nc {netq} -rn {resn_pdb[:3]} -pf y -j 4 -dr no",
-        "ligand.mol2")
+    _sh(
+        W,
+        f"antechamber -i ligand_obabel.mol2 -fi mol2 -o ligand.mol2 -fo mol2 "
+        f"-c bcc -at gaff2 -nc {netq} -rn {resn_pdb[:3]} -pf y -j 4 -dr no",
+        "ligand.mol2",
+    )
     _restore_names(W, m)
     _sh(W, "parmchk2 -i ligand.mol2 -f mol2 -o ligand.frcmod -s gaff2", "ligand.frcmod")
-    _leap(W, "tleap_ligand.in",
-          "source leaprc.gaff2\nloadamberparams ligand.frcmod\n"
-          "lig = loadmol2 ligand.mol2\ncheck lig\n"
-          "saveamberparm lig ligand.prmtop ligand.rst7\n"
-          "savepdb lig ligand_leap.pdb\nquit\n", "ligand.prmtop")
+    _leap(
+        W,
+        "tleap_ligand.in",
+        "source leaprc.gaff2\nloadamberparams ligand.frcmod\n"
+        "lig = loadmol2 ligand.mol2\ncheck lig\n"
+        "saveamberparm lig ligand.prmtop ligand.rst7\n"
+        "savepdb lig ligand_leap.pdb\nquit\n",
+        "ligand.prmtop",
+    )
     _pqr(W, "ligand", "ligand.pqr")
     for f in JUNK:
         p = os.path.join(W, f)
@@ -514,7 +697,9 @@ def _is_h_atom(aname, elem=""):
     el = (elem or "").strip().upper()
     if el == "H":
         return True
-    return aname.startswith("H") or (len(aname) > 1 and aname[0].isdigit() and aname[1] == "H")
+    return aname.startswith("H") or (
+        len(aname) > 1 and aname[0].isdigit() and aname[1] == "H"
+    )
 
 
 def _parse_pdb_heavy(path):
@@ -531,12 +716,16 @@ def _parse_pdb_heavy(path):
             if _is_h_atom(aname, el):
                 continue
             chains.add(l[21])
-            atoms.append({
-                "atom_name": aname,
-                "resname": l[17:20].strip(),
-                "resid": int(l[22:26]),
-                "xyz": np.array([float(l[30:38]), float(l[38:46]), float(l[46:54])]),
-            })
+            atoms.append(
+                {
+                    "atom_name": aname,
+                    "resname": l[17:20].strip(),
+                    "resid": int(l[22:26]),
+                    "xyz": np.array(
+                        [float(l[30:38]), float(l[38:46]), float(l[46:54])]
+                    ),
+                }
+            )
     return atoms, sorted(chains)
 
 
@@ -545,7 +734,14 @@ def _seq_residues(atoms):
     for a in atoms:
         if cur != a["resid"]:
             cur = a["resid"]
-            out.append({"seq_pos": len(out), "resname": a["resname"], "resid_native": cur, "atoms": []})
+            out.append(
+                {
+                    "seq_pos": len(out),
+                    "resname": a["resname"],
+                    "resid_native": cur,
+                    "atoms": [],
+                }
+            )
         out[-1]["atoms"].append(a)
     return out
 
@@ -556,7 +752,12 @@ def _center_pqr_copy(src, dst):
     hits = [i for i, l in enumerate(lines) if l.startswith("ATOM") and len(l) >= 54]
     if not hits:
         sys.exit(f"  ERROR: no fixed-column ATOM records in {src}")
-    xyz = np.array([[float(lines[i][30:38]), float(lines[i][38:46]), float(lines[i][46:54])] for i in hits])
+    xyz = np.array(
+        [
+            [float(lines[i][30:38]), float(lines[i][38:46]), float(lines[i][46:54])]
+            for i in hits
+        ]
+    )
     shift = xyz.mean(axis=0)
     for k, i in enumerate(hits):
         v = xyz[k] - shift
@@ -569,7 +770,9 @@ def _check_net_charge(q_sum, netq, label):
     if not isinstance(netq, int):
         sys.exit(f"  ERROR: ligand_net_charge must be an integer, got {netq!r}")
     if abs(float(q_sum) - int(netq)) > 0.05:
-        sys.exit(f"  ERROR: ligand_net_charge is {int(netq):+d} e, where {label} sums to {float(q_sum):+.2f} e")
+        sys.exit(
+            f"  ERROR: ligand_net_charge is {int(netq):+d} e, where {label} sums to {float(q_sum):+.2f} e"
+        )
 
 
 def _build_chain(cfg, rec_src, rec_ext, lig_src, _lig_ext, W):
@@ -584,7 +787,9 @@ def _build_chain(cfg, rec_src, rec_ext, lig_src, _lig_ext, W):
         _center_pqr_copy(rec_src, dst_pqr)
     else:
         raw_pqr_path = os.path.join(W, "_receptor_raw.pqr")
-        _parameterize_protein_pdb(rec_src, cfg["receptor"], W, "protein", "_receptor_raw.pqr")
+        _parameterize_protein_pdb(
+            rec_src, cfg["receptor"], W, "protein", "_receptor_raw.pqr"
+        )
         _center_pqr_copy(raw_pqr_path, dst_pqr)
         rec_rmap = resid_map(rec_src)
 
@@ -592,15 +797,22 @@ def _build_chain(cfg, rec_src, rec_ext, lig_src, _lig_ext, W):
     if not lig_pdb:
         sys.exit(f"  ERROR: no heavy ATOM records in {cfg['ligand']}")
     if len(lig_chains) > 1:
-        sys.exit(f"  ERROR: {cfg['ligand']} contains multiple chains {lig_chains}. Keep one chain.")
+        sys.exit(
+            f"  ERROR: {cfg['ligand']} contains multiple chains {lig_chains}. Keep one chain."
+        )
     lig_chain_id = lig_chains[0] if lig_chains and lig_chains[0].strip() else None
     lig_name = os.path.splitext(os.path.basename(lig_src))[0]
     lig_res_pdb = _seq_residues(lig_pdb)
 
     pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     coffdrop_dir = os.path.join(pkg_dir, "coffdrop_data")
-    chain = chain_from_pdb(lig_src, chain_id=lig_chain_id, name=lig_name,
-                           sidechains=True, coffdrop_dir=coffdrop_dir)
+    chain = chain_from_pdb(
+        lig_src,
+        chain_id=lig_chain_id,
+        name=lig_name,
+        sidechains=True,
+        coffdrop_dir=coffdrop_dir,
+    )
     _check_net_charge(sum(float(b.charge) for b in chain.atoms), netq, cfg["ligand"])
     unique_resids = []
     for bead in chain.atoms:
@@ -633,8 +845,12 @@ def _build_chain(cfg, rec_src, rec_ext, lig_src, _lig_ext, W):
         mrn = _resolve_res(b_rn)
         if mrn is None or b_an not in bead_map[mrn]:
             sys.exit(f"  ERROR: unmapped COFFDROP bead {bead.resname}")
-        coords = [a["xyz"] for an in bead_map[mrn][b_an]
-                  for a in res["atoms"] if a["atom_name"] == an]
+        coords = [
+            a["xyz"]
+            for an in bead_map[mrn][b_an]
+            for a in res["atoms"]
+            if a["atom_name"] == an
+        ]
         if not coords:
             coords = [a["xyz"] for a in res["atoms"] if a["atom_name"] == "CA"]
         if not coords:
@@ -663,7 +879,9 @@ def _build_chain(cfg, rec_src, rec_ext, lig_src, _lig_ext, W):
         for rt, lt in zip(_list(c["receptor"]), _list(c["ligand"])):
             rec_i = _match_atom(rec_pqr, rt, rec_rmap, "receptor")
             if not (isinstance(lt, tuple) and len(lt) == 3):
-                sys.exit('  ERROR: chain <ligand> needs <target resid="..." atom="..." resname="..."/> entries')
+                sys.exit(
+                    '  ERROR: chain <ligand> needs <target resid="..." atom="..." resname="..."/> entries'
+                )
             l_resid, l_aname, l_resn = lt
             sp_l = lig_sp.get(l_resid)
             cands = beads_by_sp.get(sp_l, []) if sp_l is not None else []
@@ -676,8 +894,12 @@ def _build_chain(cfg, rec_src, rec_ext, lig_src, _lig_ext, W):
             json.dump(rp_list, fh, indent=2)
 
     if len(rp_list) < int(c["n_needed"]):
-        sys.exit(f"  ERROR: {len(rp_list)} chain reaction pairs found (minimum {c['n_needed']}).")
-    print(f"  chain.json: {chain.n_atoms} beads; reaction_pairs.json: {len(rp_list)} pairs, n_needed {c['n_needed']}")
+        sys.exit(
+            f"  ERROR: {len(rp_list)} chain reaction pairs found (minimum {c['n_needed']})."
+        )
+    print(
+        f"  chain.json: {chain.n_atoms} beads; reaction_pairs.json: {len(rp_list)} pairs, n_needed {c['n_needed']}"
+    )
     return {"chain_pairs": rp_list, "n_beads": chain.n_atoms}
 
 
@@ -686,7 +908,9 @@ def _build_rigid(cfg, rec_src, rec_ext, lig_src, lig_ext, W):
     if rec_ext == ".pqr":
         _copy_clean_pqr(rec_src, os.path.join(W, "receptor.pqr"), cfg["receptor"])
     else:
-        _parameterize_protein_pdb(rec_src, cfg["receptor"], W, "protein", "receptor.pqr")
+        _parameterize_protein_pdb(
+            rec_src, cfg["receptor"], W, "protein", "receptor.pqr"
+        )
         rec_rmap = resid_map(rec_src)
 
     netq = int(cfg["ligand_net_charge"])
@@ -715,9 +939,18 @@ def _element(name, column="", resname=""):
 
 
 def read_pqr(path):
-    return [dict(name=a.name, el=_element(a.name, a.element, a.resname), resname=a.resname,
-                 resid=a.resid, xyz=np.array([a.x, a.y, a.z]), q=a.charge, r=a.radius)
-            for a in parse_pqr_records(path)]
+    return [
+        dict(
+            name=a.name,
+            el=_element(a.name, a.element, a.resname),
+            resname=a.resname,
+            resid=a.resid,
+            xyz=np.array([a.x, a.y, a.z]),
+            q=a.charge,
+            r=a.radius,
+        )
+        for a in parse_pqr_records(path)
+    ]
 
 
 def _name(x):
@@ -743,15 +976,21 @@ def check_criterion(c, model="rigid", has_chain_rp_json=False):
             sys.exit(f"  ERROR: mode 'contacts' needs explicit {missing} atom entries.")
         R, L = _list(c["receptor"]), _list(c["ligand"])
         if len(R) != len(L):
-            sys.exit(f"  ERROR: {len(R)} receptor targets against {len(L)} ligand entries.")
+            sys.exit(
+                f"  ERROR: {len(R)} receptor targets against {len(L)} ligand entries."
+            )
         if model != "chain" and not pair_count_ok(len(R), c["n_needed"]):
-            sys.exit(f"  ERROR: {len(R)} pairs with n_needed {c['n_needed']} are not allowed. Choose one pair with "
-                     "n_needed 1, or an even number of pairs with n_needed half of that count.")
+            sys.exit(
+                f"  ERROR: {len(R)} pairs with n_needed {c['n_needed']} are not allowed. Choose one pair with "
+                "n_needed 1, or an even number of pairs with n_needed half of that count."
+            )
     elif model == "chain":
         sys.exit("  ERROR: model 'chain' requires criterion mode 'contacts'.")
     else:
         if not isinstance(c.get("n_needed"), int) or c["n_needed"] != 0:
-            sys.exit("  ERROR: mode 'centroid' requires integer n_needed 0 (ignored, rxns.xml writes 1).")
+            sys.exit(
+                "  ERROR: mode 'centroid' requires integer n_needed 0 (ignored, rxns.xml writes 1)."
+            )
     return mode
 
 
@@ -773,14 +1012,32 @@ def resid_map(pdb_path):
 
 def _match_atom(atoms, target, rmap, side_label):
     if not (isinstance(target, tuple) and len(target) == 3):
-        sys.exit(f'  ERROR: {side_label} needs <target resid="..." atom="..." resname="..."/> entries')
+        sys.exit(
+            f'  ERROR: {side_label} needs <target resid="..." atom="..." resname="..."/> entries'
+        )
     resid, aname, resname = target
     q_resid = rmap.get(resid, resid) if rmap else resid
-    i = next((k for k, a in enumerate(atoms)
-              if a["resid"] == q_resid and a["name"] == aname and _resname_match(a["resname"], resname)), None)
+    i = next(
+        (
+            k
+            for k, a in enumerate(atoms)
+            if a["resid"] == q_resid
+            and a["name"] == aname
+            and _resname_match(a["resname"], resname)
+        ),
+        None,
+    )
     if i is None and rmap:
-        i = next((k for k, a in enumerate(atoms)
-                  if a["resid"] == resid and a["name"] == aname and _resname_match(a["resname"], resname)), None)
+        i = next(
+            (
+                k
+                for k, a in enumerate(atoms)
+                if a["resid"] == resid
+                and a["name"] == aname
+                and _resname_match(a["resname"], resname)
+            ),
+            None,
+        )
     if i is None:
         sys.exit(f"  ERROR: no {resname}{resid} {aname} in the {side_label}")
     return i
@@ -792,7 +1049,9 @@ def ligand_atom(lig, target, lig_rmap=None):
     name = _name(target)
     js = [k for k, b in enumerate(lig) if b["name"] == name]
     if len(js) != 1:
-        sys.exit(f"  ERROR: {'no' if not js else 'more than one'} ligand atom {name} in ligand.pqr")
+        sys.exit(
+            f"  ERROR: {'no' if not js else 'more than one'} ligand atom {name} in ligand.pqr"
+        )
     return js[0]
 
 
@@ -819,7 +1078,8 @@ def write_rxns(path, pairs, n_needed):
     body = "".join(
         f"        <pair>\n          <atoms> {i + 1} {j + 1} </atoms>\n"
         f"          <distance> {float(cut)!s} </distance>\n        </pair>\n"
-        for i, j, cut, _d in pairs)
+        for i, j, cut, _d in pairs
+    )
     with open(path, "w") as fh:
         fh.write(
             "<top>\n  <first_state> start </first_state>\n  <reactions>\n    <reaction>\n"
@@ -836,19 +1096,31 @@ def _md5(path):
         return hashlib.md5(fh.read()).hexdigest()
 
 
-TOP_LEVEL = ({"model", "criterion", "work_dir", "bd_work_dir",
-              "source_dir", "chain_cfg", "n_gpus", "resolve_paths_in_w"}
-             | set(BD_PARAMS))
+TOP_LEVEL = {
+    "model",
+    "criterion",
+    "work_dir",
+    "bd_work_dir",
+    "source_dir",
+    "chain_cfg",
+    "n_gpus",
+    "resolve_paths_in_w",
+} | set(BD_PARAMS)
 
 
 def _check(choice, table, given, what, ignore=frozenset()):
     if choice not in table:
-        sys.exit(f"{what} must be one of {sorted(table)}, got {choice!r}\n"
-                 + "\n".join(f"    {k:<14}{v['note']}, needs {', '.join(v['need'])}"
-                              for k, v in table.items()))
+        sys.exit(
+            f"{what} must be one of {sorted(table)}, got {choice!r}\n"
+            + "\n".join(
+                f"    {k:<14}{v['note']}, needs {', '.join(v['need'])}"
+                for k, v in table.items()
+            )
+        )
     spec = table[choice]
-    missing = [k for k in spec["need"]
-               if given.get(k) is None or given.get(k) in ("", [], ())]
+    missing = [
+        k for k in spec["need"] if given.get(k) is None or given.get(k) in ("", [], ())
+    ]
     if missing:
         sys.exit(f"{what} {choice!r} needs {missing}, found blank or absent")
     extra = set(given) - set(spec["need"]) - set(spec["opt"]) - {"mode"} - ignore
@@ -861,7 +1133,9 @@ def write_chain_input(path, cfg, W):
     use_abs = bool(cfg.get("resolve_paths_in_w"))
     rec_pqr = os.path.join(W, "receptor.pqr") if use_abs else "receptor.pqr"
     chain_json = os.path.join(W, "chain.json") if use_abs else "chain.json"
-    rp_json = os.path.join(W, "reaction_pairs.json") if use_abs else "reaction_pairs.json"
+    rp_json = (
+        os.path.join(W, "reaction_pairs.json") if use_abs else "reaction_pairs.json"
+    )
     sdir = cfg.get("source_dir", W)
 
     def _grid_path(raw, default_name):
@@ -874,24 +1148,32 @@ def write_chain_input(path, cfg, W):
     tg_dx = _grid_path(cc.get("target_grid_dx", ""), "receptor1.dx")
     bn_dx = _grid_path(cc.get("born_grid_dx", ""), "receptor0_born.dx")
     auto_diff = str(cc.get("auto_diffusion", "true"))
-    diff_xml = "" if auto_diff.lower() in ("true", "yes", "1") else (
-        f"\n    <D_trans>{cc.get('d_trans', '0.015')}</D_trans>"
-        f"\n    <D_rot>{cc.get('d_rot', '0.00005')}</D_rot>"
+    diff_xml = (
+        ""
+        if auto_diff.lower() in ("true", "yes", "1")
+        else (
+            f"\n    <D_trans>{cc.get('d_trans', '0.015')}</D_trans>"
+            f"\n    <D_rot>{cc.get('d_rot', '0.00005')}</D_rot>"
+        )
     )
     en_cut = str(cc.get("elastic_network_cutoff", "")).strip()
     en_k = str(cc.get("elastic_network_k", "")).strip()
     en_xml = (
-        f'\n    <elastic_network_cutoff>{en_cut}</elastic_network_cutoff>'
-        f'\n    <elastic_network_k>{en_k}</elastic_network_k>'
-        if en_cut or en_k else ""
+        f"\n    <elastic_network_cutoff>{en_cut}</elastic_network_cutoff>"
+        f"\n    <elastic_network_k>{en_k}</elastic_network_k>"
+        if en_cut or en_k
+        else ""
     )
-    debye_line = (f"  <debye_length>{cfg['debye_length']}</debye_length>\n"
-                  if cfg.get("debye_length") not in (None, "") else "")
+    debye_line = (
+        f"  <debye_length>{cfg['debye_length']}</debye_length>\n"
+        if cfg.get("debye_length") not in (None, "")
+        else ""
+    )
     bd_wdir = cfg.get("bd_work_dir", "bd_sims")
     txt = (
         '<?xml version="1.0"?>\n<pystarc>\n'
-        f'  <receptor_pqr>{rec_pqr}</receptor_pqr>\n'
-        f'{debye_line}'
+        f"  <receptor_pqr>{rec_pqr}</receptor_pqr>\n"
+        f"{debye_line}"
         f'  <ion_concentration>{cfg.get("ion_concentration", "0.15")}</ion_concentration>\n'
         f'  <ion_radius_pos>{cfg.get("ion_radius_pos", "0.95")}</ion_radius_pos>\n'
         f'  <ion_radius_neg>{cfg.get("ion_radius_neg", "1.81")}</ion_radius_neg>\n'
@@ -901,6 +1183,8 @@ def write_chain_input(path, cfg, W):
         f'  <apbs_cglen>{cfg.get("apbs_cglen", "0")}</apbs_cglen>\n'
         f'  <apbs_fglen>{cfg["apbs_fglen"]}</apbs_fglen>\n'
         f'  <apbs_dime>{cfg["apbs_dime"]}</apbs_dime>\n'
+        f'  <apbs_coarse_dime>{cfg.get("apbs_coarse_dime", "0")}</apbs_coarse_dime>\n'
+        f'  <apbs_fine_dime>{cfg.get("apbs_fine_dime", "0")}</apbs_fine_dime>\n'
         f'  <r_hydro_rec>{cfg.get("r_hydro_rec", "0")}</r_hydro_rec>\n'
         f'  <bd_milestone_radius>{cfg["bd_milestone_radius"]}</bd_milestone_radius>\n'
         f'  <n_trajectories>{cfg["n_trajectories"]}</n_trajectories>\n'
@@ -908,7 +1192,7 @@ def write_chain_input(path, cfg, W):
         f'  <dt>{cfg["dt"]}</dt>\n'
         f'  <temperature>{cfg["temperature"]}</temperature>\n'
         f'  <seed>{cfg["seed"]}</seed>\n'
-        f'  <work_dir>{bd_wdir}</work_dir>\n'
+        f"  <work_dir>{bd_wdir}</work_dir>\n"
         f'  <gpu>{cfg.get("gpu", "false")}</gpu>\n'
         f'  <hydrodynamic_interactions>{cfg.get("hydrodynamic_interactions", "true")}</hydrodynamic_interactions>\n'
         f'  <desolvation_alpha>{cfg["desolvation_alpha"]}</desolvation_alpha>\n'
@@ -916,27 +1200,27 @@ def write_chain_input(path, cfg, W):
         f'  <convergence_interval>{cfg["convergence_interval"]}</convergence_interval>\n'
         f'  <convergence_tol>{cfg["convergence_tol"]}</convergence_tol>\n'
         f'  <checkpoint_interval>{cfg.get("checkpoint_interval", "0")}</checkpoint_interval>\n'
-        '  <outputs>\n'
+        "  <outputs>\n"
         f'    <save_interval>{cfg["save_interval"]}</save_interval>\n'
         f'    <full_paths>{cfg.get("full_paths", "true")}</full_paths>\n'
         f'    <energetics>{cfg.get("energetics", "true")}</energetics>\n'
-        '  </outputs>\n'
-        '  <chain>\n'
-        f'    <chain_json>{chain_json}</chain_json>\n'
-        f'    <reaction_pairs_json>{rp_json}</reaction_pairs_json>\n'
-        f'    <target_grid_dx>{tg_dx}</target_grid_dx>\n'
-        f'    <born_grid_dx>{bn_dx}</born_grid_dx>\n'
+        "  </outputs>\n"
+        "  <chain>\n"
+        f"    <chain_json>{chain_json}</chain_json>\n"
+        f"    <reaction_pairs_json>{rp_json}</reaction_pairs_json>\n"
+        f"    <target_grid_dx>{tg_dx}</target_grid_dx>\n"
+        f"    <born_grid_dx>{bn_dx}</born_grid_dx>\n"
         f'    <r_escape>{cfg.get("r_escape", "0")}</r_escape>\n'
         f'    <reaction_n_needed>{cfg["criterion"]["n_needed"]}</reaction_n_needed>\n'
-        f'    <auto_diffusion>{auto_diff}</auto_diffusion>{diff_xml}\n'
+        f"    <auto_diffusion>{auto_diff}</auto_diffusion>{diff_xml}\n"
         f'    <use_soft_repulsion>{cfg.get("soft_repulsion", "true")}</use_soft_repulsion>\n'
         f'    <soft_repulsion_eps>{cc.get("soft_repulsion_eps", "1.0")}</soft_repulsion_eps>\n'
         f'    <n_workers>{cfg.get("n_threads", "1")}</n_workers>\n'
         f'    <dt_chain>{cc.get("dt_chain", "0.05")}</dt_chain>\n'
         f'    <chain_steps_per_outer>{cc.get("chain_steps_per_outer", "4")}</chain_steps_per_outer>\n'
         f'    <n_equilibration_steps>{cc.get("n_equilibration_steps", "0")}</n_equilibration_steps>{en_xml}\n'
-        '  </chain>\n'
-        '</pystarc>\n'
+        "  </chain>\n"
+        "</pystarc>\n"
     )
     with open(path, "w") as fh:
         fh.write(txt)
@@ -947,7 +1231,9 @@ def build(**cfg):
     _check(model, MODELS, cfg, "model", ignore=TOP_LEVEL)
     c = cfg.get("criterion", {})
     cc = cfg.get("chain_cfg", {})
-    mode = check_criterion(c, model, has_chain_rp_json=bool(cc.get("reaction_pairs_json")))
+    mode = check_criterion(
+        c, model, has_chain_rp_json=bool(cc.get("reaction_pairs_json"))
+    )
     if model != "chain" and cc:
         sys.exit(f"  ERROR: <chain> settings {sorted(cc)} apply to model 'chain'.")
     W = cfg["work_dir"]
@@ -959,7 +1245,9 @@ def build(**cfg):
             sys.exit(f"  ERROR: no {raw}")
     rec_ext, lig_ext = _ext(cfg["receptor"]), _ext(cfg["ligand"])
     if rec_ext != lig_ext:
-        sys.exit(f"  ERROR: <receptor> ({rec_ext}) and <ligand> ({lig_ext}) must both be .pdb or both be .pqr")
+        sys.exit(
+            f"  ERROR: <receptor> ({rec_ext}) and <ligand> ({lig_ext}) must both be .pdb or both be .pqr"
+        )
 
     if model == "chain":
         extra = _build_chain(cfg, rec_src, rec_ext, lig_src, lig_ext, W)
@@ -972,8 +1260,18 @@ def build(**cfg):
             n_beads=extra["n_beads"],
             n_needed=c["n_needed"],
             pairs=extra["chain_pairs"],
-            code=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            md5={f: _md5(os.path.join(W, f)) for f in ("receptor.pqr", "chain.json", "reaction_pairs.json", "input.xml")},
+            code=os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            ),
+            md5={
+                f: _md5(os.path.join(W, f))
+                for f in (
+                    "receptor.pqr",
+                    "chain.json",
+                    "reaction_pairs.json",
+                    "input.xml",
+                )
+            },
         )
         with open(os.path.join(W, RECORD), "w") as fh:
             json.dump(record, fh, indent=1, default=float)
@@ -983,9 +1281,13 @@ def build(**cfg):
     extra = _build_rigid(cfg, rec_src, rec_ext, lig_src, lig_ext, W)
     rec = read_pqr(os.path.join(W, "receptor.pqr"))
     lig = read_pqr(os.path.join(W, "ligand.pqr"))
-    record = dict(mode=mode, model=model, receptor=cfg["receptor"], ligand=cfg["ligand"])
+    record = dict(
+        mode=mode, model=model, receptor=cfg["receptor"], ligand=cfg["ligand"]
+    )
     if mode == "contacts":
-        pairs = contacts_listed(rec, lig, c, extra.get("rec_rmap"), extra.get("lig_rmap"))
+        pairs = contacts_listed(
+            rec, lig, c, extra.get("rec_rmap"), extra.get("lig_rmap")
+        )
         n_needed = c["n_needed"]
         if not pair_count_ok(len(pairs), n_needed):
             sys.exit(f"  ERROR: {len(pairs)} pairs were found for n_needed {n_needed}.")
@@ -996,8 +1298,13 @@ def build(**cfg):
     record.update(
         pairs=[[int(i) + 1, int(j) + 1, float(cut)] for i, j, cut, _d in pairs],
         n_needed=n_needed,
-        code=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        md5={f: _md5(os.path.join(W, f)) for f in ("receptor.pqr", "ligand.pqr", "rxns.xml", "input.xml")},
+        code=os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        ),
+        md5={
+            f: _md5(os.path.join(W, f))
+            for f in ("receptor.pqr", "ligand.pqr", "rxns.xml", "input.xml")
+        },
     )
     with open(os.path.join(W, RECORD), "w") as fh:
         json.dump(record, fh, indent=1, default=float)
@@ -1007,7 +1314,9 @@ def build(**cfg):
 
 
 def find_templates():
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates")
+    return os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates"
+    )
 
 
 def write_input(path, cfg):
@@ -1029,7 +1338,9 @@ def write_input(path, cfg):
         txt = re.sub(rf"<{k}>\s*</{k}>", f"<{k}>{v}</{k}>", txt)
     with open(path, "w") as fh:
         fh.write(txt)
-    left = [t for t in re.findall(r"<([a-z0-9_]+)>\s*</\1>", txt) if t != "debye_length"]
+    left = [
+        t for t in re.findall(r"<([a-z0-9_]+)>\s*</\1>", txt) if t != "debye_length"
+    ]
     if left:
         sys.exit(f"  ERROR: input.xml still has empty tags {left}")
 
@@ -1040,10 +1351,20 @@ def build_from_config(config_path, work_dir_override=None):
         raise FileNotFoundError(f"Configuration file not found: {cpath}")
     cfg = read_config(cpath)
     source_dir = os.path.dirname(cpath)
-    raw_bd = work_dir_override if work_dir_override is not None else cfg.get("bd_work_dir", "bd_sims")
-    W = str(raw_bd) if os.path.isabs(str(raw_bd)) else os.path.join(source_dir, str(raw_bd))
+    raw_bd = (
+        work_dir_override
+        if work_dir_override is not None
+        else cfg.get("bd_work_dir", "bd_sims")
+    )
+    W = (
+        str(raw_bd)
+        if os.path.isabs(str(raw_bd))
+        else os.path.join(source_dir, str(raw_bd))
+    )
     os.makedirs(W, exist_ok=True)
-    run_cfg = dict(cfg, source_dir=source_dir, work_dir=W, bd_work_dir=W, resolve_paths_in_w=True)
+    run_cfg = dict(
+        cfg, source_dir=source_dir, work_dir=W, bd_work_dir=W, resolve_paths_in_w=True
+    )
     build(**run_cfg)
     return os.path.join(W, "input.xml"), cfg
 
@@ -1059,22 +1380,27 @@ def geometry_check(rec, lig, cfg):
         pad = max(a["r"] for a in rec) + float(cfg["srad"])
         fg = max((float(np.max(R.max(0) - R.min(0))) + 2 * pad) * 1.05, 4 * pad * 1.025)
     ok = b + lmax < fg / 2
-    print(f"  rmax={rmax:.1f} lmax={lmax:.1f} b={b:.0f} fglen={fg:.0f}  "
-          f"{'OK' if ok else 'WARNING, b-surface outside the grid'}")
+    print(
+        f"  rmax={rmax:.1f} lmax={lmax:.1f} b={b:.0f} fglen={fg:.0f}  "
+        f"{'OK' if ok else 'WARNING, b-surface outside the grid'}"
+    )
 
 
 def _el(sec_name, t, v, ind):
     if v in (None, "", [], ()):
         return f"{ind}<{t}></{t}>"
     if sec_name == "criterion" and t == "receptor":
-        rows = "".join(f'{ind}  <target resid="{r}" atom="{a}" resname="{n}"/>\n'
-                       for r, a, n in v)
+        rows = "".join(
+            f'{ind}  <target resid="{r}" atom="{a}" resname="{n}"/>\n' for r, a, n in v
+        )
         return f"{ind}<{t}>\n{rows}{ind}</{t}>"
     if sec_name == "criterion" and t == "ligand" and isinstance(v, (list, tuple)):
         rows = "".join(
-            f'{ind}  <target resid="{x[0]}" atom="{x[1]}" resname="{x[2]}"/>\n'
-            if isinstance(x, tuple) and len(x) == 3
-            else f'{ind}  <atom name="{_name(x)}"/>\n'
+            (
+                f'{ind}  <target resid="{x[0]}" atom="{x[1]}" resname="{x[2]}"/>\n'
+                if isinstance(x, tuple) and len(x) == 3
+                else f'{ind}  <atom name="{_name(x)}"/>\n'
+            )
             for x in v
         )
         return f"{ind}<{t}>\n{rows}{ind}</{t}>"
@@ -1151,4 +1477,6 @@ if __name__ == "__main__":
     elif len(args) == 1 and os.path.exists(args[0]):
         build_from_config(args[0])
     else:
-        sys.exit("Usage: python -m pystarc.pipeline.build_inputs <config.xml> | --template")
+        sys.exit(
+            "Usage: python -m pystarc.pipeline.build_inputs <config.xml> | --template"
+        )

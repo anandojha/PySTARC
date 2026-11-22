@@ -149,7 +149,9 @@ def test_atom_near_a_corner_of_the_coarsest_box_counts():
     f_rec = -ALPHA * 0.8**2 * A_COARSE
     for n in range(3):
         assert np.allclose(F[n], -R[n] @ f_rec, rtol=1e-12, atol=1e-15)
-        assert np.allclose(T[n], -R[n] @ np.cross(corners[n], f_rec), rtol=1e-12, atol=1e-15)
+        assert np.allclose(
+            T[n], -R[n] @ np.cross(corners[n], f_rec), rtol=1e-12, atol=1e-15
+        )
 
 
 def test_a_finer_grid_that_is_the_larger_box_counts():
@@ -174,7 +176,9 @@ def test_reach_stops_at_the_nonzero_nodes_and_drops_nothing():
     grids = [_grid(0.5, cut), _grid(0.25, cut)]
     eng = _engine(grids)
     far = max(
-        np.linalg.norm(np.argwhere(g.data != 0) * g.delta[0, 0] + g.origin, axis=1).max()
+        np.linalg.norm(
+            np.argwhere(g.data != 0) * g.delta[0, 0] + g.origin, axis=1
+        ).max()
         + 2.5 * g.delta[0, 0]
         for g in grids
     )

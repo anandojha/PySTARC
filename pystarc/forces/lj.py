@@ -296,7 +296,9 @@ class LJForceEngine:
                 ri = r + rad_self
                 c = self.hp.factor * area
                 f_s = f_s + np.where((ri >= self.hp.a) & (ri <= self.hp.b), c, 0.0)
-                e = np.where(ri > self.hp.b, 0.0, c * (self.hp.b - np.maximum(ri, self.hp.a)))
+                e = np.where(
+                    ri > self.hp.b, 0.0, c * (self.hp.b - np.maximum(ri, self.hp.a))
+                )
                 E += float(np.sum(np.where(on, e, 0.0)))
             w += np.where(on, f_s / np.where(on, r, 1.0), 0.0)
         F1 = -w[:, :, None] * d

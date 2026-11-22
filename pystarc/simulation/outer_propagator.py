@@ -343,7 +343,7 @@ class OuterPropagator:
                 D0 = self._D_parallel(r)
                 survives, new_x, delta_t = step_near_absorbing_surface(rng, x, -Fr0, D0)
                 # Accumulate the elapsed time from the Lamm-Schulten step
-                # (audit fix 2026-05-21). This mirrors the b-sphere branch
+                # (audit fix 2026-05-21). This matches the b-sphere branch
                 # above. Without it, trajectories near the q-sphere
                 # under-accumulate time and the outer-sphere rotation is
                 # under-applied. In the not-survives branch do_when_near_q

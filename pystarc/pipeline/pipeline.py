@@ -90,9 +90,16 @@ def _run_key(cfg, W: Path) -> str:
     import hashlib
 
     skip = {
-        "n_trajectories", "seed", "max_steps", "work_dir", "n_threads",
-        "gpu_force_batch", "checkpoint_interval", "convergence_interval",
-        "confidence_interval", "outputs",
+        "n_trajectories",
+        "seed",
+        "max_steps",
+        "work_dir",
+        "n_threads",
+        "gpu_force_batch",
+        "checkpoint_interval",
+        "convergence_interval",
+        "confidence_interval",
+        "outputs",
     }
     items = sorted((k, repr(v)) for k, v in vars(cfg).items() if k not in skip)
     h = hashlib.sha256(repr(items).encode())
@@ -106,6 +113,7 @@ def _run_key(cfg, W: Path) -> str:
             h.update(p.name.encode() + m.digest())
     return h.hexdigest()
 
+
 def _checklist(cfg, params, geom, k_b, gpu_engine, cpu_engine, result):
     """Checklist lines built from the settings and the engines the run used."""
     e = gpu_engine
@@ -114,9 +122,11 @@ def _checklist(cfg, params, geom, k_b, gpu_engine, cpu_engine, result):
     lines = [
         "Checklist",
         f"  Temperature = {cfg.temperature:.2f} K  (kT = {cfg.temperature / 298.15:.6f})",
-        f"  k_b Romberg integral           (k_b={k_b:.4f} Å³/ps)"
-        if e is not None
-        else f"  k_b of the outer propagator    (k_db={getattr(result, 'k_db', 0.0):.4f} Å³/ps)",
+        (
+            f"  k_b Romberg integral           (k_b={k_b:.4f} Å³/ps)"
+            if e is not None
+            else f"  k_b of the outer propagator    (k_db={getattr(result, 'k_db', 0.0):.4f} Å³/ps)"
+        ),
         f"  HI in k_b integral             ({'enabled' if params.hydrodynamic_interactions else 'disabled'})",
         f"  Hydro radii  receptor {geom.receptor.hydrodynamic_r:.4f} Å ({src(cfg.r_hydro_rec)}), "
         f"ligand {geom.ligand.hydrodynamic_r:.4f} Å ({src(cfg.r_hydro_lig)})",
@@ -128,19 +138,26 @@ def _checklist(cfg, params, geom, k_b, gpu_engine, cpu_engine, result):
         lines.append(
             "  Multipole far-field (monopole + dipole + quadrupole)"
             if e._has_yukawa and e._multipole is not None
-            else "  Monopole far-field" if e._has_yukawa
-            else "  No far-field force beyond the grids"
+            else (
+                "  Monopole far-field"
+                if e._has_yukawa
+                else "  No far-field force beyond the grids"
+            )
         )
         born1 = alpha != 0 and len(e._born_grids_gpu) > 0
         born2 = born1 and bool(e._lig_born_grids_gpu)
         if params._soft_repulsion:
-            lines.append("  Soft repulsion kT (0.9345 (r_i + r_j) / r)^12 (replaces the overlap check)")
+            lines.append(
+                "  Soft repulsion kT (0.9345 (r_i + r_j) / r)^12 (replaces the overlap check)"
+            )
         elif params._overlap_check:
             lines.append("  Overlap check (overlapping moves are rejected)")
         else:
             lines.append("  Overlap check disabled")
         lines.append(
-            "  WCA repulsive forces (LJ from PQR radii)" if e._use_lj else "  LJ forces disabled"
+            "  WCA repulsive forces (LJ from PQR radii)"
+            if e._use_lj
+            else "  LJ forces disabled"
         )
     else:
         lines.append("  APBS grids finest first, no far-field force beyond the grids")
@@ -157,9 +174,13 @@ def _checklist(cfg, params, geom, k_b, gpu_engine, cpu_engine, result):
             else "  LJ forces disabled"
         )
     lines.append(
-        f"  Born both directions            (alpha={alpha:.8f})" if born2
-        else f"  Born on the ligand atoms only   (alpha={alpha:.8f})" if born1
-        else "  Born desolvation off"
+        f"  Born both directions            (alpha={alpha:.8f})"
+        if born2
+        else (
+            f"  Born on the ligand atoms only   (alpha={alpha:.8f})"
+            if born1
+            else "  Born desolvation off"
+        )
     )
     lines.append("  Variable dt (pair_dt + force_dt + edge_dt)")
     lines.append(
@@ -175,9 +196,11 @@ def _checklist(cfg, params, geom, k_b, gpu_engine, cpu_engine, result):
     lines += [
         "  Outer propagator: return_prob at r_escape",
         "  Diffusional rotation on return from r_escape",
-        "  Brownian bridge at reaction surface"
-        if params.use_brownian_bridge
-        else "  Brownian bridge off (reaction test at the end of each step)",
+        (
+            "  Brownian bridge at reaction surface"
+            if params.use_brownian_bridge
+            else "  Brownian bridge off (reaction test at the end of each step)"
+        ),
         "  Position refresh after return (prevents r-overshoot)",
     ]
     return lines
@@ -194,7 +217,9 @@ def run(cfg: PySTARCConfig):
     print(f"  Ligand resname: {cfg.ligand_resname}")
     print(f"  Work dir      : {W}")
     print(f"  b-surface     : {cfg.bd_milestone_radius:.1f} Å  (start sphere)")
-    print(f"  Reactions     : {cfg.rxns_xml.strip() or 'ghost_atoms ' + cfg.ghost_atoms.strip()}")
+    print(
+        f"  Reactions     : {cfg.rxns_xml.strip() or 'ghost_atoms ' + cfg.ghost_atoms.strip()}"
+    )
     _resc = (
         cfg.r_escape
         if getattr(cfg, "r_escape", 0.0) > 0
@@ -243,7 +268,10 @@ def run(cfg: PySTARCConfig):
         # Copy the files into the work directory so that APBS can read them. A
         # link left there is replaced by a private copy, so the centring below
         # never writes into the file it points to.
-        for src, dst in ((receptor_pqr, W / "receptor.pqr"), (ligand_pqr, W / "ligand.pqr")):
+        for src, dst in (
+            (receptor_pqr, W / "receptor.pqr"),
+            (ligand_pqr, W / "ligand.pqr"),
+        ):
             if dst.is_symlink() or src.resolve() != dst.resolve():
                 data = src.read_bytes()
                 dst.unlink(missing_ok=True)
@@ -368,7 +396,10 @@ def run(cfg: PySTARCConfig):
         n_rec = len(mol_rec.atoms)
         lj_kw = dict(
             lj_params=LJParams(
-                [LJAtomType(str(i), eps if a > 0 else 0.0, a) for i, a in enumerate(radii)],
+                [
+                    LJAtomType(str(i), eps if a > 0 else 0.0, a)
+                    for i, a in enumerate(radii)
+                ],
                 use_wca=True,
             ),
             lj_type_ids=(list(range(n_rec)), list(range(n_rec, len(radii)))),
@@ -379,7 +410,7 @@ def run(cfg: PySTARCConfig):
         elec_mol1=rec_e,
         elec_mol2=lig_e,
         born_mol1=rec_b,
-        born_mol2=lig_b,
+        born_mol2=lig_b if cfg.enable_born2_torque else [],
         eff_charges_mol1=load_effective_charges(W, "receptor", cfg.debye_length),
         debye_length=cfg.debye_length,
         desolvation_alpha=cfg.desolvation_alpha,
@@ -449,7 +480,9 @@ def run(cfg: PySTARCConfig):
             raise ValueError(f"{cfg.rxns_xml} holds no reaction")
     if not _use_state_machine:
         if cfg.rxns_xml.strip():
-            _parse_rxns_xml_criteria(Path(cfg.rxns_xml.strip()).expanduser(), single=True)
+            _parse_rxns_xml_criteria(
+                Path(cfg.rxns_xml.strip()).expanduser(), single=True
+            )
         for stage_idx, stage_pairs in enumerate(rxn_stages):
             pairs = []
             for rp in stage_pairs:

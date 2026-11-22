@@ -36,5 +36,7 @@ def test_bridge_switch_reads_false_and_true(tmp_path):
     off = _input_with(tmp_path, "  <brownian_bridge>false</brownian_bridge>\n")
     assert parse(off).brownian_bridge is False
     on = off.with_name("input_bridge_on.xml")
-    on.write_text(off.read_text().replace(">false</brownian_bridge>", ">true</brownian_bridge>"))
+    on.write_text(
+        off.read_text().replace(">false</brownian_bridge>", ">true</brownian_bridge>")
+    )
     assert parse(on).brownian_bridge is True

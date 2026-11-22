@@ -504,17 +504,23 @@ def _step_kernels():
         "pose": k(
             "int64 j, raw float64 pos, raw float64 q",
             "raw float64 cen, raw float64 quat, raw float64 rot, float64 r",
-            _POSE_CODE, "pystarc_pose", **d,
+            _POSE_CODE,
+            "pystarc_pose",
+            **d,
         ),
         "pairs": k(
             "raw float64 rot, raw float64 cen, raw float64 lig, raw float64 rec, "
             "raw float64 cut, int64 npair, int64 need",
             "raw float64 gho, raw float64 dist, int64 nsat, bool hit",
-            _PAIRS_CODE, "pystarc_pairs", **d,
+            _PAIRS_CODE,
+            "pystarc_pairs",
+            **d,
         ),
         "escape": k(
-            "float64 r, bool hit, float64 r_esc", "bool esc, raw int32 cnt",
-            _ESCAPE_CODE, "pystarc_escape",
+            "float64 r, bool hit, float64 r_esc",
+            "bool esc, raw int32 cnt",
+            _ESCAPE_CODE,
+            "pystarc_escape",
         ),
         "dt": k(
             "float64 r, float64 r_outer, float64 c_pair, float64 D_t, float64 D_r1, "
@@ -522,7 +528,9 @@ def _step_kernels():
             "float64 debye2, float64 debye3, float64 alpha, float64 r_b, "
             "float64 r_esc, float64 D18",
             "float64 dt, bool outer",
-            _DT_CODE, "pystarc_dt", preamble=_STEP_DEVICE,
+            _DT_CODE,
+            "pystarc_dt",
+            preamble=_STEP_DEVICE,
         ),
         "surface": k(
             "float64 r, float64 dt0, raw float64 frc, raw float64 trq, "
@@ -530,7 +538,9 @@ def _step_kernels():
             "float64 rho, float64 extent, float64 D_t, float64 D_r1, "
             "float64 D_lig, float64 D_spin, float64 max_dt, float64 min_dt",
             "float64 dt",
-            _SURFACE_CODE, "pystarc_surface", **d,
+            _SURFACE_CODE,
+            "pystarc_surface",
+            **d,
         ),
         "hi": k(
             "float64 r, float64 dt, raw float64 cen, float64 D0, float64 dpre, "
@@ -538,7 +548,9 @@ def _step_kernels():
             "float64 c_ov, float64 c8S, float64 c6am2, float64 am2sq, "
             "float64 c3ov, float64 am2",
             "float64 D, raw float64 dvg",
-            _HI_CODE, "pystarc_hi", preamble=_STEP_DEVICE,
+            _HI_CODE,
+            "pystarc_hi",
+            preamble=_STEP_DEVICE,
         ),
         "move": k(
             "int64 j, float64 dt, float64 D, raw float64 cen, raw float64 frc, "
@@ -546,20 +558,25 @@ def _step_kernels():
             "raw float64 nr1, bool hi, bool tumble, float64 Dr1, float64 Dr2, "
             "float64 Dr1x2, float64 Dr2x2",
             "raw float64 pos, raw float64 q, raw float64 drift, float64 sig",
-            _MOVE_CODE, "pystarc_move", **d,
+            _MOVE_CODE,
+            "pystarc_move",
+            **d,
         ),
         "bridge": k(
             "int64 j, float64 D, float64 dt, raw float64 pos, raw float64 q, "
             "raw float64 lig, raw float64 rec, raw float64 cut, raw float64 gho0, "
             "raw float64 d0, raw float64 cen, int64 npair, float64 Dr1, float64 Dr2",
             "raw float64 d1, raw float64 pc, raw bool above",
-            _BRIDGE_CODE, "pystarc_bridge", **d,
+            _BRIDGE_CODE,
+            "pystarc_bridge",
+            **d,
         ),
         "fire": k(
             "raw float64 u, raw float64 pc, raw float64 d1, raw float64 cut, "
             "raw bool rev, bool reverted, int64 npair, int64 need",
             "raw bool fired, int64 total, int64 inside, bool hit",
-            _FIRE_CODE, "pystarc_fire",
+            _FIRE_CODE,
+            "pystarc_fire",
         ),
     }
 
@@ -642,7 +659,11 @@ class GPUBatchResult:
             )
             return (0.0, 1.0)
         # z = 1.96 at 0.95 as in convergence.json and the pooled results.
-        z = 1.96 if abs(confidence - 0.95) < 1e-9 else float(stats.norm.ppf(0.5 + confidence / 2.0))
+        z = (
+            1.96
+            if abs(confidence - 0.95) < 1e-9
+            else float(stats.norm.ppf(0.5 + confidence / 2.0))
+        )
         p = self.reaction_probability
         z2n = z**2 / n
         denom = 1.0 + z2n
@@ -776,7 +797,9 @@ class GPUBatchSimulator:
         # the first reaction's ReactionCriteria.
         if pathway_set.reactions:
             c0 = pathway_set.reactions[0].criteria
-            self._rxn_n_needed = needed_pairs(c0.n_needed, len(self._rxn_cutoffs), c0.name)
+            self._rxn_n_needed = needed_pairs(
+                c0.n_needed, len(self._rxn_cutoffs), c0.name
+            )
         else:
             self._rxn_n_needed = 1
         # Receptor ghost atom positions, which are fixed because the receptor
@@ -818,7 +841,9 @@ class GPUBatchSimulator:
                 "label each reaction for the state machine."
             )
         if any(getattr(rxn, "probability", 1.0) < 1.0 for rxn in pathway_set.reactions):
-            raise NotImplementedError("Reaction probabilities below 1 are not implemented on the GPU.")
+            raise NotImplementedError(
+                "Reaction probabilities below 1 are not implemented on the GPU."
+            )
         if _sm_any_labels and pathway_set.reactions:
             # Validate all-or-none labeling. If any reaction labels a source
             # state, every reaction must label state_before. An unlabeled
@@ -1074,8 +1099,12 @@ class GPUBatchSimulator:
 
         # k_b(b) and k_b(q_out) from the Romberg integrals out to b and to the
         # escape sphere; the return probability is their ratio.
-        self._k_b = 4.0 * math.pi / romberg_integrate(intgd_romberg, 0.0, 1.0 / b, tol=1e-8)
-        k_q = 4.0 * math.pi / romberg_integrate(intgd_romberg, 0.0, 1.0 / q_out, tol=1e-8)
+        self._k_b = (
+            4.0 * math.pi / romberg_integrate(intgd_romberg, 0.0, 1.0 / b, tol=1e-8)
+        )
+        k_q = (
+            4.0 * math.pi / romberg_integrate(intgd_romberg, 0.0, 1.0 / q_out, tol=1e-8)
+        )
         if not all(math.isfinite(k) and k > 0 for k in (self._k_b, k_q)):
             raise ValueError(
                 f"k_b = {self._k_b} and k_b(r_esc) = {k_q} must be finite and "
@@ -1277,16 +1306,28 @@ class GPUBatchSimulator:
         }
         _n_sm = len(self._sm_rxn_names) if self._sm_active else 0
         _like = {
-            "pos": pos, "q": q, "status": status, "n_steps": n_steps,
+            "pos": pos,
+            "q": q,
+            "status": status,
+            "n_steps": n_steps,
             "prev_r": _prev_r,
-            "start_pos": _start_pos, "start_q": _start_q, "min_dist": _min_dist,
-            "step_at_min": _step_at_min, "total_time": _total_time,
-            "n_returns": _n_returns, "bb_triggered": _bb_triggered,
-            "near_miss_pos": _nm_pos, "near_miss_q": _nm_q,
-            "rad_counts": _rad_counts, "rad_time": _rad_time,
-            "ang_counts": _ang_counts, "ang_time": _ang_time,
-            "ms_flux_out": _ms_flux_out, "ms_flux_in": _ms_flux_in,
-            "contact_counts": _contact_counts, "contact_time": _contact_time,
+            "start_pos": _start_pos,
+            "start_q": _start_q,
+            "min_dist": _min_dist,
+            "step_at_min": _step_at_min,
+            "total_time": _total_time,
+            "n_returns": _n_returns,
+            "bb_triggered": _bb_triggered,
+            "near_miss_pos": _nm_pos,
+            "near_miss_q": _nm_q,
+            "rad_counts": _rad_counts,
+            "rad_time": _rad_time,
+            "ang_counts": _ang_counts,
+            "ang_time": _ang_time,
+            "ms_flux_out": _ms_flux_out,
+            "ms_flux_in": _ms_flux_in,
+            "contact_counts": _contact_counts,
+            "contact_time": _contact_time,
             "trans_mat": _trans_mat,
             "sm_current_state": np.zeros(N if self._sm_active else 0, dtype=np.int32),
             "sm_rxn_fire_counts": np.zeros(_n_sm, dtype=np.int64),
@@ -1319,7 +1360,8 @@ class GPUBatchSimulator:
                     + "). Delete it to start this run fresh."
                 )
             _r = {
-                k: np.ascontiguousarray(ckpt[k], dtype=a.dtype) for k, a in _like.items()
+                k: np.ascontiguousarray(ckpt[k], dtype=a.dtype)
+                for k, a in _like.items()
             }
             pos, q = cp.asarray(_r["pos"]), cp.asarray(_r["q"])
             status, n_steps = cp.asarray(_r["status"]), cp.asarray(_r["n_steps"])
@@ -1554,7 +1596,9 @@ class GPUBatchSimulator:
         # holds at the end of a step (input key brownian_bridge).
         _use_bridge = bool(getattr(self.params, "use_brownian_bridge", True))
         if not _use_bridge:
-            print("  Brownian bridge off. Reactions are checked at the end of each step only.")
+            print(
+                "  Brownian bridge off. Reactions are checked at the end of each step only."
+            )
         if _use_soft:
             _use_overlap = False
         # With either excluded-volume model the time step has to resolve the
@@ -1621,9 +1665,11 @@ class GPUBatchSimulator:
         # the receptor (lever up to the receptor extent), so the surface limits
         # use the atom mobility D_t + D_r2 rho_max^2 + D_r1 min(r + rho_max, R)^2.
         _rho_max = float(cp.linalg.norm(self._mol2_pos0, axis=1).max())
-        _rec_extent = float(
-            np.linalg.norm(rec_pos_np[_rec_real], axis=1).max()
-        ) if np.any(_rec_real) else 0.0
+        _rec_extent = (
+            float(np.linalg.norm(rec_pos_np[_rec_real], axis=1).max())
+            if np.any(_rec_real)
+            else 0.0
+        )
         if _surface_dt:
             print(
                 "  Surface time step: sqrt(6 D dt) <= 0.7 × room and "
@@ -1899,12 +1945,8 @@ class GPUBatchSimulator:
             # Batch the force computation to limit GPU memory use.
             forces_gpu = cp.zeros((N_sr, 3), dtype=cp.float64)
             torques_gpu = cp.zeros((N_sr, 3), dtype=cp.float64)
-            _room_gpu = (
-                cp.full(N_sr, cp.inf, dtype=cp.float64) if _surface_dt else None
-            )
-            _stiff_gpu = (
-                cp.zeros(N_sr, dtype=cp.float64) if _soft is not None else None
-            )
+            _room_gpu = cp.full(N_sr, cp.inf, dtype=cp.float64) if _surface_dt else None
+            _stiff_gpu = cp.zeros(N_sr, dtype=cp.float64) if _soft is not None else None
             for _fb0 in range(0, N_sr, _force_batch):
                 _fb1 = min(_fb0 + _force_batch, N_sr)
                 _R_b = R_sr[_fb0:_fb1]
@@ -1978,10 +2020,10 @@ class GPUBatchSimulator:
             # mode. Reference BD engines refine the timestep so that the
             # diffusive step stays much smaller than the distance to the
             # reaction surface. The criterion is that 12σ should stay below the
-            # minimum reaction coordinate reachable from the current state,
+            # minimum reaction coordinate accessible from the current state,
             # which rearranges to dt ≤ rxn_coord² / (288 D). Trajectories that
-            # are already inside the surface, or that have no reachable
-            # reactions from their current state, use a large sentinel value so
+            # are already inside the surface, or that have no accessible
+            # reactions from their current state, assign a large sentinel value so
             # that this term does not constrain them.
             if (
                 self._sm_active
@@ -2000,13 +2042,13 @@ class GPUBatchSimulator:
                 _big = cp.asarray(1.0e30, dtype=cp.float64)
                 _rxn_coord_masked = cp.where(_sm_reachable, _rxn_coord_per_pair, _big)
                 _rxn_coord_per_traj = cp.min(_rxn_coord_masked, axis=1)  # (N_sr,)
-                # This refinement activates only when the current diffusive
+                # This refinement engages when the current diffusive
                 # width would approach the distance to the reaction surface,
                 # that is when 12σ > rxn_coord, matching the adaptive criterion
                 # of the reference BD engine. When the trigger fires, Δt is
                 # reduced toward rxn_coord²/(288 D_t) but never below the
                 # configured reaction-surface floor _min_core_rxn_dt, which is
-                # 0.05 ps in SEEKR2. Trajectories far from any reachable
+                # 0.05 ps in SEEKR2. Trajectories far from any accessible
                 # reaction surface are not slowed.
                 _sigma_now = cp.sqrt(2.0 * D_t * dt_arr)
                 _needs_refinement = 12.0 * _sigma_now > _rxn_coord_per_traj
@@ -2276,19 +2318,50 @@ class GPUBatchSimulator:
                 ((N_sr + 255) // 256,),
                 (256,),
                 (
-                    sr_idx, _cur_r, dt_arr, np.int32(N_sr), pos, q, status,
-                    np.int64(step), cp.asarray(_snapped_gids),
+                    sr_idx,
+                    _cur_r,
+                    dt_arr,
+                    np.int32(N_sr),
+                    pos,
+                    q,
+                    status,
+                    np.int64(step),
+                    cp.asarray(_snapped_gids),
                     np.int32(len(_snapped_gids)),
-                    _gho_book, _rec_gho_book, _cut_book, np.int32(_n_rxn_pairs),
-                    _rad_bins_gpu, np.int32(len(_rad_bins)),
-                    _trans_bins_gpu, np.int32(len(_trans_bins)),
-                    _ms_radii_gpu, np.int32(len(_ms_radii)),
-                    np.int32(_n_theta), np.int32(_n_phi), np.float64(_ANGLE_EDGE),
-                    n_steps, _min_dist, _step_at_min, _nm_pos, _nm_q,
-                    _total_time, _prev_r, _rad_counts, _ang_counts,
-                    _ms_flux_out, _ms_flux_in, _trans_mat, _contact_counts,
-                    _ang_defer, _book_cnt, r_sr, cen_sr, np.float64(_TICKS),
-                    _rad_time, _ang_time, _contact_time,
+                    _gho_book,
+                    _rec_gho_book,
+                    _cut_book,
+                    np.int32(_n_rxn_pairs),
+                    _rad_bins_gpu,
+                    np.int32(len(_rad_bins)),
+                    _trans_bins_gpu,
+                    np.int32(len(_trans_bins)),
+                    _ms_radii_gpu,
+                    np.int32(len(_ms_radii)),
+                    np.int32(_n_theta),
+                    np.int32(_n_phi),
+                    np.float64(_ANGLE_EDGE),
+                    n_steps,
+                    _min_dist,
+                    _step_at_min,
+                    _nm_pos,
+                    _nm_q,
+                    _total_time,
+                    _prev_r,
+                    _rad_counts,
+                    _ang_counts,
+                    _ms_flux_out,
+                    _ms_flux_in,
+                    _trans_mat,
+                    _contact_counts,
+                    _ang_defer,
+                    _book_cnt,
+                    r_sr,
+                    cen_sr,
+                    np.float64(_TICKS),
+                    _rad_time,
+                    _ang_time,
+                    _contact_time,
                 ),
             )
             if _n_rxn_pairs:

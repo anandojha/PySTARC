@@ -184,7 +184,9 @@ def write_all(
             enpairs = sim_data["encounter_n_pairs"]
             ebridge = sim_data["encounter_bridge_only"]
             with open(p, "w") as f:
-                f.write("traj_id,step,x,y,z,q0,q1,q2,q3,n_pairs_satisfied,bridge_only\n")
+                f.write(
+                    "traj_id,step,x,y,z,q0,q1,q2,q3,n_pairs_satisfied,bridge_only\n"
+                )
                 for i in range(len(epos)):
                     f.write(
                         f"{int(etraj[i])},{int(estep[i])},"

@@ -5774,7 +5774,9 @@ class TestPathsNPZ:
         data["path_steps"] = [
             np.column_stack([np.arange(2.0), np.zeros(2), np.zeros((2, 3)), q])
         ]
-        write_all(tmp_path, _make_result(), data, OutputConfig(), k_b=57.47, D_rel=0.434)
+        write_all(
+            tmp_path, _make_result(), data, OutputConfig(), k_b=57.47, D_rel=0.434
+        )
         d = np.load(tmp_path / "paths.npz")
         assert d["data"][:, 5:9] == pytest.approx(q)
 
@@ -5782,9 +5784,20 @@ class TestPathsNPZ:
         """Path arrays from runs before the q3 column keep their 8 column names."""
         data = _make_dummy_data()
         data["path_steps"] = [np.random.randn(10, 8)]
-        write_all(tmp_path, _make_result(), data, OutputConfig(), k_b=57.47, D_rel=0.434)
+        write_all(
+            tmp_path, _make_result(), data, OutputConfig(), k_b=57.47, D_rel=0.434
+        )
         d = np.load(tmp_path / "paths.npz")
-        assert list(d["columns"]) == ["traj_id", "step", "x", "y", "z", "q0", "q1", "q2"]
+        assert list(d["columns"]) == [
+            "traj_id",
+            "step",
+            "x",
+            "y",
+            "z",
+            "q0",
+            "q1",
+            "q2",
+        ]
 
     def test_disabled(self, tmp_path):
         """Disabling full_paths prevents paths.npz from being written."""
@@ -22606,7 +22619,9 @@ def _collect():
                 if fname == "getattr" and len(node.args) == 3:
                     key = node.args[1]
                     # The engine's _debye is the configured debye_length.
-                    name = {"_debye": "debye_length"}.get(getattr(key, "value", None), getattr(key, "value", None))
+                    name = {"_debye": "debye_length"}.get(
+                        getattr(key, "value", None), getattr(key, "value", None)
+                    )
                     if isinstance(key, ast.Constant) and name in PHYSICS_DEFAULT_NAMES:
                         v = _literal(node.args[2])
                         if v is not None:
@@ -22643,7 +22658,11 @@ def test_physics_default_is_defined_once(name):
         allowed.add(_normalise(registry))
 
     undeclared = values - allowed
-    if undeclared if registry is not None else (len(values) > 1 and len(undeclared) > 1):
+    if (
+        undeclared
+        if registry is not None
+        else (len(values) > 1 and len(undeclared) > 1)
+    ):
         detail = []
         for v, locs in sorted(sites.items(), key=lambda kv: str(kv[0])):
             for rel, line in locs:
@@ -23400,6 +23419,7 @@ def test_soft_repulsion_input_flag(tmp_path):
 def test_soft_repulsion_refuses_lj_forces(tmp_path):
     """The soft wall and the LJ repulsion together would count the excluded volume
     twice, so the input is refused; either one alone is accepted."""
+
     def write(soft, lj):
         xml = tmp_path / f"soft_{soft}_lj_{lj}.xml"
         xml.write_text(
@@ -23412,6 +23432,7 @@ def test_soft_repulsion_refuses_lj_forces(tmp_path):
 </pystarc>"""
         )
         return xml
+
     with pytest.raises(ValueError, match="count it twice"):
         parse(write("true", "true"))
     assert parse(write("true", "false")).soft_repulsion is True
@@ -23425,8 +23446,10 @@ def test_soft_repulsion_stiffness_is_radial_curvature():
     lr = np.array([1.0])
     s = srep.SoftRepulsion(rec, rr, lr)
     r0, h = 1.75, 1e-4
+
     def energy(r):
         return s.atom_terms(np.array([[[r, 0.0, 0.0]]]))[1][0, 0]
+
     curv = (energy(r0 + h) - 2.0 * energy(r0) + energy(r0 - h)) / (h * h)
     k = s.atom_terms(np.array([[[r0, 0.0, 0.0]]]))[2][0, 0]
     assert k == pytest.approx(curv, rel=1e-5)
@@ -23437,7 +23460,10 @@ def test_soft_repulsion_stiffness_is_radial_curvature():
 def test_surface_time_step_curvature_limit():
     """With a stiffness K the step keeps D K dt at most curv_max."""
     out = srep.surface_time_step(
-        np.array([1.0]), np.array([5.0]), np.array([0.0]), 0.5, stiffness=np.array([400.0])
+        np.array([1.0]),
+        np.array([5.0]),
+        np.array([0.0]),
+        0.5,
+        stiffness=np.array([400.0]),
     )
     assert out[0] == pytest.approx(0.05 / (0.5 * 400.0))
-

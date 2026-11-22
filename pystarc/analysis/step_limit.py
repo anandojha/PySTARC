@@ -135,7 +135,9 @@ def recommend_max_steps(
     if n.size == 0 or n.size != out.size:
         raise ValueError("n_steps and outcomes must be non-empty and of equal length")
     if granularity <= 0 or ceiling < granularity:
-        raise ValueError("granularity must be positive and ceiling at least granularity")
+        raise ValueError(
+            "granularity must be positive and ceiling at least granularity"
+        )
     if not 0 < tol < 1:
         raise ValueError("tol must be between 0 and 1")
     reacted = np.array([o in _REACTED for o in out])
@@ -269,17 +271,20 @@ def recommend_max_steps(
 
 
 def read_trajectories_csv(path: str):
-    """Read the outcome and n_steps columns of a trajectories.csv."""
+    """Read outcome and step-count columns of rigid or chain trajectories.csv."""
     outcomes, n_steps = [], []
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
-        if reader.fieldnames is None or not {"outcome", "n_steps"} <= set(
-            reader.fieldnames
-        ):
+        fields = set(reader.fieldnames or ())
+        if {"outcome", "n_steps"} <= fields:
+            out_col, step_col = "outcome", "n_steps"
+        elif {"fate", "steps"} <= fields:
+            out_col, step_col = "fate", "steps"
+        else:
             raise ValueError(f"{path}: expected the columns outcome and n_steps")
         for row in reader:
-            outcomes.append(row["outcome"].strip())
-            n_steps.append(int(float(row["n_steps"])))
+            outcomes.append(row[out_col].strip().lower())
+            n_steps.append(int(float(row[step_col])))
     return n_steps, outcomes
 
 
@@ -326,7 +331,11 @@ def format_report(rec: Dict, n_steps: Optional[Sequence[int]] = None) -> str:
     lines.append(
         f"  max_steps        = {rec['max_steps']:,}  "
         f"(S = {rec['survival_at_max_steps']:.2e}, {rec['method']}; "
-        + ("meets the tolerance)" if rec["meets_tolerance"] else "does NOT meet the tolerance)")
+        + (
+            "meets the tolerance)"
+            if rec["meets_tolerance"]
+            else "does NOT meet the tolerance)"
+        )
     )
     for w in rec["warnings"]:
         lines.append(f"  Warning: {w}")
@@ -351,10 +360,16 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         help="largest relative change of k_on allowed from the trajectories at the limit (default 0.01)",
     )
     parser.add_argument(
-        "--granularity", type=int, default=10_000, help="max_steps is a multiple of this (default 10000)"
+        "--granularity",
+        type=int,
+        default=10_000,
+        help="max_steps is a multiple of this (default 10000)",
     )
     parser.add_argument(
-        "--ceiling", type=int, default=1_000_000, help="largest max_steps considered (default 1000000)"
+        "--ceiling",
+        type=int,
+        default=1_000_000,
+        help="largest max_steps considered (default 1000000)",
     )
     parser.add_argument(
         "--pilot-cap",
@@ -362,7 +377,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         default=None,
         help="max_steps of the pilot run (default: the largest step count when some trajectory is at the limit)",
     )
-    parser.add_argument("--json", default=None, help="also write the recommendation to this JSON file")
+    parser.add_argument(
+        "--json", default=None, help="also write the recommendation to this JSON file"
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
     try:
         n_steps, outcomes = read_trajectories_csv(args.trajectories)

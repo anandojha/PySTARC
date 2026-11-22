@@ -300,6 +300,7 @@ class NAMSimulator:
         R = ori.to_rotation_matrix()
         new_pos = (R @ self._mol2_pos0.T).T + pos
         mol = self._mol2_scratch
+        mol._rotation_matrix = R
         for atom, p in zip(mol.atoms, new_pos):
             atom.x = float(p[0])
             atom.y = float(p[1])
@@ -477,7 +478,17 @@ class NAMSimulator:
             dW_r = math.sqrt(dt) * self.rng.standard_normal(3)
             dW_r1 = math.sqrt(dt) * self.rng.standard_normal(3)
             pos, ori = bd_step_wiener_two_body(
-                pos, ori, force, torque, D_t, D_r1, D_r2, dt, dW_t, dW_r1, dW_r,
+                pos,
+                ori,
+                force,
+                torque,
+                D_t,
+                D_r1,
+                D_r2,
+                dt,
+                dW_t,
+                dW_r1,
+                dW_r,
                 grad_D_t,
             )
             # Backstep on a large force change, subdividing the Wiener path.

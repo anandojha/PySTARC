@@ -38,7 +38,24 @@ import numpy as np
 
 
 ORDERS = {"SING": 1, "DOUB": 2, "TRIP": 3, "AROM": 4, "DELO": 4}
-METALS = {"ZN", "MG", "MN", "FE", "FE2", "CU", "CU1", "CO", "NI", "CA", "CAL", "CD", "HG", "SR", "BA", "AL"}
+METALS = {
+    "ZN",
+    "MG",
+    "MN",
+    "FE",
+    "FE2",
+    "CU",
+    "CU1",
+    "CO",
+    "NI",
+    "CA",
+    "CAL",
+    "CD",
+    "HG",
+    "SR",
+    "BA",
+    "AL",
+}
 SKIP_SOLVENT = {"HOH", "WAT", "TIP3", "SPC", "NA", "CL", "K", "Na+", "Cl-", "K+"}
 SKIP_HET = SKIP_SOLVENT | {"MG", "ZN", "CA", "CAL", "ACE", "NME"}
 RESIDUE_CHARGES = {"ARG": 1, "LYS": 1, "HIP": 1, "ASP": -1, "GLU": -1, "CYM": -1}
@@ -81,9 +98,11 @@ def _cif_tokens(path):
             if line[j] in ("'", '"'):
                 q = line[j]
                 k = j + 1
-                while k < n and not (line[k] == q and (k + 1 == n or line[k + 1].isspace())):
+                while k < n and not (
+                    line[k] == q and (k + 1 == n or line[k + 1].isspace())
+                ):
                     k += 1
-                out.append(("value", line[j + 1:k]))
+                out.append(("value", line[j + 1 : k]))
                 j = k + 1
             else:
                 k = j
@@ -117,8 +136,10 @@ def _cif_rows(path, category):
                 i += 1
             if tags and tags[0].split(".")[0] == category:
                 cols = [x.split(".", 1)[1] for x in tags]
-                rows += [dict(zip(cols, vals[r:r + len(cols)]))
-                         for r in range(0, len(vals) - len(cols) + 1, len(cols))]
+                rows += [
+                    dict(zip(cols, vals[r : r + len(cols)]))
+                    for r in range(0, len(vals) - len(cols) + 1, len(cols))
+                ]
         elif kind == "tag" and i + 1 < len(toks) and toks[i + 1][0] == "value":
             if w.split(".")[0] == category:
                 single[w.split(".", 1)[1]] = toks[i + 1][1]
@@ -132,7 +153,9 @@ def load_ccd(code, cif_path=None, cache_dir="."):
     path = cif_path or os.path.join(cache_dir, f"{code}.cif")
     downloaded = False
     if not os.path.exists(path):
-        _download(f"https://files.rcsb.org/ligands/download/{code}.cif", path, f"{code}.cif")
+        _download(
+            f"https://files.rcsb.org/ligands/download/{code}.cif", path, f"{code}.cif"
+        )
         downloaded = True
     try:
         bonds, charges, elements, leaving, aromatic_atoms = {}, {}, {}, set(), set()
@@ -152,7 +175,9 @@ def load_ccd(code, cif_path=None, cache_dir="."):
                 continue
             order = ORDERS.get(row.get("value_order", "").upper())
             if order is None:
-                sys.exit(f"ERROR: unsupported bond order {row.get('value_order')!r} in {code}.cif")
+                sys.exit(
+                    f"ERROR: unsupported bond order {row.get('value_order')!r} in {code}.cif"
+                )
             if row.get("pdbx_aromatic_flag") == "Y" and order == 4:
                 aromatic_atoms.update((row["atom_id_1"], row["atom_id_2"]))
             bonds[frozenset((row["atom_id_1"], row["atom_id_2"]))] = order
@@ -166,12 +191,18 @@ def load_ccd(code, cif_path=None, cache_dir="."):
 
 def deposited_centroid(entry, chains, resname, resid=None):
     """Centroid and atom count of a reference HETATM/ATOM group in a PDB file."""
-    chain_set = ({chains} if isinstance(chains, str) and chains
-                 else (set(chains) if chains else set()))
+    chain_set = (
+        {chains}
+        if isinstance(chains, str) and chains
+        else (set(chains) if chains else set())
+    )
     groups = {}
     with open(entry) as fh:
         for line in fh:
-            if not line.startswith(("ATOM", "HETATM")) or line[17:20].strip() != resname:
+            if (
+                not line.startswith(("ATOM", "HETATM"))
+                or line[17:20].strip() != resname
+            ):
                 continue
             if (chain_set and line[21] not in chain_set) or line[16] not in (" ", "A"):
                 continue
@@ -181,9 +212,13 @@ def deposited_centroid(entry, chains, resname, resid=None):
                 [float(line[30:38]), float(line[38:46]), float(line[46:54])]
             )
     if not groups:
-        sys.exit(f"ERROR: {entry} has no {resname} {resid or ''} in chains {sorted(chain_set) or 'all'}.")
+        sys.exit(
+            f"ERROR: {entry} has no {resname} {resid or ''} in chains {sorted(chain_set) or 'all'}."
+        )
     if len(groups) > 1:
-        sys.exit(f"ERROR: {entry} holds multiple {resname} copies {sorted(groups)}. Specify --pocket-ligand-resid.")
+        sys.exit(
+            f"ERROR: {entry} holds multiple {resname} copies {sorted(groups)}. Specify --pocket-ligand-resid."
+        )
     xyz = np.array(next(iter(groups.values())))
     return xyz.mean(axis=0), len(xyz)
 
@@ -195,8 +230,11 @@ def check_formula(mol, formula):
         want[e.upper()] += int(n) if n else 1
     got = collections.Counter(a.GetSymbol().upper() for a in mol.GetAtoms())
     if got != want:
-        diff = {k: got.get(k, 0) - want.get(k, 0)
-                for k in sorted(set(got) | set(want)) if got.get(k, 0) != want.get(k, 0)}
+        diff = {
+            k: got.get(k, 0) - want.get(k, 0)
+            for k in sorted(set(got) | set(want))
+            if got.get(k, 0) != want.get(k, 0)
+        }
         sys.exit(f"ERROR: ligand composition off by {diff} against {formula}")
 
 
@@ -247,7 +285,9 @@ def _apply_mutations(prot_lines, mut_specs):
         elif len(parts) == 3:
             parsed[(parts[0], parts[1])] = parts[2].upper()
         else:
-            sys.exit(f"ERROR: --mutate expects RESID:RESNAME or CHAIN:RESID:RESNAME, got {spec!r}")
+            sys.exit(
+                f"ERROR: --mutate expects RESID:RESNAME or CHAIN:RESID:RESNAME, got {spec!r}"
+            )
     out, applied = [], []
     seen = set()
     matched_specs = set()
@@ -277,7 +317,9 @@ def _apply_mutations(prot_lines, mut_specs):
             seen.add(tag)
             applied.append(f"{ch.strip()}{rcode}:{old_res}->{new_res}")
     if len(matched_specs) < len(parsed):
-        sys.exit(f"ERROR: one or more --mutate targets {mut_specs} were absent from receptor ATOM records")
+        sys.exit(
+            f"ERROR: one or more --mutate targets {mut_specs} were absent from receptor ATOM records"
+        )
     if shutil.which("tleap") is not None:
         out = _complete_mutated_sidechains(out, {(t[0], t[1]) for t in seen})
     return out, applied
@@ -291,8 +333,12 @@ def _complete_mutated_sidechains(prot_lines, mutated_keys):
             _write_chain_separated_atoms(fh, prot_lines)
             fh.write("END\n")
         with open(os.path.join(tmp, "tleap.in"), "w") as fh:
-            fh.write("source leaprc.protein.ff14SB\nmol = loadpdb in.pdb\nsavepdb mol out.pdb\nquit\n")
-        subprocess.run(["tleap", "-f", "tleap.in"], cwd=tmp, capture_output=True, text=True)
+            fh.write(
+                "source leaprc.protein.ff14SB\nmol = loadpdb in.pdb\nsavepdb mol out.pdb\nquit\n"
+            )
+        subprocess.run(
+            ["tleap", "-f", "tleap.in"], cwd=tmp, capture_output=True, text=True
+        )
         out_pdb = os.path.join(tmp, "out.pdb")
         if not os.path.exists(out_pdb) or os.path.getsize(out_pdb) == 0:
             return prot_lines
@@ -311,7 +357,11 @@ def _complete_mutated_sidechains(prot_lines, mutated_keys):
     leap_groups = {}
     for l in leap_lines:
         an = l[12:16].strip()
-        if an == "OXT" or an.startswith("H") or (len(an) > 1 and an[0].isdigit() and an[1] == "H"):
+        if (
+            an == "OXT"
+            or an.startswith("H")
+            or (len(an) > 1 and an[0].isdigit() and an[1] == "H")
+        ):
             continue
         lrk = int(l[22:26])
         if lrk not in leap_groups:
@@ -342,7 +392,11 @@ def _complete_mutated_sidechains(prot_lines, mutated_keys):
                 continue
             serial += 1
             el = an[:1]
-            occ_bf = tmpl[54:66].rstrip("\r\n").ljust(12) if len(tmpl) >= 54 else "  1.00  0.00"
+            occ_bf = (
+                tmpl[54:66].rstrip("\r\n").ljust(12)
+                if len(tmpl) >= 54
+                else "  1.00  0.00"
+            )
             merged.append(
                 f"ATOM  {serial:5d} {ll[12:16]} {tmpl[17:27]}   "
                 f"{ll[30:54]}{occ_bf}          {el:>2s}\n"
@@ -362,8 +416,18 @@ def _parse_res_targets(specs, chains):
     return out
 
 
-def _apply_his_and_cyx(prot_lines, metal_lines, hid_specs, hie_specs, hip_specs, cyx_specs,
-                       auto_metal, auto_cyx, metal_cutoff=2.6, ss_cutoff=2.2):
+def _apply_his_and_cyx(
+    prot_lines,
+    metal_lines,
+    hid_specs,
+    hie_specs,
+    hip_specs,
+    cyx_specs,
+    auto_metal,
+    auto_cyx,
+    metal_cutoff=2.6,
+    ss_cutoff=2.2,
+):
     taut_map = {}
     if auto_metal and metal_lines:
         m_xyz = [_xyz(l) for l in metal_lines]
@@ -385,8 +449,11 @@ def _apply_his_and_cyx(prot_lines, metal_lines, hid_specs, hie_specs, hip_specs,
 
     ss_keys = set(_parse_res_targets(cyx_specs, chains))
     if auto_cyx:
-        sgs = [(l[21], l[22:27].strip(), _xyz(l)) for l in prot_lines
-               if l[17:20].strip() in ("CYS", "CYX") and l[12:16].strip() == "SG"]
+        sgs = [
+            (l[21], l[22:27].strip(), _xyz(l))
+            for l in prot_lines
+            if l[17:20].strip() in ("CYS", "CYX") and l[12:16].strip() == "SG"
+        ]
         for i in range(len(sgs)):
             for j in range(i + 1, len(sgs)):
                 if float(np.linalg.norm(sgs[i][2] - sgs[j][2])) <= ss_cutoff:
@@ -443,12 +510,17 @@ def _ensure_pdb_atom_names(mol, default_resname="LIG"):
             a.SetPDBResidueInfo(inf)
 
 
-def _apply_prot_deprot_and_hs(rw, idx, label, prot_atoms, deprot_atoms, expected_formula="", default_resname="LIG"):
+def _apply_prot_deprot_and_hs(
+    rw, idx, label, prot_atoms, deprot_atoms, expected_formula="", default_resname="LIG"
+):
     from rdkit import Chem
     from rdkit.Chem import rdMolDescriptors
 
     gone = []
-    for flag, names, step in (("--protonate", prot_atoms, 1), ("--deprotonate", deprot_atoms, -1)):
+    for flag, names, step in (
+        ("--protonate", prot_atoms, 1),
+        ("--deprotonate", deprot_atoms, -1),
+    ):
         for nm in names:
             if nm not in idx:
                 sys.exit(f"ERROR: {flag} atom {nm!r} absent from {label}")
@@ -472,29 +544,46 @@ def _apply_prot_deprot_and_hs(rw, idx, label, prot_atoms, deprot_atoms, expected
     _ensure_pdb_atom_names(mol, default_resname=default_resname)
     q_net = sum(a.GetFormalCharge() for a in mol.GetAtoms())
     formula = rdMolDescriptors.CalcMolFormula(mol)
-    pdb_lines = [l + "\n" for l in Chem.MolToPDBBlock(mol, flavor=0).splitlines()
-                 if l.startswith(("ATOM", "HETATM"))]
+    pdb_lines = [
+        l + "\n"
+        for l in Chem.MolToPDBBlock(mol, flavor=0).splitlines()
+        if l.startswith(("ATOM", "HETATM"))
+    ]
     return pdb_lines, q_net, formula, mol.GetNumAtoms()
 
 
-def _build_ligand_from_ccd(lig_lines, code, cif_path, prot_atoms, deprot_atoms, tmp_dir, expected_formula=""):
+def _build_ligand_from_ccd(
+    lig_lines, code, cif_path, prot_atoms, deprot_atoms, tmp_dir, expected_formula=""
+):
     from rdkit import Chem
 
-    bonds, charges, elements, leaving, aromatic_atoms = load_ccd(code, cif_path=cif_path, cache_dir=tmp_dir)
+    bonds, charges, elements, leaving, aromatic_atoms = load_ccd(
+        code, cif_path=cif_path, cache_dir=tmp_dir
+    )
     block = "".join(lig_lines) + "END\n"
-    m = Chem.MolFromPDBBlock(block, removeHs=False, sanitize=False, proximityBonding=False)
+    m = Chem.MolFromPDBBlock(
+        block, removeHs=False, sanitize=False, proximityBonding=False
+    )
     if m is None:
         sys.exit(f"ERROR: RDKit could not parse ligand {code}")
     rw = Chem.RWMol(m)
     atom_name = lambda a: a.GetPDBResidueInfo().GetName().strip()
-    drop = [a.GetIdx() for a in rw.GetAtoms() if a.GetAtomicNum() == 1 and atom_name(a) not in elements]
+    drop = [
+        a.GetIdx()
+        for a in rw.GetAtoms()
+        if a.GetAtomicNum() == 1 and atom_name(a) not in elements
+    ]
     for k in sorted(drop, reverse=True):
         rw.RemoveAtom(k)
     unknown = sorted({atom_name(a) for a in rw.GetAtoms()} - set(elements))
     if unknown:
         sys.exit(f"ERROR: ligand atoms {unknown} absent from {code} CCD definition")
     heavy = {atom_name(a) for a in rw.GetAtoms() if a.GetAtomicNum() > 1}
-    absent = sorted(nm for nm, el in elements.items() if el != "H" and nm not in heavy and nm not in leaving)
+    absent = sorted(
+        nm
+        for nm, el in elements.items()
+        if el != "H" and nm not in heavy and nm not in leaving
+    )
     if absent:
         sys.exit(f"ERROR: ligand lacks heavy atoms {absent} of {code}")
     idx = {atom_name(a): a.GetIdx() for a in rw.GetAtoms()}
@@ -514,13 +603,24 @@ def _build_ligand_from_ccd(lig_lines, code, cif_path, prot_atoms, deprot_atoms, 
     for a in rw.GetAtoms():
         nm = atom_name(a)
         a.SetFormalCharge(charges.get(nm, 0))
-        if nm in aromatic_atoms and any(b.GetBondType() == Chem.BondType.AROMATIC for b in a.GetBonds()):
+        if nm in aromatic_atoms and any(
+            b.GetBondType() == Chem.BondType.AROMATIC for b in a.GetBonds()
+        ):
             a.SetIsAromatic(True)
-    return _apply_prot_deprot_and_hs(rw, idx, code, prot_atoms, deprot_atoms, expected_formula, default_resname=code)
+    return _apply_prot_deprot_and_hs(
+        rw, idx, code, prot_atoms, deprot_atoms, expected_formula, default_resname=code
+    )
 
 
-def _build_ligand_from_template_or_charge(lig_lines, code, template_smiles, net_charge, prot_atoms, deprot_atoms,
-                                          expected_formula=""):
+def _build_ligand_from_template_or_charge(
+    lig_lines,
+    code,
+    template_smiles,
+    net_charge,
+    prot_atoms,
+    deprot_atoms,
+    expected_formula="",
+):
     from rdkit import Chem
     from rdkit.Chem import AllChem, rdDetermineBonds
 
@@ -541,13 +641,25 @@ def _build_ligand_from_template_or_charge(lig_lines, code, template_smiles, net_
         rdDetermineBonds.DetermineBondOrders(m, charge=int(net_charge))
         rw = Chem.RWMol(m)
     _ensure_pdb_atom_names(rw, default_resname=code)
-    idx = {a.GetPDBResidueInfo().GetName().strip(): a.GetIdx()
-           for a in rw.GetAtoms() if a.GetPDBResidueInfo() is not None}
-    return _apply_prot_deprot_and_hs(rw, idx, code, prot_atoms, deprot_atoms, expected_formula, default_resname=code)
+    idx = {
+        a.GetPDBResidueInfo().GetName().strip(): a.GetIdx()
+        for a in rw.GetAtoms()
+        if a.GetPDBResidueInfo() is not None
+    }
+    return _apply_prot_deprot_and_hs(
+        rw, idx, code, prot_atoms, deprot_atoms, expected_formula, default_resname=code
+    )
 
 
-def build_external_ligand_file(lig_file, resname="LIG", template_smiles="", net_charge=None,
-                               prot_atoms=(), deprot_atoms=(), expected_formula=""):
+def build_external_ligand_file(
+    lig_file,
+    resname="LIG",
+    template_smiles="",
+    net_charge=None,
+    prot_atoms=(),
+    deprot_atoms=(),
+    expected_formula="",
+):
     """Load an external .sdf, .mol2, or .pdb ligand file and return prepared HETATM lines."""
     from rdkit import Chem
     from rdkit.Chem import AllChem, rdDetermineBonds
@@ -561,9 +673,13 @@ def build_external_ligand_file(lig_file, resname="LIG", template_smiles="", net_
     elif ext == ".mol2":
         mol = Chem.MolFromMol2File(lig_file, removeHs=False, sanitize=False)
     elif ext == ".pdb":
-        mol = Chem.MolFromPDBFile(lig_file, removeHs=(bool(template_smiles)), sanitize=False)
+        mol = Chem.MolFromPDBFile(
+            lig_file, removeHs=(bool(template_smiles)), sanitize=False
+        )
     else:
-        sys.exit(f"ERROR: --ligand-file {lig_file!r} must end in .sdf, .mol, .mol2, or .pdb")
+        sys.exit(
+            f"ERROR: --ligand-file {lig_file!r} must end in .sdf, .mol, .mol2, or .pdb"
+        )
     if mol is None:
         sys.exit(f"ERROR: RDKit could not read --ligand-file {lig_file}")
 
@@ -575,17 +691,28 @@ def build_external_ligand_file(lig_file, resname="LIG", template_smiles="", net_
         mol = AllChem.AssignBondOrdersFromTemplate(tmpl, mol)
     elif ext == ".pdb":
         if net_charge is None:
-            sys.exit("ERROR: --ligand-file .pdb requires --ligand-charge or --ligand-smiles")
+            sys.exit(
+                "ERROR: --ligand-file .pdb requires --ligand-charge or --ligand-smiles"
+            )
         rdDetermineBonds.DetermineBondOrders(mol, charge=int(net_charge))
 
     rw = Chem.RWMol(mol)
     _ensure_pdb_atom_names(rw, default_resname=resname)
     idx = {a.GetPDBResidueInfo().GetName().strip(): a.GetIdx() for a in rw.GetAtoms()}
-    return _apply_prot_deprot_and_hs(rw, idx, lig_file, prot_atoms, deprot_atoms, expected_formula,
-                                     default_resname=resname)
+    return _apply_prot_deprot_and_hs(
+        rw,
+        idx,
+        lig_file,
+        prot_atoms,
+        deprot_atoms,
+        expected_formula,
+        default_resname=resname,
+    )
 
 
-def build_smiles_ligand_pdb(smiles, resname="LIG", seed=1, target_centroid=None, expected_formula=""):
+def build_smiles_ligand_pdb(
+    smiles, resname="LIG", seed=1, target_centroid=None, expected_formula=""
+):
     """Embed a 3D conformer from SMILES, shift onto target_centroid when given, and return HETATM lines."""
     from rdkit import Chem
     from rdkit.Chem import AllChem, rdMolDescriptors
@@ -611,8 +738,11 @@ def build_smiles_ligand_pdb(smiles, resname="LIG", seed=1, target_centroid=None,
     _ensure_pdb_atom_names(mol, default_resname=resname)
     q_net = Chem.GetFormalCharge(mol)
     formula = rdMolDescriptors.CalcMolFormula(mol)
-    pdb_lines = [l + "\n" for l in Chem.MolToPDBBlock(mol, flavor=0).splitlines()
-                 if l.startswith(("ATOM", "HETATM"))]
+    pdb_lines = [
+        l + "\n"
+        for l in Chem.MolToPDBBlock(mol, flavor=0).splitlines()
+        if l.startswith(("ATOM", "HETATM"))
+    ]
     return pdb_lines, q_net, formula, mol.GetNumAtoms()
 
 
@@ -647,8 +777,16 @@ def _write_receptor_pdb(path, prot_lines, kept_het_lines):
         out.write("END\n")
 
 
-def split_complex_pdb(complex_path, receptor_out, ligand_out, ligand_resname="", ligand_chains=(),
-                      keep_hetatm=(), ligand_charge=None, model="rigid"):
+def split_complex_pdb(
+    complex_path,
+    receptor_out,
+    ligand_out,
+    ligand_resname="",
+    ligand_chains=(),
+    keep_hetatm=(),
+    ligand_charge=None,
+    model="rigid",
+):
     """Split an existing complex PDB into receptor.pdb and ligand.pdb (small molecule or --ligand-chain)."""
     if not os.path.exists(complex_path):
         sys.exit(f"ERROR: {complex_path} not found")
@@ -666,27 +804,37 @@ def split_complex_pdb(complex_path, receptor_out, ligand_out, ligand_resname="",
             elif line.startswith("HETATM"):
                 resn = line[17:20].strip()
                 row = line if line.endswith("\n") else line + "\n"
-                if resn.upper() in keep_set or (resn.upper() in METALS and resn != ligand_resname):
+                if resn.upper() in keep_set or (
+                    resn.upper() in METALS and resn != ligand_resname
+                ):
                     metals.append(row)
                 elif resn not in SKIP_HET:
                     het.append(row)
     if lchain_set:
         if not lig_prot:
-            sys.exit(f"ERROR: no ATOM records for --ligand-chain {sorted(lchain_set)} in {complex_path}")
+            sys.exit(
+                f"ERROR: no ATOM records for --ligand-chain {sorted(lchain_set)} in {complex_path}"
+            )
         lig = lig_prot
     else:
         groups = {}
         for l in het:
             groups.setdefault((l[21], l[22:27].strip(), l[17:20].strip()), []).append(l)
         if not groups:
-            sys.exit(f"ERROR: no ligand HETATM in {complex_path} (pass --ligand-chain for protein-protein PDBs)")
+            sys.exit(
+                f"ERROR: no ligand HETATM in {complex_path} (pass --ligand-chain for protein-protein PDBs)"
+            )
         if ligand_resname:
             pick = [k for k in groups if k[2] == ligand_resname]
             if len(pick) != 1:
-                sys.exit(f"ERROR: ligand {ligand_resname!r} not uniquely matched in {complex_path}")
+                sys.exit(
+                    f"ERROR: ligand {ligand_resname!r} not uniquely matched in {complex_path}"
+                )
             chosen = pick[0]
         elif len(groups) > 1:
-            sys.exit(f"ERROR: multiple HETATM groups in {complex_path}, pass --ligand <RESNAME>")
+            sys.exit(
+                f"ERROR: multiple HETATM groups in {complex_path}, pass --ligand <RESNAME>"
+            )
         else:
             chosen = next(iter(groups))
         lig = groups[chosen]
@@ -705,8 +853,11 @@ def split_complex_pdb(complex_path, receptor_out, ligand_out, ligand_resname="",
         q_net = _chain_net_charge(lig)
     else:
         q_net = 0
-    print(f"# Split {complex_path} -> {receptor_out} ({len(prot)} protein + {len(metals)} metal atoms), "
-          f"{ligand_out} ({len(lig)} ligand atoms)", file=sys.stderr)
+    print(
+        f"# Split {complex_path} -> {receptor_out} ({len(prot)} protein + {len(metals)} metal atoms), "
+        f"{ligand_out} ({len(lig)} ligand atoms)",
+        file=sys.stderr,
+    )
     _print_structure_snippet(receptor_out, ligand_out, q_net, model)
 
 
@@ -757,14 +908,20 @@ def write_sphere_pair(spec, receptor_out, ligand_out):
     """Write single-atom charged-sphere receptor.pqr and ligand.pqr from Q_REC:R_REC,Q_LIG:R_LIG."""
     parts = [p.strip() for p in spec.split(",") if p.strip()]
     if len(parts) != 2 or any(":" not in p for p in parts):
-        sys.exit(f"ERROR: --sphere-pair expects Q_REC:R_REC,Q_LIG:R_LIG (for example 1.0:1.0,-1.0:1.0), got {spec!r}")
-    (q_rec, r_rec), (q_lig, r_lig) = (tuple(float(x) for x in p.split(":", 1)) for p in parts)
+        sys.exit(
+            f"ERROR: --sphere-pair expects Q_REC:R_REC,Q_LIG:R_LIG (for example 1.0:1.0,-1.0:1.0), got {spec!r}"
+        )
+    (q_rec, r_rec), (q_lig, r_lig) = (
+        tuple(float(x) for x in p.split(":", 1)) for p in parts
+    )
     if r_rec <= 0.0 or r_lig <= 0.0:
         sys.exit("ERROR: sphere radii must exceed zero")
     for dst, q, r in ((receptor_out, q_rec, r_rec), (ligand_out, q_lig, r_lig)):
         os.makedirs(os.path.dirname(os.path.abspath(dst)) or ".", exist_ok=True)
         with open(dst, "w") as fh:
-            fh.write(f"ATOM      1  U   FOO    1     0.0  0.0  0.0  {q:4.1f} {r:3.1f}\n")
+            fh.write(
+                f"ATOM      1  U   FOO    1     0.0  0.0  0.0  {q:4.1f} {r:3.1f}\n"
+            )
         print(f"# Wrote {dst}: 1 atom, Q={q:+.2f} e, R={r:.2f} A", file=sys.stderr)
     _print_structure_snippet(receptor_out, ligand_out, round(q_lig), "rigid")
 
@@ -783,13 +940,17 @@ def _parse_resid_set(spec):
     return out
 
 
-def prmtop_to_pqrs(prmtop_path, pdb_path, ligand_resname, ligand_residues, receptor_out, ligand_out):
+def prmtop_to_pqrs(
+    prmtop_path, pdb_path, ligand_resname, ligand_residues, receptor_out, ligand_out
+):
     """Export receptor.pqr and ligand.pqr from an AMBER prmtop + coordinate PDB."""
     for p in (prmtop_path, pdb_path):
         if not os.path.exists(p):
             sys.exit(f"ERROR: {p} not found")
     if not ligand_resname and not ligand_residues:
-        sys.exit("ERROR: --prmtop requires --ligand <RESNAME> or --ligand-residues <START-END>")
+        sys.exit(
+            "ERROR: --prmtop requires --ligand <RESNAME> or --ligand-residues <START-END>"
+        )
     lig_rset = _parse_resid_set(ligand_residues) if ligand_residues else set()
     top = os.path.abspath(prmtop_path)
     pdb = os.path.abspath(pdb_path)
@@ -798,12 +959,18 @@ def prmtop_to_pqrs(prmtop_path, pdb_path, ligand_resname, ligand_residues, recep
         subprocess.run(
             "cpptraj",
             input=f"parm {top}\ntrajin {pdb}\ntrajout {rst}\nrun\n",
-            cwd=tmp, capture_output=True, text=True,
+            cwd=tmp,
+            capture_output=True,
+            text=True,
         )
         if not os.path.exists(rst):
             sys.exit(f"ERROR: cpptraj failed on {prmtop_path} + {pdb_path}")
-        r = subprocess.run(["ambpdb", "-p", top, "-c", rst, "-pqr"],
-                           cwd=tmp, capture_output=True, text=True)
+        r = subprocess.run(
+            ["ambpdb", "-p", top, "-c", rst, "-pqr"],
+            cwd=tmp,
+            capture_output=True,
+            text=True,
+        )
     rec, lig = [], []
     for line in r.stdout.strip().split("\n"):
         if not line.startswith(("ATOM", "HETATM")):
@@ -850,48 +1017,214 @@ def _print_structure_snippet(rec_out, lig_out, net_q, model):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--pdb", help="Local input PDB file")
-    ap.add_argument("--pdb-id", help="4-character RCSB PDB identifier to download when --pdb is omitted")
-    ap.add_argument("--prmtop", default="", help="AMBER topology (.prmtop/.parm7) to export into receptor and ligand PQRs")
-    ap.add_argument("--split-complex", default="", help="Existing prepared complex PDB to split into receptor and ligand PDBs")
-    ap.add_argument("--receptor-pqr", default="", help="Existing pre-parameterized receptor PQR paired with --ligand-pqr")
-    ap.add_argument("--ligand-pqr", default="", help="Existing pre-parameterized ligand PQR paired with --receptor-pqr")
-    ap.add_argument("--sphere-pair", default="", help="Generate charged-sphere PQRs from Q_REC:R_REC,Q_LIG:R_LIG (for example 1.0:1.0,-1.0:1.0)")
-    ap.add_argument("--receptor-out", default="", help="Output path for the prepared receptor (.pdb or .pqr)")
-    ap.add_argument("--ligand-out", default="", help="Output path for the prepared ligand (.pdb or .pqr)")
-    ap.add_argument("--chain", default="", help="Comma-separated receptor chain IDs to retain (blank retains all chains)")
-    ap.add_argument("--ligand-chain", default="", help="Comma-separated protein ligand chain IDs to extract into --ligand-out")
-    ap.add_argument("--model", choices=("rigid", "chain"), default="rigid", help="Model tag printed in <structure> snippet")
-    ap.add_argument("--resid-min", type=int, default=None, help="Lowest receptor residue number retained")
-    ap.add_argument("--resid-max", type=int, default=None, help="Highest receptor residue number retained")
-    ap.add_argument("--altloc", default="A", help="Preferred protein conformer indicator (default: A)")
-    ap.add_argument("--mse-to-met", action="store_true", help="Convert selenomethionine HETATM MSE residues to ATOM MET")
-    ap.add_argument("--mutate", default="", help="Comma-separated receptor point mutations RESID:RESNAME or CHAIN:RESID:RESNAME")
-    ap.add_argument("--ligand", default="", help="3-letter residue name of the crystal, docked, or prmtop ligand")
-    ap.add_argument("--ligand-residues", default="", help="Ligand residue numbers/ranges (e.g. 109-197) for protein-protein --prmtop")
-    ap.add_argument("--ligand-resid", type=int, default=None, help="Ligand residue number when multiple copies exist")
-    ap.add_argument("--ligand-altloc", default="", help="Preferred ligand conformer indicator (defaults to --altloc)")
-    ap.add_argument("--ligand-file", default="", help="External docked or 3D ligand file (.sdf, .mol, .mol2, or .pdb)")
-    ap.add_argument("--ccd", default="", help="CCD component code for crystal ligand bond orders (defaults to --ligand)")
-    ap.add_argument("--cif", default="", help="Optional local .cif path for the ligand CCD definition")
-    ap.add_argument("--ligand-smiles", default="", help="SMILES bond-order template for a non-CCD docked ligand")
-    ap.add_argument("--ligand-charge", type=int, default=None, help="Formal net charge for a non-CCD .pdb ligand with explicit Hs")
-    ap.add_argument("--protonate", default="", help="Comma-separated ligand heavy-atom names gaining one proton")
-    ap.add_argument("--deprotonate", default="", help="Comma-separated ligand heavy-atom names losing one proton")
-    ap.add_argument("--smiles", default="", help="Ligand SMILES string to embed as a 3D conformer")
-    ap.add_argument("--ligand-resname", default="LIG", help="3-letter residue name assigned to a SMILES or external ligand")
-    ap.add_argument("--seed", type=int, default=1, help="Random seed for RDKit ETKDG conformer embedding")
-    ap.add_argument("--pocket-ligand", default="", help="Reference HETATM residue name marking the pocket centroid for --smiles")
-    ap.add_argument("--pocket-ligand-resid", type=int, default=None, help="Residue number of --pocket-ligand")
-    ap.add_argument("--formula", default="", help="Optional expected molecular formula check for the ligand")
-    ap.add_argument("--keep-hetatm", default="", help="Comma-separated HETATM residue names retained with the receptor")
-    ap.add_argument("--hid", default="", help="Comma-separated receptor residue numbers (or CHAIN:RESID) set to HID")
-    ap.add_argument("--hie", default="", help="Comma-separated receptor residue numbers (or CHAIN:RESID) set to HIE")
-    ap.add_argument("--hip", default="", help="Comma-separated receptor residue numbers (or CHAIN:RESID) set to HIP")
-    ap.add_argument("--cyx", default="", help="Comma-separated receptor cysteine numbers (or CHAIN:RESID) set to CYX")
-    ap.add_argument("--metal-his", action="store_true", help="Assign HID/HIE on histidines coordinating retained metals")
-    ap.add_argument("--auto-cyx", action="store_true", help="Assign CYX on receptor cysteines with SG-SG <= 2.2 A")
+    ap.add_argument(
+        "--pdb-id",
+        help="4-character RCSB PDB identifier to download when --pdb is omitted",
+    )
+    ap.add_argument(
+        "--prmtop",
+        default="",
+        help="AMBER topology (.prmtop/.parm7) to export into receptor and ligand PQRs",
+    )
+    ap.add_argument(
+        "--split-complex",
+        default="",
+        help="Existing prepared complex PDB to split into receptor and ligand PDBs",
+    )
+    ap.add_argument(
+        "--receptor-pqr",
+        default="",
+        help="Existing pre-parameterized receptor PQR paired with --ligand-pqr",
+    )
+    ap.add_argument(
+        "--ligand-pqr",
+        default="",
+        help="Existing pre-parameterized ligand PQR paired with --receptor-pqr",
+    )
+    ap.add_argument(
+        "--sphere-pair",
+        default="",
+        help="Generate charged-sphere PQRs from Q_REC:R_REC,Q_LIG:R_LIG (for example 1.0:1.0,-1.0:1.0)",
+    )
+    ap.add_argument(
+        "--receptor-out",
+        default="",
+        help="Output path for the prepared receptor (.pdb or .pqr)",
+    )
+    ap.add_argument(
+        "--ligand-out",
+        default="",
+        help="Output path for the prepared ligand (.pdb or .pqr)",
+    )
+    ap.add_argument(
+        "--chain",
+        default="",
+        help="Comma-separated receptor chain IDs to retain (blank retains all chains)",
+    )
+    ap.add_argument(
+        "--ligand-chain",
+        default="",
+        help="Comma-separated protein ligand chain IDs to extract into --ligand-out",
+    )
+    ap.add_argument(
+        "--model",
+        choices=("rigid", "chain"),
+        default="rigid",
+        help="Model tag printed in <structure> snippet",
+    )
+    ap.add_argument(
+        "--resid-min",
+        type=int,
+        default=None,
+        help="Lowest receptor residue number retained",
+    )
+    ap.add_argument(
+        "--resid-max",
+        type=int,
+        default=None,
+        help="Highest receptor residue number retained",
+    )
+    ap.add_argument(
+        "--altloc",
+        default="A",
+        help="Preferred protein conformer indicator (default: A)",
+    )
+    ap.add_argument(
+        "--mse-to-met",
+        action="store_true",
+        help="Convert selenomethionine HETATM MSE residues to ATOM MET",
+    )
+    ap.add_argument(
+        "--mutate",
+        default="",
+        help="Comma-separated receptor point mutations RESID:RESNAME or CHAIN:RESID:RESNAME",
+    )
+    ap.add_argument(
+        "--ligand",
+        default="",
+        help="3-letter residue name of the crystal, docked, or prmtop ligand",
+    )
+    ap.add_argument(
+        "--ligand-residues",
+        default="",
+        help="Ligand residue numbers/ranges (e.g. 109-197) for protein-protein --prmtop",
+    )
+    ap.add_argument(
+        "--ligand-resid",
+        type=int,
+        default=None,
+        help="Ligand residue number when multiple copies exist",
+    )
+    ap.add_argument(
+        "--ligand-altloc",
+        default="",
+        help="Preferred ligand conformer indicator (defaults to --altloc)",
+    )
+    ap.add_argument(
+        "--ligand-file",
+        default="",
+        help="External docked or 3D ligand file (.sdf, .mol, .mol2, or .pdb)",
+    )
+    ap.add_argument(
+        "--ccd",
+        default="",
+        help="CCD component code for crystal ligand bond orders (defaults to --ligand)",
+    )
+    ap.add_argument(
+        "--cif",
+        default="",
+        help="Optional local .cif path for the ligand CCD definition",
+    )
+    ap.add_argument(
+        "--ligand-smiles",
+        default="",
+        help="SMILES bond-order template for a non-CCD docked ligand",
+    )
+    ap.add_argument(
+        "--ligand-charge",
+        type=int,
+        default=None,
+        help="Formal net charge for a non-CCD .pdb ligand with explicit Hs",
+    )
+    ap.add_argument(
+        "--protonate",
+        default="",
+        help="Comma-separated ligand heavy-atom names gaining one proton",
+    )
+    ap.add_argument(
+        "--deprotonate",
+        default="",
+        help="Comma-separated ligand heavy-atom names losing one proton",
+    )
+    ap.add_argument(
+        "--smiles", default="", help="Ligand SMILES string to embed as a 3D conformer"
+    )
+    ap.add_argument(
+        "--ligand-resname",
+        default="LIG",
+        help="3-letter residue name assigned to a SMILES or external ligand",
+    )
+    ap.add_argument(
+        "--seed",
+        type=int,
+        default=1,
+        help="Random seed for RDKit ETKDG conformer embedding",
+    )
+    ap.add_argument(
+        "--pocket-ligand",
+        default="",
+        help="Reference HETATM residue name marking the pocket centroid for --smiles",
+    )
+    ap.add_argument(
+        "--pocket-ligand-resid",
+        type=int,
+        default=None,
+        help="Residue number of --pocket-ligand",
+    )
+    ap.add_argument(
+        "--formula",
+        default="",
+        help="Optional expected molecular formula check for the ligand",
+    )
+    ap.add_argument(
+        "--keep-hetatm",
+        default="",
+        help="Comma-separated HETATM residue names retained with the receptor",
+    )
+    ap.add_argument(
+        "--hid",
+        default="",
+        help="Comma-separated receptor residue numbers (or CHAIN:RESID) set to HID",
+    )
+    ap.add_argument(
+        "--hie",
+        default="",
+        help="Comma-separated receptor residue numbers (or CHAIN:RESID) set to HIE",
+    )
+    ap.add_argument(
+        "--hip",
+        default="",
+        help="Comma-separated receptor residue numbers (or CHAIN:RESID) set to HIP",
+    )
+    ap.add_argument(
+        "--cyx",
+        default="",
+        help="Comma-separated receptor cysteine numbers (or CHAIN:RESID) set to CYX",
+    )
+    ap.add_argument(
+        "--metal-his",
+        action="store_true",
+        help="Assign HID/HIE on histidines coordinating retained metals",
+    )
+    ap.add_argument(
+        "--auto-cyx",
+        action="store_true",
+        help="Assign CYX on receptor cysteines with SG-SG <= 2.2 A",
+    )
     args = ap.parse_args(argv)
 
     rec_chains = set(_csv_list(args.chain))
@@ -908,15 +1241,23 @@ def main(argv=None):
             ap.error("--receptor-pqr and --ligand-pqr must be passed together")
         rec_out = args.receptor_out or "receptor.pqr"
         lig_out = args.ligand_out or "ligand.pqr"
-        prepare_pqr_pair(args.receptor_pqr, args.ligand_pqr, rec_out, lig_out, args.model)
+        prepare_pqr_pair(
+            args.receptor_pqr, args.ligand_pqr, rec_out, lig_out, args.model
+        )
         return
 
     if args.split_complex:
         rec_out = args.receptor_out or "receptor.pdb"
         lig_out = args.ligand_out or "ligand.pdb"
         split_complex_pdb(
-            args.split_complex, rec_out, lig_out, args.ligand, lig_chains,
-            keep_hetatm=_csv_list(args.keep_hetatm), ligand_charge=args.ligand_charge, model=args.model,
+            args.split_complex,
+            rec_out,
+            lig_out,
+            args.ligand,
+            lig_chains,
+            keep_hetatm=_csv_list(args.keep_hetatm),
+            ligand_charge=args.ligand_charge,
+            model=args.model,
         )
         return
 
@@ -925,11 +1266,15 @@ def main(argv=None):
             ap.error("--prmtop requires --pdb <coord.pdb>")
         rec_out = args.receptor_out or "receptor.pqr"
         lig_out = args.ligand_out or "ligand.pqr"
-        prmtop_to_pqrs(args.prmtop, args.pdb, args.ligand, args.ligand_residues, rec_out, lig_out)
+        prmtop_to_pqrs(
+            args.prmtop, args.pdb, args.ligand, args.ligand_residues, rec_out, lig_out
+        )
         return
 
     if not args.pdb and not args.pdb_id and not args.ligand_file and not args.smiles:
-        ap.error("Specify --pdb, --pdb-id, --ligand-file, --smiles, --split-complex, --prmtop, --receptor-pqr/--ligand-pqr, or --sphere-pair")
+        ap.error(
+            "Specify --pdb, --pdb-id, --ligand-file, --smiles, --split-complex, --prmtop, --receptor-pqr/--ligand-pqr, or --sphere-pair"
+        )
 
     ref_out = args.receptor_out or args.ligand_out or "receptor.pdb"
     out_dir = os.path.dirname(os.path.abspath(ref_out)) or "."
@@ -961,7 +1306,12 @@ def main(argv=None):
         keep_het.discard(args.pocket_ligand)
     prot_raw, kept_het_raw, lig_raw, lig_chain_raw = [], [], [], []
     for l in raw_lines:
-        if l.startswith("HETATM") and args.mse_to_met and len(l) > 26 and l[17:20].strip() == "MSE":
+        if (
+            l.startswith("HETATM")
+            and args.mse_to_met
+            and len(l) > 26
+            and l[17:20].strip() == "MSE"
+        ):
             l = _convert_mse_line(l)
         if l.startswith("ATOM") and len(l) > 26:
             if l[12:16].strip() == "OXT":
@@ -985,7 +1335,11 @@ def main(argv=None):
             if resn in keep_het and (not rec_chains or l[21] in rec_chains):
                 kept_het_raw.append(l)
 
-    if pdb_path and not prot_raw and not (lig_chains and lig_chain_raw and not args.receptor_out):
+    if (
+        pdb_path
+        and not prot_raw
+        and not (lig_chains and lig_chain_raw and not args.receptor_out)
+    ):
         sys.exit("ERROR: no matching receptor ATOM records in input PDB")
 
     prot_lines = _select_conformer(prot_raw, preferred=args.altloc) if prot_raw else []
@@ -998,7 +1352,8 @@ def main(argv=None):
 
     if prot_lines:
         prot_lines, his_applied = _apply_his_and_cyx(
-            prot_lines, metal_lines,
+            prot_lines,
+            metal_lines,
             _csv_list(args.hid),
             _csv_list(args.hie),
             _csv_list(args.hip),
@@ -1009,13 +1364,19 @@ def main(argv=None):
     else:
         his_applied = {}
 
-    lig_sources = sum(bool(x) for x in (args.ligand, args.ligand_file, args.smiles, lig_chains))
+    lig_sources = sum(
+        bool(x) for x in (args.ligand, args.ligand_file, args.smiles, lig_chains)
+    )
     if lig_sources > 1:
-        sys.exit("ERROR: choose one of --ligand, --ligand-file, --smiles, or --ligand-chain")
+        sys.exit(
+            "ERROR: choose one of --ligand, --ligand-file, --smiles, or --ligand-chain"
+        )
     prot_atoms = _csv_list(args.protonate)
     deprot_atoms = _csv_list(args.deprotonate)
     if set(prot_atoms) & set(deprot_atoms):
-        sys.exit(f"ERROR: overlap between --protonate and --deprotonate: {sorted(set(prot_atoms) & set(deprot_atoms))}")
+        sys.exit(
+            f"ERROR: overlap between --protonate and --deprotonate: {sorted(set(prot_atoms) & set(deprot_atoms))}"
+        )
 
     lig_out_lines = []
     lig_msg = "none"
@@ -1028,29 +1389,51 @@ def main(argv=None):
             groups.setdefault((l[21], l[22:27].strip(), l[17:20].strip()), []).append(l)
         if not groups:
             sys.exit(f"ERROR: ligand {args.ligand!r} absent from {pdb_path}")
-        chosen = next((k for k in groups if rec_chains and k[0] in rec_chains), next(iter(groups)))
+        chosen = next(
+            (k for k in groups if rec_chains and k[0] in rec_chains), next(iter(groups))
+        )
         if args.ligand_smiles or args.ligand_charge is not None:
-            lig_out_lines, q_net, formula, n_lig = _build_ligand_from_template_or_charge(
-                groups[chosen], args.ligand, args.ligand_smiles, args.ligand_charge,
-                prot_atoms, deprot_atoms, args.formula,
+            lig_out_lines, q_net, formula, n_lig = (
+                _build_ligand_from_template_or_charge(
+                    groups[chosen],
+                    args.ligand,
+                    args.ligand_smiles,
+                    args.ligand_charge,
+                    prot_atoms,
+                    deprot_atoms,
+                    args.formula,
+                )
             )
         else:
             ccd_code = args.ccd or args.ligand
             lig_out_lines, q_net, formula, n_lig = _build_ligand_from_ccd(
-                groups[chosen], ccd_code, args.cif or None, prot_atoms, deprot_atoms, out_dir, args.formula
+                groups[chosen],
+                ccd_code,
+                args.cif or None,
+                prot_atoms,
+                deprot_atoms,
+                out_dir,
+                args.formula,
             )
         lig_msg = f"{args.ligand} ({n_lig} atoms, {formula}, Q={q_net:+d} e)"
     elif args.ligand_file:
         lig_out_lines, q_net, formula, n_lig = build_external_ligand_file(
-            args.ligand_file, resname=args.ligand_resname, template_smiles=args.ligand_smiles,
-            net_charge=args.ligand_charge, prot_atoms=prot_atoms, deprot_atoms=deprot_atoms,
+            args.ligand_file,
+            resname=args.ligand_resname,
+            template_smiles=args.ligand_smiles,
+            net_charge=args.ligand_charge,
+            prot_atoms=prot_atoms,
+            deprot_atoms=deprot_atoms,
             expected_formula=args.formula,
         )
         lig_msg = f"{args.ligand_resname} from {os.path.basename(args.ligand_file)} ({n_lig} atoms, {formula}, Q={q_net:+d} e)"
     elif args.smiles:
         lig_out_lines, q_net, formula, n_lig = build_smiles_ligand_pdb(
-            args.smiles, resname=args.ligand_resname, seed=args.seed,
-            target_centroid=pocket_center, expected_formula=args.formula,
+            args.smiles,
+            resname=args.ligand_resname,
+            seed=args.seed,
+            target_centroid=pocket_center,
+            expected_formula=args.formula,
         )
         lig_msg = f"{args.ligand_resname} from SMILES ({n_lig} atoms, {formula}, Q={q_net:+d} e)"
     elif lig_chains:
@@ -1074,13 +1457,23 @@ def main(argv=None):
                 for l in lig_out_lines:
                     out.write(l if l.endswith("\n") else l + "\n")
             out.write("END\n")
-    target_desc = ", ".join(x for x in (rec_out if prot_lines else "", lig_out if lig_out_lines else "") if x)
+    target_desc = ", ".join(
+        x
+        for x in (rec_out if prot_lines else "", lig_out if lig_out_lines else "")
+        if x
+    )
 
     n_res = len({(l[21], l[22:27]) for l in prot_lines})
-    his_str = ", ".join(f"{c.strip()}{r}:{t}" for (c, r), t in sorted(his_applied.items())) or "unchanged"
+    his_str = (
+        ", ".join(f"{c.strip()}{r}:{t}" for (c, r), t in sorted(his_applied.items()))
+        or "unchanged"
+    )
     mut_str = f", mutations {', '.join(mut_applied)}" if mut_applied else ""
-    print(f"# Prepared {target_desc} -> {n_res} receptor residues ({len(prot_lines)} protein atoms, "
-          f"states {his_str}{mut_str}), retained HETATM {len(kept_het_lines)} atoms, ligand {lig_msg}", file=sys.stderr)
+    print(
+        f"# Prepared {target_desc} -> {n_res} receptor residues ({len(prot_lines)} protein atoms, "
+        f"states {his_str}{mut_str}), retained HETATM {len(kept_het_lines)} atoms, ligand {lig_msg}",
+        file=sys.stderr,
+    )
     _print_structure_snippet(rec_out, lig_out, q_net, args.model)
 
 

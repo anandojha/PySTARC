@@ -62,7 +62,9 @@ def main():
     if os.path.exists(split_path):
         with open(split_path) as f:
             split = {s["dir"]: s for s in json.load(f)["shards"]}
-        left_out = [os.path.basename(d) for d in subdirs if os.path.basename(d) not in split]
+        left_out = [
+            os.path.basename(d) for d in subdirs if os.path.basename(d) not in split
+        ]
         if left_out:
             print(f"  Left out (not in split.json): {', '.join(left_out)}")
         subdirs = [os.path.join(bd_sims, d) for d in split]
@@ -148,7 +150,11 @@ def main():
     RSE = SE / P if P > 0 else float("inf")
     # Wilson interval for the reaction probability at the shards' confidence
     # level, with z = 1.96 at 0.95 as in convergence.json.
-    z = 1.96 if abs(conf - 0.95) < 1e-9 else statistics.NormalDist().inv_cdf(0.5 + conf / 2)
+    z = (
+        1.96
+        if abs(conf - 0.95) < 1e-9
+        else statistics.NormalDist().inv_cdf(0.5 + conf / 2)
+    )
     if N_p == 0:
         P_lo, P_hi = 0.0, 1.0
     else:
@@ -202,7 +208,9 @@ def main():
     print(f"  k_on             = {k_on:.4e} M-1 s-1")
     if k_on > 0:
         print(f"  k_on (± error)     = ({man:.1f} ± {err:.1f}) x 10^{exp} M-1 s-1")
-    print(f"  {'Wilson ' + format(100 * conf, 'g') + '% CI':<17s}= [{k_lo:.4e}, {k_hi:.4e}] M-1 s-1")
+    print(
+        f"  {'Wilson ' + format(100 * conf, 'g') + '% CI':<17s}= [{k_lo:.4e}, {k_hi:.4e}] M-1 s-1"
+    )
     if n_max:
         print(
             f"  k_on bound       = [{k_bound_lo:.4e}, {k_bound_hi:.4e}] M-1 s-1  "
@@ -213,7 +221,8 @@ def main():
         for t, n in targets.items():
             status = "completed" if N_p >= n else "need more simulations"
             print(f"    For ±{t} RSE: {n:,} ({status})")
-    print(f"  {'Converged' if RSE < conv_tol else 'Not converged'} (RSE {RSE*100:.2f}%)")
+    is_converged = (0 < P < 1) and (RSE < conv_tol)
+    print(f"  {'Converged' if is_converged else 'Not converged'} (RSE {RSE*100:.2f}%)")
     print(f"  Wall clock       = {wall_time:.1f} s  (slowest of {len(runs)} shard(s))")
     print(f"  Aggregate GPU-s  = {aggregate_gpu_sec:.1f} s  (sum over shards)")
     # Assemble the combined results dictionary that will be written to disk.
@@ -307,7 +316,11 @@ def main():
         offsets=traj_offsets,
     )
     _concat_csv(
-        dirs_valid, "pose_clusters.csv", bd_sims, reindex="traj_id", offsets=traj_offsets
+        dirs_valid,
+        "pose_clusters.csv",
+        bd_sims,
+        reindex="traj_id",
+        offsets=traj_offsets,
     )
     _sum_csv(
         dirs_valid,
@@ -381,7 +394,7 @@ def main():
         "SE_kon": CONV * k_b * SE,
         "wilson_CI": [k_lo, k_hi],
         "wilson_CI_P": [P_lo, P_hi],
-        "converged": RSE < conv_tol if P > 0 else False,
+        "converged": (0 < P < 1) and (RSE < conv_tol),
         "confidence_level": conf,
         "tol": conv_tol,
         "tol_pct": conv_tol * 100,

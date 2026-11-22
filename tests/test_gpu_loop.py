@@ -20,30 +20,87 @@ from pystarc.pathways.reaction_interface import PathwaySet, ReactionInterface
 from pystarc.simulation.nam_simulator import NAMParameters
 from pystarc.structures.molecules import Atom, ContactPair, Molecule, ReactionCriteria
 
-KEYS = ("outcome", "n_steps", "total_time_ps", "bb_triggered", "encounter_traj",
-        "encounter_step", "encounter_pos", "encounter_bridge_only")
+KEYS = (
+    "outcome",
+    "n_steps",
+    "total_time_ps",
+    "bb_triggered",
+    "encounter_traj",
+    "encounter_step",
+    "encounter_pos",
+    "encounter_bridge_only",
+)
 
 
 def _mol(xyz, radii):
-    return Molecule(atoms=[Atom(index=i, name="GHO" if r == 0 else "C", x=p[0], y=p[1], z=p[2],
-                                radius=r) for i, (p, r) in enumerate(zip(xyz, radii))])
+    return Molecule(
+        atoms=[
+            Atom(
+                index=i, name="GHO" if r == 0 else "C", x=p[0], y=p[1], z=p[2], radius=r
+            )
+            for i, (p, r) in enumerate(zip(xyz, radii))
+        ]
+    )
 
 
-def _run(work, n=400, max_steps=40, seed=5, rxns=((12.0, None, None),), b=15.0, r_esc=16.6,
-         bridge=True, ckpt=0, key="k", rec=None, lig=None, overlap=False):
+def _run(
+    work,
+    n=400,
+    max_steps=40,
+    seed=5,
+    rxns=((12.0, None, None),),
+    b=15.0,
+    r_esc=16.6,
+    bridge=True,
+    ckpt=0,
+    key="k",
+    rec=None,
+    lig=None,
+    overlap=False,
+):
     """One pair, receptor atom 0 and ligand atom 0, per reaction (cutoff, before, after)."""
     rec = rec or _mol([[0.0, 0.0, 0.0]], [2.0])
     lig = lig or _mol([[0.0, 0.0, 0.0]], [1.5])
-    rx = [ReactionInterface(name=f"r{i}", criteria=ReactionCriteria(
-        name=f"r{i}", pairs=[ContactPair(0, 0, c)], n_needed=1, state_before=sb, state_after=sa),
-        state_before=sb, state_after=sa) for i, (c, sb, sa) in enumerate(rxns)]
-    p = NAMParameters(n_trajectories=n, max_steps=max_steps, r_start=b, r_escape=r_esc, seed=seed,
-                      hydrodynamic_interactions=False, use_brownian_bridge=bridge,
-                      minimum_core_reaction_dt=0.05)
-    p.checkpoint_interval, p._run_key, p._work_dir, p._overlap_check = ckpt, key, str(work), overlap
+    rx = [
+        ReactionInterface(
+            name=f"r{i}",
+            criteria=ReactionCriteria(
+                name=f"r{i}",
+                pairs=[ContactPair(0, 0, c)],
+                n_needed=1,
+                state_before=sb,
+                state_after=sa,
+            ),
+            state_before=sb,
+            state_after=sa,
+        )
+        for i, (c, sb, sa) in enumerate(rxns)
+    ]
+    p = NAMParameters(
+        n_trajectories=n,
+        max_steps=max_steps,
+        r_start=b,
+        r_escape=r_esc,
+        seed=seed,
+        hydrodynamic_interactions=False,
+        use_brownian_bridge=bridge,
+        minimum_core_reaction_dt=0.05,
+    )
+    p.checkpoint_interval, p._run_key, p._work_dir, p._overlap_check = (
+        ckpt,
+        key,
+        str(work),
+        overlap,
+    )
     eng = GPUBatchForceEngine([], [], alpha=0.0, debye_length=7.86)
-    sim = gbs.GPUBatchSimulator(rec, lig, MobilityTensor.from_radii(10.0, 2.0),
-                                PathwaySet(rx, first_state=rxns[0][1]), p, eng)
+    sim = gbs.GPUBatchSimulator(
+        rec,
+        lig,
+        MobilityTensor.from_radii(10.0, 2.0),
+        PathwaySet(rx, first_state=rxns[0][1]),
+        p,
+        eng,
+    )
     return sim.run().sim_data
 
 
@@ -94,9 +151,15 @@ def test_a_resumed_run_equals_the_run_that_was_not_stopped(tmp_path, monkeypatch
     assert not (tmp_path / "b" / "checkpoint.npz").exists()
 
 
-@pytest.mark.parametrize("change,word", [(dict(n=401), "run_N"), (dict(seed=6), "run_seed"),
-                                         (dict(max_steps=41), "run_max_steps"),
-                                         (dict(key="other"), "run_key")])
+@pytest.mark.parametrize(
+    "change,word",
+    [
+        (dict(n=401), "run_N"),
+        (dict(seed=6), "run_seed"),
+        (dict(max_steps=41), "run_max_steps"),
+        (dict(key="other"), "run_key"),
+    ],
+)
 def test_a_checkpoint_of_another_run_raises(tmp_path, monkeypatch, change, word):
     _stopped(monkeypatch, tmp_path)
     with pytest.raises(RuntimeError, match=f"written by another run.*{word}"):
@@ -114,7 +177,10 @@ def test_checkpoints_off_leave_a_checkpoint_alone(tmp_path, monkeypatch):
     _stopped(monkeypatch, tmp_path / "b")
     with pytest.warns(RuntimeWarning, match="left untouched"):
         out = _run(tmp_path / "b")
-    assert _same(out, _run(tmp_path / "a")) and (tmp_path / "b" / "checkpoint.npz").exists()
+    assert (
+        _same(out, _run(tmp_path / "a"))
+        and (tmp_path / "b" / "checkpoint.npz").exists()
+    )
 
 
 def test_flattened_encounter_rows_are_the_reactions_at_the_end_of_their_step(tmp_path):
@@ -175,9 +241,13 @@ def test_overlap_map_and_test_hold_real_atoms_only(tmp_path, monkeypatch):
     lig0 = np.array([[0.6, 0.0, 0.0], [-0.6, 0.0, 0.0]])
     qn = rng.normal(size=(4000, 4))
     w, x, y, z = (qn / np.linalg.norm(qn, axis=1, keepdims=True)).T
-    R = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
-                  [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
-                  [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]]).transpose(2, 0, 1)
+    R = np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+            [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+            [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+        ]
+    ).transpose(2, 0, 1)
     pos = np.einsum("nij,kj->nki", R, lig0) + rng.uniform(-5.5, 5.5, (4000, 1, 3))
     d = np.linalg.norm(pos[:, :, None] - ring[None, None], axis=3)
     ref = (d < 0.5 * (np.array([1.7, 1.5])[:, None] + 1.7)).any(axis=(1, 2))

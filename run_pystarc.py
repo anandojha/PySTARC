@@ -98,14 +98,27 @@ def _run_multi_gpu(input_xml_path: Path, work_dir: Path, n_gpus: int):
     rc = split_multi_gpu(str(input_xml_path), n_splits=n_gpus)
     if rc != 0:
         sys.exit(rc)
-    visible = [d.strip() for d in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",") if d.strip()]
+    visible = [
+        d.strip()
+        for d in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")
+        if d.strip()
+    ]
     runner = str(Path(__file__).resolve())
     procs = []
     for i in range(1, n_gpus + 1):
         shard_dir = work_dir / f"bd_{i}"
         env = dict(os.environ)
-        env["CUDA_VISIBLE_DEVICES"] = visible[(i - 1) % len(visible)] if visible else str(i - 1)
-        procs.append((i, subprocess.Popen([sys.executable, runner, "input.xml"], cwd=str(shard_dir), env=env)))
+        env["CUDA_VISIBLE_DEVICES"] = (
+            visible[(i - 1) % len(visible)] if visible else str(i - 1)
+        )
+        procs.append(
+            (
+                i,
+                subprocess.Popen(
+                    [sys.executable, runner, "input.xml"], cwd=str(shard_dir), env=env
+                ),
+            )
+        )
     failed = []
     for i, p in procs:
         code = p.wait()
@@ -113,8 +126,12 @@ def _run_multi_gpu(input_xml_path: Path, work_dir: Path, n_gpus: int):
             failed.append((i, code))
     if failed:
         sys.exit(f"ERROR: multi-GPU shard failure: {failed}")
-    combiner = str(Path(__file__).resolve().parent / "pystarc" / "multi_GPU" / "combine_data.py")
-    rc = subprocess.run([sys.executable, combiner, "--bd-sims", str(work_dir)]).returncode
+    combiner = str(
+        Path(__file__).resolve().parent / "pystarc" / "multi_GPU" / "combine_data.py"
+    )
+    rc = subprocess.run(
+        [sys.executable, combiner, "--bd-sims", str(work_dir)]
+    ).returncode
     if rc != 0:
         sys.exit(rc)
 
@@ -266,7 +283,11 @@ def main():
                     print(line)
                 # Convergence analysis
                 if cfg.convergence_check:
-                    _k_b = rj.get("k_b", 0.0) if rj_path.exists() else getattr(result, "k_db", 0.0)
+                    _k_b = (
+                        rj.get("k_b", 0.0)
+                        if rj_path.exists()
+                        else getattr(result, "k_db", 0.0)
+                    )
                     _conv = analyse_convergence(
                         n_reacted=result.n_reacted,
                         n_escaped=result.n_escaped,
