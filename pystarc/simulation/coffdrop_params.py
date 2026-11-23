@@ -37,11 +37,12 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 import numpy as np
 import math
-from scipy.interpolate import CubicSpline
+from scipy.interpolate import CubicSpline, PPoly, PchipInterpolator
+from pystarc.global_defs.constants import KBT_KCAL
+from pystarc.global_defs.defaults import TEMPERATURE
 
-# Unit conversions. The energies in coffdrop.xml are given in kcal/mol, so this
-# is the standard COFFDROP factor that converts them to units of kBT.
-_KCAL_TO_KBT = 1.688656287
+# Unit conversion from kcal/mol in coffdrop.xml to kBT at reference temperature.
+_KCAL_TO_KBT = 1.0 / KBT_KCAL
 
 
 # Bead mapping
@@ -145,61 +146,103 @@ def _parse_charges(xml_path: str) -> Dict[Tuple[str, str], float]:
 @dataclass
 class TabulatedPotential:
     """
-    A one-dimensional tabulated potential evaluated by interpolation.
+    One-dimensional tabulated potential evaluated by spline interpolation.
     """
 
     x_min: float
     x_max: float
-    values: np.ndarray  # the N energy values in units of kBT
-    residues: Tuple  # the residue type indices
-    atoms: Tuple  # the atom (bead) type indices
-    orders: Tuple  # the sequence order values
+    values: np.ndarray  # N energy values in kBT
+    residues: Tuple  # residue type indices
+    atoms: Tuple  # atom (bead) type indices
+    orders: Tuple  # sequence order values
     index: int
+    kind: str = ""
+    eq_length: Optional[float] = None
 
     def __post_init__(self):
+        self.values = np.asarray(self.values, dtype=np.float64)
         n = len(self.values)
         if n == 0:
             raise ValueError(
                 "TabulatedPotential requires at least one energy value, but "
-                f"the values array is empty (index={self.index}). This usually "
-                "means an empty <data> tag in the force-field XML."
+                f"the values array is empty (index={self.index}). An empty "
+                "<data> tag in the force-field XML causes this."
             )
         self._dx = (self.x_max - self.x_min) / (n - 1) if n > 1 else 1.0
-        # Build the cubic spline once when the object is constructed, so that
-        # later calls to value() and deriv() simply evaluate it. We use natural
-        # boundary conditions (the second derivative vanishes at the endpoints)
-        # to match the Even_Spline semantics of BD2. A spline can only be built
-        # when there are at least 4 points, so for shorter tables we fall back
-        # to linear interpolation.
+        self.left_slope: float = 0.0
+        self.is_periodic: bool = self.kind == "dihedral"
         if n >= 4:
-            xs = self.x_min + self._dx * np.arange(n)
-            self._spline = CubicSpline(xs, self.values, bc_type="natural")
+            xs = self.x_min + self._dx * np.arange(n, dtype=np.float64)
+            if self.kind == "pair":
+                # Monotone cubic Hermite avoids Gibbs ringing across steep cores.
+                self._spline = PchipInterpolator(xs, self.values)
+            elif self.kind == "dihedral":
+                has_ghost = (
+                    abs(float(self.values[0]) - float(self.values[-2])) < 1e-6
+                    and abs(float(self.values[1]) - float(self.values[-1])) < 1e-6
+                )
+                if has_ghost:
+                    vals_per = np.array(self.values[1:], dtype=np.float64, copy=True)
+                    vals_per[-1] = vals_per[0]
+                    cs = CubicSpline(xs[1:], vals_per, bc_type="periodic")
+                    self._spline = PPoly(
+                        np.concatenate([cs.c[:, -1:], cs.c], axis=1), xs
+                    )
+                elif abs(float(self.values[0]) - float(self.values[-1])) < 1e-6:
+                    vals_per = np.array(self.values, dtype=np.float64, copy=True)
+                    vals_per[-1] = vals_per[0]
+                    self._spline = CubicSpline(xs, vals_per, bc_type="periodic")
+                else:
+                    self._spline = CubicSpline(xs, self.values, bc_type="natural")
+            else:
+                self._spline = CubicSpline(xs, self.values, bc_type="natural")
         else:
             self._spline = None
 
+        if self.kind == "pair" and float(self.values[0]) > 100.0:
+            if self._spline is not None:
+                self.left_slope = min(float(self._spline(self.x_min, 1)), -1.0e4)
+            elif n >= 2:
+                slope0 = float(self.values[1] - self.values[0]) / self._dx
+                self.left_slope = min(slope0, -1.0e4)
+            else:
+                self.left_slope = -1.0e4
+        elif self.kind == "bond":
+            if self._spline is not None:
+                slope0 = float(self._spline(self.x_min, 1))
+                if slope0 < 0.0:
+                    self.left_slope = slope0
+            elif n >= 2:
+                slope0 = float(self.values[1] - self.values[0]) / self._dx
+                if slope0 < 0.0:
+                    self.left_slope = slope0
+
     def value(self, x: float) -> float:
-        """Cubic-spline interpolation, clamped at the table boundaries."""
+        """Spline interpolation, clamped at table boundaries."""
         if x <= self.x_min:
             return float(self.values[0])
         if x >= self.x_max:
             return float(self.values[-1])
         if self._spline is not None:
             return float(self._spline(x))
-        # Fall back to linear interpolation for short tables.
         t = (x - self.x_min) / self._dx
         i = int(math.floor(t))
         frac = t - i
         return float(self.values[i] * (1.0 - frac) + self.values[i + 1] * frac)
 
     def deriv(self, x: float) -> float:
-        """First derivative of the spline, zero outside the table."""
-        if x <= self.x_min or x >= self.x_max:
+        """First derivative of the spline, with repulsive left core on pair tables."""
+        if not math.isfinite(x):
+            return 0.0
+        if x <= self.x_min:
+            if self.left_slope != 0.0:
+                return self.left_slope
+            if not (self.is_periodic and x == self.x_min):
+                return 0.0
+        if x >= self.x_max:
             return 0.0
         if self._spline is not None:
-            return float(
-                self._spline(x, 1)
-            )  # the second argument 1 selects the first derivative
-        # Fall back to linear differences for short tables.
+            return float(self._spline(x, 1))
         t = (x - self.x_min) / self._dx
         i = int(math.floor(t))
         if i < 0:
@@ -210,31 +253,28 @@ class TabulatedPotential:
         return float((self.values[i + 1] - self.values[i]) / self._dx)
 
     def deriv_array(self, xs: np.ndarray) -> np.ndarray:
-        """Vectorized first derivative that returns an array of derivatives.
-
-        This has the same meaning as deriv() applied to each element, returning
-        zero outside the table range, but it takes advantage of the array
-        support in CubicSpline and so is much faster than a Python loop over
-        scalar deriv() calls. The input xs is an array of x values of shape
-        (N,), and the result is an array of shape (N,) giving the first
-        derivative at each x, which is zero outside [x_min, x_max].
-        """
-        xs = np.asarray(xs)
+        """Vectorized first derivative matching scalar deriv() elementwise."""
+        xs = np.asarray(xs, dtype=np.float64)
         out = np.zeros_like(xs, dtype=np.float64)
-        in_range = (xs > self.x_min) & (xs < self.x_max)
-        if not in_range.any():
-            return out
-        if self._spline is not None:
-            # CubicSpline accepts array input directly.
-            out[in_range] = self._spline(xs[in_range], 1)
-            return out
-        # Fall back to linear differences, with the index arithmetic vectorized.
-        n = len(self.values)
-        t = (xs - self.x_min) / self._dx
-        i_arr = np.floor(t).astype(np.int64)
-        i_arr = np.clip(i_arr, 0, n - 2)
-        diffs = (self.values[i_arr + 1] - self.values[i_arr]) / self._dx
-        out[in_range] = diffs[in_range]
+        finite = np.isfinite(xs)
+        if self.is_periodic:
+            in_range = finite & (xs >= self.x_min) & (xs < self.x_max)
+        else:
+            in_range = finite & (xs > self.x_min) & (xs < self.x_max)
+        if in_range.any():
+            xs_in = xs[in_range]
+            if self._spline is not None:
+                out[in_range] = self._spline(xs_in, 1)
+            else:
+                n = len(self.values)
+                t = (xs_in - self.x_min) / self._dx
+                i_arr = np.floor(t).astype(np.int64)
+                i_arr = np.clip(i_arr, 0, n - 2)
+                out[in_range] = (self.values[i_arr + 1] - self.values[i_arr]) / self._dx
+        if self.left_slope != 0.0:
+            left_mask = finite & (xs <= self.x_min)
+            if left_mask.any():
+                out[left_mask] = self.left_slope
         return out
 
 
@@ -245,21 +285,17 @@ def _txt_to_floats(txt: str) -> np.ndarray:
 
 def _parse_ff(
     xml_path: str,
-) -> Tuple[
-    Dict, List[TabulatedPotential], List[TabulatedPotential], List[TabulatedPotential]
-]:
-    """
-    Parse coffdrop.xml.
+    nb_attractive_scale: float = 1.0,
+    temperature: float = TEMPERATURE,
+    return_bonds: bool = False,
+):
+    """Parse coffdrop.xml into type maps and tabulated pair, angle, dihedral, and optional bond tables."""
+    if temperature <= 0.0:
+        raise ValueError(f"temperature must be positive, got {temperature}")
+    kcal_to_kbt = _KCAL_TO_KBT * (TEMPERATURE / float(temperature))
 
-    The function returns four objects. The first, type_map, maps atom and
-    residue names to integer indices and has the form {'atoms': {name: index},
-    'residues': {name: index}}. The remaining three are lists of
-    TabulatedPotential objects holding, respectively, the non-bonded pair
-    potentials, the bond-angle potentials, and the dihedral-angle potentials.
-    """
     tree = ET.parse(xml_path)
     root = tree.getroot()
-    # Type indices
     type_map: Dict = {"atoms": {}, "residues": {}}
     types_node = root.find("types")
     if types_node is not None:
@@ -271,8 +307,14 @@ def _parse_ff(
             n = (rtype.findtext("name") or rtype.findtext("n") or "").strip()
             i = int(rtype.findtext("index", "0"))
             type_map["residues"][n] = i
-    # Pair potentials
-    pairs: List[TabulatedPotential] = []
+
+    # Non-bonded pair potentials: (0, 0) general pairs followed by non-(0, 0)
+    # improper-bond tables ((1, 2) adjacent pairs plus intra-residue TRP-cap
+    # tables (1, 1) CN-CD and (2, 2) CD-CC). Actual bond="true" tables go into
+    # bond_pots so pair_pots keeps sequential 0-based indices matching XML order.
+    pairs_00: List[TabulatedPotential] = []
+    pairs_non00: List[TabulatedPotential] = []
+    bond_pots: List[TabulatedPotential] = []
     pairs_node = root.find("pairs")
     if pairs_node is not None:
         dist_txt = pairs_node.findtext("distance", "").strip()
@@ -286,24 +328,51 @@ def _parse_ff(
         for pot_node in pairs_node.findall("potentials/potential"):
             orders_txt = pot_node.findtext("orders", "0 0").split()
             orders = tuple(int(v) for v in orders_txt)
-            # Orders of (0, 0) identify a non-bonded pair potential.
-            if orders != (0, 0):
-                continue
-            idx = int(pot_node.findtext("index", "0"))
             res_txt = pot_node.findtext("residues", "").split()
             at_txt = pot_node.findtext("atoms", "").split()
-            data = _txt_to_floats(pot_node.findtext("data", "")) * _KCAL_TO_KBT
-            pairs.append(
-                TabulatedPotential(
-                    x_min=x_min_p,
-                    x_max=x_max_p,
-                    values=data,
-                    residues=tuple(int(v) for v in res_txt),
-                    atoms=tuple(int(v) for v in at_txt),
-                    orders=orders,
-                    index=idx,
+            is_bond = pot_node.attrib.get("bond", "").strip().lower() == "true"
+            data = _txt_to_floats(pot_node.findtext("data", "")) * kcal_to_kbt
+            if is_bond:
+                eq_txt = pot_node.findtext("eq_length")
+                eq_len = (
+                    float(eq_txt) if eq_txt is not None and eq_txt.strip() else None
                 )
+                bond_pots.append(
+                    TabulatedPotential(
+                        x_min=x_min_p,
+                        x_max=x_max_p,
+                        values=data,
+                        residues=tuple(int(v) for v in res_txt),
+                        atoms=tuple(int(v) for v in at_txt),
+                        orders=orders,
+                        index=0,
+                        kind="bond",
+                        eq_length=eq_len,
+                    )
+                )
+                continue
+            if nb_attractive_scale != 1.0:
+                data[data < 0.0] *= float(nb_attractive_scale)
+            pot = TabulatedPotential(
+                x_min=x_min_p,
+                x_max=x_max_p,
+                values=data,
+                residues=tuple(int(v) for v in res_txt),
+                atoms=tuple(int(v) for v in at_txt),
+                orders=orders,
+                index=0,
+                kind="pair",
             )
+            if orders == (0, 0):
+                pairs_00.append(pot)
+            else:
+                pairs_non00.append(pot)
+    pairs: List[TabulatedPotential] = pairs_00 + pairs_non00
+    for seq_idx, pot in enumerate(pairs):
+        pot.index = seq_idx
+    for seq_idx, pot in enumerate(bond_pots):
+        pot.index = seq_idx
+
     # Bond-angle potentials
     angles: List[TabulatedPotential] = []
     angles_node = root.find("bond_angles")
@@ -321,7 +390,7 @@ def _parse_ff(
             res_txt = pot_node.findtext("residues", "").split()
             at_txt = pot_node.findtext("atoms", "").split()
             ord_txt = pot_node.findtext("orders", "").split()
-            data = _txt_to_floats(pot_node.findtext("data", "")) * _KCAL_TO_KBT
+            data = _txt_to_floats(pot_node.findtext("data", "")) * kcal_to_kbt
             angles.append(
                 TabulatedPotential(
                     x_min=x_min_a,
@@ -331,8 +400,10 @@ def _parse_ff(
                     atoms=tuple(int(v) for v in at_txt),
                     orders=tuple(int(v) for v in ord_txt),
                     index=idx,
+                    kind="angle",
                 )
             )
+
     # Dihedral potentials
     dihedrals: List[TabulatedPotential] = []
     dih_node = root.find("dihedral_angles")
@@ -350,7 +421,7 @@ def _parse_ff(
             res_txt = pot_node.findtext("residues", "").split()
             at_txt = pot_node.findtext("atoms", "").split()
             ord_txt = pot_node.findtext("orders", "").split()
-            data = _txt_to_floats(pot_node.findtext("data", "")) * _KCAL_TO_KBT
+            data = _txt_to_floats(pot_node.findtext("data", "")) * kcal_to_kbt
             dihedrals.append(
                 TabulatedPotential(
                     x_min=x_min_d,
@@ -360,8 +431,11 @@ def _parse_ff(
                     atoms=tuple(int(v) for v in at_txt),
                     orders=tuple(int(v) for v in ord_txt),
                     index=idx,
+                    kind="dihedral",
                 )
             )
+    if return_bonds:
+        return type_map, pairs, angles, dihedrals, bond_pots
     return type_map, pairs, angles, dihedrals
 
 
@@ -426,6 +500,9 @@ class COFFDROPParams:
         pair_pots: List[TabulatedPotential],
         angle_pots: List[TabulatedPotential],
         dihedral_pots: List[TabulatedPotential],
+        nb_attractive_scale: float = 1.0,
+        temperature: float = TEMPERATURE,
+        bond_pots: Optional[List[TabulatedPotential]] = None,
     ):
         self.mapping = mapping
         self.bonds = bonds
@@ -434,33 +511,297 @@ class COFFDROPParams:
         self.pair_pots = pair_pots
         self.angle_pots = angle_pots
         self.dihedral_pots = dihedral_pots
-        # Pre-build the name to index lookups.
+        self.bond_pots: List[TabulatedPotential] = (
+            list(bond_pots) if bond_pots is not None else []
+        )
+        self.nb_attractive_scale = float(nb_attractive_scale)
+        self.temperature = float(temperature)
         self._at_idx = type_map["atoms"]
         self._res_idx = type_map["residues"]
         self.files: Dict[str, str] = {}
+        self._pot_index_cache: Dict[str, Tuple[int, int, Dict]] = {}
+        self._diff_index_cache: Dict[str, Tuple[int, int, object]] = {}
+
+    def _indexed_bucket(
+        self, kind: str, at_indices: Tuple[int, ...], orders: Tuple[int, ...]
+    ) -> List[TabulatedPotential]:
+        pots = getattr(self, kind + "_pots")
+        cached = self._pot_index_cache.get(kind)
+        if cached is None or cached[0] != id(pots) or cached[1] != len(pots):
+            buckets: Dict[
+                Tuple[Tuple[int, ...], Tuple[int, ...]], List[TabulatedPotential]
+            ] = {}
+            for pot in pots:
+                buckets.setdefault((pot.atoms, pot.orders), []).append(pot)
+            cached = (id(pots), len(pots), buckets)
+            self._pot_index_cache[kind] = cached
+        return cached[2].get((at_indices, orders), [])
+
+    def match_pot(
+        self,
+        kind: str,
+        res_indices: Tuple[int, ...],
+        at_indices: Tuple[int, ...],
+        orders: Tuple[int, ...],
+        wildcard: int = 0,
+    ) -> Optional[TabulatedPotential]:
+        """Indexed lookup matching _match_pot semantics over pair, angle, or dihedral tables."""
+        bucket = self._indexed_bucket(kind, at_indices, orders)
+        if not bucket:
+            return None
+        return _match_pot(bucket, res_indices, at_indices, orders, wildcard=wildcard)
+
+    def _bond_diff_buckets(
+        self,
+    ) -> Dict[Tuple[Tuple[int, int], int], Dict[Tuple[int, int], TabulatedPotential]]:
+        pots = self.bond_pots
+        cached = self._diff_index_cache.get("bond")
+        if cached is None or cached[0] != id(pots) or cached[1] != len(pots):
+            buckets: Dict[
+                Tuple[Tuple[int, int], int], Dict[Tuple[int, int], TabulatedPotential]
+            ] = {}
+            for pot in pots:
+                if (
+                    len(pot.orders) != 2
+                    or len(pot.atoms) != 2
+                    or len(pot.residues) != 2
+                ):
+                    continue
+                diff = pot.orders[1] - pot.orders[0]
+                rmap = buckets.setdefault((pot.atoms, diff), {})
+                rmap.setdefault(pot.residues, pot)
+            cached = (id(pots), len(pots), buckets)
+            self._diff_index_cache["bond"] = cached
+        return cached[2]  # type: ignore[return-value]
+
+    def _improper_pair_diff_buckets(
+        self,
+    ) -> Dict[Tuple[Tuple[int, int], int], Dict[Tuple[int, int], TabulatedPotential]]:
+        pots = self.pair_pots
+        cached = self._diff_index_cache.get("improper_pair")
+        if cached is None or cached[0] != id(pots) or cached[1] != len(pots):
+            buckets: Dict[
+                Tuple[Tuple[int, int], int], Dict[Tuple[int, int], TabulatedPotential]
+            ] = {}
+            for pot in pots:
+                if pot.orders == (0, 0) or len(pot.orders) != 2:
+                    continue
+                if len(pot.atoms) != 2 or len(pot.residues) != 2:
+                    continue
+                diff = pot.orders[1] - pot.orders[0]
+                rmap = buckets.setdefault((pot.atoms, diff), {})
+                rmap.setdefault(pot.residues, pot)
+            cached = (id(pots), len(pots), buckets)
+            self._diff_index_cache["improper_pair"] = cached
+        return cached[2]  # type: ignore[return-value]
+
+    def _angle_diff_index(
+        self,
+    ) -> Tuple[
+        Dict[
+            Tuple[Tuple[int, int, int], Tuple[int, int]],
+            Dict[Tuple[int, int, int], TabulatedPotential],
+        ],
+        Tuple[Tuple[int, int], ...],
+    ]:
+        pots = self.angle_pots
+        cached = self._diff_index_cache.get("angle")
+        if cached is None or cached[0] != id(pots) or cached[1] != len(pots):
+            buckets: Dict[
+                Tuple[Tuple[int, int, int], Tuple[int, int]],
+                Dict[Tuple[int, int, int], TabulatedPotential],
+            ] = {}
+            diffs_seen = set()
+            for pot in pots:
+                if (
+                    len(pot.orders) != 3
+                    or len(pot.atoms) != 3
+                    or len(pot.residues) != 3
+                ):
+                    continue
+                diffs = (pot.orders[1] - pot.orders[0], pot.orders[2] - pot.orders[0])
+                diffs_seen.add(diffs)
+                rmap = buckets.setdefault((pot.atoms, diffs), {})
+                rmap.setdefault(pot.residues, pot)
+            cached = (id(pots), len(pots), (buckets, tuple(sorted(diffs_seen))))
+            self._diff_index_cache["angle"] = cached
+        return cached[2]  # type: ignore[return-value]
+
+    def _dihedral_diff_buckets(
+        self,
+    ) -> Dict[
+        Tuple[Tuple[int, int, int, int], Tuple[int, int, int]],
+        Dict[Tuple[int, int, int, int], TabulatedPotential],
+    ]:
+        pots = self.dihedral_pots
+        cached = self._diff_index_cache.get("dihedral")
+        if cached is None or cached[0] != id(pots) or cached[1] != len(pots):
+            buckets: Dict[
+                Tuple[Tuple[int, int, int, int], Tuple[int, int, int]],
+                Dict[Tuple[int, int, int, int], TabulatedPotential],
+            ] = {}
+            for pot in pots:
+                if (
+                    len(pot.orders) != 4
+                    or len(pot.atoms) != 4
+                    or len(pot.residues) != 4
+                ):
+                    continue
+                diffs = (
+                    pot.orders[1] - pot.orders[0],
+                    pot.orders[2] - pot.orders[0],
+                    pot.orders[3] - pot.orders[0],
+                )
+                rmap = buckets.setdefault((pot.atoms, diffs), {})
+                rmap.setdefault(pot.residues, pot)
+            cached = (id(pots), len(pots), buckets)
+            self._diff_index_cache["dihedral"] = cached
+        return cached[2]  # type: ignore[return-value]
+
+    def angle_diffs(self) -> Tuple[Tuple[int, int], ...]:
+        """Return sorted unique relative residue difference pairs present in angle_pots."""
+        _, diffs_tuple = self._angle_diff_index()
+        return diffs_tuple
+
+    def match_bond_pot(
+        self,
+        res0: str,
+        bead0: str,
+        order0: int,
+        res1: str,
+        bead1: str,
+        order1: int,
+    ) -> Optional[TabulatedPotential]:
+        """Look up a bond="true" TabulatedPotential by residue diff and BD2 wildcard order."""
+        if not self.bond_pots:
+            return None
+        r0, r1 = self._ri(res0), self._ri(res1)
+        a0, a1 = self._ai(bead0), self._ai(bead1)
+        if a0 < 0 or a1 < 0:
+            return None
+        diff = order1 - order0
+        buckets = self._bond_diff_buckets()
+        fwd = buckets.get(((a0, a1), diff))
+        rev = buckets.get(((a1, a0), -diff))
+        for pr0, pr1 in ((r0, r1), (r0, 0), (0, r1), (0, 0)):
+            if fwd is not None:
+                pot = fwd.get((pr0, pr1))
+                if pot is not None:
+                    return pot
+            if rev is not None:
+                pot = rev.get((pr1, pr0))
+                if pot is not None:
+                    return pot
+        return None
+
+    def match_improper_pair(
+        self,
+        res_indices: Tuple[int, int],
+        at_indices: Tuple[int, int],
+        diff: int,
+    ) -> Optional[TabulatedPotential]:
+        """Look up a directed non-(0,0) improper-bond pair table with BD2 wildcard order."""
+        rmap = self._improper_pair_diff_buckets().get((at_indices, diff))
+        if not rmap:
+            return None
+        r0, r1 = res_indices
+        for pat in ((r0, r1), (r0, 0), (0, r1), (0, 0)):
+            pot = rmap.get(pat)
+            if pot is not None:
+                return pot
+        return None
+
+    def match_angle_diff(
+        self,
+        res_indices: Tuple[int, int, int],
+        at_indices: Tuple[int, int, int],
+        diffs: Tuple[int, int],
+    ) -> Optional[TabulatedPotential]:
+        """Look up an angle table by relative residue diffs using BD2 wildcard priority."""
+        buckets, _ = self._angle_diff_index()
+        rmap = buckets.get((at_indices, diffs))
+        if not rmap:
+            return None
+        r0, r1, r2 = res_indices
+        for pat in (
+            (r0, r1, r2),
+            (r0, r1, 0),
+            (r0, 0, r2),
+            (0, r1, r2),
+            (r0, 0, 0),
+            (0, r1, 0),
+            (0, 0, r2),
+            (0, 0, 0),
+        ):
+            pot = rmap.get(pat)
+            if pot is not None:
+                return pot
+        return None
+
+    def match_dihedral_diff(
+        self,
+        res_indices: Tuple[int, int, int, int],
+        at_indices: Tuple[int, int, int, int],
+        diffs: Tuple[int, int, int],
+    ) -> Optional[TabulatedPotential]:
+        """Look up a dihedral table by relative residue diffs with fewest-wildcard, lowest-index tie-break."""
+        rmap = self._dihedral_diff_buckets().get((at_indices, diffs))
+        if not rmap:
+            return None
+        r0, r1, r2, r3 = res_indices
+        best_key: Optional[Tuple[int, int]] = None
+        best_pot: Optional[TabulatedPotential] = None
+        for mask in range(16):
+            m0 = (mask >> 0) & 1
+            m1 = (mask >> 1) & 1
+            m2 = (mask >> 2) & 1
+            m3 = (mask >> 3) & 1
+            pat = (
+                r0 if m0 else 0,
+                r1 if m1 else 0,
+                r2 if m2 else 0,
+                r3 if m3 else 0,
+            )
+            pot = rmap.get(pat)
+            if pot is not None:
+                cand_key = (4 - (m0 + m1 + m2 + m3), pot.index)
+                if best_key is None or cand_key < best_key:
+                    best_key = cand_key
+                    best_pot = pot
+        return best_pot
 
     @classmethod
     def load(
-        cls, ff_xml: str, mapping_xml: str, connectivity_xml: str, charges_xml: str
+        cls,
+        ff_xml: str,
+        mapping_xml: str,
+        connectivity_xml: str,
+        charges_xml: str,
+        nb_attractive_scale: float = 1.0,
+        temperature: float = TEMPERATURE,
     ) -> "COFFDROPParams":
-        """
-        Load all four COFFDROP files.
-
-        The argument ff_xml is the path to coffdrop.xml, which holds the
-        tabulated force-field potentials. The argument mapping_xml is the path
-        to map.xml, which gives the atom-to-bead mapping. The argument
-        connectivity_xml is the path to connectivity.xml, which holds the bond
-        definitions. The argument charges_xml is the path to charges.xml, which
-        gives the bead partial charges.
-        """
+        """Load all four COFFDROP XML parameter files."""
         mapping = _parse_mapping(mapping_xml)
         bonds = _parse_connectivity(connectivity_xml)
         charges = _parse_charges(charges_xml)
-        type_map, pair_pots, angle_pots, dihedral_pots = _parse_ff(ff_xml)
-        params = cls(
-            mapping, bonds, charges, type_map, pair_pots, angle_pots, dihedral_pots
+        type_map, pair_pots, angle_pots, dihedral_pots, bond_pots = _parse_ff(
+            ff_xml,
+            nb_attractive_scale=nb_attractive_scale,
+            temperature=temperature,
+            return_bonds=True,
         )
-        # The source files, which chain_io writes into the chain JSON.
+        params = cls(
+            mapping,
+            bonds,
+            charges,
+            type_map,
+            pair_pots,
+            angle_pots,
+            dihedral_pots,
+            nb_attractive_scale=nb_attractive_scale,
+            temperature=temperature,
+            bond_pots=bond_pots,
+        )
         params.files = dict(
             ff_xml=str(ff_xml),
             mapping_xml=str(mapping_xml),
@@ -471,12 +812,28 @@ class COFFDROPParams:
 
     # Public evaluation API
     def _ri(self, resname: str) -> int:
-        """Return the residue type index, using the XXX wildcard 0 if unknown."""
+        """Return residue type index, falling back to XXX wildcard 0."""
         return self._res_idx.get(resname, 0)
 
     def _ai(self, beadname: str) -> int:
-        """Return the atom (bead) type index."""
+        """Return atom (bead) type index."""
         return self._at_idx.get(beadname, -1)
+
+    def _lookup_pair(
+        self,
+        res0: str,
+        bead0: str,
+        res1: str,
+        bead1: str,
+        orders: Tuple[int, int] = (0, 0),
+    ) -> Optional[TabulatedPotential]:
+        ri = (self._ri(res0), self._ri(res1))
+        ai = (self._ai(bead0), self._ai(bead1))
+        pot = self.match_pot("pair", ri, ai, orders)
+        if pot is None:
+            ord_rev = (orders[1], orders[0])
+            pot = self.match_pot("pair", (ri[1], ri[0]), (ai[1], ai[0]), ord_rev)
+        return pot
 
     def pair_potential(
         self,
@@ -487,19 +844,8 @@ class COFFDROPParams:
         r: float,
         orders: Tuple[int, int] = (0, 0),
     ) -> float:
-        """
-        Return the non-bonded pair potential V(r) in kBT at separation r in Å.
-
-        The default orders of (0, 0) select the non-bonded pair convention.
-        """
-        ri = (self._ri(res0), self._ri(res1))
-        ai = (self._ai(bead0), self._ai(bead1))
-        # The interaction is symmetric, so try both orderings of the pair.
-        pot = _match_pot(self.pair_pots, ri, ai, orders)
-        if pot is None:
-            ai_rev = (ai[1], ai[0])
-            ri_rev = (ri[1], ri[0])
-            pot = _match_pot(self.pair_pots, ri_rev, ai_rev, orders)
+        """Return non-bonded pair potential V(r) in kBT at separation r in A."""
+        pot = self._lookup_pair(res0, bead0, res1, bead1, orders)
         return pot.value(r) if pot is not None else 0.0
 
     def pair_force(
@@ -511,18 +857,8 @@ class COFFDROPParams:
         r: float,
         orders: Tuple[int, int] = (0, 0),
     ) -> float:
-        """
-        Return the non-bonded pair force dV/dr in kBT/Å at separation r.
-
-        A positive value corresponds to a repulsive force.
-        """
-        ri = (self._ri(res0), self._ri(res1))
-        ai = (self._ai(bead0), self._ai(bead1))
-        pot = _match_pot(self.pair_pots, ri, ai, orders)
-        if pot is None:
-            ai_rev = (ai[1], ai[0])
-            ri_rev = (ri[1], ri[0])
-            pot = _match_pot(self.pair_pots, ri_rev, ai_rev, orders)
+        """Return non-bonded pair derivative dV/dr in kBT/A at separation r."""
+        pot = self._lookup_pair(res0, bead0, res1, bead1, orders)
         return pot.deriv(r) if pot is not None else 0.0
 
     def angle_potential(
@@ -532,10 +868,10 @@ class COFFDROPParams:
         orders: Tuple[int, ...],
         theta_deg: float,
     ) -> float:
-        """Return the bond-angle potential V(θ) in kBT, with θ in degrees."""
+        """Return bond-angle potential V(theta) in kBT, with theta in degrees."""
         ri = tuple(self._ri(r) for r in residues)
         ai = tuple(self._ai(b) for b in beads)
-        pot = _match_pot(self.angle_pots, ri, ai, orders)
+        pot = self.match_pot("angle", ri, ai, orders)
         return pot.value(theta_deg) if pot is not None else 0.0
 
     def angle_force(
@@ -545,10 +881,10 @@ class COFFDROPParams:
         orders: Tuple[int, ...],
         theta_deg: float,
     ) -> float:
-        """Return the bond-angle force dV/dθ in kBT per degree."""
+        """Return bond-angle derivative dV/dtheta in kBT per degree."""
         ri = tuple(self._ri(r) for r in residues)
         ai = tuple(self._ai(b) for b in beads)
-        pot = _match_pot(self.angle_pots, ri, ai, orders)
+        pot = self.match_pot("angle", ri, ai, orders)
         return pot.deriv(theta_deg) if pot is not None else 0.0
 
     def dihedral_potential(
@@ -558,10 +894,10 @@ class COFFDROPParams:
         orders: Tuple[int, ...],
         phi_deg: float,
     ) -> float:
-        """Return the dihedral potential V(φ) in kBT, with φ in degrees."""
+        """Return dihedral potential V(phi) in kBT, with phi in degrees."""
         ri = tuple(self._ri(r) for r in residues)
         ai = tuple(self._ai(b) for b in beads)
-        pot = _match_pot(self.dihedral_pots, ri, ai, orders)
+        pot = self.match_pot("dihedral", ri, ai, orders)
         return pot.value(phi_deg) if pot is not None else 0.0
 
     def dihedral_force(
@@ -571,10 +907,10 @@ class COFFDROPParams:
         orders: Tuple[int, ...],
         phi_deg: float,
     ) -> float:
-        """Return the dihedral force dV/dφ in kBT per degree."""
+        """Return dihedral derivative dV/dphi in kBT per degree."""
         ri = tuple(self._ri(r) for r in residues)
         ai = tuple(self._ai(b) for b in beads)
-        pot = _match_pot(self.dihedral_pots, ri, ai, orders)
+        pot = self.match_pot("dihedral", ri, ai, orders)
         return pot.deriv(phi_deg) if pot is not None else 0.0
 
     def bead_charge(self, resname: str, beadname: str) -> float:
@@ -589,7 +925,10 @@ class COFFDROPParams:
     def bond_length(
         self, res0: str, bead0: str, order0: int, res1: str, bead1: str, order1: int
     ) -> Optional[float]:
-        """Return the equilibrium bond length in Å for a bond, or None if absent."""
+        """Return equilibrium bond length in A, preferring coffdrop.xml eq_length over connectivity.xml."""
+        bpot = self.match_bond_pot(res0, bead0, order0, res1, bead1, order1)
+        if bpot is not None and bpot.eq_length is not None:
+            return float(bpot.eq_length)
         for bond in self.bonds:
             r_match = (bond.residues[0] in (res0, "XXX")) and (
                 bond.residues[1] in (res1, "XXX")

@@ -21,6 +21,8 @@ step_near_absorbing_surface.hh, lines 37 to 38.
 """
 
 from __future__ import annotations
+from scipy.special import erfcinv as _scipy_erfcinv
+from scipy.special import erfcx as _scipy_erfcx
 from scipy.special import erfinv as _scipy_erfinv
 from typing import Tuple
 import warnings
@@ -52,60 +54,64 @@ def step_near_absorbing_surface(
     the surface, which is 0 if the particle was absorbed. time is the elapsed
     time in picoseconds.
     """
-    b = -F  # b is defined as −F by convention.
-    # tau has units of Length², following the BrownDye2 convention, so the
-    # elapsed time is tau/D. Earlier versions used tau = x0*x0/D, which
-    # conflated tau with a time-typed quantity. That produced dimensionally
-    # inconsistent erf arguments and a returned time that was off by a factor
-    # of D.
-    tau = x0 * x0  # Length², in Å²
+    b = -F  # Convention b = -F.
+    tau = x0 * x0  # Length^2, in A^2.
     st = math.sqrt(tau)
     st2 = 2.0 * st
     bt = b * tau
+    bx0 = b * x0
     erfmt = math.erf((x0 - bt) / st2)
-    erfpt = math.erf((x0 + bt) / st2)
-    # Survival probability.
-    psurv = 0.5 * (math.exp(b * x0) * (erfpt - 1.0) + erfmt + 1.0)
+    # Overflow-free survival probability via scaled complementary error function.
+    if bx0 >= 1.0:
+        zm = 0.5 * (bx0 - 1.0)
+        zp = 0.5 * (bx0 + 1.0)
+        psurv = (
+            0.5
+            * math.exp(-zm * zm)
+            * (float(_scipy_erfcx(zm)) - float(_scipy_erfcx(zp)))
+        )
+    elif bx0 >= -1.0:
+        term1 = -math.exp(-0.25 * (bx0 - 1.0) ** 2) * float(
+            _scipy_erfcx(0.5 * (1.0 + bx0))
+        )
+        psurv = 0.5 * (term1 + math.erfc(0.5 * (bx0 - 1.0)))
+    else:
+        term1 = -math.exp(bx0) * math.erfc(0.5 * (1.0 + bx0))
+        psurv = 0.5 * (term1 + math.erfc(0.5 * (bx0 - 1.0)))
     psurv = max(0.0, min(1.0, psurv))  # Clamp into [0, 1] for numerical safety.
     survives = rng.random() < psurv
     if survives:
-        # Sample the new position from the survival distribution using
-        # rejection sampling, with the no-flux distribution as the proposal.
-        E = math.erf((x0 - bt) / st2)
+        # Sample the new position by rejection with truncated Gaussian proposal.
+        # Exact acceptance ratio is p(x) / p0(x) = 1 - exp(-x * x0 / tau).
+        E = erfmt
+        erfc_tail = math.erfc(0.5 * (bx0 - 1.0))
         x = 0.0
         last_proposal = None  # Most recent non-negative no-flux proposal draw.
         found = False
         max_attempts = 10000
         for _ in range(max_attempts):
             pc = rng.random()
-            iearg = pc * (E + 1.0) - E
-            # Clamp to the valid range for erfinv.
-            iearg = max(-1.0 + 1e-12, min(1.0 - 1e-12, iearg))
-            x = 2.0 * st * _inv_erf(iearg) - bt + x0
+            if bx0 > 4.0:
+                y = (1.0 - pc) * erfc_tail
+                if y <= 0.0:
+                    continue
+                z_inv = float(_scipy_erfcinv(y))
+                if not math.isfinite(z_inv):
+                    continue
+                x = 2.0 * st * z_inv - bt + x0
+            else:
+                iearg = pc * (E + 1.0) - E
+                iearg = max(-1.0 + 1e-12, min(1.0 - 1e-12, iearg))
+                x = 2.0 * st * _inv_erf(iearg) - bt + x0
             if x < 0.0:
                 continue  # Reject and try again.
             last_proposal = x
-            t4 = 4.0 * tau
-            p0 = math.exp(-((x - x0 + bt) ** 2) / t4)
-            p1 = math.exp(b * x0 - ((x + x0 + bt) ** 2) / t4)
-            p2 = -2.0 * math.exp(-((x + bt) ** 2 + x0 * (x0 + 2.0 * (x - bt))) / t4)
-            p = p0 + p1 + p2
-            denom = 0.5 * (erfmt + 1.0)
-            pu = p0 / denom if denom > 1e-30 else 0.0
-            if p < 0 or pu <= 0:
-                continue
-            found = rng.random() < (p / pu)
+            ratio_arg = x * x0 / tau
+            acc = -math.expm1(-ratio_arg) if ratio_arg > 0.0 else 0.0
+            found = rng.random() < acc
             if found:
                 break
         if not found:
-            # The acceptance ratio of this rejection step is bounded by one, so
-            # for a well-posed survival distribution the loop terminates after a
-            # finite number of draws. Reaching the attempt cap indicates a
-            # degenerate, over-constrained configuration where the survival
-            # density is effectively unsupported. Make this rare case visible
-            # and return the most recent valid proposal draw, which is itself a
-            # sample of the no-flux distribution truncated to x >= 0, rather
-            # than a fixed deterministic value.
             warnings.warn(
                 "step_near_absorbing_surface: survival rejection sampling did "
                 "not converge within {0} attempts for x0={1!r}, F={2!r}, "
@@ -121,12 +127,10 @@ def step_near_absorbing_surface(
         return True, new_x, time
 
     else:
-        # The particle was absorbed, so sample the absorption time. Its
-        # density is p(τ) ∝ x0 · exp(−(x0 − b·τ)² / (4τ)) / (2√(π·τ³)).
+        # Sample absorption time from p(t) propto x0 * exp(-(x0 - b*t)^2 / (4t)) / (2 sqrt(pi t^3)).
         x02 = x0 * x0
         b2 = b * b
-        # Find tau_max, where dp/dτ = 0, using a Taylor expansion for small b·x0.
-        if abs(b * x0) < 0.5:
+        if abs(bx0) < 0.5:
             tau_max = x02 * (1.0 / 6.0 - x02 * b2 / 216.0)
         else:
             tau_max = (math.sqrt(b2 * x02 + 9.0) - 3.0) / b2 if b2 > 0 else x02 / 6.0
@@ -143,22 +147,32 @@ def step_near_absorbing_surface(
         pmax = pt(tau_max)
         if pmax <= 0:
             pmax = 1e-30
-        # Rejection sampling for the absorption time.
         tau_samp = 0.0
         accepted = False
         max_attempts = 10000
-        for _ in range(max_attempts):
-            tau_samp = tau * rng.random()
-            p_samp = pmax * rng.random()
-            if p_samp < pt(tau_samp):
-                accepted = True
-                break
+        if b != 0.0 and abs(bx0) > 15.0:
+            # Exact Michael-Schucany-Haas Inverse Gaussian sampler truncated to (0, tau].
+            ab = abs(b)
+            mu = x0 / ab
+            abx0 = ab * x0
+            for _ in range(max_attempts):
+                u1 = max(1e-15, min(1.0 - 1e-15, rng.random()))
+                z = math.sqrt(2.0) * _inv_erf(2.0 * u1 - 1.0)
+                alpha = (z * z) / abx0
+                s = 1.0 + alpha + math.sqrt(alpha * (2.0 + alpha))
+                t_cand = mu / s if rng.random() <= s / (1.0 + s) else mu * s
+                if 0.0 < t_cand <= tau:
+                    tau_samp = t_cand
+                    accepted = True
+                    break
+        else:
+            for _ in range(max_attempts):
+                tau_samp = tau * rng.random()
+                p_samp = pmax * rng.random()
+                if p_samp < pt(tau_samp):
+                    accepted = True
+                    break
         if not accepted:
-            # The proposal envelope pmax bounds the absorption-time density, so
-            # for a well-posed density the loop terminates after a finite number
-            # of draws. Reaching the attempt cap indicates a degenerate
-            # configuration; make this rare case visible and return the last
-            # candidate time rather than silently treating it as accepted.
             warnings.warn(
                 "step_near_absorbing_surface: absorption-time rejection "
                 "sampling did not converge within {0} attempts for x0={1!r}, "

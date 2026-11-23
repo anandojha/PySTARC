@@ -40,6 +40,8 @@ from typing import List, Optional, Tuple
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
+import os
+import threading
 import warnings
 import numpy as np
 from pystarc.global_defs.defaults import (
@@ -239,8 +241,12 @@ def analyse_molecule(
         if cache_path.exists():
             try:
                 cached = cache_path.read_text().strip().split()
+                if len(cached) != 4:
+                    raise ValueError(f"incomplete cache line ({len(cached)} fields)")
                 r_h = float(cached[0])
                 centroid = np.array([float(x) for x in cached[1:4]])
+                if not (np.isfinite(r_h) and np.all(np.isfinite(centroid))):
+                    raise ValueError("non-finite cache values")
                 print(f"    r_hydro cache hit: {cache_path.name}")
             except Exception:
                 cache_path.unlink(missing_ok=True)
@@ -254,12 +260,21 @@ def analyse_molecule(
                     coords, radii_hydro, spacing=grid_spacing, n_mc=n_mc
                 )
                 centroid = mc_center
-                # Save the result to the cache.
+                # Write atomically via a PID/thread-qualified temp file so parallel
+                # GPU workers never read a half-written cache file.
+                tmp_path = Path(
+                    f"{cache_path}.tmp.{os.getpid()}.{threading.get_ident()}"
+                )
                 try:
                     line = f"{r_h:.8f} {centroid[0]:.8f} {centroid[1]:.8f} {centroid[2]:.8f}\n"
-                    cache_path.write_text(line)
+                    with open(tmp_path, "w", encoding="utf-8") as fh:
+                        fh.write(line)
+                        fh.flush()
+                        os.fsync(fh.fileno())
+                    os.replace(tmp_path, cache_path)
                     print(f"    r_hydro cached: {cache_path.name}")
                 except Exception as e:
+                    tmp_path.unlink(missing_ok=True)
                     print(f"    r_hydro cache write failed: {e}")
             except Exception as e:
                 warnings.warn(

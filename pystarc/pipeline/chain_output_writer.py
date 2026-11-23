@@ -38,6 +38,8 @@ chain BD data, so we keep the two writers separate.
 """
 
 from __future__ import annotations
+import os
+import statistics
 import math
 from pystarc.global_defs.constants import MOLAR_RATE_CONV
 from pystarc.global_defs.defaults import QB_FACTOR
@@ -145,6 +147,7 @@ def _chain_block(sim) -> Dict[str, Any]:
     template = sim.chain_template
     return {
         "name": template.name,
+        "flexible_partner": str(getattr(sim, "flexible_partner", "ligand")),
         "n_atoms": template.n_atoms,
         "atom_radii": [float(a.radius) for a in template.atoms],
         "atom_charges": [float(a.charge) for a in template.atoms],
@@ -285,27 +288,58 @@ def _rate_block(sim, results) -> dict:
         out["k_on"] = None
         out["reason"] = "no trajectory was run"
         return out
+    conf = float(getattr(sim, "confidence_interval", 0.95))
+    conv_tol = float(getattr(sim, "convergence_tol", 0.05))
+    z = (
+        1.96
+        if abs(conf - 0.95) < 1.0e-9
+        else statistics.NormalDist().inv_cdf(0.5 + 0.5 * conf)
+    )
     p = n_r / n
-    lo, hi = _wilson(n_r, n)
+    lo, hi = _wilson(n_r, n, z=z)
+    p_hi_bound = (n_r + n_c) / n
+    use_lmz = bool(getattr(sim.params, "use_lmz", False))
+    b_rad = float(getattr(prop, "b_radius", 0.0))
+    r_esc = float(getattr(sim.params, "r_escape", 0.0))
+    nam_omega = 0.0
+    if not use_lmz and r_esc > b_rad > 0.0 and hasattr(prop, "_relative_rate"):
+        rate_esc = float(prop._relative_rate(r_esc))
+        if rate_esc > 0.0:
+            nam_omega = min(max(float(k_b) / rate_esc, 0.0), 1.0 - 1.0e-12)
+
+    def _nam_beta(prob: float) -> float:
+        if nam_omega <= 0.0:
+            return prob
+        denom = 1.0 - (1.0 - prob) * nam_omega
+        return prob / denom if denom > 0.0 else 1.0
+
+    beta = _nam_beta(p)
+    beta_lo = _nam_beta(lo)
+    beta_hi = _nam_beta(hi)
+    beta_bound_hi = _nam_beta(p_hi_bound)
     conv = MOLAR_RATE_CONV  # A^3/ps to M^-1 s^-1
     out.update(
         {
             "k_b": float(k_b),
             "k_b_units": "A^3/ps",
-            "b_radius": float(getattr(prop, "b_radius", 0.0)),
+            "b_radius": b_rad,
             "q_radius": float(getattr(prop, "qradius", 0.0)),
             "return_prob": float(getattr(prop, "return_prob", 0.0)),
-            "P_rxn": float(p),
-            "P_rxn_low": float(lo),
-            "P_rxn_high": float(hi),
-            "k_on": float(conv * k_b * p),
-            "k_on_low": float(conv * k_b * lo),
-            "k_on_high": float(conv * k_b * hi),
+            "nam_omega": float(nam_omega),
+            "P_rxn_raw": float(p),
+            "P_rxn": float(beta),
+            "P_rxn_low": float(beta_lo),
+            "P_rxn_high": float(beta_hi),
+            "k_on": float(conv * k_b * beta),
+            "k_on_low": float(conv * k_b * beta_lo),
+            "k_on_high": float(conv * k_b * beta_hi),
             "k_on_units": "M-1 s-1",
-            "P_rxn_bound_low": float(p),
-            "P_rxn_bound_high": float((n_r + n_c) / n),
-            "k_on_bound_low": float(conv * k_b * p),
-            "k_on_bound_high": float(conv * k_b * (n_r + n_c) / n),
+            "P_rxn_bound_low": float(beta),
+            "P_rxn_bound_high": float(beta_bound_hi),
+            "k_on_bound_low": float(conv * k_b * beta),
+            "k_on_bound_high": float(conv * k_b * beta_bound_hi),
+            "confidence_level": conf,
+            "convergence_tol": conv_tol,
         }
     )
     return out
@@ -347,7 +381,15 @@ def write_results_json(
         "params": _params_block(sim),
     }
     p = work_dir / "results.json"
-    p.write_text(json.dumps(data, indent=2))
+    tmp = work_dir / f"results.json.tmp.{os.getpid()}"
+    payload = json.dumps(data, indent=2)
+    try:
+        tmp.write_text(payload)
+        os.replace(tmp, p)
+    except Exception:
+        if tmp.exists():
+            tmp.unlink(missing_ok=True)
+        raise
     return p
 
 
@@ -523,28 +565,27 @@ def write_energetics_npz(
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
-    traj_id_list: List[int] = []
-    step_list: List[int] = []
-    energy_list: List[np.ndarray] = []
+    traj_id_parts: List[np.ndarray] = []
+    step_parts: List[np.ndarray] = []
+    energy_parts: List[np.ndarray] = []
     fate_list: List[str] = []
-    has_data = False
     for i, r in enumerate(results):
         fate_list.append(r.fate.name)
         if r.energy_steps is None or r.path_steps is None:
             continue
-        n = len(r.path_steps)
-        traj_id_list.extend([i] * n)
-        step_list.extend([int(s) for s in r.path_steps])
-        energy_list.append(r.energy_steps)
-        has_data = True
-    if not has_data:
+        steps_arr = np.asarray(r.path_steps, dtype=int)
+        n = len(steps_arr)
+        traj_id_parts.append(np.full(n, i, dtype=int))
+        step_parts.append(steps_arr)
+        energy_parts.append(np.asarray(r.energy_steps))
+    if not energy_parts:
         return None
     p = work_dir / "energetics.npz"
     np.savez(
         p,
-        traj_id=np.array(traj_id_list, dtype=int),
-        step=np.array(step_list, dtype=int),
-        energy=np.concatenate(energy_list, axis=0),
+        traj_id=np.concatenate(traj_id_parts, axis=0),
+        step=np.concatenate(step_parts, axis=0),
+        energy=np.concatenate(energy_parts, axis=0),
         fate=np.array(fate_list, dtype="U10"),
         columns=np.array(["total", "elec", "born", "steric"], dtype="U10"),
     )
@@ -569,39 +610,54 @@ def write_paths_npz(
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
-    traj_id_list: List[int] = []
-    step_list: List[int] = []
-    com_list: List[np.ndarray] = []
-    q_list: List[np.ndarray] = []
-    radial_list: List[float] = []
+    traj_id_parts: List[np.ndarray] = []
+    step_parts: List[np.ndarray] = []
+    com_parts: List[np.ndarray] = []
+    q_parts: List[np.ndarray] = []
+    radial_parts: List[np.ndarray] = []
+    returns_parts: List[np.ndarray] = []
+    has_returns = False
     fate_list: List[str] = []
-    has_data = False
     for i, r in enumerate(results):
         fate_list.append(r.fate.name)
         if r.path_steps is None or r.path_com is None or r.path_q is None:
             continue
-        n = len(r.path_steps)
-        traj_id_list.extend([i] * n)
-        step_list.extend([int(s) for s in r.path_steps])
-        com_list.append(r.path_com)
-        q_list.append(r.path_q)
+        steps_arr = np.asarray(r.path_steps, dtype=int)
+        com_arr = np.asarray(r.path_com)
+        q_arr = np.asarray(r.path_q)
+        n = len(steps_arr)
+        traj_id_parts.append(np.full(n, i, dtype=int))
+        step_parts.append(steps_arr)
+        com_parts.append(com_arr)
+        q_parts.append(q_arr)
         if r.radial_trace is not None:
-            radial_list.extend([float(v) for v in r.radial_trace])
+            radial_parts.append(np.asarray(r.radial_trace, dtype=float))
         else:
-            radial_list.extend([float(np.linalg.norm(c)) for c in r.path_com])
-        has_data = True
-    if not has_data:
+            radial_parts.append(
+                np.linalg.norm(com_arr, axis=1).astype(float)
+                if n > 0
+                else np.empty(0, dtype=float)
+            )
+        ret_arr = getattr(r, "radial_returns", None)
+        if ret_arr is not None and len(ret_arr) == n:
+            returns_parts.append(np.asarray(ret_arr, dtype=int))
+            has_returns = True
+        else:
+            returns_parts.append(np.zeros(n, dtype=int))
+    if not com_parts:
         return None
     p = work_dir / "paths.npz"
-    np.savez(
-        p,
-        traj_id=np.array(traj_id_list, dtype=int),
-        step=np.array(step_list, dtype=int),
-        com=np.concatenate(com_list, axis=0),
-        q=np.concatenate(q_list, axis=0),
-        radial=np.array(radial_list, dtype=float),
+    save_kw = dict(
+        traj_id=np.concatenate(traj_id_parts, axis=0),
+        step=np.concatenate(step_parts, axis=0),
+        com=np.concatenate(com_parts, axis=0),
+        q=np.concatenate(q_parts, axis=0),
+        radial=np.concatenate(radial_parts, axis=0),
         fate=np.array(fate_list, dtype="U10"),
     )
+    if has_returns:
+        save_kw["radial_returns"] = np.concatenate(returns_parts, axis=0)
+    np.savez(p, **save_kw)
     return p
 
 
@@ -622,14 +678,25 @@ def write_radial_density_csv(
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
-    all_r: List[float] = []
+    max_r = -math.inf
+    has_data = False
     for r in results:
-        if r.radial_trace is not None:
-            all_r.extend([float(v) for v in r.radial_trace])
-    if not all_r:
+        if r.radial_trace is not None and len(r.radial_trace) > 0:
+            arr = np.asarray(r.radial_trace, dtype=float)
+            m = float(arr.max())
+            if m > max_r:
+                max_r = m
+            has_data = True
+    if not has_data:
         return None
-    r_arr = np.asarray(all_r, dtype=float)
-    counts, edges = np.histogram(r_arr, bins=n_bins, range=(0.0, float(r_arr.max())))
+    counts = np.zeros(n_bins, dtype=np.int64)
+    edges = None
+    hist_range = (0.0, max_r)
+    for r in results:
+        if r.radial_trace is not None and len(r.radial_trace) > 0:
+            arr = np.asarray(r.radial_trace, dtype=float)
+            c_i, edges = np.histogram(arr, bins=n_bins, range=hist_range)
+            counts += c_i
     total = int(counts.sum())
     p = work_dir / "radial_density.csv"
     with open(p, "w") as f:
@@ -650,8 +717,8 @@ def write_angular_map_npz(
     """Write a two-dimensional histogram of ligand (theta, phi) occupancy in
     the receptor frame.
 
-    The function uses the path_com positions and converts each one to spherical
-    coordinates. The polar angle in [0, π] is
+    The function converts path_com positions to spherical coordinates. The
+    polar angle in [0, π] is
 
         theta = arccos(z / r)
 
@@ -671,36 +738,42 @@ def write_angular_map_npz(
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
-    coms: List[np.ndarray] = []
+    counts = np.zeros((n_theta, n_phi), dtype=np.int64)
+    theta_edges = None
+    phi_edges = None
+    total_snapshots = 0
+    hist_range = [[0.0, float(np.pi)], [-float(np.pi), float(np.pi)]]
     for r in results:
-        if r.path_com is not None:
-            coms.append(r.path_com)
-    if not coms:
+        if r.path_com is None:
+            continue
+        com_arr = np.asarray(r.path_com, dtype=float)
+        if com_arr.size == 0:
+            continue
+        norms = np.linalg.norm(com_arr, axis=1)
+        nonzero = norms > 1e-12
+        if not nonzero.any():
+            continue
+        valid = com_arr[nonzero]
+        rs = norms[nonzero]
+        theta = np.arccos(np.clip(valid[:, 2] / rs, -1.0, 1.0))
+        phi = np.arctan2(valid[:, 1], valid[:, 0])
+        c_i, theta_edges, phi_edges = np.histogram2d(
+            theta,
+            phi,
+            bins=[n_theta, n_phi],
+            range=hist_range,
+        )
+        counts += c_i.astype(np.int64)
+        total_snapshots += len(theta)
+    if total_snapshots == 0:
         return None
-    coms_arr = np.concatenate(coms, axis=0)
-    if coms_arr.size == 0:
-        return None
-    norms = np.linalg.norm(coms_arr, axis=1)
-    nonzero = norms > 1e-12
-    if not nonzero.any():
-        return None
-    valid = coms_arr[nonzero]
-    rs = norms[nonzero]
-    theta = np.arccos(np.clip(valid[:, 2] / rs, -1.0, 1.0))
-    phi = np.arctan2(valid[:, 1], valid[:, 0])
-    counts, theta_edges, phi_edges = np.histogram2d(
-        theta,
-        phi,
-        bins=[n_theta, n_phi],
-        range=[[0.0, float(np.pi)], [-float(np.pi), float(np.pi)]],
-    )
     p = work_dir / "angular_map.npz"
     np.savez(
         p,
         counts=counts.astype(int),
         theta_edges=theta_edges.astype(float),
         phi_edges=phi_edges.astype(float),
-        total_snapshots=np.array([len(theta)], dtype=int),
+        total_snapshots=np.array([total_snapshots], dtype=int),
     )
     return p
 
@@ -728,7 +801,7 @@ def write_milestone_flux_csv(
     r_curr.
 
     Crossings that happen between sampled points, that is within one
-    save_interval, are not detected, so this is a coarse-grained flux estimate.
+    save_interval, are not counted, so this is a coarse-grained flux estimate.
     For a typical save_interval of 10 and shells separated by several Å, the
     miss rate should be small.
 
@@ -738,45 +811,97 @@ def write_milestone_flux_csv(
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
-    radials: List[np.ndarray] = []
-    returns: List[Optional[np.ndarray]] = []
+    r_min = math.inf
+    r_max = -math.inf
+    has_trace = False
     for r in results:
-        if r.radial_trace is not None and len(r.radial_trace) >= 2:
-            radials.append(np.asarray(r.radial_trace, dtype=float))
-            ret = getattr(r, "radial_returns", None)
-            returns.append(None if ret is None or b_radius is None else np.asarray(ret))
-    if not radials:
+        rt = r.radial_trace
+        if rt is not None and len(rt) >= 2:
+            arr = np.asarray(rt, dtype=float)
+            lo = float(arr.min())
+            hi = float(arr.max())
+            if lo < r_min:
+                r_min = lo
+            if hi > r_max:
+                r_max = hi
+            has_trace = True
+    if not has_trace or r_max <= r_min:
         return None
-    all_r = np.concatenate(radials)
-    if len(all_r) < 2:
-        return None
-    r_min = float(all_r.min())
-    r_max = float(all_r.max())
-    if r_max <= r_min:
-        return None
-    # Place n_shells interior shell radii, excluding the two endpoints.
+    # Interior shell radii excluding the two endpoints.
     shells = np.linspace(r_min, r_max, n_shells + 2)[1:-1]
-    n_out = np.zeros(n_shells, dtype=int)
-    n_in = np.zeros(n_shells, dtype=int)
+    n_out = np.zeros(n_shells, dtype=np.int64)
+    n_in = np.zeros(n_shells, dtype=np.int64)
 
-    def cross(r_prev, r_curr):
-        for k, s in enumerate(shells):
-            if r_prev < s <= r_curr:
-                n_out[k] += 1
-            elif r_curr < s <= r_prev:
-                n_in[k] += 1
+    def _accum_crossings(a: np.ndarray, b: np.ndarray) -> None:
+        out_m = b > a
+        if out_m.any():
+            lo_idx = np.searchsorted(shells, a[out_m], side="right")
+            hi_idx = np.searchsorted(shells, b[out_m], side="right")
+            diff = np.bincount(lo_idx, minlength=n_shells + 1) - np.bincount(
+                hi_idx, minlength=n_shells + 1
+            )
+            n_out[:] += np.cumsum(diff)[:-1]
+        in_m = b < a
+        if in_m.any():
+            lo_idx = np.searchsorted(shells, b[in_m], side="right")
+            hi_idx = np.searchsorted(shells, a[in_m], side="right")
+            diff = np.bincount(lo_idx, minlength=n_shells + 1) - np.bincount(
+                hi_idx, minlength=n_shells + 1
+            )
+            n_in[:] += np.cumsum(diff)[:-1]
 
-    for trace, ret in zip(radials, returns):
-        for i in range(1, len(trace)):
-            r_prev = float(trace[i - 1])
-            n_ret = int(ret[i]) if ret is not None and i < len(ret) else 0
-            if n_ret > 0:
-                q = QB_FACTOR * float(b_radius)
-                cross(r_prev, q)
-                for _ in range(n_ret - 1):
-                    cross(float(b_radius), q)
-                r_prev = float(b_radius)
-            cross(r_prev, float(trace[i]))
+    b_val = float(b_radius) if b_radius is not None else None
+    q_val = QB_FACTOR * b_val if b_val is not None else None
+    q_idx = (
+        int(np.searchsorted(shells, q_val, side="right")) if q_val is not None else 0
+    )
+    bq_out_mask = (
+        ((b_val < shells) & (shells <= q_val)).astype(np.int64)
+        if b_val is not None and b_val < q_val
+        else None
+    )
+    bq_in_mask = (
+        ((q_val < shells) & (shells <= b_val)).astype(np.int64)
+        if b_val is not None and q_val < b_val
+        else None
+    )
+
+    for r in results:
+        rt = r.radial_trace
+        if rt is None or len(rt) < 2:
+            continue
+        trace = np.asarray(rt, dtype=float)
+        r_prev = trace[:-1]
+        r_curr = trace[1:]
+        m = len(r_prev)
+        ret = getattr(r, "radial_returns", None)
+        if ret is not None and b_val is not None:
+            ret_arr = np.asarray(ret, dtype=np.int64)
+            if len(ret_arr) >= m + 1:
+                n_ret_arr = ret_arr[1 : m + 1]
+            else:
+                n_ret_arr = np.zeros(m, dtype=np.int64)
+                k_copy = min(len(ret_arr) - 1, m)
+                if k_copy > 0:
+                    n_ret_arr[:k_copy] = ret_arr[1 : 1 + k_copy]
+            ret_mask = n_ret_arr > 0
+            if ret_mask.any():
+                prev_ret = r_prev[ret_mask]
+                sub_lt = prev_ret[prev_ret < q_val]
+                if sub_lt.size > 0:
+                    lo_idx = np.searchsorted(shells, sub_lt, side="right")
+                    diff = np.bincount(lo_idx, minlength=n_shells + 1)
+                    diff[q_idx] -= sub_lt.size
+                    n_out[:] += np.cumsum(diff)[:-1]
+                extra_walks = int(np.sum(n_ret_arr[ret_mask] - 1))
+                if extra_walks > 0:
+                    if bq_out_mask is not None:
+                        n_out[:] += extra_walks * bq_out_mask
+                    elif bq_in_mask is not None:
+                        n_in[:] += extra_walks * bq_in_mask
+                r_prev = np.where(ret_mask, b_val, r_prev)
+        _accum_crossings(r_prev, r_curr)
+
     p = work_dir / "milestone_flux.csv"
     with open(p, "w") as f:
         f.write("shell_radius,n_crossings_out,n_crossings_in\n")
@@ -794,9 +919,10 @@ def write_chain_results(
 ) -> List[Tuple[str, Path]]:
     """Write the chain BD output files to work_dir.
 
-    Two files are always written regardless of the output flags. results.json
-    holds the summary, diffusion, chain, and parameters blocks, and
-    trajectories.csv holds one row per trajectory.
+    Two files are always written regardless of the output flags. trajectories.csv
+    holds one row per trajectory, and results.json holds the summary, diffusion,
+    chain, and parameters blocks. results.json is written last via an atomic
+    rename so resume and combiner checks never observe a partial shard.
 
     The remaining files are conditional and gated on OutputConfig flags. The
     outputs.encounters_csv flag controls encounters.csv, outputs.near_misses_csv
@@ -817,33 +943,18 @@ def write_chain_results(
     written. In those cases the file is skipped silently.
 
     The function returns a list of (filename, full_path) tuples for every file
-    that was actually written, ordered by the rigid-body output_writer
-    convention.
-
-    The work_dir parameter is the output directory, which is created if it does
-    not exist. The sim parameter is a ChainBDSimulator instance, which is
-    introspected for the run configuration. The results parameter is the list
-    of TrajectoryResult objects returned by sim.run(). The wall_time_sec
-    parameter is the wall-clock time of the run in seconds, included in the
-    summary when it is greater than 0. The outputs parameter is an OutputConfig
-    that controls the per-file flags. When outputs is None, a
-    default-constructed OutputConfig is used, which has all flags set to True.
+    that was written.
     """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
     written: List[Tuple[str, Path]] = []
-    # Use a fresh OutputConfig when the caller did not supply one.
     if outputs is None:
         from pystarc.pipeline.input_parser import OutputConfig
 
         outputs = OutputConfig()
-    # Files that are always written.
-    p = write_results_json(work_dir, sim, results, wall_time_sec)
-    written.append(("results.json", p))
+    # Write trajectories.csv and all conditional outputs before atomic results.json.
     p = write_trajectories_csv(work_dir, results)
     written.append(("trajectories.csv", p))
-    # Sub-stage 2b adds five conditional writers, each gated on an OutputConfig
-    # flag.
     if outputs.encounters_csv:
         p = write_encounters_csv(work_dir, results)
         if p is not None:
@@ -852,7 +963,6 @@ def write_chain_results(
         p = write_near_misses_csv(work_dir, results)
         if p is not None:
             written.append(("near_misses.csv", p))
-    # Sub-stage 2c adds the heavier-data writers.
     if outputs.full_paths:
         p = write_paths_npz(work_dir, results)
         if p is not None:
@@ -873,7 +983,6 @@ def write_chain_results(
         p = write_contact_frequency_csv(work_dir, results)
         if p is not None:
             written.append(("contact_frequency.csv", p))
-    # Sub-stage 2d adds the milestone flux and energetics writers.
     if outputs.milestone_flux:
         p = write_milestone_flux_csv(
             work_dir, results, b_radius=getattr(sim.params, "r_start", None)
@@ -884,4 +993,7 @@ def write_chain_results(
         p = write_energetics_npz(work_dir, results)
         if p is not None:
             written.append(("energetics.npz", p))
+    # Commit results.json last via atomic rename as the completion marker.
+    p = write_results_json(work_dir, sim, results, wall_time_sec)
+    written.append(("results.json", p))
     return written

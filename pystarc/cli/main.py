@@ -229,13 +229,13 @@ def main():
 )
 @click.option(
     "--dt-chain",
-    default=0.05,
+    default=0.01,
     show_default=True,
     help="Inner internal-coordinate timestep (ps)",
 )
 @click.option(
     "--chain-steps-per-outer",
-    default=4,
+    default=20,
     show_default=True,
     help="Number of inner steps per outer step",
 )
@@ -297,6 +297,49 @@ def main():
     "Rotne-Prager hydrodynamics. When set, --d-trans and "
     "--d-rot must NOT be supplied.",
 )
+@click.option(
+    "--born-dx",
+    "born_dx",
+    multiple=True,
+    help="APBS Born desolvation .dx grid file(s) for the target.",
+)
+@click.option(
+    "--target-hydro-radius",
+    "target_hydro_radius",
+    default=None,
+    type=float,
+    help="Hydrodynamic radius of the rigid target in Angstroms for two-body RPY "
+    "(auto-derived when omitted; pass <= 0 for a fixed target).",
+)
+@click.option(
+    "--soft-repulsion/--no-soft-repulsion",
+    "use_soft_repulsion",
+    default=False,
+    show_default=True,
+    help="Add WCA soft steric repulsion between chain beads and target atoms.",
+)
+@click.option(
+    "--hard-sphere/--no-hard-sphere",
+    "use_hard_sphere",
+    default=True,
+    show_default=True,
+    help="Reject steps that overlap a chain bead with a target atom.",
+)
+@click.option(
+    "--overlap-scale",
+    "overlap_scale",
+    default=0.5,
+    type=float,
+    show_default=True,
+    help="Scale factor on (r_bead + r_target) for hard-sphere overlap checks.",
+)
+@click.option(
+    "--far-field/--no-far-field",
+    "use_far_field",
+    default=False,
+    show_default=True,
+    help="Apply multipole/Yukawa far-field electrostatics outside the DX grids.",
+)
 def chain_simulation(
     chain_file,
     target,
@@ -316,17 +359,14 @@ def chain_simulation(
     verbose,
     output_dir,
     auto_diffusion,
+    born_dx,
+    target_hydro_radius,
+    use_soft_repulsion,
+    use_hard_sphere,
+    overlap_scale,
+    use_far_field,
 ):
-    """Run a chain Brownian dynamics simulation against a rigid target.
-
-    The flexible chain is loaded from a JSON file giving its atoms, bonds,
-    angles, torsions, and initial body-frame positions, and the target is
-    loaded from a PQR file. The target's electrostatic environment may be
-    supplied through one or more APBS .dx grids. Without them the chain feels
-    only its internal bonded forces and moves by pure diffusion.
-    """
-    # Validate the diffusion-coefficient mode before doing any work, so the
-    # user sees the error immediately rather than after reading the inputs.
+    """Run a chain Brownian dynamics simulation against a rigid target."""
     if auto_diffusion:
         if d_trans is not None or d_rot is not None:
             raise click.UsageError(
@@ -362,10 +402,31 @@ def chain_simulation(
         g = DXGrid.from_file(dx_file)
         grids.append(g)
         click.echo(f"  loaded grid: {g}")
-    if len(grids) > 1:
-        click.echo("  warning: chain_simulation currently uses only the first DX grid")
     target_grid = grids[0] if grids else None
 
+    born_grids = []
+    for bdx_file in born_dx:
+        bg = DXGrid.from_file(bdx_file)
+        born_grids.append(bg)
+        click.echo(f"  loaded Born grid: {bg}")
+    born_grid = born_grids[0] if born_grids else None
+
+    if target_hydro_radius is not None:
+        a_target = float(target_hydro_radius) if target_hydro_radius > 0.0 else None
+    elif len(target_mol.atoms) > 0:
+        from pystarc.global_defs.defaults import SOLVENT_PROBE_RADIUS
+        from pystarc.pipeline.geometry import analyse_molecule
+
+        a_target = float(
+            analyse_molecule(Path(target), srad=SOLVENT_PROBE_RADIUS).hydrodynamic_r
+        )
+        click.echo(f"  target hydrodynamic radius (auto): {a_target:.3f} A")
+    else:
+        a_target = None
+
+    has_tables = chain_template.coffdrop_params is not None and bool(
+        chain_template.pair_lookups
+    )
     params = ChainBDParameters(
         n_trajectories=n,
         dt=dt,
@@ -377,7 +438,42 @@ def chain_simulation(
         seed=seed,
         n_threads=n_threads,
         verbose=verbose,
+        use_soft_repulsion=use_soft_repulsion,
+        use_hard_sphere=use_hard_sphere,
+        overlap_scale=overlap_scale,
+        coffdrop_active=has_tables,
+        intra_debye_huckel=has_tables,
+        rotate_body_tensors=True,
+        remove_internal_rotation=True,
+        inner_field=True,
+        diffusion_update_interval=10 if auto_diffusion else 0,
     )
+
+    multipole_exp = None
+    if use_far_field and len(target_mol.atoms) > 0:
+        from pystarc.forces.multipole_farfield import MultipoleExpansion
+
+        t_pos = np.array([[a.x, a.y, a.z] for a in target_mol.atoms], dtype=float)
+        t_chg = np.array(
+            [float(getattr(a, "charge", 0.0)) for a in target_mol.atoms],
+            dtype=float,
+        )
+        multipole_exp = MultipoleExpansion(
+            t_pos,
+            t_chg,
+            debye_length=params.debye_length,
+            sdie=params.dielectric,
+            kT_scale=1.0,
+        )
+
+    output_path = Path(output_dir)
+    extra_kw = {
+        "elec_grids": grids,
+        "born_grids": born_grids,
+        "use_far_field": use_far_field,
+        "multipole_expansion": multipole_exp,
+    }
+
     if auto_diffusion:
         click.echo(
             "  hydrodynamics: full Rotne-Prager (auto-computing D from "
@@ -390,7 +486,10 @@ def chain_simulation(
             params=params,
             pathway_set=pathways,
             target_grid=target_grid,
+            born_grid=born_grid,
             auto_diffusion=True,
+            target_hydro_radius=a_target,
+            **extra_kw,
         )
         click.echo(f"  D_trans diag (A^2/ps): {np.diag(sim.D_trans)}")
         click.echo(f"  D_rot   diag (rad^2/ps): {np.diag(sim.D_rot)}")
@@ -407,6 +506,9 @@ def chain_simulation(
             D_trans=d_trans,
             D_rot=d_rot,
             target_grid=target_grid,
+            born_grid=born_grid,
+            target_hydro_radius=a_target,
+            **extra_kw,
         )
 
     click.echo(f"\nRunning {n} trajectories ...")
@@ -417,7 +519,6 @@ def chain_simulation(
     _wall = _time.time() - _t0
     click.echo(f"  done: {len(results)} trajectories in {_wall:.2f}s")
     # Write the summary results and the per-trajectory CSV.
-    output_path = Path(output_dir)
     written = write_chain_results(
         output_path,
         sim,

@@ -28,6 +28,8 @@ from pystarc.simulation.coffdrop_chain import (
     ChainBond,
     ChainCommon,
     ChainTorsion,
+    CoplanarConstraint,
+    LengthConstraint,
 )
 from typing import Tuple, Optional, List, Dict
 from pathlib import Path
@@ -94,6 +96,7 @@ def load_chain_from_json(path: str | Path) -> Tuple[ChainCommon, np.ndarray]:
                 charge=float(atom_dict.get("charge", 0.0)),
                 resname=atom_dict.get("resname", ""),
                 resid=int(atom_dict.get("resid", i)),
+                hydro_radius=float(atom_dict.get("hydro_radius", 0.0)),
             )
         )
         pos = atom_dict["position"]
@@ -141,12 +144,45 @@ def load_chain_from_json(path: str | Path) -> Tuple[ChainCommon, np.ndarray]:
                 type_idx=int(td.get("type_idx", -1)),
             )
         )
+    length_constraints = [
+        LengthConstraint(
+            a=ChainAtomRef(int(lc["a"])),
+            b=ChainAtomRef(int(lc["b"])),
+            length=float(lc["length"]),
+        )
+        for lc in data.get("length_constraints", [])
+    ]
+    coplanar_constraints = [
+        CoplanarConstraint(
+            a=ChainAtomRef(int(cc_item["a"])),
+            b=ChainAtomRef(int(cc_item["b"])),
+            c=ChainAtomRef(int(cc_item["c"])),
+            d=ChainAtomRef(int(cc_item["d"])),
+        )
+        for cc_item in data.get("coplanar_constraints", [])
+    ]
+    raw_network = data.get("network")
+    if raw_network is None:
+        raw_network = data.get("elastic_network", [])
+    network = [
+        ChainBond(
+            a=ChainAtomRef(int(bd["a"])),
+            b=ChainAtomRef(int(bd["b"])),
+            r0=float(bd["r0"]),
+            k_spring=float(bd["k_spring"]),
+            type_idx=int(bd.get("type_idx", -1)),
+        )
+        for bd in raw_network
+    ]
     common = ChainCommon(
         name=name,
         atoms=atoms,
         bonds=bonds,
         angles=angles,
         torsions=torsions,
+        length_constraints=length_constraints,
+        coplanar_constraints=coplanar_constraints,
+        network=network,
     )
     block = data.get("coffdrop")
     if block is not None:
@@ -217,15 +253,16 @@ def save_chain_to_json(
         )
     atoms_out = []
     for atom, pos in zip(common.atoms, body_positions):
-        atoms_out.append(
-            {
-                "radius": float(atom.radius),
-                "charge": float(atom.charge),
-                "resname": str(atom.resname),
-                "resid": int(atom.resid),
-                "position": [float(pos[0]), float(pos[1]), float(pos[2])],
-            }
-        )
+        entry = {
+            "radius": float(atom.radius),
+            "charge": float(atom.charge),
+            "resname": str(atom.resname),
+            "resid": int(atom.resid),
+            "position": [float(pos[0]), float(pos[1]), float(pos[2])],
+        }
+        if getattr(atom, "hydro_radius", 0.0) > 0.0:
+            entry["hydro_radius"] = float(atom.hydro_radius)
+        atoms_out.append(entry)
     bonds_out = [
         {
             "a": _atom_ref_to_int(bd.a),
@@ -267,6 +304,36 @@ def save_chain_to_json(
         "angles": angles_out,
         "torsions": torsions_out,
     }
+    if common.length_constraints:
+        data["length_constraints"] = [
+            {
+                "a": _atom_ref_to_int(lc.a),
+                "b": _atom_ref_to_int(lc.b),
+                "length": float(lc.length),
+            }
+            for lc in common.length_constraints
+        ]
+    if common.coplanar_constraints:
+        data["coplanar_constraints"] = [
+            {
+                "a": _atom_ref_to_int(cc_item.a),
+                "b": _atom_ref_to_int(cc_item.b),
+                "c": _atom_ref_to_int(cc_item.c),
+                "d": _atom_ref_to_int(cc_item.d),
+            }
+            for cc_item in common.coplanar_constraints
+        ]
+    if common.network:
+        data["network"] = [
+            {
+                "a": _atom_ref_to_int(bd.a),
+                "b": _atom_ref_to_int(bd.b),
+                "r0": float(bd.r0),
+                "k_spring": float(bd.k_spring),
+                "type_idx": int(bd.type_idx),
+            }
+            for bd in common.network
+        ]
     params = common.coffdrop_params
     if params is not None:
         files = getattr(params, "files", {})
@@ -300,36 +367,131 @@ def save_chain_to_json(
 # longer have to reimplement it every time chain BD is set up from a real PDB.
 
 _TLEAP_VARIANT_GROUPS = (
-    frozenset({"HIS", "HIE", "HID", "HIP"}),
+    frozenset({"HIS", "HIE", "HID", "HIP", "HSE", "HSD", "HSP"}),
     frozenset({"CYS", "CYX", "CYM"}),
     frozenset({"ASP", "ASH"}),
     frozenset({"GLU", "GLH"}),
     frozenset({"LYS", "LYN"}),
 )
 
+_CANONICAL_RESNAMES = frozenset(
+    {
+        "ALA",
+        "ARG",
+        "ASN",
+        "ASP",
+        "CYS",
+        "GLN",
+        "GLU",
+        "GLY",
+        "HIS",
+        "HIP",
+        "ILE",
+        "LEU",
+        "LYS",
+        "MET",
+        "PHE",
+        "PRO",
+        "SER",
+        "THR",
+        "TRP",
+        "TYR",
+        "VAL",
+    }
+)
+
+_PROTONATION_CANONICAL = {
+    "HIE": "HIS",
+    "HID": "HIS",
+    "HSE": "HIS",
+    "HSD": "HIS",
+    "HSP": "HIP",
+    "CYX": "CYS",
+    "CYM": "CYS",
+    "ASH": "ASP",
+    "GLH": "GLU",
+    "LYN": "LYS",
+}
+
+_GHOST_ATOM_NAMES = frozenset({"GHO", "PKT"})
+
+_SKIP_RESNAMES = frozenset(
+    {
+        "GHO",
+        "PKT",
+        "HOH",
+        "WAT",
+        "TIP",
+        "TIP3",
+        "SOL",
+        "NA",
+        "CL",
+        "K",
+        "MG",
+        "ZN",
+        "CA",
+        "FE",
+        "MN",
+        "CU",
+        "CO",
+        "NI",
+        "CD",
+        "HG",
+        "SO4",
+        "PO4",
+    }
+)
+
+
+def _is_hydrogen(atom_name: str, element: str = "") -> bool:
+    """Return True when a PDB atom name or element column identifies hydrogen."""
+    elem = element.strip().upper()
+    if elem in ("H", "D"):
+        return True
+    name = atom_name.strip().upper()
+    if not name:
+        return False
+    if name[0] == "H":
+        return True
+    if len(name) >= 2 and name[0].isdigit() and name[1] == "H":
+        return True
+    return False
+
+
+def _normalize_pdb_resname(resname: str) -> str:
+    """Normalize Amber terminal prefixes (NALA -> ALA, CSER -> SER) and
+    protonation variants (HID/HIE/HSE/HSD -> HIS, HSP -> HIP, CYX/CYM -> CYS,
+    ASH -> ASP, GLH -> GLU, LYN -> LYS).
+    """
+    r = resname.strip().upper()
+    if len(r) == 4 and r[0] in ("N", "C"):
+        tail = r[1:]
+        if tail in _CANONICAL_RESNAMES or tail in _PROTONATION_CANONICAL:
+            r = tail
+    return _PROTONATION_CANONICAL.get(r, r)
+
 
 def _resname_match_tleap(r1: str, r2: str) -> bool:
-    """Match residue names while allowing TLEAP-renamed variants.
-
-    Tleap renames residues such as histidine and cysteine according to their
-    protonation or disulfide state, so that HIS becomes HIE and CYS becomes CYX,
-    and so on. Raw PDBs instead use the canonical name. This matcher treats such
-    variant pairs as equal.
-    """
-    if r1 == r2:
+    """Match residue names while normalizing Amber terminal and protonation variants."""
+    n1 = _normalize_pdb_resname(r1)
+    n2 = _normalize_pdb_resname(r2)
+    if n1 == n2:
         return True
     for group in _TLEAP_VARIANT_GROUPS:
-        if r1 in group and r2 in group:
+        if n1 in group and n2 in group:
             return True
     return False
 
 
 def _resolve_resname(resname: str, mapping: dict) -> Optional[str]:
-    """Find a TLEAP variant of resname that exists as a key in mapping."""
+    """Find a canonical or TLEAP variant of resname present in mapping."""
     if resname in mapping:
         return resname
+    norm = _normalize_pdb_resname(resname)
+    if norm in mapping:
+        return norm
     for group in _TLEAP_VARIANT_GROUPS:
-        if resname in group:
+        if norm in group:
             for cand in group:
                 if cand in mapping:
                     return cand
@@ -340,27 +502,30 @@ def _parse_pdb_chain_for_beads(
     pdb_path,
     chain_id: Optional[str] = None,
 ) -> List[dict]:
-    """Parse the heavy atoms of one chain in a PDB.
-
-    The function returns a list of residue dictionaries in N-to-C order. Each
-    dictionary has a "resname" string, a "resid" integer, and an "atoms" entry
-    mapping each atom name to its coordinate array.
-    """
+    """Parse heavy polymer atoms of one chain in a PDB in file order across TER segments."""
     residues: List[dict] = []
+    res_index_map: Dict[Tuple[str, int, int, str], int] = {}
     chains_seen: set = set()
-    last_key = None
+    seg_idx = 0
     with open(pdb_path) as fh:
         for line in fh:
+            if line.startswith("TER") and (len(line) == 3 or line[3].isspace()):
+                seg_idx += 1
+                continue
             if not line.startswith("ATOM"):
                 continue
             if len(line) < 54:
+                continue
+            atom_name = line[12:16].strip()
+            resname_raw = line[17:21].strip().upper()
+            element = line[76:78].strip() if len(line) >= 78 else ""
+            if atom_name.upper() in _GHOST_ATOM_NAMES or resname_raw in _SKIP_RESNAMES:
                 continue
             ch = line[21:22].strip() or "A"
             chains_seen.add(ch)
             if chain_id is not None and ch != chain_id:
                 continue
-            atom_name = line[12:16].strip()
-            if atom_name.startswith("H"):
+            if _is_hydrogen(atom_name, element):
                 continue
             try:
                 resid = int(line[22:26])
@@ -369,23 +534,23 @@ def _parse_pdb_chain_for_beads(
                 z = float(line[46:54])
             except ValueError:
                 continue
-            resname = line[17:20].strip()
+            resname = _normalize_pdb_resname(resname_raw)
             icode = line[26:27].strip()
-            res_key = (ch, resid, icode)
-            if res_key != last_key:
-                last_key = res_key
+            res_key = (ch, seg_idx, resid, icode)
+            if res_key not in res_index_map:
+                res_index_map[res_key] = len(residues)
                 residues.append(
                     {
                         "resname": resname,
                         "resid": resid,
+                        "seg_idx": seg_idx,
+                        "icode": icode,
                         "atoms": {},
                     }
                 )
-            # For a repeated atom name within one residue (alternate
-            # conformers), keep the first one seen, which is the primary
-            # conformer (altLoc A) in a conventionally ordered PDB.
-            if atom_name not in residues[-1]["atoms"]:
-                residues[-1]["atoms"][atom_name] = np.array([x, y, z])
+            r_entry = residues[res_index_map[res_key]]
+            if atom_name not in r_entry["atoms"]:
+                r_entry["atoms"][atom_name] = np.array([x, y, z])
 
     if chain_id is None and len(chains_seen) > 1:
         raise ValueError(
@@ -521,7 +686,10 @@ def pdb_to_bead_positions(
             f"{chain_id!r} has {len(residues)}. Wrong chain_id or inconsistent inputs."
         )
 
-    positions = np.zeros((common.n_atoms, 3))
+    positions = np.zeros((common.n_atoms, 3), dtype=float)
+    mapped = [False] * common.n_atoms
+    missing_entries: List[Tuple[int, dict, List[str]]] = []
+
     for i, bead in enumerate(common.atoms):
         parts = bead.resname.split(":")
         if len(parts) != 2:
@@ -551,31 +719,240 @@ def pdb_to_bead_positions(
 
         if coords:
             positions[i] = np.mean(coords, axis=0)
-            continue
+            mapped[i] = True
+        else:
+            missing_entries.append((i, res, atom_names))
 
-        # Apply the fallback hierarchy when the distal atoms are missing.
-        if fallback == "strict":
-            raise RuntimeError(
-                f"Bead {i} ({bead.resname}) at PDB residue "
-                f"{res['resname']}{res['resid']}: none of {atom_names} found; "
-                f"fallback=strict so cannot recover"
-            )
-        fallback_chain = []
-        if fallback in ("auto", "cb"):
-            fallback_chain.append("CB")
-        if fallback in ("auto", "ca"):
-            fallback_chain.append("CA")
-        fb_pos = None
-        for fb_atom in fallback_chain:
-            if fb_atom in res["atoms"]:
-                fb_pos = res["atoms"][fb_atom]
-                break
-        if fb_pos is None:
-            raise RuntimeError(
-                f"Bead {i} ({bead.resname}) at PDB residue "
-                f"{res['resname']}{res['resid']}: none of {atom_names} found "
-                f"and no fallback ({fallback_chain}) available"
-            )
-        positions[i] = fb_pos
+    if missing_entries:
+        # Build bond adjacency for outward extension of missing sidechain beads.
+        bond_nbrs: Dict[int, List[Tuple[int, float]]] = {
+            k: [] for k in range(common.n_atoms)
+        }
+        for bond in common.bonds:
+            ia = _atom_ref_to_int(bond.a)
+            ib = _atom_ref_to_int(bond.b)
+            r0 = float(bond.r0)
+            bond_nbrs[ia].append((ib, r0))
+            bond_nbrs[ib].append((ia, r0))
+
+        unit_axes = (
+            np.array([1.0, 0.0, 0.0]),
+            np.array([0.0, 1.0, 0.0]),
+            np.array([0.0, 0.0, 1.0]),
+        )
+
+        for i, res, atom_names in missing_entries:
+            bead = common.atoms[i]
+            if fallback == "strict":
+                raise RuntimeError(
+                    f"Bead {i} ({bead.resname}) at PDB residue "
+                    f"{res['resname']}{res['resid']}: none of {atom_names} found; "
+                    f"fallback=strict so cannot recover"
+                )
+            fallback_chain = []
+            if fallback in ("auto", "cb"):
+                fallback_chain.append("CB")
+            if fallback in ("auto", "ca"):
+                fallback_chain.append("CA")
+            fb_pos = None
+            for fb_atom in fallback_chain:
+                if fb_atom in res["atoms"]:
+                    fb_pos = res["atoms"][fb_atom]
+                    break
+            if fb_pos is None:
+                raise RuntimeError(
+                    f"Bead {i} ({bead.resname}) at PDB residue "
+                    f"{res['resname']}{res['resid']}: none of {atom_names} found "
+                    f"and no fallback ({fallback_chain}) available"
+                )
+
+            # Locate bonded parent (preferring same residue) to extend outward by r0.
+            parent_idx = None
+            r0 = 2.5
+            for nbr, blen in bond_nbrs[i]:
+                if mapped[nbr] and common.atoms[nbr].resid == bead.resid:
+                    parent_idx = nbr
+                    r0 = blen
+                    break
+            if parent_idx is None:
+                for nbr, blen in bond_nbrs[i]:
+                    if mapped[nbr]:
+                        parent_idx = nbr
+                        r0 = blen
+                        break
+
+            anchor = positions[parent_idx] if parent_idx is not None else fb_pos
+            direction = np.zeros(3, dtype=float)
+            if parent_idx is not None:
+                # Prefer same-residue grandparent (e.g. CA -> CB -> CG).
+                gp_same = [
+                    gp
+                    for gp, _ in bond_nbrs[parent_idx]
+                    if gp != i
+                    and mapped[gp]
+                    and common.atoms[gp].resid == common.atoms[parent_idx].resid
+                ]
+                if gp_same:
+                    direction = positions[parent_idx] - positions[gp_same[0]]
+                else:
+                    # Parent is CA: sum outward vectors from bonded backbone neighbors.
+                    gp_any = [
+                        gp for gp, _ in bond_nbrs[parent_idx] if gp != i and mapped[gp]
+                    ]
+                    for gp in gp_any:
+                        v = positions[parent_idx] - positions[gp]
+                        vn = float(np.linalg.norm(v))
+                        if vn > 1e-8:
+                            direction += v / vn
+
+            dnorm = float(np.linalg.norm(direction))
+            if dnorm > 1e-8:
+                u = direction / dnorm
+            else:
+                u = unit_axes[i % 3]
+            positions[i] = anchor + r0 * u
+            mapped[i] = True
 
     return positions
+
+
+def prepare_chain_partner(
+    pdb_path: str | Path,
+    flexible_chain_id: str,
+    chain_name: str = "",
+    sidechains: bool = True,
+    coffdrop_dir: Optional[str] = None,
+    fallback: str = "auto",
+) -> Tuple[ChainCommon, np.ndarray]:
+    """Build a COFFDROP chain topology and centered body-frame positions for one PDB chain.
+
+    Either protein partner of a complex PDB can be chosen through flexible_chain_id.
+    The returned body positions have zero centroid and are ready for save_chain_to_json
+    or direct simulator construction.
+    """
+    from pystarc.simulation.coffdrop_chain import chain_from_pdb
+
+    label = chain_name or str(flexible_chain_id)
+    common = chain_from_pdb(
+        str(pdb_path),
+        chain_id=flexible_chain_id,
+        name=label,
+        sidechains=sidechains,
+        coffdrop_dir=coffdrop_dir,
+    )
+    body_positions = pdb_to_bead_positions(
+        common,
+        pdb_path,
+        chain_id=flexible_chain_id,
+        coffdrop_dir=coffdrop_dir,
+        fallback=fallback,
+    )
+    body_positions = body_positions - body_positions.mean(axis=0)
+    return common, body_positions
+
+
+def interface_reaction_pairs(
+    pdb_path: str | Path,
+    rigid_chain_id: str,
+    flexible_chain_id: str,
+    rigid_pqr_path: str | Path,
+    chain_common: ChainCommon,
+    interface_cutoff: float = 6.0,
+    reaction_distance: float = 8.0,
+    coffdrop_dir: Optional[str] = None,
+) -> List[Tuple[int, int, float]]:
+    """Map heavy-atom interface contacts of a complex PDB to (rigid_pqr_idx, chain_bead_idx, cutoff) pairs.
+
+    Contacts closer than interface_cutoff angstrom between rigid_chain_id and
+    flexible_chain_id in pdb_path are mapped onto the atom indices of rigid_pqr_path
+    and the COFFDROP bead indices of chain_common. Calling this function with the
+    two chain identifiers swapped prepares reaction pairs for the opposite partner
+    role.
+    """
+    from pystarc.structures.pqr_io import parse_pqr
+
+    if coffdrop_dir is None:
+        coffdrop_dir = str(COFFDROP_DATA)
+    map_xml_path = Path(coffdrop_dir) / "map.xml"
+    if not map_xml_path.exists():
+        raise FileNotFoundError(f"COFFDROP map.xml not found at {map_xml_path}")
+    bead_mapping = _parse_coffdrop_map_simple(str(map_xml_path))
+
+    rigid_res = _parse_pdb_chain_for_beads(pdb_path, chain_id=rigid_chain_id)
+    flex_res = _parse_pdb_chain_for_beads(pdb_path, chain_id=flexible_chain_id)
+    rigid_mol = parse_pqr(str(rigid_pqr_path))
+
+    pqr_residues: List[dict] = []
+    last_resid = None
+    for idx, atom in enumerate(rigid_mol.atoms):
+        if atom.residue_index != last_resid:
+            last_resid = atom.residue_index
+            pqr_residues.append({"resname": atom.residue_name, "atoms": {}})
+        aname = atom.name.strip()
+        if aname not in pqr_residues[-1]["atoms"]:
+            pqr_residues[-1]["atoms"][aname] = idx
+
+    if len(pqr_residues) != len(rigid_res):
+        raise ValueError(
+            f"Rigid PQR {rigid_pqr_path} has {len(pqr_residues)} residues, "
+            f"whereas PDB chain {rigid_chain_id!r} has {len(rigid_res)} residues."
+        )
+    for k, (rp, rmol) in enumerate(zip(rigid_res, pqr_residues)):
+        if not _resname_match_tleap(rp["resname"], rmol["resname"]):
+            raise ValueError(
+                f"Residue mismatch at position {k}: PDB {rp['resname']} vs "
+                f"PQR {rmol['resname']}"
+            )
+
+    unique_resids: List[int] = []
+    for bead in chain_common.atoms:
+        if bead.resid < 0:
+            continue
+        if not unique_resids or unique_resids[-1] != bead.resid:
+            unique_resids.append(bead.resid)
+    resid_to_seq = {r: k for k, r in enumerate(unique_resids)}
+    if len(unique_resids) != len(flex_res):
+        raise ValueError(
+            f"Chain topology has {len(unique_resids)} residues, whereas PDB chain "
+            f"{flexible_chain_id!r} has {len(flex_res)} residues."
+        )
+
+    atom_to_bead: Dict[Tuple[int, str], int] = {}
+    ca_bead_of_seq: Dict[int, int] = {}
+    for b_idx, bead in enumerate(chain_common.atoms):
+        if bead.resid < 0:
+            continue
+        parts = bead.resname.split(":")
+        if len(parts) != 2:
+            continue
+        b_res, b_name = parts
+        seq_k = resid_to_seq[bead.resid]
+        if b_name == "CA":
+            ca_bead_of_seq[seq_k] = b_idx
+        m_res = _resolve_resname(b_res, bead_mapping)
+        if m_res is not None and b_name in bead_mapping[m_res]:
+            for an in bead_mapping[m_res][b_name]:
+                atom_to_bead[(seq_k, an)] = b_idx
+
+    cut2 = float(interface_cutoff) ** 2
+    seen_pairs = set()
+    pairs_out: List[Tuple[int, int, float]] = []
+    for r_seq, r_pdb in enumerate(rigid_res):
+        pqr_atoms = pqr_residues[r_seq]["atoms"]
+        for r_aname, r_xyz in r_pdb["atoms"].items():
+            if r_aname not in pqr_atoms:
+                continue
+            t_idx = pqr_atoms[r_aname]
+            for f_seq, f_pdb in enumerate(flex_res):
+                for f_aname, f_xyz in f_pdb["atoms"].items():
+                    d = r_xyz - f_xyz
+                    if float(d @ d) < cut2:
+                        b_idx = atom_to_bead.get(
+                            (f_seq, f_aname), ca_bead_of_seq.get(f_seq)
+                        )
+                        if b_idx is not None and (t_idx, b_idx) not in seen_pairs:
+                            seen_pairs.add((t_idx, b_idx))
+                            pairs_out.append(
+                                (int(t_idx), int(b_idx), float(reaction_distance))
+                            )
+    return pairs_out

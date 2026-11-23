@@ -48,6 +48,38 @@ def parse_reaction_xml(path: str | Path) -> PathwaySet:
     path = Path(path)
     tree = ET.parse(path)
     root = tree.getroot()
+    if root.tag == "top" or (
+        root.find("reactions") is not None and not root.findall("reaction")
+    ):
+        from pystarc.pipeline.geometry import _parse_rxns_xml_reaction_groups
+
+        groups, first_state = _parse_rxns_xml_reaction_groups(path)
+        pathway_set = PathwaySet(first_state=first_state)
+        for grp in groups:
+            pairs = [
+                ContactPair(int(rp.rec_index), int(rp.lig_index), float(rp.cutoff))
+                for rp in grp.pairs
+            ]
+            needed_pairs(
+                int(grp.n_needed), len(pairs), f"{path}, reaction {grp.name!r}"
+            )
+            criteria = ReactionCriteria(
+                name=grp.name,
+                pairs=pairs,
+                n_needed=int(grp.n_needed),
+                state_before=grp.state_before,
+                state_after=grp.state_after,
+            )
+            pathway_set.add(
+                ReactionInterface(
+                    name=grp.name,
+                    criteria=criteria,
+                    probability=1.0,
+                    state_before=grp.state_before,
+                    state_after=grp.state_after,
+                )
+            )
+        return pathway_set
     first_state = root.get("first_state")
     pathway_set = PathwaySet(first_state=first_state)
     for rxn_elem in root.findall("reaction"):

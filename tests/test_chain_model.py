@@ -260,7 +260,7 @@ def test_hard_sphere_rejects_every_step_inside_the_target():
     res = sim.run_one(*trajectory_rngs(1, 0))
     assert res.fate == Fate.MAX_STEPS
     assert res.n_hard_sphere_rejections == 6
-    assert res.n_hard_sphere_redraws == 6 * 3
+    assert res.n_hard_sphere_redraws == 0
     assert res.final_separation == pytest.approx(20.0)
 
 

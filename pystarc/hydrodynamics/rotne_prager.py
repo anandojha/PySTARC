@@ -92,15 +92,20 @@ def rpy_offdiagonal(
     D = kBT·mobility, so mobility = D/kBT. Returns the tensor in Å²/ps,
     consistent with the self-diffusion coefficients.
     """
-    r = float(np.linalg.norm(r_vec))
-    if r < 1e-10:
-        return np.zeros((3, 3))
-    rhat = r_vec / r
-    outer = np.outer(rhat, rhat)
-    I3 = np.eye(3)
     PI = math.pi
     PI6 = 6.0 * PI
     PI8 = 8.0 * PI
+    r = float(np.linalg.norm(r_vec))
+    if r < 1e-10:
+        a_max = max(a, b)
+        prod = D_a * PI6 * a * D_b * PI6 * b
+        if a_max <= 0.0 or prod <= 0.0:
+            return np.zeros((3, 3))
+        kT_over_eta = math.sqrt(prod)
+        return (kT_over_eta / (PI6 * a_max)) * np.eye(3)
+    rhat = r_vec / r
+    outer = np.outer(rhat, rhat)
+    I3 = np.eye(3)
     a2 = a * a
     b2 = b * b
     r2 = r * r
@@ -205,7 +210,7 @@ class MobilityTensor:
         D_rel = D_t1 + D_t2. With RPY coupling, which is the default, the
         result is
 
-            D_rel_eff(r) = D_t1 + D_t2 - (2/3)·tr(M_12(r)),
+            D_rel_eff(r) = D_t1 + D_t2 - 2 r̂·M_12(r)·r̂,
 
         where M_12(r) is the off-diagonal mobility tensor. The RPY
         correction reduces D_rel near contact (r ≈ a+b) and vanishes at
@@ -368,16 +373,21 @@ def rpy_full_components(ai, aj, r):
         tr_eps = _rt_term(aj, ai)
         return tt_I, tt_uu, rr_I, rr_uu, rt_eps, tr_eps
 
-    # One sphere is strictly inside the other.
+    # One sphere is strictly inside the other (Zuk et al. 2014, Eq. 3.15).
     a = max(ai, aj)
     tt_I = 1.0 / (pi6 * a)
     tt_uu = 0.0
     rr_I = 1.0 / (8.0 * pi * a * a * a)
     rr_uu = 0.0
-    # The BD2 implementation leaves the translation-rotation coupling at
-    # zero in this regime, and we follow the same choice.
-    rt_eps = 0.0
-    tr_eps = 0.0
+    if ai > aj:
+        rt_eps = r / (8.0 * pi * ai * ai * ai)
+        tr_eps = 0.0
+    elif aj > ai:
+        rt_eps = 0.0
+        tr_eps = r / (8.0 * pi * aj * aj * aj)
+    else:
+        rt_eps = 0.0
+        tr_eps = 0.0
     return tt_I, tt_uu, rr_I, rr_uu, rt_eps, tr_eps
 
 
@@ -740,49 +750,16 @@ def _build_robust_solver(M):
     )
 
 
-def chain_rigid_body_resistance(
+def chain_rigid_body_resistance_full(
     positions, radii, center=None, warn_regularized=True, info=None
 ):
-    """Compute the chain's rigid-body resistance matrices and
-    hydrodynamic center, given the bead positions and radii.
+    """Compute rigid-body resistance blocks (A, B, C) and hydrodynamic center hc.
 
-    Returns (A, C, hc). The matrix A is the (3, 3) translational
-    resistance, the force per unit velocity, acting as
-    F_net = η·A @ v_chain, where v_chain is the uniform translational
-    velocity of the rigid chain. The matrix C is the (3, 3) rotational
-    resistance, the torque per unit angular velocity taken about the
-    point center, acting as T_net = η·C @ omega_chain. The vector hc is
-    the (3,) hydrodynamic center, the radius-weighted centroid.
-
-    By convention the viscosity is not included. Multiply A by η for the
-    physical resistance. The corresponding rigid-body translational
-    diffusion is D_trans = kT·inv(η·A), and similarly for D_rot.
-
-    The algorithm works as follows. The six rigid-body velocity fields, three
-    translations and three rotations about center, are stacked into one
-    (3N, 6) right hand side. A single factorization of M_tt solves
-    M_tt·F = V for the per-bead forces required to maintain each motion
-    against the fluid, and the columns of A and C are read off from the sums
-    and moments of those forces. This avoids ever forming M_tt^{-1}
-    explicitly.
-
-    Parameters
-    ----------
-    positions : (N, 3) bead centers.
-    radii     : (N,)   bead hydrodynamic radii.
-    center    : (3,) point about which the rotation is taken. None selects the
-                hydrodynamic center hc, the default behavior.
-    warn_regularized : if False, a regularized factorization of M_tt raises no
-                RuntimeWarning. The caller can read info instead.
-    info      : optional dict. The key "regularized" is set to True when the
-                factorization needed a jitter or a clipped spectrum.
-
-    Notes
-    -----
-    The translation-rotation cross-coupling block B is not returned. For
-    chains that are well-centered at the hydrodynamic center, B is small
-    or zero by symmetry. A full Stokesian-dynamics treatment would
-    compute it.
+    Returns (A, B, C, hc). Matrix A is translational resistance (3, 3), matrix B
+    is rotation-translation coupling (3, 3) mapping uniform translation to torque
+    about center, matrix C is rotational resistance (3, 3) about center, and hc
+    is the radius-weighted centroid (3,). Viscosity is omitted. Multiply by eta
+    for physical resistance.
     """
     positions = np.asarray(positions, dtype=float)
     radii = np.asarray(radii, dtype=float)
@@ -800,13 +777,6 @@ def chain_rigid_body_resistance(
     c = hc if center is None else np.asarray(center, dtype=float)
     M_tt = _translation_only_mobility(positions, radii)
 
-    # Solve M_tt @ F = V. The RPY mobility is symmetric positive definite
-    # for non-overlapping beads, but coarse-grained chains derived from
-    # PDB files can have near-coincident beads (for example the
-    # CA fallback for disordered sidechains), which makes M_tt
-    # ill-conditioned or indefinite. _build_robust_solver falls back
-    # from a regularized Cholesky factorization to a symmetric
-    # eigendecomposition rather than raising a LinAlgError on the user.
     solve, _was_regularized, _solver_info = _build_robust_solver(M_tt)
     if info is not None:
         info["regularized"] = bool(_was_regularized)
@@ -825,9 +795,8 @@ def chain_rigid_body_resistance(
             stacklevel=2,
         )
 
-    # The columns 0 to 2 prescribe a uniform translation v_i = e_k for every
-    # bead. The columns 3 to 5 prescribe a rigid-body rotation omega = e_k
-    # about center, so bead i moves with velocity v_i = omega × (r_i - center).
+    # Columns 0..2 prescribe unit translation v_i = e_k. Columns 3..5 prescribe
+    # rigid rotation omega = e_k about center with v_i = omega x (r_i - center).
     d = positions - c
     V = np.zeros((3 * n, 6))
     for k in range(3):
@@ -838,11 +807,140 @@ def chain_rigid_body_resistance(
     F = solve(V).reshape(n, 3, 6)
 
     A = F[:, :, :3].sum(axis=0)
+    B = np.zeros((3, 3))
     C = np.zeros((3, 3))
     for k in range(3):
+        B[:, k] = np.cross(d, F[:, :, k]).sum(axis=0)
         C[:, k] = np.cross(d, F[:, :, 3 + k]).sum(axis=0)
 
+    if info is not None:
+        info["B"] = B
+
+    return A, B, C, hc
+
+
+def chain_rigid_body_resistance(
+    positions, radii, center=None, warn_regularized=True, info=None
+):
+    """Compute rigid-body resistance matrices (A, C) and hydrodynamic center hc.
+
+    Returns (A, C, hc). When info is a dict, info["B"] stores the (3, 3)
+    rotation-translation coupling block and info["regularized"] records
+    whether Cholesky regularization occurred.
+    """
+    A, _B, C, hc = chain_rigid_body_resistance_full(
+        positions,
+        radii,
+        center=center,
+        warn_regularized=warn_regularized,
+        info=info,
+    )
     return A, C, hc
+
+
+def _chain_rigid_body_resistance_6n(
+    positions, radii, center=None, warn_regularized=True, info=None
+):
+    """Compute full 6x6 rigid-body resistance blocks (A, B, C) via 6N RPY mobility."""
+    positions = np.asarray(positions, dtype=float)
+    radii = np.asarray(radii, dtype=float)
+
+    if positions.ndim != 2 or positions.shape[1] != 3:
+        raise ValueError(f"positions must have shape (N, 3); got {positions.shape}")
+    if radii.ndim != 1 or radii.shape[0] != positions.shape[0]:
+        raise ValueError(
+            f"radii must have shape (N,); got radii.shape={radii.shape}, "
+            f"positions.shape={positions.shape}"
+        )
+
+    n = positions.shape[0]
+    hc = _hydrodynamic_center(positions, radii)
+    c = hc if center is None else np.asarray(center, dtype=float)
+
+    M_full = rpy_full_mobility_matrix(positions, radii)
+    solve, _was_regularized, _solver_info = _build_robust_solver(M_full)
+    if info is not None:
+        info["regularized"] = bool(_was_regularized)
+    if _was_regularized and warn_regularized:
+        warnings.warn(
+            f"chain_diffusion_tensors (method='6n'): full RPY mobility matrix "
+            f"was not strictly positive definite and needed regularization "
+            f"({_solver_info}).",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    d = positions - c
+    K = np.zeros((6 * n, 6), dtype=float)
+    for i in range(n):
+        r0 = 6 * i
+        di = d[i]
+        K[r0 : r0 + 3, 0:3] = np.eye(3)
+        K[r0, 4] = di[2]
+        K[r0, 5] = -di[1]
+        K[r0 + 1, 3] = -di[2]
+        K[r0 + 1, 5] = di[0]
+        K[r0 + 2, 3] = di[1]
+        K[r0 + 2, 4] = -di[0]
+        K[r0 + 3 : r0 + 6, 3:6] = np.eye(3)
+
+    FT = solve(K)
+    Xi = K.T @ FT
+    Xi = 0.5 * (Xi + Xi.T)
+    A = Xi[:3, :3].copy()
+    B = Xi[3:, :3].copy()
+    C = Xi[3:, 3:].copy()
+    if info is not None:
+        info["B"] = B
+    return A, B, C, hc
+
+
+def _diffusion_from_resistance_full(A, B, C, c, scale, info=None):
+    """Invert 6x6 resistance (A, B, C) via Schur complement at center of diffusion."""
+    A_sym = 0.5 * (A + A.T)
+    A_inv = np.linalg.inv(A_sym)
+    C_schur = C - B @ A_inv @ B.T
+    C_schur = 0.5 * (C_schur + C_schur.T)
+    eigvals = np.linalg.eigvalsh(C_schur)
+    scale_c = abs(float(eigvals[-1]))
+    if scale_c == 0.0 or float(eigvals[0]) <= 1e-12 * scale_c:
+        raise np.linalg.LinAlgError(
+            "rigid-body rotational resistance C is singular for this "
+            f"chain geometry (eigenvalues {eigvals})."
+        )
+    try:
+        D_rr = scale * np.linalg.inv(C_schur)
+    except np.linalg.LinAlgError:
+        raise np.linalg.LinAlgError(
+            "rigid-body rotational resistance C is singular for this "
+            f"chain geometry (eigenvalues {eigvals})."
+        ) from None
+    D_rr = 0.5 * (D_rr + D_rr.T)
+    D_tr_O = -A_inv @ B.T @ D_rr
+    D_rt_O = D_tr_O.T
+    D_tt_O = scale * A_inv + A_inv @ B.T @ D_rr @ B @ A_inv
+    rhs = np.array(
+        [
+            D_rt_O[1, 2] - D_rt_O[2, 1],
+            D_rt_O[2, 0] - D_rt_O[0, 2],
+            D_rt_O[0, 1] - D_rt_O[1, 0],
+        ],
+        dtype=float,
+    )
+    delta = np.linalg.solve(np.trace(D_rr) * np.eye(3) - D_rr, rhs)
+    U = np.array(
+        [
+            [0.0, -delta[2], delta[1]],
+            [delta[2], 0.0, -delta[0]],
+            [-delta[1], delta[0], 0.0],
+        ],
+        dtype=float,
+    )
+    D_trans = D_tt_O - U @ D_rr @ U + D_tr_O @ U - U @ D_tr_O.T
+    D_trans = 0.5 * (D_trans + D_trans.T)
+    if info is not None:
+        info["center_of_diffusion"] = c + delta
+    return D_trans, D_rr
 
 
 def chain_diffusion_tensors(
@@ -853,56 +951,50 @@ def chain_diffusion_tensors(
     center=None,
     warn_regularized=True,
     info=None,
+    include_coupling=True,
+    method="3n",
 ):
-    """Compute the chain's rigid-body diffusion tensors and hydrodynamic
-    center, ready for use in a Brownian-dynamics integrator.
+    """Compute rigid-body diffusion tensors (D_trans, D_rot) and hydrodynamic center hc.
 
-    Returns (D_trans, D_rot, hc). The matrix D_trans is the (3, 3)
-    translational diffusion tensor in length²/time, D_rot is the (3, 3)
-    rotational diffusion tensor in 1/time, and hc is the (3,)
-    hydrodynamic center in length.
-
-    The diffusion tensors are obtained by inverting the resistance
-    matrices A and C from chain_rigid_body_resistance and scaling by
-    kT/η,
-
-        D_trans = (kT/η)·inv(A)
-        D_rot   = (kT/η)·inv(C).
-
-    Parameters
-    ----------
-    positions : (N, 3) bead centers.
-    radii     : (N,)   bead hydrodynamic radii.
-    kT        : thermal energy. The PySTARC convention is kT = 1.
-    viscosity : solvent viscosity. If None, the package default
-                WATER_VISCOSITY from motion/do_bd_step is used, which
-                derives from ETA_WATER at T_DEFAULT and is 0.2162 kBT·ps/Å³.
-    center    : (3,) point about which the rotational resistance is taken.
-                None selects the hydrodynamic center hc.
-    warn_regularized, info : passed to chain_rigid_body_resistance.
-
-    Notes
-    -----
-    For a chain of N >= 2 beads, both A and C are invertible by
-    construction. For N = 1 the matrix A is invertible but C is the zero
-    matrix (see the chain_rigid_body_resistance docstring), so a
-    single-bead chain cannot use the algorithm without bead-rotation
-    contributions. Callers should special-case N = 1 by using the bead's
-    own rotational mobility 1/(8πηa³).
+    With include_coupling=True (default), the full 6x6 resistance matrix (A, B, C)
+    is inverted via Schur complement and shifted to the center of diffusion r_D,
+    producing origin-independent D_trans and D_rot tensors. Setting method='6n'
+    assembles the full 6N x 6N RPY mobility matrix including bead rotations and
+    rotation-translation coupling. When info is supplied, info['center_of_diffusion']
+    records r_D and info['B'] records the coupling block about center.
     """
     from pystarc.motion.do_bd_step import WATER_VISCOSITY
 
     if viscosity is None:
         viscosity = WATER_VISCOSITY
+    if method not in ("3n", "6n"):
+        raise ValueError(f"method must be '3n' or '6n'; got {method!r}")
 
-    # Require at least one bead before computing the resistance tensors. An
-    # empty set of positions would otherwise reach chain_rigid_body_resistance
-    # and divide by zero.
     n = len(positions)
     if n < 1:
         raise ValueError("at least one bead required")
 
-    A, C, hc = chain_rigid_body_resistance(
+    scale = kT / viscosity
+
+    if method == "6n":
+        A, B, C, hc = _chain_rigid_body_resistance_6n(
+            positions,
+            radii,
+            center=center,
+            warn_regularized=warn_regularized,
+            info=info,
+        )
+        c = hc if center is None else np.asarray(center, dtype=float)
+        if include_coupling:
+            D_trans, D_rot = _diffusion_from_resistance_full(
+                A, B, C, c, scale, info=info
+            )
+        else:
+            D_trans = scale * np.linalg.inv(A)
+            D_rot = scale * np.linalg.inv(C)
+        return D_trans, D_rot, hc
+
+    A, B, C, hc = chain_rigid_body_resistance_full(
         positions,
         radii,
         center=center,
@@ -910,31 +1002,32 @@ def chain_diffusion_tensors(
         info=info,
     )
 
-    scale = kT / viscosity
-    D_trans = scale * np.linalg.inv(A)
-
     if n == 1:
-        # C is zero by construction in the BD2 algorithm, so for a single
-        # bead we fall back to the Stokes rotational mobility, which is
-        # correct.
+        D_trans = scale * np.linalg.inv(A)
         a = float(radii[0])
-        D_rot = (kT / viscosity) * np.eye(3) / (8.0 * math.pi * a**3)
-    else:
-        # A singular C arises for special chain geometries. For example,
-        # a perfectly collinear chain has zero rotational drag about its
-        # own axis because all moment arms vanish. In that case the chain
-        # is not a well-defined three-degree-of-freedom rigid rotor, so we
-        # raise a clear error rather than a generic numpy LinAlgError.
-        try:
-            D_rot = scale * np.linalg.inv(C)
-        except np.linalg.LinAlgError:
-            eigvals = np.linalg.eigvalsh(C)
-            raise np.linalg.LinAlgError(
-                "rigid-body rotational resistance C is singular for this "
-                f"chain geometry (eigenvalues {eigvals}). This typically "
-                "means the chain lies along a single axis (zero moment "
-                "arm about that axis). Real BD trajectories rarely hit "
-                "this exactly."
-            ) from None
+        D_rot = scale * np.eye(3) / (8.0 * math.pi * a**3)
+        if info is not None:
+            info["center_of_diffusion"] = hc.copy()
+        return D_trans, D_rot, hc
+
+    if include_coupling:
+        c = hc if center is None else np.asarray(center, dtype=float)
+        D_trans, D_rot = _diffusion_from_resistance_full(A, B, C, c, scale, info=info)
+        return D_trans, D_rot, hc
+
+    D_trans = scale * np.linalg.inv(A)
+    C_sym = 0.5 * (C + C.T)
+    try:
+        eigvals = np.linalg.eigvalsh(C_sym)
+        scale_c = abs(float(eigvals[-1]))
+        if scale_c == 0.0 or float(eigvals[0]) <= 1e-12 * scale_c:
+            raise np.linalg.LinAlgError("singular")
+        D_rot = scale * np.linalg.inv(C)
+    except np.linalg.LinAlgError:
+        eigvals = np.linalg.eigvalsh(C_sym)
+        raise np.linalg.LinAlgError(
+            "rigid-body rotational resistance C is singular for this "
+            f"chain geometry (eigenvalues {eigvals})."
+        ) from None
 
     return D_trans, D_rot, hc

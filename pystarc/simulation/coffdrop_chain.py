@@ -20,12 +20,18 @@ COFFDROP support.
 """
 
 from __future__ import annotations
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 from dataclasses import dataclass, field
 import numpy as np
 import math
-from pystarc.global_defs.constants import KBT_KCAL
-from pystarc.global_defs.defaults import CHAIN_DT, DESOLVATION_ALPHA, VISCOSITY
+from pystarc.global_defs.constants import KBT_KCAL, VACUUM_PERMITTIVITY_KBT
+from pystarc.global_defs.defaults import (
+    CHAIN_DT,
+    DESOLVATION_ALPHA,
+    GHOST_NAMES,
+    SOLVENT_DIELECTRIC,
+    VISCOSITY,
+)
 
 # A bond, angle, or dihedral involves atoms that may live either on
 # the chain itself or on a rigid core (a structured protein domain).
@@ -90,6 +96,7 @@ class ChainAtom:
     charge: float
     resname: str = ""
     resid: int = 0
+    hydro_radius: float = 0.0
 
 
 # A bond exerts a force from a potential V(r), and the distance fluctuates
@@ -163,6 +170,13 @@ class ChainCommon:
     def n_atoms(self) -> int:
         return len(self.atoms)
 
+    def hydro_radii_array(self) -> np.ndarray:
+        """Return hydrodynamic radii, falling back to steric radius when hydro_radius <= 0."""
+        return np.array(
+            [a.hydro_radius if a.hydro_radius > 0.0 else a.radius for a in self.atoms],
+            dtype=float,
+        )
+
 
 # Per-trajectory mutable state. Positions and forces are stored as
 # contiguous (n_atoms, 3) arrays for vectorized force evaluation and to
@@ -218,17 +232,59 @@ class ChainState:
 # assembling the Jacobian and Lagrange-multiplier system.
 
 
-def compute_constraint_violations(state: "ChainState") -> np.ndarray:
-    """Signed violation vector for all constraints on a chain state."""
+def _coplanar_violation_and_grad(
+    ra: np.ndarray, rb: np.ndarray, rc: np.ndarray, rd: np.ndarray
+) -> Tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, bool]:
+    """Signed plane distance of atom a from plane (b, c, d) and exact 4-atom gradients.
+
+    Returns (phi, ga, gb, gc, gd, degenerate). When (b, c, d) are collinear
+    (|(rc - rb) x (rd - rb)| < 1e-12), returns zeros with degenerate=True.
+    """
+    centroid = (rb + rc + rd) / 3.0
+    d2 = rc - rb
+    d3 = rd - rb
+    perp = np.cross(d2, d3)
+    perp_norm = float(np.linalg.norm(perp))
+    if not math.isfinite(perp_norm) or perp_norm < 1e-12:
+        z = np.zeros(3, dtype=float)
+        return 0.0, z, z, z, z, True
+    n_hat = perp / perp_norm
+    w = ra - centroid
+    phi = float(np.dot(w, n_hat))
+    q = (w - phi * n_hat) / perp_norm
+    g2 = np.cross(d3, q)
+    g3 = np.cross(q, d2)
+    third_n = n_hat / 3.0
+    ga = n_hat
+    gc = -third_n + g2
+    gd = -third_n + g3
+    gb = -third_n - g2 - g3
+    return phi, ga, gb, gc, gd, False
+
+
+def compute_constraint_violations(
+    state: "ChainState",
+    return_degenerate: bool = False,
+) -> Union[np.ndarray, Tuple[np.ndarray, bool]]:
+    """Signed violation vector for all constraints on a chain state.
+
+    When return_degenerate is True, returns (phi, had_degenerate) where
+    had_degenerate marks any coincident length pair (r < 1e-12) or collinear
+    coplanar triple (|(rc - rb) x (rd - rb)| < 1e-12).
+    """
     common = state.common
     pos = state.positions
     n_len = len(common.length_constraints)
     n_cop = len(common.coplanar_constraints)
     phi = np.zeros(n_len + n_cop, dtype=float)
+    had_degenerate = False
     for ic, c in enumerate(common.length_constraints):
         ra = pos[_chain_idx(c.a)]
         rb = pos[_chain_idx(c.b)]
-        phi[ic] = float(np.linalg.norm(ra - rb)) - c.length
+        r = float(np.linalg.norm(ra - rb))
+        if not math.isfinite(r) or r < 1e-12:
+            had_degenerate = True
+        phi[ic] = r - c.length
     for ic, c in enumerate(common.coplanar_constraints):
         ra = pos[_chain_idx(c.a)]
         rb = pos[_chain_idx(c.b)]
@@ -239,59 +295,56 @@ def compute_constraint_violations(state: "ChainState") -> np.ndarray:
         d3 = rd - rb
         perp = np.cross(d2, d3)
         perp_norm = float(np.linalg.norm(perp))
-        if perp_norm < 1e-12:
-            # Degenerate: the three plane atoms are colinear and the plane
-            # is undefined. Report zero violation (the constraint cannot be
-            # evaluated meaningfully); the solver will see this and either
-            # accept it or report failure.
+        if not math.isfinite(perp_norm) or perp_norm < 1e-12:
+            had_degenerate = True
             phi[n_len + ic] = 0.0
         else:
             n_hat = perp / perp_norm
             phi[n_len + ic] = float(np.dot(ra - centroid, n_hat))
+    if return_degenerate:
+        return phi, had_degenerate
     return phi
 
 
-# Iterative constraint satisfaction in the style of SHAKE.
-#
-# Each sweep visits every constraint and applies a local position correction
-# that exactly satisfies that constraint in isolation. After visiting all
-# constraints, neighboring constraints may have been perturbed, so the routine
-# sweeps again. It converges when the maximum signed violation drops below tol.
-#
-# For a length constraint between atoms a, b with target L, the correction is
-#   delta = (|r_b - r_a| - L) / 2
-#   r_a += +delta * (r_b - r_a) / |r_b - r_a|
-#   r_b += -delta * (r_b - r_a) / |r_b - r_a|
-# After this, |r_b - r_a| equals L exactly.
-#
-# For a coplanar constraint on atoms (a, b, c, d), atom a must lie in the plane
-# of atoms b, c, d. The plane normal n_hat is built from atoms b, c, d, and atom
-# a is shifted by -phi * n_hat, where phi is the signed distance from a to
-# the plane. Atoms b, c, d are not moved by this correction.
-#
-# This pairwise sweep is the simplest form of SHAKE. It handles loosely
-# coupled constraint networks (chains, lightly cross-linked systems) but can
-# converge slowly or stall on tightly coupled networks. The Newton fallback
-# handles those cases.
+def _resolve_mobilities(n_atoms: int, mobilities: Optional[np.ndarray]) -> np.ndarray:
+    if mobilities is None:
+        return np.ones(n_atoms, dtype=float)
+    mob = np.asarray(mobilities, dtype=float).reshape(n_atoms)
+    if not np.all(np.isfinite(mob)) or np.any(mob < 0.0):
+        raise ValueError("mobilities must be finite and non-negative")
+    return mob
 
 
 def satisfy_constraints(
-    state: "ChainState", tol: float = 1e-6, max_iter: int = 200
+    state: "ChainState",
+    tol: float = 1e-6,
+    max_iter: int = 200,
+    mobilities: Optional[np.ndarray] = None,
 ) -> int:
-    """Iteratively project positions onto the constraint manifold.
+    """Iteratively project positions onto the constraint manifold via SHAKE.
 
-    The positions of state are modified in place. tol is the convergence
-    tolerance on the maximum signed violation, and max_iter is a hard cap on
-    the number of sweeps. The function returns the number of sweeps used and
-    raises RuntimeError if the solver fails to converge within max_iter sweeps.
+    Modifies state.positions in place. Length constraints split corrections by
+    mobility weights mu_a / (mu_a + mu_b). Coplanar constraints project all
+    four atoms along the analytic gradient M grad_c / (grad_c^T M grad_c),
+    preserving center of mass and zero net torque under uniform mobilities.
+    Refuses convergence when any constraint is degenerate.
     """
     common = state.common
     pos = state.positions
     if not common.length_constraints and not common.coplanar_constraints:
         return 0
+    mob = _resolve_mobilities(state.n_atoms, mobilities)
+    if max_iter > 0:
+        init_phi, init_deg = compute_constraint_violations(
+            state, return_degenerate=True
+        )
+        init_viol = float(np.max(np.abs(init_phi))) if init_phi.size else 0.0
+        if not init_deg and init_viol < tol:
+            return 0
+    max_violation = float("nan")
+    had_degenerate = False
     for it in range(max_iter):
-        max_violation = 0.0
-        # Length constraints: split correction symmetrically along bond axis.
+        had_degenerate = False
         for c in common.length_constraints:
             ia = _chain_idx(c.a)
             ib = _chain_idx(c.b)
@@ -299,59 +352,66 @@ def satisfy_constraints(
             rb = pos[ib]
             d = rb - ra
             r = float(np.linalg.norm(d))
-            if r < 1e-12:
-                # Coincident atoms, so the direction cannot be resolved. Skip
-                # this constraint and let other forces (or another sweep) move
-                # the atoms apart first.
+            if not math.isfinite(r) or r < 1e-12:
+                had_degenerate = True
+                continue
+            mu_a = float(mob[ia])
+            mu_b = float(mob[ib])
+            mu_sum = mu_a + mu_b
+            if mu_sum < 1e-30:
+                had_degenerate = True
                 continue
             violation = r - c.length
-            if abs(violation) > max_violation:
-                max_violation = abs(violation)
             d_hat = d / r
-            half = 0.5 * violation
-            pos[ia] = ra + half * d_hat
-            pos[ib] = rb - half * d_hat
-        # Coplanar constraints: shift only atom a onto the plane.
+            wa = mu_a / mu_sum
+            wb = mu_b / mu_sum
+            pos[ia] = ra + (wa * violation) * d_hat
+            pos[ib] = rb - (wb * violation) * d_hat
         for c in common.coplanar_constraints:
             ia = _chain_idx(c.a)
-            ra = pos[ia]
-            rb = pos[_chain_idx(c.b)]
-            rc = pos[_chain_idx(c.c)]
-            rd = pos[_chain_idx(c.d)]
-            centroid = (rb + rc + rd) / 3.0
-            d2 = rc - rb
-            d3 = rd - rb
-            perp = np.cross(d2, d3)
-            perp_norm = float(np.linalg.norm(perp))
-            if perp_norm < 1e-12:
+            ib = _chain_idx(c.b)
+            ic = _chain_idx(c.c)
+            ild = _chain_idx(c.d)
+            phi, ga, gb, gc, gd, deg = _coplanar_violation_and_grad(
+                pos[ia], pos[ib], pos[ic], pos[ild]
+            )
+            if deg:
+                had_degenerate = True
                 continue
-            n_hat = perp / perp_norm
-            phi = float(np.dot(ra - centroid, n_hat))
-            if abs(phi) > max_violation:
-                max_violation = abs(phi)
-            pos[ia] = ra - phi * n_hat
-        if max_violation < tol:
+            grads: Dict[int, np.ndarray] = {}
+            for idx, gv in ((ia, ga), (ib, gb), (ic, gc), (ild, gd)):
+                if idx in grads:
+                    grads[idx] = grads[idx] + gv
+                else:
+                    grads[idx] = gv
+            denom = sum(
+                float(mob[idx]) * float(np.dot(gv, gv)) for idx, gv in grads.items()
+            )
+            if not math.isfinite(denom) or denom < 1e-30:
+                had_degenerate = True
+                continue
+            scale = -phi / denom
+            for idx, gv in grads.items():
+                pos[idx] = pos[idx] + (scale * float(mob[idx])) * gv
+        post_phi, post_deg = compute_constraint_violations(
+            state, return_degenerate=True
+        )
+        max_violation = float(np.max(np.abs(post_phi))) if post_phi.size else 0.0
+        if not had_degenerate and not post_deg and max_violation < tol:
             return it + 1
+    reason = (
+        "degenerate constraint"
+        if had_degenerate
+        else f"final max violation = {max_violation:.3e}"
+    )
     raise RuntimeError(
         f"satisfy_constraints failed to converge in {max_iter} iterations; "
-        f"final max violation = {max_violation:.3e}, tol = {tol:.3e}"
+        f"{reason}, tol = {tol:.3e}"
     )
 
 
-# Constraint Jacobian for the Newton solver.
-#
-# Each row of the Jacobian is the gradient of one scalar constraint with
-# respect to the flattened position vector r in R^{3*n_atoms}. Length-
-# constraint gradients are analytic and simple. Coplanar-constraint
-# gradients are analytic for atom a and computed by finite differences for
-# the three plane atoms b, c, d. The finite-difference piece is acceptable
-# because coplanar constraints are rare in production chain configurations
-# and the cost is bounded, at 9 extra evaluations of one scalar per coplanar
-# constraint per Newton step.
-
-
 def _build_constraint_jacobian(state: "ChainState") -> np.ndarray:
-    """Constraint Jacobian J of shape (n_constraints, 3 * n_atoms).
+    """Analytic constraint Jacobian J of shape (n_constraints, 3 * n_atoms).
 
     Row i, columns 3k..3k+2 hold dc_i/dr_k for atom k.
     """
@@ -361,92 +421,44 @@ def _build_constraint_jacobian(state: "ChainState") -> np.ndarray:
     n_len = len(common.length_constraints)
     n_cop = len(common.coplanar_constraints)
     J = np.zeros((n_len + n_cop, 3 * n_atoms), dtype=float)
-    # Length-constraint rows: analytic.
     for ic, c in enumerate(common.length_constraints):
         ia = _chain_idx(c.a)
         ib = _chain_idx(c.b)
-        ra = pos[ia]
-        rb = pos[ib]
-        d = ra - rb
+        d = pos[ia] - pos[ib]
         r = float(np.linalg.norm(d))
-        if r < 1e-12:
+        if not math.isfinite(r) or r < 1e-12:
             continue
         d_hat = d / r
-        J[ic, 3 * ia : 3 * ia + 3] = d_hat
-        J[ic, 3 * ib : 3 * ib + 3] = -d_hat
-    # Coplanar-constraint rows: analytic for atom a, FD for atoms b, c, d.
+        J[ic, 3 * ia : 3 * ia + 3] += d_hat
+        J[ic, 3 * ib : 3 * ib + 3] -= d_hat
     for ic, c in enumerate(common.coplanar_constraints):
         row_idx = n_len + ic
         ia = _chain_idx(c.a)
-        ra = pos[ia]
-        rb = pos[_chain_idx(c.b)]
-        rc = pos[_chain_idx(c.c)]
-        rd = pos[_chain_idx(c.d)]
-        centroid = (rb + rc + rd) / 3.0
-        d2 = rc - rb
-        d3 = rd - rb
-        perp = np.cross(d2, d3)
-        perp_norm = float(np.linalg.norm(perp))
-        if perp_norm < 1e-12:
+        ib = _chain_idx(c.b)
+        ic_idx = _chain_idx(c.c)
+        ild = _chain_idx(c.d)
+        _phi, ga, gb, gc, gd, deg = _coplanar_violation_and_grad(
+            pos[ia], pos[ib], pos[ic_idx], pos[ild]
+        )
+        if deg:
             continue
-        n_hat = perp / perp_norm
-        # dc/dr_a = n_hat (the in-plane reference moves linearly with a's
-        # projection along n_hat).
-        J[row_idx, 3 * ia : 3 * ia + 3] = n_hat
-        # FD for the three plane-defining atoms. Perturb each component of
-        # r_b, r_c, r_d in turn and recompute the scalar constraint.
-        eps = 1e-6
-        for plane_atom_idx, plane_field in [
-            (_chain_idx(c.b), "b"),
-            (_chain_idx(c.c), "c"),
-            (_chain_idx(c.d), "d"),
-        ]:
-            for k in range(3):
-                pos[plane_atom_idx, k] += eps
-                phi_p = _coplanar_violation(state, c)
-                pos[plane_atom_idx, k] -= 2 * eps
-                phi_m = _coplanar_violation(state, c)
-                pos[plane_atom_idx, k] += eps
-                J[row_idx, 3 * plane_atom_idx + k] = (phi_p - phi_m) / (2 * eps)
-
+        J[row_idx, 3 * ia : 3 * ia + 3] += ga
+        J[row_idx, 3 * ib : 3 * ib + 3] += gb
+        J[row_idx, 3 * ic_idx : 3 * ic_idx + 3] += gc
+        J[row_idx, 3 * ild : 3 * ild + 3] += gd
     return J
 
 
 def _coplanar_violation(state: "ChainState", c: "CoplanarConstraint") -> float:
     """Signed perpendicular distance of atom a from the plane of b, c, d."""
     pos = state.positions
-    ra = pos[_chain_idx(c.a)]
-    rb = pos[_chain_idx(c.b)]
-    rc = pos[_chain_idx(c.c)]
-    rd = pos[_chain_idx(c.d)]
-    centroid = (rb + rc + rd) / 3.0
-    d2 = rc - rb
-    d3 = rd - rb
-    perp = np.cross(d2, d3)
-    perp_norm = float(np.linalg.norm(perp))
-    if perp_norm < 1e-12:
-        return 0.0
-    return float(np.dot(ra - centroid, perp / perp_norm))
-
-
-# Newton constraint solver.
-#
-# At each iteration the solver builds the constraint Jacobian J = dphi/dr (one
-# row per constraint, 3 columns per atom) and the constraint residual phi. The
-# step Delta_r is parameterized as Delta_r = J^T lambda for Lagrange
-# multipliers lambda in R^{n_constraints}. Substituting into the linearized
-# constraint equation J Delta_r = -phi gives the n_c x n_c square system
-#
-#   (J J^T) lambda = -phi
-#
-# which is small and positive-(semi)definite for non-degenerate constraint
-# sets. The solver finds lambda, recovers Delta_r = J^T lambda, applies it, and
-# iterates.
-#
-# If a step does not reduce ||phi||, the solver halves it and retries up to a
-# few times. This handles modest overshoot. For severe cases (a rank-deficient
-# Jacobian or a far-from-feasible start), the solver raises rather than
-# silently doing the wrong thing.
+    phi, *_rest = _coplanar_violation_and_grad(
+        pos[_chain_idx(c.a)],
+        pos[_chain_idx(c.b)],
+        pos[_chain_idx(c.c)],
+        pos[_chain_idx(c.d)],
+    )
+    return phi
 
 
 def satisfy_constraints_newton(
@@ -454,54 +466,67 @@ def satisfy_constraints_newton(
     tol: float = 1e-8,
     max_iter: int = 50,
     max_damping: int = 8,
+    mobilities: Optional[np.ndarray] = None,
 ) -> int:
-    """Newton-Lagrange constraint solver.
+    """Newton-Lagrange constraint solver with optional mobility weighting.
 
-    Converges in a handful of iterations on chain configurations regardless
-    of chain length, in contrast to SHAKE which scales as O(N) sweeps for
-    a chain of N constrained bonds.
-
-    Returns the number of Newton iterations used. Raises RuntimeError if
-    the solver fails to converge or if the Jacobian is rank-deficient.
+    Solves (J M J^T) lambda = -phi with displacement dr = M J^T lambda.
+    Falls back to least-squares and L2 norm descent checks on rank-deficient
+    Jacobians, and refuses convergence on degenerate constraints.
     """
     common = state.common
     if not common.length_constraints and not common.coplanar_constraints:
         return 0
     n_atoms = state.n_atoms
-    # Initialize new_violation so the final RuntimeError still references a
-    # bound name when max_iter == 0 and the loop never runs.
+    mob = _resolve_mobilities(n_atoms, mobilities)
+    m_vec = np.repeat(mob, 3)
     new_violation = float("nan")
     for it in range(max_iter):
-        phi = compute_constraint_violations(state)
+        phi, had_deg = compute_constraint_violations(state, return_degenerate=True)
+        if had_deg:
+            raise RuntimeError(
+                f"satisfy_constraints_newton: degenerate constraint at iter {it}"
+            )
         violation = float(np.max(np.abs(phi))) if phi.size else 0.0
+        phi_norm = float(np.linalg.norm(phi)) if phi.size else 0.0
         if violation < tol:
             return it
         J = _build_constraint_jacobian(state)
-        # JJt is square (n_c x n_c), positive semi-definite. For a non-
-        # degenerate constraint set it is positive definite and can
-        # be solved directly. Use lstsq for graceful handling of rank
-        # deficiency (e.g. redundant constraints).
-        JJt = J @ J.T
+        JM = J * m_vec[None, :]
+        JMJt = JM @ J.T
+        rank_deficient = False
         try:
-            lam = np.linalg.solve(JJt, -phi)
+            svals = np.linalg.svd(JMJt, compute_uv=False)
+            if svals.size == 0 or svals[0] <= 0.0 or svals[-1] <= 1e-12 * svals[0]:
+                rank_deficient = True
+                lam, *_ = np.linalg.lstsq(JMJt, -phi, rcond=None)
+            else:
+                lam = np.linalg.solve(JMJt, -phi)
+                if not np.all(np.isfinite(lam)):
+                    rank_deficient = True
+                    lam, *_ = np.linalg.lstsq(JMJt, -phi, rcond=None)
         except np.linalg.LinAlgError:
-            # Singular: fall back to least-squares (returns minimum-norm
-            # solution).
-            lam, *_ = np.linalg.lstsq(JJt, -phi, rcond=None)
-        delta = (J.T @ lam).reshape(n_atoms, 3)
-        # Damped step: try full step first, halve if violation does not
-        # decrease.
+            rank_deficient = True
+            lam, *_ = np.linalg.lstsq(JMJt, -phi, rcond=None)
+        delta = (m_vec * (J.T @ lam)).reshape(n_atoms, 3)
         scale = 1.0
         original_pos = state.positions.copy()
         for _ in range(max_damping + 1):
             state.positions[:] = original_pos + scale * delta
-            new_phi = compute_constraint_violations(state)
-            new_violation = float(np.max(np.abs(new_phi))) if new_phi.size else 0.0
-            if new_violation < violation:
-                break
+            new_phi, new_deg = compute_constraint_violations(
+                state, return_degenerate=True
+            )
+            if not new_deg and np.all(np.isfinite(new_phi)):
+                new_violation = float(np.max(np.abs(new_phi))) if new_phi.size else 0.0
+                new_norm = float(np.linalg.norm(new_phi)) if new_phi.size else 0.0
+                if rank_deficient:
+                    if new_norm < phi_norm:
+                        break
+                else:
+                    if new_violation < violation or new_norm < phi_norm:
+                        break
             scale *= 0.5
         else:
-            # All damping attempts failed: revert and bail.
             state.positions[:] = original_pos
             raise RuntimeError(
                 f"satisfy_constraints_newton: damped step failed at iter {it}; "
@@ -513,29 +538,38 @@ def satisfy_constraints_newton(
     )
 
 
-# Hybrid solver. It tries SHAKE first for cheap convergence, and switches to
-# Newton if SHAKE stalls. SHAKE handles the common case (chains, lightly
-# coupled networks) in microseconds. Newton handles the hard cases (tight
-# rings, dense cross-linking) but at higher per-iteration cost. The hybrid
-# gives the best of both with no user tuning required.
-
-
 def satisfy_constraints_hybrid(
     state: "ChainState",
     tol: float = 1e-8,
     shake_max_iter: int = 50,
     newton_max_iter: int = 50,
+    mobilities: Optional[np.ndarray] = None,
 ) -> int:
-    """SHAKE first, fall back to Newton if SHAKE does not converge.
-
-    Returns the total iteration count across both solvers (SHAKE sweeps +
-    Newton iterations).
-    """
+    """SHAKE first, rolling back any degraded state before Newton fallback."""
+    common = state.common
+    if not common.length_constraints and not common.coplanar_constraints:
+        return 0
+    pre_pos = state.positions.copy()
+    pre_phi, pre_deg = compute_constraint_violations(state, return_degenerate=True)
+    pre_viol = float(np.max(np.abs(pre_phi))) if pre_phi.size else 0.0
     try:
-        return satisfy_constraints(state, tol=tol, max_iter=shake_max_iter)
+        return satisfy_constraints(
+            state, tol=tol, max_iter=shake_max_iter, mobilities=mobilities
+        )
     except RuntimeError:
-        # SHAKE stalled. Try Newton.
-        n = satisfy_constraints_newton(state, tol=tol, max_iter=newton_max_iter)
+        post_phi, post_deg = compute_constraint_violations(
+            state, return_degenerate=True
+        )
+        post_viol = float(np.max(np.abs(post_phi))) if post_phi.size else 0.0
+        if (
+            not np.all(np.isfinite(state.positions))
+            or (post_deg and not pre_deg)
+            or post_viol > pre_viol
+        ):
+            state.positions[:] = pre_pos
+        n = satisfy_constraints_newton(
+            state, tol=tol, max_iter=newton_max_iter, mobilities=mobilities
+        )
         return shake_max_iter + n
 
 
@@ -555,7 +589,7 @@ def satisfy_constraints_hybrid(
 
 
 def _bond_force_state(state: "ChainState", bond: "ChainBond") -> None:
-    """Accumulate harmonic-bond force contribution into state.forces."""
+    """Accumulate harmonic or tabulated COFFDROP bond force into state.forces."""
     ia = _chain_idx(bond.a)
     ib = _chain_idx(bond.b)
     ri = state.positions[ia]
@@ -572,7 +606,15 @@ def _bond_force_state(state: "ChainState", bond: "ChainBond") -> None:
     if r < 1e-8:
         return
     r_hat = dr / r
-    f_mag = -bond.k_spring * (r - bond.r0)  # kBT/A
+    cd_params = state.common.coffdrop_params
+    if (
+        bond.type_idx >= 0
+        and cd_params is not None
+        and getattr(cd_params, "bond_pots", None)
+    ):
+        f_mag = -cd_params.bond_pots[bond.type_idx].deriv(r)  # kBT/A
+    else:
+        f_mag = -bond.k_spring * (r - bond.r0)  # kBT/A
     state.forces[ia] -= f_mag * r_hat
     state.forces[ib] += f_mag * r_hat
 
@@ -598,6 +640,12 @@ def _angle_force_state(state: "ChainState", angle: "ChainAngle") -> None:
     ri = state.positions[ia]
     rj = state.positions[ib]
     rk = state.positions[ic]
+    if not (
+        np.all(np.isfinite(ri)) and np.all(np.isfinite(rj)) and np.all(np.isfinite(rk))
+    ):
+        return
+    if np.max(np.abs(ri)) > 1e6 or np.max(np.abs(rj)) > 1e6 or np.max(np.abs(rk)) > 1e6:
+        return
     u = ri - rj
     v = rk - rj
     nu = float(np.linalg.norm(u))
@@ -779,13 +827,13 @@ def _scatter(F: np.ndarray, idx: np.ndarray, vec: np.ndarray) -> None:
 
 
 def _spline_table(pots) -> dict:
-    """Stack the piecewise cubic coefficients of a list of tabulated potentials.
+    """Stack piecewise cubic coefficients of a list of tabulated potentials.
 
-    Interval m of potential t holds coef[:, start[t] + m], the coefficients of
-    c0 s^3 + c1 s^2 + c2 s + c3 with s the distance from the interval start. A
-    table of fewer than four points is linear, as in TabulatedPotential.
+    Interval m of potential t holds coef[:, start[t] + m] for
+    c0 s^3 + c1 s^2 + c2 s + c3 with s measured from interval start.
     """
     coefs, start, x_min, x_max, dx, n_int = [], [], [], [], [], []
+    left_slope, is_periodic = [], []
     offset = 0
     for pot in pots:
         if pot._spline is not None:
@@ -803,6 +851,8 @@ def _spline_table(pots) -> dict:
         x_max.append(pot.x_max)
         dx.append(pot._dx)
         n_int.append(c.shape[1])
+        left_slope.append(float(getattr(pot, "left_slope", 0.0)))
+        is_periodic.append(bool(getattr(pot, "is_periodic", False)))
     return dict(
         coef=np.concatenate(coefs, axis=1) if coefs else np.zeros((4, 0)),
         start=np.array(start, dtype=np.int64),
@@ -810,26 +860,51 @@ def _spline_table(pots) -> dict:
         x_max=np.array(x_max, dtype=float),
         dx=np.array(dx, dtype=float),
         n_int=np.array(n_int, dtype=np.int64),
+        left_slope=np.array(left_slope, dtype=float),
+        is_periodic=np.array(is_periodic, dtype=bool),
     )
 
 
 def _table_derivative(params, kind: str, types: np.ndarray, x: np.ndarray):
-    """First derivative of the tabulated potentials types at x, zero outside.
+    """First derivative of tabulated potentials types at x.
 
-    kind is "pair", "angle" or "dihedral". The stacked coefficients are built
-    once per parameter set and kept on it.
+    kind is "pair", "angle", or "dihedral". Guards finite in-range values
+    before integer indexing, includes x_min for periodic tables, and applies
+    repulsive left_slope for pair tables when x <= x_min.
     """
     cache = params.__dict__.setdefault("_tables", {})
     if kind not in cache:
         cache[kind] = _spline_table(getattr(params, kind + "_pots"))
     tab = cache[kind]
+    x = np.asarray(x, dtype=np.float64)
+    out = np.zeros(x.shape, dtype=np.float64)
+    if x.size == 0:
+        return out
     x0 = tab["x_min"][types]
-    h = tab["dx"][types]
-    inside = (x > x0) & (x < tab["x_max"][types])
-    m = np.clip(np.floor((x - x0) / h).astype(np.int64), 0, tab["n_int"][types] - 1)
-    s = x - (x0 + h * m)
-    c = tab["coef"][:, tab["start"][types] + m]
-    return np.where(inside, (3.0 * c[0] * s + 2.0 * c[1]) * s + c[2], 0.0)
+    x1 = tab["x_max"][types]
+    per = tab["is_periodic"][types]
+    finite = np.isfinite(x)
+    lo_ok = np.where(per, x >= x0, x > x0)
+    inside = finite & lo_ok & (x < x1)
+    if np.any(inside):
+        t_in = types[inside]
+        x_in = x[inside]
+        x0_in = x0[inside]
+        h_in = tab["dx"][t_in]
+        m = np.clip(
+            np.floor((x_in - x0_in) / h_in).astype(np.int64),
+            0,
+            tab["n_int"][t_in] - 1,
+        )
+        s = x_in - (x0_in + h_in * m)
+        c = tab["coef"][:, tab["start"][t_in] + m]
+        out[inside] = (3.0 * c[0] * s + 2.0 * c[1]) * s + c[2]
+    ls = tab["left_slope"][types]
+    if np.any(ls != 0.0):
+        left_mask = finite & (x <= x0) & (ls != 0.0)
+        if np.any(left_mask):
+            out[left_mask] = ls[left_mask]
+    return out
 
 
 def _term_arrays(common: "ChainCommon") -> dict:
@@ -858,6 +933,7 @@ def _term_arrays(common: "ChainCommon") -> dict:
     arrays = {}
     for name, terms in (("bond", common.bonds), ("network", common.network)):
         arrays[name] = (*ids(terms, "ab"), vals(terms, "r0"), vals(terms, "k_spring"))
+    arrays["bond_type"] = vals(common.bonds, "type_idx", np.int64)
     a = common.angles
     arrays["angle"] = (
         *ids(a, "abc"),
@@ -877,65 +953,92 @@ def _term_arrays(common: "ChainCommon") -> dict:
     return arrays
 
 
-def _harmonic_bond_forces(F, pos, ok, terms) -> None:
-    """Harmonic bonds V = k/2 (r - r0)^2, as _bond_force_state."""
+def _harmonic_bond_forces(F, pos, ok, terms, bond_types=None, params=None) -> None:
+    """Harmonic bonds V = k/2 (r - r0)^2, or tabulated bond_pots when type_idx >= 0."""
     ia, ib, r0, k = terms
     if ia.size == 0:
         return
     d = pos[ib] - pos[ia]
     r = np.sqrt(np.einsum("ij,ij->i", d, d))
     use = ok[ia] & ok[ib] & (r >= 1e-8)
+    if not np.any(use):
+        return
+    typ = bond_types
     if not use.all():
         ia, ib, r0, k, d, r = ia[use], ib[use], r0[use], k[use], d[use], r[use]
-    f = (-k * (r - r0) / r)[:, None] * d
+        if typ is not None:
+            typ = typ[use]
+    dV = k * (r - r0)
+    if typ is not None and params is not None and getattr(params, "bond_pots", None):
+        tab = typ >= 0
+        if np.any(tab):
+            dV[tab] = _table_derivative(params, "bond", typ[tab], r[tab])
+    f = (-dV / r)[:, None] * d
     _scatter(F, ia, -f)
     _scatter(F, ib, f)
 
 
 def _angle_forces(F, pos, ok, terms, params) -> None:
-    """Angle forces, tabulated for type_idx >= 0 and harmonic otherwise.
-
-    The tabulated derivative is in kBT per degree, as in _angle_force_state.
-    """
+    """Angle forces, tabulated for type_idx >= 0 and harmonic otherwise."""
     ia, ib, ic, theta0, k, typ = terms
     if ia.size == 0:
         return
+    ok_t = ok[ia] & ok[ib] & ok[ic]
+    if not np.any(ok_t):
+        return
+    if not ok_t.all():
+        ia, ib, ic = ia[ok_t], ib[ok_t], ic[ok_t]
+        theta0, k, typ = theta0[ok_t], k[ok_t], typ[ok_t]
     u = pos[ia] - pos[ib]
     v = pos[ic] - pos[ib]
     nu = np.sqrt(np.einsum("ij,ij->i", u, u))
     nv = np.sqrt(np.einsum("ij,ij->i", v, v))
-    use = ok[ia] & ok[ib] & ok[ic] & (nu >= 1e-8) & (nv >= 1e-8)
-    u = u / np.where(use, nu, 1.0)[:, None]
-    v = v / np.where(use, nv, 1.0)[:, None]
+    use = (nu >= 1e-8) & (nv >= 1e-8)
+    if not np.any(use):
+        return
+    if not use.all():
+        ia, ib, ic = ia[use], ib[use], ic[use]
+        theta0, k, typ = theta0[use], k[use], typ[use]
+        u, v, nu, nv = u[use], v[use], nu[use], nv[use]
+    u = u / nu[:, None]
+    v = v / nv[:, None]
     cos_t = np.clip(np.einsum("ij,ij->i", u, v), -1.0, 1.0)
     theta = np.arccos(cos_t)
     sin_t = np.sin(theta)
-    use &= np.abs(sin_t) >= 1e-8
+    use2 = np.abs(sin_t) >= 1e-8
+    if not np.any(use2):
+        return
+    if not use2.all():
+        ia, ib, ic = ia[use2], ib[use2], ic[use2]
+        theta0, k, typ = theta0[use2], k[use2], typ[use2]
+        u, v, nu, nv = u[use2], v[use2], nu[use2], nv[use2]
+        cos_t, theta, sin_t = cos_t[use2], theta[use2], sin_t[use2]
     dV = k * (theta - theta0)
-    tab = (typ >= 0) & use if params is not None else np.zeros_like(use)
-    if tab.any():
-        dV[tab] = _table_derivative(
-            params, "angle", typ[tab], np.degrees(theta[tab])
-        ) * (180.0 / math.pi)
-    coeff = np.where(use, dV / np.where(use, sin_t, 1.0), 0.0)
-    fi = (coeff / np.where(use, nu, 1.0))[:, None] * (v - cos_t[:, None] * u)
-    fk = (coeff / np.where(use, nv, 1.0))[:, None] * (u - cos_t[:, None] * v)
+    if params is not None:
+        tab = typ >= 0
+        if np.any(tab):
+            dV[tab] = _table_derivative(
+                params, "angle", typ[tab], np.degrees(theta[tab])
+            ) * (180.0 / math.pi)
+    coeff = dV / sin_t
+    fi = (coeff / nu)[:, None] * (v - cos_t[:, None] * u)
+    fk = (coeff / nv)[:, None] * (u - cos_t[:, None] * v)
     _scatter(F, ia, fi)
     _scatter(F, ic, fk)
     _scatter(F, ib, -(fi + fk))
 
 
 def _torsion_forces(F, pos, ok, terms, params) -> None:
-    """Torsion forces, tabulated for type_idx >= 0 and V = k (1 - cos(n phi -
-    phi0)) otherwise.
-
-    The dihedral phi and its gradient follow Blondel and Karplus (1996), with
-    the sign convention of ChainForceEvaluator._torsion_force. The tabulated
-    derivative is in kBT per degree on [0, 360).
-    """
+    """Torsion forces, tabulated for type_idx >= 0 and V = k (1 - cos(n phi - phi0)) otherwise."""
     ia, ib, ic, il, phi0, k, n, typ = terms
     if ia.size == 0:
         return
+    ok_t = ok[ia] & ok[ib] & ok[ic] & ok[il]
+    if not np.any(ok_t):
+        return
+    if not ok_t.all():
+        ia, ib, ic, il = ia[ok_t], ib[ok_t], ic[ok_t], il[ok_t]
+        phi0, k, n, typ = phi0[ok_t], k[ok_t], n[ok_t], typ[ok_t]
     f = pos[ia] - pos[ib]
     g = pos[ib] - pos[ic]
     h = pos[il] - pos[ic]
@@ -943,19 +1046,25 @@ def _torsion_forces(F, pos, ok, terms, params) -> None:
     b = np.cross(h, g)
     a2 = np.einsum("ij,ij->i", a, a)
     b2 = np.einsum("ij,ij->i", b, b)
-    use = ok[ia] & ok[ib] & ok[ic] & ok[il] & (a2 >= 1e-24) & (b2 >= 1e-24)
-    a2 = np.where(use, a2, 1.0)
-    b2 = np.where(use, b2, 1.0)
     gn = np.sqrt(np.einsum("ij,ij->i", g, g))
-    gn = np.where(use, gn, 1.0)
+    use = (a2 >= 1e-24) & (b2 >= 1e-24) & (gn >= 1e-12)
+    if not np.any(use):
+        return
+    if not use.all():
+        ia, ib, ic, il = ia[use], ib[use], ic[use], il[use]
+        phi0, k, n, typ = phi0[use], k[use], n[use], typ[use]
+        f, g, h = f[use], g[use], h[use]
+        a, b, a2, b2, gn = a[use], b[use], a2[use], b2[use], gn[use]
     phi = np.arctan2(-gn * np.einsum("ij,ij->i", f, b), np.einsum("ij,ij->i", a, b))
     dV = k * n * np.sin(n * phi - phi0)
-    tab = (typ >= 0) & use if params is not None else np.zeros_like(use)
-    if tab.any():
-        dV[tab] = _table_derivative(
-            params, "dihedral", typ[tab], np.mod(np.degrees(phi[tab]), 360.0)
-        ) * (180.0 / math.pi)
-    dV = np.where(use, dV, 0.0)
+    if params is not None:
+        tab = typ >= 0
+        if np.any(tab):
+            deg = np.mod(np.degrees(phi[tab]), 360.0)
+            deg = np.where(deg >= 360.0, 0.0, deg)
+            dV[tab] = _table_derivative(params, "dihedral", typ[tab], deg) * (
+                180.0 / math.pi
+            )
     fg = np.einsum("ij,ij->i", f, g) / gn
     hg = np.einsum("ij,ij->i", h, g) / gn
     grad_i = -(gn / a2)[:, None] * a
@@ -968,23 +1077,89 @@ def _torsion_forces(F, pos, ok, terms, params) -> None:
     _scatter(F, il, -dV[:, None] * grad_l)
 
 
+def chain_intra_debye_huckel_forces(
+    common: "ChainCommon",
+    positions: np.ndarray,
+    forces: np.ndarray,
+    debye_length: float,
+    dielectric: float = SOLVENT_DIELECTRIC,
+    kT_scale: float = 1.0,
+) -> float:
+    """Accumulate intra-chain screened Coulomb forces into forces and return energy (kBT).
+
+    Evaluates U_ij = q_i q_j l_B exp(-r / lambda_D) / r and
+    F_i = q_i q_j l_B exp(-r / lambda_D) (1 + r / lambda_D) / r^2 * (r_i - r_j) / r
+    for all non-excluded pairs (outside bonded_exclusions) with |q_i q_j| > 1e-12.
+    """
+    n = common.n_atoms
+    if n < 2 or debye_length is None or debye_length <= 0.0:
+        return 0.0
+    charges_tuple = tuple(float(a.charge) for a in common.atoms)
+    has_cd = common.coffdrop_params is not None
+    key = (
+        id(common.bonds),
+        len(common.bonds),
+        id(common.length_constraints),
+        len(common.length_constraints),
+        id(common.angles),
+        len(common.angles),
+        id(common.torsions),
+        len(common.torsions),
+        has_cd,
+        charges_tuple,
+        tuple(int(a.resid) for a in common.atoms) if has_cd else (),
+    )
+    cache = common.__dict__.get("_dh_cache")
+    if cache is None or cache[0] != key:
+        q = np.array(charges_tuple, dtype=np.float64)
+        skip = _coffdrop_exclusion_mask(common) if has_cd else bonded_exclusions(common)
+        iu, ju = np.triu_indices(n, k=1)
+        qij = q[iu] * q[ju]
+        m = (~skip[iu, ju]) & (np.abs(qij) > 1e-12)
+        cache = (key, iu[m].copy(), ju[m].copy(), qij[m].copy())
+        common.__dict__["_dh_cache"] = cache
+    _, iu, ju, qij = cache
+    if iu.size == 0:
+        return 0.0
+    pos = np.asarray(positions, dtype=np.float64)
+    ok = np.all(np.isfinite(pos), axis=1) & (np.max(np.abs(pos), axis=1) <= 1e6)
+    ok_p = ok[iu] & ok[ju]
+    if not np.any(ok_p):
+        return 0.0
+    if not ok_p.all():
+        iu, ju, qij = iu[ok_p], ju[ok_p], qij[ok_p]
+    dr = pos[iu] - pos[ju]
+    r = np.sqrt(np.einsum("ij,ij->i", dr, dr))
+    use = r > 1e-10
+    if not np.any(use):
+        return 0.0
+    if not use.all():
+        iu, ju, qij, dr, r = iu[use], ju[use], qij[use], dr[use], r[use]
+    l_B = 1.0 / (
+        4.0 * math.pi * float(dielectric) * VACUUM_PERMITTIVITY_KBT * float(kT_scale)
+    )
+    kappa = 0.0 if math.isinf(debye_length) else 1.0 / float(debye_length)
+    kr = kappa * r
+    exp_kr = np.exp(-kr)
+    u_pairs = qij * l_B * exp_kr / r
+    f_over_r = u_pairs * (1.0 + kr) / (r * r)
+    fvec = f_over_r[:, None] * dr
+    _scatter(forces, iu, fvec)
+    _scatter(forces, ju, -fvec)
+    return float(np.sum(u_pairs))
+
+
 def compute_chain_forces(
     state: "ChainState",
     kT: float = 1.0,
     soft_repulsion: bool = False,
     soft_repulsion_eps: float = 1.0,
     target_grids: Optional[list] = None,
+    debye_length: Optional[float] = None,
+    dielectric: float = SOLVENT_DIELECTRIC,
+    kT_scale: float = 1.0,
 ) -> None:
-    """Fill state.forces from the interactions within the chain.
-
-    state.forces is zeroed first. Then the bonds, the elastic network springs,
-    the angles and the torsions are added, with the COFFDROP tables where the
-    chain carries them, and the COFFDROP pair forces when the chain has pair
-    tables. With soft_repulsion the WCA repulsion of
-    chain_intra_nonbonded_forces is added on the pairs that have no table.
-    target_grids adds the field of APBS grids on the bead charges. kT is kept
-    for the API; the forces are in kBT/A.
-    """
+    """Fill state.forces (in kBT/A) from internal chain interactions."""
     state.zero_forces()
     common = state.common
     pos = state.positions
@@ -992,12 +1167,21 @@ def compute_chain_forces(
     ok = np.all(np.isfinite(pos), axis=1) & (np.max(np.abs(pos), axis=1) <= 1e6)
     terms = _term_arrays(common)
     params = common.coffdrop_params
-    _harmonic_bond_forces(F, pos, ok, terms["bond"])
+    _harmonic_bond_forces(F, pos, ok, terms["bond"], terms["bond_type"], params)
     _harmonic_bond_forces(F, pos, ok, terms["network"])
     _angle_forces(F, pos, ok, terms["angle"], params)
     _torsion_forces(F, pos, ok, terms["torsion"], params)
     if params is not None and common.pair_lookups:
         F += chain_intra_coffdrop_pair_forces(state, common)
+    if debye_length is not None and debye_length > 0.0:
+        chain_intra_debye_huckel_forces(
+            common,
+            pos,
+            F,
+            debye_length=debye_length,
+            dielectric=dielectric,
+            kT_scale=kT_scale,
+        )
     if target_grids:
         atom_charges = np.array([a.charge for a in common.atoms])
         compute_target_grid_forces(state, target_grids, atom_charges)
@@ -1006,17 +1190,123 @@ def compute_chain_forces(
 
 
 def bonded_exclusions(common: "ChainCommon") -> np.ndarray:
-    """Return the (n, n) mask of the pairs joined by a bond or sharing a bonded
-    neighbor, the 1-2 and 1-3 pairs that the bond and angle terms describe."""
+    """Return (n, n) mask of 1-2 bonded/constrained pairs and 1-3 angle pairs."""
     n = common.n_atoms
     bonded = np.zeros((n, n), dtype=bool)
     for bond in common.bonds:
         i, j = _chain_idx(bond.a), _chain_idx(bond.b)
         bonded[i, j] = bonded[j, i] = True
+    for lc in common.length_constraints:
+        i, j = _chain_idx(lc.a), _chain_idx(lc.b)
+        bonded[i, j] = bonded[j, i] = True
     one_three = (bonded.astype(np.int64) @ bonded.astype(np.int64)) > 0
     excluded = bonded | one_three
+    for ang in common.angles:
+        ia, ic = _chain_idx(ang.a), _chain_idx(ang.c)
+        excluded[ia, ic] = excluded[ic, ia] = True
     np.fill_diagonal(excluded, True)
     return excluded
+
+
+def coffdrop_nonbonded_exclusions(common: "ChainCommon") -> Set[Tuple[int, int]]:
+    """Return canonical (i, j) pairs (i < j) excluded from COFFDROP (0,0) and intra-DH.
+
+    Matches BrownDye 2 aux/coffdrop_chain.cc (lines 392-444):
+    - 1-2 bonds and length constraints, 1-3 bond/constraint paths, and angle pairs;
+    - all 6 atom pairs from every proper or improper torsion in common.torsions;
+    - all intra-residue pairs (assigning negative-resid cap beads to their bonded
+      terminal residue, matching COFFDROP map.xml);
+    - all pairs spanning two distinct residues connected by a bond or length
+      constraint (preserving chain breaks where no connecting bond exists).
+    """
+    n = common.n_atoms
+    excluded: Set[Tuple[int, int]] = set()
+    if n < 2:
+        return excluded
+
+    base_mask = bonded_exclusions(common)
+    iu, ju = np.nonzero(np.triu(base_mask, k=1))
+    for i, j in zip(iu.tolist(), ju.tolist()):
+        excluded.add((i, j))
+
+    for ang in common.angles:
+        ids = (_chain_idx(ang.a), _chain_idx(ang.b), _chain_idx(ang.c))
+        for p in range(3):
+            for q in range(p + 1, 3):
+                u, v = ids[p], ids[q]
+                if u != v:
+                    excluded.add((u, v) if u < v else (v, u))
+
+    for tor in common.torsions:
+        ids = (
+            _chain_idx(tor.a),
+            _chain_idx(tor.b),
+            _chain_idx(tor.c),
+            _chain_idx(tor.d),
+        )
+        for p in range(4):
+            for q in range(p + 1, 4):
+                u, v = ids[p], ids[q]
+                if u != v:
+                    excluded.add((u, v) if u < v else (v, u))
+
+    eff_resid = [int(a.resid) for a in common.atoms]
+    bond_edges: List[Tuple[int, int]] = []
+    for bond in common.bonds:
+        bond_edges.append((_chain_idx(bond.a), _chain_idx(bond.b)))
+    for lc in common.length_constraints:
+        bond_edges.append((_chain_idx(lc.a), _chain_idx(lc.b)))
+
+    for i in range(n):
+        if eff_resid[i] < 0:
+            eff_resid[i] = -1 - i
+    for ia, ib in bond_edges:
+        ra, rb = common.atoms[ia].resid, common.atoms[ib].resid
+        if ra < 0 <= rb:
+            eff_resid[ia] = int(rb)
+        elif rb < 0 <= ra:
+            eff_resid[ib] = int(ra)
+
+    res_atoms: Dict[int, List[int]] = {}
+    for i, r in enumerate(eff_resid):
+        res_atoms.setdefault(r, []).append(i)
+
+    for atom_list in res_atoms.values():
+        m = len(atom_list)
+        for p in range(m):
+            u = atom_list[p]
+            for q in range(p + 1, m):
+                v = atom_list[q]
+                excluded.add((u, v) if u < v else (v, u))
+
+    bonded_res_pairs: Set[Tuple[int, int]] = set()
+    for ia, ib in bond_edges:
+        ra, rb = eff_resid[ia], eff_resid[ib]
+        if ra != rb:
+            bonded_res_pairs.add((ra, rb) if ra < rb else (rb, ra))
+
+    for r1, r2 in bonded_res_pairs:
+        atoms1 = res_atoms[r1]
+        atoms2 = res_atoms[r2]
+        for u in atoms1:
+            for v in atoms2:
+                if u != v:
+                    excluded.add((u, v) if u < v else (v, u))
+
+    return excluded
+
+
+def _coffdrop_exclusion_mask(common: "ChainCommon") -> np.ndarray:
+    """Return (n, n) symmetric boolean mask from coffdrop_nonbonded_exclusions(common)."""
+    n = common.n_atoms
+    mask = np.zeros((n, n), dtype=bool)
+    np.fill_diagonal(mask, True)
+    excl = coffdrop_nonbonded_exclusions(common)
+    if excl:
+        ij = np.array(list(excl), dtype=np.int64).reshape(-1, 2)
+        mask[ij[:, 0], ij[:, 1]] = True
+        mask[ij[:, 1], ij[:, 0]] = True
+    return mask
 
 
 def chain_intra_nonbonded_forces(
@@ -1024,51 +1314,37 @@ def chain_intra_nonbonded_forces(
     common: "ChainCommon",
     eps: float = 1.0,
 ) -> np.ndarray:
-    """Intra-chain WCA forces between non-bonded bead pairs.
-
-    Returns an (n_atoms, 3) array of per-bead forces in kBT/Å units. The WCA
-    potential is
-
-        V(r) = 4 eps [(sig/r)^12 - (sig/r)^6] + eps   if r < r_min
-             = 0                                       if r >= r_min
-
-    where r_min = 2^(1/6) × sig is the Lennard-Jones minimum (the standard WCA
-    convention) and sig is the sum of the two bead radii. The force on bead i
-    from bead j is
-
-        F_i = -dV/dr × r_hat_ij
-
-    with r_hat_ij pointing from j to i, so at r < sig the force pushes bead i
-    away from bead j, which is the correct repulsion. Bead j receives the
-    opposite force by Newton's third law.
-
-    The pairs joined by a bond or sharing a bonded neighbor are excluded, as
-    their distance is set by the bond and angle terms. When the chain carries
-    COFFDROP pair tables, the pairs with a table are excluded as well, since
-    the table holds their repulsion. Ghost beads with radius < 1e-10 are
-    skipped to avoid divide-by-zero forces.
-
-    Here state is the ChainState providing positions and atom radii via
-    common, common is the ChainCommon holding the chain topology (bonds,
-    atoms), and eps is the WCA well depth in kBT units (default 1.0). The
-    return value F is the (n_atoms, 3) per-bead force array.
-    """
+    """Intra-chain WCA forces between non-bonded bead pairs in kBT/A."""
     n = common.n_atoms
     F = np.zeros((n, 3))
     if n < 2:
         return F
-    tables = common.coffdrop_params is not None and bool(common.pair_lookups)
-    key = (id(common.bonds), len(common.bonds), tables, len(common.pair_lookups))
+    has_cd = common.coffdrop_params is not None
+    tables = has_cd and bool(common.pair_lookups)
+    key = (
+        id(common.bonds),
+        len(common.bonds),
+        id(common.length_constraints),
+        len(common.length_constraints),
+        id(common.angles),
+        len(common.angles),
+        id(common.torsions),
+        len(common.torsions),
+        has_cd,
+        tables,
+        len(common.pair_lookups),
+        tuple(int(a.resid) for a in common.atoms) if has_cd else (),
+    )
     cache = common.__dict__.get("_wca_cache")
     if cache is None or cache[0] != key:
         radii = np.array([a.radius for a in common.atoms], dtype=float)
-        skip = bonded_exclusions(common)
+        skip = _coffdrop_exclusion_mask(common) if has_cd else bonded_exclusions(common)
         if tables:
             ij = np.array(list(common.pair_lookups), dtype=np.int64).reshape(-1, 2)
             skip[ij[:, 0], ij[:, 1]] = True
             skip[ij[:, 1], ij[:, 0]] = True
         iu, ju = np.triu_indices(n, k=1)
-        live = radii >= 1e-10  # ghost beads carry no excluded volume
+        live = radii >= 1e-10
         m = ~skip[iu, ju] & live[iu] & live[ju]
         iu, ju = iu[m], ju[m]
         cache = (key, iu, ju, radii[iu] + radii[ju])
@@ -1077,16 +1353,20 @@ def chain_intra_nonbonded_forces(
     if iu.size == 0:
         return F
     pos = np.asarray(state.positions, dtype=float)
-    dr = pos[iu] - pos[ju]  # vector FROM j TO i
+    ok = np.all(np.isfinite(pos), axis=1) & (np.max(np.abs(pos), axis=1) <= 1e6)
+    ok_p = ok[iu] & ok[ju]
+    if not np.any(ok_p):
+        return F
+    if not ok_p.all():
+        iu, ju, sig = iu[ok_p], ju[ok_p], sig[ok_p]
+    dr = pos[iu] - pos[ju]
     r = np.sqrt(np.einsum("ij,ij->i", dr, dr))
-    # WCA cutoff at r_min = 2^(1/6) * sigma (the LJ minimum)
     m = (r >= 1e-10) & (r < 2.0 ** (1.0 / 6.0) * sig)
     if not np.any(m):
         return F
     iu, ju, dr, r, s = iu[m], ju[m], dr[m], r[m], sig[m]
     sr6 = (s / r) ** 6
     sr12 = sr6 * sr6
-    # Force on i = -(dV/dr) r_hat = (4 eps / r^2) [12 sr12 - 6 sr6] dr.
     fvec = (4.0 * eps * (12.0 * sr12 - 6.0 * sr6) / (r * r))[:, None] * dr
     _scatter(F, iu, fvec)
     _scatter(F, ju, -fvec)
@@ -1097,23 +1377,12 @@ def chain_intra_coffdrop_pair_forces(
     state: "ChainState",
     common: "ChainCommon",
 ) -> np.ndarray:
-    """Intra-chain non-bonded pair forces from COFFDROP tabulated potentials.
-
-    Returns an (n_atoms, 3) array of per-bead forces in kBT/Å units. For each
-    pair (i, j) in common.pair_lookups, the spline derivative dV/dr of its
-    table is evaluated at the pair separation r. The force on i is
-    -dV/dr (r_i - r_j)/r and the force on j is the opposite. The chain
-    builders leave the bonded and 1-3 pairs out of pair_lookups. Pairs not in
-    pair_lookups contribute zero force here.
-
-    This requires common.coffdrop_params to be set. It is not checked in this
-    function, since compute_chain_forces is the gate.
-    """
+    """Intra-chain non-bonded pair forces from COFFDROP tabulated potentials in kBT/A."""
     n = common.n_atoms
     F = np.zeros((n, 3))
     pair_lookups = common.pair_lookups
     if not pair_lookups:
-        return F  # no tabulated pairs configured
+        return F
     key = (id(pair_lookups), len(pair_lookups))
     cache = common.__dict__.get("_pair_cache")
     if cache is None or cache[0] != key:
@@ -1124,12 +1393,27 @@ def chain_intra_coffdrop_pair_forces(
         common.__dict__["_pair_cache"] = cache
     _, i_arr, j_arr, t_arr = cache
     pos = state.positions
+    ok = np.all(np.isfinite(pos), axis=1) & (np.max(np.abs(pos), axis=1) <= 1e6)
+    ok_p = ok[i_arr] & ok[j_arr]
+    if not np.any(ok_p):
+        return F
+    if not ok_p.all():
+        i_arr, j_arr, t_arr = i_arr[ok_p], j_arr[ok_p], t_arr[ok_p]
     dr = pos[i_arr] - pos[j_arr]
     r = np.sqrt(np.einsum("ij,ij->i", dr, dr))
+    use = r > 1e-10
+    if not np.any(use):
+        return F
+    if not use.all():
+        i_arr, j_arr, t_arr, dr, r = (
+            i_arr[use],
+            j_arr[use],
+            t_arr[use],
+            dr[use],
+            r[use],
+        )
     dV_dr = _table_derivative(common.coffdrop_params, "pair", t_arr, r)
-    # The table derivative is zero below x_min > 0, which covers r near zero.
-    f = np.where(r > 1e-10, -dV_dr / np.where(r > 1e-10, r, 1.0), 0.0)
-    fvec = f[:, None] * dr
+    fvec = (-dV_dr / r)[:, None] * dr
     _scatter(F, i_arr, fvec)
     _scatter(F, j_arr, -fvec)
     return F
@@ -1413,8 +1697,9 @@ class ChainForceEvaluator:
 
         a28 = math.sqrt(a22 * a22 + a23 * a23 + a24 * a24)  # |t1|
         a29 = math.sqrt(a25 * a25 + a26 * a26 + a27 * a27)  # |t2|
+        b2_len = math.sqrt(a16 * a16 + a17 * a17 + a18 * a18)
 
-        if a28 < 1e-12 or a29 < 1e-12:
+        if a28 < 1e-12 or a29 < 1e-12 or b2_len < 1e-12:
             return F
 
         # u1 = t1 / |t1|, u2 = t2 / |t2|
@@ -1553,10 +1838,9 @@ class ChainForceEvaluator:
         # for dphi/dr_a is unchanged, and only the force-field-dependent
         # dV/dphi changes.
         if tor.type_idx >= 0 and coffdrop_params is not None:
-            phi_deg = phi * 180.0 / math.pi
-            # Wrap to [0, 360) since dihedral tables are typically
-            # parameterized over that range.
-            phi_deg = phi_deg % 360.0
+            phi_deg = (phi * 180.0 / math.pi) % 360.0
+            if phi_deg >= 360.0:
+                phi_deg = 0.0
             pot = coffdrop_params.dihedral_pots[tor.type_idx]
             dV_deg = pot.deriv(phi_deg)
             dV_dphi = dV_deg * (180.0 / math.pi)
@@ -1665,12 +1949,11 @@ class ChainBDPropagator:
             forces = self._evaluator.compute_forces(chain, self.kT)
         for i, b in enumerate(chain.beads):
             b.force = forces[i]
-        # Propagate each bead
+        # Propagate each bead: b.force is in kBT/A and D = kT * mob (A^2/ps),
+        # so drift = D * F_kBT * dt = kT * mob * b.force * dt matches noise sqrt(2 D dt).
         for i, b in enumerate(chain.beads):
-            mob = 1.0 / (6.0 * math.pi * self.eta * b.radius)  # A^3/(kBT*ps)
-            # Deterministic drift, dpos = mob × F × dt.
-            drift = mob * b.force * dt
-            # Stochastic kick, wdpos = sqrt(2 kT mob) × dW.
+            mob = 1.0 / (6.0 * math.pi * self.eta * b.radius)
+            drift = self.kT * mob * b.force * dt
             sigma = math.sqrt(2.0 * self.kT * mob * dt)
             noise = sigma * rng.standard_normal(3)
             b.pos += drift + noise
@@ -1790,121 +2073,215 @@ def build_chain_from_coffdrop(
     return FlexibleChain(beads=beads, bonds=bonds, name="-".join(residues[:3]) + "...")
 
 
+_CANONICAL_RESIDUES = frozenset(
+    {
+        "ALA",
+        "ARG",
+        "ASN",
+        "ASP",
+        "CYS",
+        "GLN",
+        "GLU",
+        "GLY",
+        "HIS",
+        "HIP",
+        "ILE",
+        "LEU",
+        "LYS",
+        "MET",
+        "PHE",
+        "PRO",
+        "SER",
+        "THR",
+        "TRP",
+        "TYR",
+        "VAL",
+    }
+)
+
+# Amber/CHARMM protonation variants -> (canonical COFFDROP name, neutralize_charge).
+_RESIDUE_VARIANT_MAP: Dict[str, Tuple[str, bool]] = {
+    "HIE": ("HIS", False),
+    "HID": ("HIS", False),
+    "HSE": ("HIS", False),
+    "HSD": ("HIS", False),
+    "HSP": ("HIP", False),
+    "CYX": ("CYS", False),
+    "CYM": ("CYS", False),
+    "ASH": ("ASP", True),
+    "GLH": ("GLU", True),
+    "LYN": ("LYS", True),
+}
+
+_PDB_SKIP_RESNAMES = frozenset(
+    set(GHOST_NAMES)
+    | {
+        "HOH",
+        "WAT",
+        "TIP",
+        "TIP3",
+        "SOL",
+        "NA",
+        "CL",
+        "K",
+        "MG",
+        "ZN",
+        "CA",
+        "FE",
+        "MN",
+        "CU",
+        "CO",
+        "NI",
+        "CD",
+        "HG",
+        "SO4",
+        "PO4",
+    }
+)
+
+
+def _normalize_residue_name(raw: str) -> Tuple[str, bool]:
+    """Normalize Amber/CHARMM protonation and terminal residue names.
+
+    Returns (canonical_name, neutral_override). When neutral_override is True
+    (ASH, GLH, LYN), the sidechain charge is forced to 0.0.
+    """
+    r = raw.strip().upper()
+    if r in _RESIDUE_VARIANT_MAP:
+        return _RESIDUE_VARIANT_MAP[r]
+    if r in _CANONICAL_RESIDUES:
+        return (r, False)
+    if len(r) == 4 and r[0] in ("N", "C"):
+        tail = r[1:]
+        if tail in _RESIDUE_VARIANT_MAP:
+            return _RESIDUE_VARIANT_MAP[tail]
+        if tail in _CANONICAL_RESIDUES:
+            return (tail, False)
+    return (r, False)
+
+
+def _lookup_coffdrop_pot(
+    params, kind: str, ri: Tuple[int, ...], ai: Tuple[int, ...], orders: Tuple[int, ...]
+):
+    """Look up a tabulated COFFDROP potential using indexed dispatch when present."""
+    if hasattr(params, "match_pot"):
+        return params.match_pot(kind, ri, ai, orders)
+    from pystarc.simulation.coffdrop_params import _match_pot
+
+    return _match_pot(getattr(params, kind + "_pots"), ri, ai, orders)
+
+
 def build_chain_common_from_coffdrop(
     residues: List[str],
     params,
     name: Optional[str] = None,
     k_spring: float = 100.0,
+    chain_breaks: Optional[Set[int]] = None,
+    hydro_radius: float = 0.0,
+    use_bond_tables: bool = False,
 ) -> "ChainCommon":
-    """Build a COFFDROP-aware ChainCommon from a peptide sequence.
-
-    This populates the type_idx fields on every angle and torsion and builds
-    pair_lookups for every non-bonded chain pair. It returns a chain ready to
-    use the tabulated force branches in compute_chain_forces.
-
-    residues is a list of 3-letter residue names such as ['ALA', 'GLY',
-    'ARG'], params is a COFFDROPParams loaded from the XML files, name is an
-    optional chain name that defaults to a hyphen-joined prefix, and k_spring
-    is the harmonic bond spring constant in kBT/Å^2. COFFDROP has no tabulated
-    bond potentials, so the bonds remain harmonic.
-
-    The returned ChainCommon has one CA bead per residue, with resname
-    "RESNAME:CA" following the "RESNAME:BEADTYPE" naming convention. Its
-    bonds form a linear backbone (i, i+1) with equilibrium lengths from
-    connectivity.xml. Its angles are every triplet (i, i+1, i+2), with
-    type_idx looked up via the forward convention residues=(XXX, R_{i+1},
-    R_{i+2}) and orders=(1, 2, 3). Its torsions are every quadruplet (i, i+1,
-    i+2, i+3), with type_idx via the forward convention residues=(R_i, R_{i+1},
-    R_{i+2}, R_{i+3}) and orders=(1, 1, 1, 1). Its pair_lookups cover every
-    non-bonded pair (i, j) with j >= i+2, with type_idx looked up by
-    residues=(R_i, R_j), atoms=(CA, CA), and orders=(0, 0). Both
-    coffdrop_params and pair_lookups are set.
-
-    The angle and torsion lookup convention is a documented assumption (the
-    forward convention with orders=(1, 2, 3) and (1, 1, 1, 1)). Heteropolymer
-    chains may need the alternate backward convention if forces appear
-    incorrect during validation. This helper is intentionally minimal, a
-    CA-only backbone for testing the tabulated machinery end to end.
-    Sidechain beads (CB, NG, and so on) are not added.
-    """
-    from pystarc.simulation.coffdrop_params import _match_pot
-
+    """Build a backbone CA COFFDROP-aware ChainCommon from a peptide sequence."""
     if not residues:
         raise ValueError("residues list cannot be empty")
-    n = len(residues)
+    breaks = set(chain_breaks) if chain_breaks else set()
+    norm_info = [_normalize_residue_name(r) for r in residues]
+    canon_residues = [c for c, _ in norm_info]
+    neutral_flags = [neut for _, neut in norm_info]
+    n = len(canon_residues)
 
-    # Atom-type lookup for CA.
     ca_atom_idx = params.type_map["atoms"].get("CA")
     if ca_atom_idx is None:
         raise ValueError("CA bead type not found in params.type_map['atoms']")
 
-    # Residue-type indices.
     def _ri(rname):
-        return params.type_map["residues"].get(rname, 0)  # 0 = XXX wildcard
+        return params.type_map["residues"].get(rname, 0)
 
-    # Build the atoms, one CA per residue. The resname follows the
-    # "RESNAME:CA" naming convention.
     atoms = []
-    for i, rname in enumerate(residues):
-        charge = params.bead_charge(rname, "CA")
+    for i, (rname, neutral) in enumerate(zip(canon_residues, neutral_flags)):
+        charge = 0.0 if neutral else params.bead_charge(rname, "CA")
         atoms.append(
             ChainAtom(
-                radius=2.0,  # typical CA Stokes radius (A)
+                radius=2.0,
                 charge=charge,
                 resname=f"{rname}:CA",
                 resid=i,
+                hydro_radius=float(hydro_radius),
             )
         )
 
-    # Build the bonds as a linear backbone, with lengths from connectivity.xml.
     bonds = []
+    ca_ca_len = params.bond_length("XXX", "CA", 1, "XXX", "CA", 2) or 3.8
+    ca_bond_pot = (
+        params.match_bond_pot("XXX", "CA", 1, "XXX", "CA", 2)
+        if use_bond_tables and hasattr(params, "match_bond_pot")
+        else None
+    )
+    ca_bond_type = ca_bond_pot.index if ca_bond_pot is not None else -1
     for i in range(n - 1):
-        r0 = params.bond_length("XXX", "CA", 1, "XXX", "CA", 2) or 3.8
+        if i in breaks:
+            continue
         bonds.append(
             ChainBond(
                 a=ChainAtomRef(i),
                 b=ChainAtomRef(i + 1),
-                r0=r0,
+                r0=ca_ca_len,
                 k_spring=k_spring,
-                type_idx=-1,  # bonds are harmonic, no tabulated lookup
+                type_idx=ca_bond_type,
             )
         )
 
-    # Build the angles, one per consecutive triplet, using the forward
-    # convention residues=(XXX, R_central, R_next) and orders=(1, 2, 3).
     angles = []
     for i in range(n - 2):
-        # The central atom is residue i+1 and the next is i+2.
-        central = residues[i + 1]
-        nxt = residues[i + 2]
-        ri = (0, _ri(central), _ri(nxt))  # 0 = XXX
+        if i in breaks or (i + 1) in breaks:
+            continue
+        ri = (
+            _ri(canon_residues[i]),
+            _ri(canon_residues[i + 1]),
+            _ri(canon_residues[i + 2]),
+        )
         ai = (ca_atom_idx, ca_atom_idx, ca_atom_idx)
-        orders = (1, 2, 3)
-        pot = _match_pot(params.angle_pots, ri, ai, orders)
-        type_idx = pot.index if pot is not None else -1
+        if hasattr(params, "match_angle_diff"):
+            pot = params.match_angle_diff(ri, ai, (1, 2))
+        else:
+            pot = _lookup_coffdrop_pot(
+                params, "angle", (ri[0], ri[1], 0), ai, (2, 3, 4)
+            )
+            if pot is None:
+                pot = _lookup_coffdrop_pot(
+                    params, "angle", (0, ri[1], ri[2]), ai, (1, 2, 3)
+                )
+        if pot is None:
+            continue
         angles.append(
             ChainAngle(
                 a=ChainAtomRef(i),
                 b=ChainAtomRef(i + 1),
                 c=ChainAtomRef(i + 2),
-                theta0=2.0,  # placeholder, ignored when type_idx >= 0
+                theta0=2.0,
                 k_angle=10.0,
-                type_idx=type_idx,
+                type_idx=pot.index,
             )
         )
 
-    # Build the torsions, one per consecutive quadruplet. For a backbone
-    # CA-CA-CA-CA, the diagnostic showed that all 441 such dihedrals use
-    # orders=(1, 2, 3, 4) with residues=(XXX, R_{i+1}, R_{i+2}, XXX), so only
-    # the two middle residues matter for the lookup.
     torsions = []
     for i in range(n - 3):
-        # Only the two middle residues distinguish the lookup.
-        ri = (0, _ri(residues[i + 1]), _ri(residues[i + 2]), 0)  # 0 = XXX
+        if i in breaks or (i + 1) in breaks or (i + 2) in breaks:
+            continue
+        ri = (
+            _ri(canon_residues[i]),
+            _ri(canon_residues[i + 1]),
+            _ri(canon_residues[i + 2]),
+            _ri(canon_residues[i + 3]),
+        )
         ai = (ca_atom_idx,) * 4
-        orders = (1, 2, 3, 4)
-        pot = _match_pot(params.dihedral_pots, ri, ai, orders)
-        type_idx = pot.index if pot is not None else -1
+        if hasattr(params, "match_dihedral_diff"):
+            pot = params.match_dihedral_diff(ri, ai, (1, 2, 3))
+        else:
+            pot = _lookup_coffdrop_pot(
+                params, "dihedral", (0, ri[1], ri[2], 0), ai, (1, 2, 3, 4)
+            )
+        if pot is None:
+            continue
         torsions.append(
             ChainTorsion(
                 a=ChainAtomRef(i),
@@ -1913,41 +2290,38 @@ def build_chain_common_from_coffdrop(
                 d=ChainAtomRef(i + 3),
                 phi0=0.0,
                 k_tor=2.0,
-                n=1,  # placeholders, ignored when type_idx >= 0
-                type_idx=type_idx,
+                n=1,
+                type_idx=pot.index,
             )
         )
 
-    # Build pair_lookups for every non-bonded pair (i, j) with j >= i+3. The
-    # 1-2 bonded pair (i, i+1) and the 1-3 angle pair (i, i+2) are excluded so
-    # the 1-3 interaction is not double-counted with the angle term; this
-    # matches the sidechain builder, which excludes 1-3 pairs explicitly. The
-    # pair potentials use orders=(0, 0), the residues come from the actual chain
-    # residues, and the atoms are (CA, CA).
-    pair_lookups = {}
-    for i in range(n):
-        for j in range(i + 3, n):
-            ri = (_ri(residues[i]), _ri(residues[j]))
-            ai = (ca_atom_idx, ca_atom_idx)
-            orders = (0, 0)
-            pot = _match_pot(params.pair_pots, ri, ai, orders)
-            if pot is None:
-                # Try reversed (symmetric pair lookup).
-                pot = _match_pot(
-                    params.pair_pots, (ri[1], ri[0]), (ai[1], ai[0]), orders
-                )
-            if pot is not None:
-                pair_lookups[(i, j)] = pot.index
-
-    return ChainCommon(
-        name=name or ("-".join(residues[:3]) + ("..." if n > 3 else "")),
+    common = ChainCommon(
+        name=name or ("-".join(canon_residues[:3]) + ("..." if n > 3 else "")),
         atoms=atoms,
         bonds=bonds,
         angles=angles,
         torsions=torsions,
         coffdrop_params=params,
-        pair_lookups=pair_lookups,
     )
+    excluded = coffdrop_nonbonded_exclusions(common)
+
+    pair_lookups = {}
+    for i in range(n):
+        for j in range(i + 1, n):
+            if (i, j) in excluded:
+                continue
+            ri = (_ri(canon_residues[i]), _ri(canon_residues[j]))
+            ai = (ca_atom_idx, ca_atom_idx)
+            pot = _lookup_coffdrop_pot(params, "pair", ri, ai, (0, 0))
+            if pot is None:
+                pot = _lookup_coffdrop_pot(
+                    params, "pair", (ri[1], ri[0]), (ai[1], ai[0]), (0, 0)
+                )
+            if pot is not None:
+                pair_lookups[(i, j)] = pot.index
+
+    common.pair_lookups = pair_lookups
+    return common
 
 
 def build_chain_common_with_sidechains_from_coffdrop(
@@ -1956,45 +2330,19 @@ def build_chain_common_with_sidechains_from_coffdrop(
     name: Optional[str] = None,
     k_spring: float = 100.0,
     caps: Tuple[Optional[str], Optional[str]] = (None, None),
+    chain_breaks: Optional[Set[int]] = None,
+    hydro_radius: float = 0.0,
+    use_bond_tables: bool = False,
 ) -> "ChainCommon":
-    """Build a COFFDROP-aware ChainCommon with sidechain beads.
-
-    Each residue contributes a CA bead together with its sidechain beads (for
-    example ALA has 2, ARG has 3, TRP has 4, and GLY has 1). Backbone CA-CA
-    bonds connect consecutive residues, and intra-residue bonds connect the
-    linear sidechain chain CA to CB to CG and onward. Equilibrium lengths come
-    from connectivity.xml.
-
-    residues is a list of 3-letter residue names, params is a COFFDROPParams,
-    name is an optional chain name, and k_spring is the harmonic spring
-    constant for the bonds in kBT/Å^2.
-
-    The returned ChainCommon has its atoms laid out per residue (CA plus
-    sidechain) and flattened across residues. Its bonds are the backbone CA-CA
-    bonds together with the intra-residue sidechain bonds. Its angles are the
-    CA-CA-CA backbone angles only, since the sidechain angles require further
-    topology work as described below. Its torsions are the CA-CA-CA-CA
-    backbone torsions only. Its pair_lookups cover all non-bonded pairs (i, j)
-    with j > i+1, using the actual bead types for the lookup. The result is
-    ready for compute_chain_forces with the sidechain pair forces enabled.
-
-    The sidechain angle and torsion topology is not yet populated. This phase
-    ships the sidechain pair forces, which are the dominant inter-residue
-    interaction in COFFDROP. Sidechain angles such as CA-CB-CG would require
-    more lookup-convention discovery, similar to what was done for the
-    backbone CA-CA-CA case, and are left for future work.
-
-    Bead naming follows the "RESNAME:BEADTYPE" convention, encoding both the
-    residue name and the bead type in each atom's resname field.
-    """
-    from pystarc.simulation.coffdrop_params import _match_pot
-
+    """Build a COFFDROP-aware ChainCommon with sidechain beads and BD2-matched terms."""
     if not residues:
         raise ValueError("residues list cannot be empty")
-    n_res = len(residues)
+    breaks = set(chain_breaks) if chain_breaks else set()
+    norm_info = [_normalize_residue_name(r) for r in residues]
+    canon_residues = [c for c, _ in norm_info]
+    neutral_flags = [neut for _, neut in norm_info]
+    n_res = len(canon_residues)
 
-    # Validate the caps. The accepted combinations are ("ACE", "NME"),
-    # ("ACE", None), (None, "NME"), and (None, None). Other values raise.
     n_cap, c_cap = caps
     if n_cap not in (None, "ACE"):
         raise ValueError(f"N-terminal cap must be 'ACE' or None, got {n_cap!r}")
@@ -2010,21 +2358,13 @@ def build_chain_common_with_sidechains_from_coffdrop(
     def _ai(beadname):
         return type_map_atoms.get(beadname, -1)
 
-    # Build the flat atom list. For each global atom index we track its
-    # residue position (which residue r in 0..n_res-1) and its bead name
-    # within the residue (for example "CA", "CB", or "NG").
     atoms = []
-    atom_residue = []  # atom_residue[global_idx] = residue position r
-    atom_beadname = []  # atom_beadname[global_idx] = bead name string
-    # ca_global_idx[r] = global atom index of the CA bead in residue r.
-    # This is used to wire backbone CA-CA bonds, angles, and torsions.
+    atom_residue = []
+    atom_beadname = []
     ca_global_idx = []
-    # For intra-residue bonds, track bead indices per residue.
-    # residue_beads[r] = [global_idx_of_CA, global_idx_of_CB, ...]
     residue_beads = []
 
-    for r, resname in enumerate(residues):
-        # Get the sidechain beads for this residue, excluding caps and termini.
+    for r, (resname, neutral) in enumerate(zip(canon_residues, neutral_flags)):
         rdef = params.mapping.get(resname)
         if rdef is None:
             raise ValueError(f"residue {resname} not in params.mapping")
@@ -2033,29 +2373,26 @@ def build_chain_common_with_sidechains_from_coffdrop(
             for b in rdef.beads
             if b.btype == "" and b.location == "" and b.name != "CA"
         ]
-        # Linear chain within the residue, running CA to CB and on to the last.
         bead_names_this_res = ["CA"] + sidechain_names
         beads_in_res = []
         for bname in bead_names_this_res:
             global_idx = len(atoms)
-            charge = params.bead_charge(resname, bname)
+            charge = 0.0 if neutral else params.bead_charge(resname, bname)
             atoms.append(
                 ChainAtom(
-                    radius=2.0,  # uniform Stokes radius
+                    radius=2.0,
                     charge=charge,
                     resname=f"{resname}:{bname}",
                     resid=r,
+                    hydro_radius=float(hydro_radius),
                 )
             )
             atom_residue.append(r)
             atom_beadname.append(bname)
             beads_in_res.append(global_idx)
         residue_beads.append(beads_in_res)
-        ca_global_idx.append(beads_in_res[0])  # CA is always first
+        ca_global_idx.append(beads_in_res[0])
 
-    # Cap atoms. ACE adds a CN bead bonded to the first CA, and NME adds a CC
-    # bead bonded to the last CA. Cap beads carry charge 0.0 because
-    # charges.xml has no entries for CN or CC.
     cn_global_idx = -1
     cc_global_idx = -1
     if n_cap == "ACE":
@@ -2065,7 +2402,8 @@ def build_chain_common_with_sidechains_from_coffdrop(
                 radius=2.0,
                 charge=0.0,
                 resname="ACE:CN",
-                resid=-1,  # caps have no residue position, so -1 marks a cap
+                resid=-1,
+                hydro_radius=float(hydro_radius),
             )
         )
         atom_residue.append(-1)
@@ -2078,6 +2416,7 @@ def build_chain_common_with_sidechains_from_coffdrop(
                 charge=0.0,
                 resname="NME:CC",
                 resid=-1,
+                hydro_radius=float(hydro_radius),
             )
         )
         atom_residue.append(-1)
@@ -2085,52 +2424,89 @@ def build_chain_common_with_sidechains_from_coffdrop(
 
     n_atoms = len(atoms)
 
-    # Build the bonds.
+    # Cap beads belong to their flanking terminal residue in COFFDROP map.xml.
+    res_all_atoms: List[List[int]] = [list(beads) for beads in residue_beads]
+    if cn_global_idx >= 0:
+        res_all_atoms[0].append(cn_global_idx)
+    if cc_global_idx >= 0:
+        res_all_atoms[n_res - 1].append(cc_global_idx)
+
+    # Segment-shifted sequence index separates chain breaks by +10 so no
+    # relative residue diff crosses an unbonded break.
+    seq_coord_res: List[int] = [0] * n_res
+    for r in range(1, n_res):
+        step = 10 if (r - 1) in breaks else 1
+        seq_coord_res[r] = seq_coord_res[r - 1] + step
+    seq_to_res: Dict[int, int] = {seq_coord_res[r]: r for r in range(n_res)}
+
+    def _eff_res(atom_idx: int) -> int:
+        r = atom_residue[atom_idx]
+        if r >= 0:
+            return r
+        if atom_idx == cn_global_idx:
+            return 0
+        if atom_idx == cc_global_idx:
+            return n_res - 1
+        return 0
+
+    eff_res_arr = [_eff_res(i) for i in range(n_atoms)]
+    atom_seq = [seq_coord_res[eff_res_arr[i]] for i in range(n_atoms)]
+    ri_arr = [_ri(canon_residues[eff_res_arr[i]]) for i in range(n_atoms)]
+    ai_arr = [_ai(atom_beadname[i]) for i in range(n_atoms)]
+
+    def _bond_type_idx(
+        res0: str, bead0: str, ord0: int, res1: str, bead1: str, ord1: int
+    ) -> int:
+        if not use_bond_tables or not hasattr(params, "match_bond_pot"):
+            return -1
+        bpot = params.match_bond_pot(res0, bead0, ord0, res1, bead1, ord1)
+        return bpot.index if bpot is not None else -1
+
+    # Bonds (equilibrium lengths read from coffdrop.xml eq_length when available).
     bonds = []
-    # Backbone CA-CA bonds between consecutive residues.
     ca_ca_len = params.bond_length("XXX", "CA", 1, "XXX", "CA", 2) or 3.8
+    ca_ca_type = _bond_type_idx("XXX", "CA", 1, "XXX", "CA", 2)
     for r in range(n_res - 1):
+        if r in breaks:
+            continue
         bonds.append(
             ChainBond(
                 a=ChainAtomRef(ca_global_idx[r]),
                 b=ChainAtomRef(ca_global_idx[r + 1]),
                 r0=ca_ca_len,
                 k_spring=k_spring,
-                type_idx=-1,
+                type_idx=ca_ca_type,
             )
         )
-    # Cap bonds. ACE adds a CA(0)-CN bond and NME adds a CA(-1)-CC bond. The
-    # equilibrium lengths from connectivity.xml are CA-CN = 3.81 and
-    # CA-CC = 3.82.
     if cn_global_idx >= 0:
         ca_cn_len = params.bond_length("XXX", "CA", 1, "XXX", "CN", 1) or 3.81
+        ca_cn_type = _bond_type_idx("XXX", "CA", 1, "XXX", "CN", 1)
         bonds.append(
             ChainBond(
                 a=ChainAtomRef(cn_global_idx),
                 b=ChainAtomRef(ca_global_idx[0]),
                 r0=ca_cn_len,
                 k_spring=k_spring,
-                type_idx=-1,
+                type_idx=ca_cn_type,
             )
         )
     if cc_global_idx >= 0:
         ca_cc_len = params.bond_length("XXX", "CA", 1, "XXX", "CC", 1) or 3.82
+        ca_cc_type = _bond_type_idx("XXX", "CA", 1, "XXX", "CC", 1)
         bonds.append(
             ChainBond(
                 a=ChainAtomRef(ca_global_idx[-1]),
                 b=ChainAtomRef(cc_global_idx),
                 r0=ca_cc_len,
                 k_spring=k_spring,
-                type_idx=-1,
+                type_idx=ca_cc_type,
             )
         )
-    # Intra-residue sidechain bonds, connecting bead i to bead i+1 within the
-    # residue.
     for r in range(n_res):
         beads = residue_beads[r]
         if len(beads) < 2:
-            continue  # GLY has only CA, so no intra-residue bonds
-        resname = residues[r]
+            continue
+        resname = canon_residues[r]
         for k in range(len(beads) - 1):
             bead_a_name = atom_beadname[beads[k]]
             bead_b_name = atom_beadname[beads[k + 1]]
@@ -2138,598 +2514,199 @@ def build_chain_common_with_sidechains_from_coffdrop(
                 params.bond_length(resname, bead_a_name, 1, resname, bead_b_name, 1)
                 or 3.0
             )
+            b_type = _bond_type_idx(resname, bead_a_name, 1, resname, bead_b_name, 1)
             bonds.append(
                 ChainBond(
                     a=ChainAtomRef(beads[k]),
                     b=ChainAtomRef(beads[k + 1]),
                     r0=r0,
                     k_spring=k_spring,
-                    type_idx=-1,
+                    type_idx=b_type,
                 )
             )
 
-    # Build the angles. There are three types. The first is the CA-CA-CA
-    # backbone angle, using the forward convention orders=(1, 2, 3) and
-    # residues=(XXX, R_central, R_next). The second is the CB-CA-CA
-    # sidechain-backbone angle, the most common sidechain angle with 858
-    # potentials in COFFDROP, where each residue r with a CB contributes two
-    # angles, CB(r)-CA(r)-CA(r+1) and CB(r)-CA(r)-CA(r-1). The third is the
-    # CA-CB-CG intra-residue angle (9 potentials, for the residues with a CG,
-    # namely LEU, ILE, ASN, GLN, MET, ASP, GLU, PHE, TYR, and TRP).
+    # Angles: exact BD2 aux/coffdrop_chain.cc:820-896 diff and wildcard selection.
     angles = []
-    ca_idx = _ai("CA")
-    cb_idx = _ai("CB")
-    cg_idx = _ai("CG")
-
-    # Backbone CA-CA-CA angles.
-    for r in range(n_res - 2):
-        ri = (0, _ri(residues[r + 1]), _ri(residues[r + 2]))
-        ai = (ca_idx, ca_idx, ca_idx)
-        pot = _match_pot(params.angle_pots, ri, ai, (1, 2, 3))
-        type_idx = pot.index if pot is not None else -1
-        angles.append(
-            ChainAngle(
-                a=ChainAtomRef(ca_global_idx[r]),
-                b=ChainAtomRef(ca_global_idx[r + 1]),
-                c=ChainAtomRef(ca_global_idx[r + 2]),
-                theta0=2.0,
-                k_angle=10.0,
-                type_idx=type_idx,
-            )
-        )
-
-    # SB (or CB) to CA to CA sidechain-backbone angles. For each residue with
-    # a first sidechain bead (CB for most residues, SB for CYS), the forward
-    # angle is SB(r)-CA(r)-CA(r+1) with orders=(2, 2, 3) and the backward angle
-    # is SB(r)-CA(r)-CA(r-1) with orders=(3, 3, 2). The lookup uses the actual
-    # atom-type index of that bead.
-    for r in range(n_res):
-        # The first sidechain bead is the first non-CA bead in the residue.
-        sb_global = None
-        sb_type_idx = None
-        for bead_global in residue_beads[r]:
-            bn = atom_beadname[bead_global]
-            if bn != "CA":
-                sb_global = bead_global
-                sb_type_idx = _ai(bn)
-                break
-        if sb_global is None:
-            continue
-        # Forward: SB(r)-CA(r)-CA(r+1)
-        if r + 1 < n_res:
-            ri = (_ri(residues[r]), _ri(residues[r]), _ri(residues[r + 1]))
-            ai = (sb_type_idx, ca_idx, ca_idx)
-            pot = _match_pot(params.angle_pots, ri, ai, (2, 2, 3))
-            type_idx = pot.index if pot is not None else -1
-            angles.append(
-                ChainAngle(
-                    a=ChainAtomRef(sb_global),
-                    b=ChainAtomRef(ca_global_idx[r]),
-                    c=ChainAtomRef(ca_global_idx[r + 1]),
-                    theta0=2.0,
-                    k_angle=10.0,
-                    type_idx=type_idx,
-                )
-            )
-        # Backward: SB(r)-CA(r)-CA(r-1)
-        if r - 1 >= 0:
-            ri = (_ri(residues[r]), _ri(residues[r]), _ri(residues[r - 1]))
-            ai = (sb_type_idx, ca_idx, ca_idx)
-            pot = _match_pot(params.angle_pots, ri, ai, (3, 3, 2))
-            type_idx = pot.index if pot is not None else -1
-            angles.append(
-                ChainAngle(
-                    a=ChainAtomRef(sb_global),
-                    b=ChainAtomRef(ca_global_idx[r]),
-                    c=ChainAtomRef(ca_global_idx[r - 1]),
-                    theta0=2.0,
-                    k_angle=10.0,
-                    type_idx=type_idx,
-                )
-            )
-
-    # Cap-flanking backbone angles. For ACE the angle is CN-CA(0)-CA(1) with
-    # residues=(r0, r0, r1) and orders=(1, 1, 2). For NME it is
-    # CA(n-2)-CA(n-1)-CC with residues=(r_{n-2}, r_{n-1}, r_{n-1}) and
-    # orders=(1, 2, 2).
-    cn_idx = _ai("CN")
-    cc_idx = _ai("CC")
-    if cn_global_idx >= 0 and n_res >= 2:
-        ri = (_ri(residues[0]), _ri(residues[0]), _ri(residues[1]))
-        ai = (cn_idx, ca_idx, ca_idx)
-        pot = _match_pot(params.angle_pots, ri, ai, (1, 1, 2))
-        type_idx = pot.index if pot is not None else -1
-        angles.append(
-            ChainAngle(
-                a=ChainAtomRef(cn_global_idx),
-                b=ChainAtomRef(ca_global_idx[0]),
-                c=ChainAtomRef(ca_global_idx[1]),
-                theta0=2.0,
-                k_angle=10.0,
-                type_idx=type_idx,
-            )
-        )
-    if cc_global_idx >= 0 and n_res >= 2:
-        ri = (
-            _ri(residues[n_res - 2]),
-            _ri(residues[n_res - 1]),
-            _ri(residues[n_res - 1]),
-        )
-        ai = (ca_idx, ca_idx, cc_idx)
-        pot = _match_pot(params.angle_pots, ri, ai, (1, 2, 2))
-        type_idx = pot.index if pot is not None else -1
-        angles.append(
-            ChainAngle(
-                a=ChainAtomRef(ca_global_idx[n_res - 2]),
-                b=ChainAtomRef(ca_global_idx[n_res - 1]),
-                c=ChainAtomRef(cc_global_idx),
-                theta0=2.0,
-                k_angle=10.0,
-                type_idx=type_idx,
-            )
-        )
-
-    # Cap-sidechain angle, on the NME side only. The angle is
-    # SC1(n-1)-CA(n-1)-CC with residues=(r_{n-1}, r_{n-1}, r_{n-1}) and
-    # orders=(2, 2, 2). SC1 is the first sidechain bead (CB for most residues,
-    # SB for CYS). GLY has no SC1, so this angle is absent for a GLY-flanked
-    # NME. On the ACE side COFFDROP has no CN-CA-SC1 angle entries, so it is
-    # skipped.
-    if cc_global_idx >= 0 and n_res >= 1:
-        last_r = n_res - 1
-        # Find first sidechain bead of last residue
-        sc1_global = None
-        sc1_type_idx = None
-        for bead_global in residue_beads[last_r]:
-            bn = atom_beadname[bead_global]
-            if bn != "CA":
-                sc1_global = bead_global
-                sc1_type_idx = _ai(bn)
-                break
-        if sc1_global is not None:
-            ri = (_ri(residues[last_r]),) * 3
-            ai = (sc1_type_idx, ca_idx, cc_idx)
-            pot = _match_pot(params.angle_pots, ri, ai, (2, 2, 2))
-            type_idx = pot.index if pot is not None else -1
-            angles.append(
-                ChainAngle(
-                    a=ChainAtomRef(sc1_global),
-                    b=ChainAtomRef(ca_global_idx[last_r]),
-                    c=ChainAtomRef(cc_global_idx),
-                    theta0=2.0,
-                    k_angle=10.0,
-                    type_idx=type_idx,
-                )
-            )
-
-    # Intra-residue sidechain angles, with two patterns. The first is
-    # CA-SC1-SC2 for any residue with at least 2 sidechain beads, which covers
-    # (CA, CB, CG) for LEU, ILE, MET and similar residues, (CA, CB, NG) for
-    # ARG, LYS, HIS, and HIP, and (CA, CB, OG) for ASP and GLU, all with
-    # orders=(3, 3, 3) and residues=(R, R, R). The second is SC1-SC2-SC3,
-    # which occurs only for TRP, the one residue with 3 sidechain beads, and
-    # covers (CB, CG, CD) with orders=(3, 3, 3) and residues=(R, R, R).
-    for r in range(n_res):
-        beads_here = residue_beads[r]
-        # Pattern (a), CA-SC1-SC2.
-        if len(beads_here) >= 3:
-            sc1_global = beads_here[1]
-            sc2_global = beads_here[2]
-            sc1_type = _ai(atom_beadname[sc1_global])
-            sc2_type = _ai(atom_beadname[sc2_global])
-            ri = (_ri(residues[r]),) * 3
-            ai = (ca_idx, sc1_type, sc2_type)
-            pot = _match_pot(params.angle_pots, ri, ai, (3, 3, 3))
-            type_idx = pot.index if pot is not None else -1
-            angles.append(
-                ChainAngle(
-                    a=ChainAtomRef(ca_global_idx[r]),
-                    b=ChainAtomRef(sc1_global),
-                    c=ChainAtomRef(sc2_global),
-                    theta0=2.0,
-                    k_angle=10.0,
-                    type_idx=type_idx,
-                )
-            )
-        # Pattern (b), SC1-SC2-SC3 (the TRP CB-CG-CD angle).
-        if len(beads_here) >= 4:
-            sc1_global = beads_here[1]
-            sc2_global = beads_here[2]
-            sc3_global = beads_here[3]
-            sc1_type = _ai(atom_beadname[sc1_global])
-            sc2_type = _ai(atom_beadname[sc2_global])
-            sc3_type = _ai(atom_beadname[sc3_global])
-            ri = (_ri(residues[r]),) * 3
-            ai = (sc1_type, sc2_type, sc3_type)
-            pot = _match_pot(params.angle_pots, ri, ai, (3, 3, 3))
-            type_idx = pot.index if pot is not None else -1
-            angles.append(
-                ChainAngle(
-                    a=ChainAtomRef(sc1_global),
-                    b=ChainAtomRef(sc2_global),
-                    c=ChainAtomRef(sc3_global),
-                    theta0=2.0,
-                    k_angle=10.0,
-                    type_idx=type_idx,
-                )
-            )
-
-    # Build the torsions. There are three types here: the CA-CA-CA-CA backbone
-    # torsions, the CA-CA-CA-CB "incoming sidechain" torsions (1875 potentials,
-    # the dominant type), and the CB-CA-CA-CA "outgoing sidechain" torsions
-    # (849 potentials). The 47 other dihedral types involving caps, termini,
-    # CG, NG, and OG are deferred. The CB-only sidechain dihedrals capture the
-    # dominant physics for standard residues.
-    torsions = []
-
-    # Backbone CA-CA-CA-CA torsions.
-    for r in range(n_res - 3):
-        ri = (0, _ri(residues[r + 1]), _ri(residues[r + 2]), 0)
-        ai = (ca_idx,) * 4
-        pot = _match_pot(params.dihedral_pots, ri, ai, (1, 2, 3, 4))
-        type_idx = pot.index if pot is not None else -1
-        torsions.append(
-            ChainTorsion(
-                a=ChainAtomRef(ca_global_idx[r]),
-                b=ChainAtomRef(ca_global_idx[r + 1]),
-                c=ChainAtomRef(ca_global_idx[r + 2]),
-                d=ChainAtomRef(ca_global_idx[r + 3]),
-                phi0=0.0,
-                k_tor=2.0,
-                n=1,
-                type_idx=type_idx,
-            )
-        )
-
-    # "Incoming sidechain" torsion CA(r)-CA(r+1)-CA(r+2)-SB(or CB)(r+2). This
-    # is generalized from CB-only to any first sidechain bead so that CYS
-    # works. It uses residues=(XXX, R_{r+1}, R_{r+2}, R_{r+2}) and
-    # orders=(1, 3, 2, 2).
-    for r in range(n_res - 2):
-        sb_global = None
-        sb_type_idx = None
-        for bead_global in residue_beads[r + 2]:
-            bn = atom_beadname[bead_global]
-            if bn != "CA":
-                sb_global = bead_global
-                sb_type_idx = _ai(bn)
-                break
-        if sb_global is None:
-            continue
-        ri = (0, _ri(residues[r + 1]), _ri(residues[r + 2]), _ri(residues[r + 2]))
-        ai = (ca_idx, ca_idx, ca_idx, sb_type_idx)
-        pot = _match_pot(params.dihedral_pots, ri, ai, (1, 3, 2, 2))
-        type_idx = pot.index if pot is not None else -1
-        torsions.append(
-            ChainTorsion(
-                a=ChainAtomRef(ca_global_idx[r]),
-                b=ChainAtomRef(ca_global_idx[r + 1]),
-                c=ChainAtomRef(ca_global_idx[r + 2]),
-                d=ChainAtomRef(sb_global),
-                phi0=0.0,
-                k_tor=2.0,
-                n=1,
-                type_idx=type_idx,
-            )
-        )
-
-    # "Outgoing sidechain" torsion SB(or CB)(r)-CA(r)-CA(r+1)-CA(r+2). This is
-    # generalized from CB-only to any first sidechain bead so that CYS works.
-    # It uses residues=(R_r, R_r, R_{r+1}, XXX) and orders=(3, 3, 2, 1).
-    for r in range(n_res - 2):
-        sb_global = None
-        sb_type_idx = None
-        for bead_global in residue_beads[r]:
-            bn = atom_beadname[bead_global]
-            if bn != "CA":
-                sb_global = bead_global
-                sb_type_idx = _ai(bn)
-                break
-        if sb_global is None:
-            continue
-        ri = (_ri(residues[r]), _ri(residues[r]), _ri(residues[r + 1]), 0)
-        ai = (sb_type_idx, ca_idx, ca_idx, ca_idx)
-        pot = _match_pot(params.dihedral_pots, ri, ai, (3, 3, 2, 1))
-        type_idx = pot.index if pot is not None else -1
-        torsions.append(
-            ChainTorsion(
-                a=ChainAtomRef(sb_global),
-                b=ChainAtomRef(ca_global_idx[r]),
-                c=ChainAtomRef(ca_global_idx[r + 1]),
-                d=ChainAtomRef(ca_global_idx[r + 2]),
-                phi0=0.0,
-                k_tor=2.0,
-                n=1,
-                type_idx=type_idx,
-            )
-        )
-
-    # Cross-residue sidechain dihedral SB(r)-CA(r)-CA(r+1)-SB(r+1). The most
-    # common form is (CB, CA, CA, CB), with 361 of 416 potentials using
-    # orders=(1, 1, 2, 2) and residues=(R_r, R_r, R_{r+1}, R_{r+1}). This is
-    # generalized to any first sidechain bead.
-    for r in range(n_res - 1):
-        # Need a first sidechain bead on both r and r+1.
-        sb1_global, sb1_type = None, None
-        for bead_global in residue_beads[r]:
-            bn = atom_beadname[bead_global]
-            if bn != "CA":
-                sb1_global = bead_global
-                sb1_type = _ai(bn)
-                break
-        if sb1_global is None:
-            continue
-        sb2_global, sb2_type = None, None
-        for bead_global in residue_beads[r + 1]:
-            bn = atom_beadname[bead_global]
-            if bn != "CA":
-                sb2_global = bead_global
-                sb2_type = _ai(bn)
-                break
-        if sb2_global is None:
-            continue
-        ri = (
-            _ri(residues[r]),
-            _ri(residues[r]),
-            _ri(residues[r + 1]),
-            _ri(residues[r + 1]),
-        )
-        ai = (sb1_type, ca_idx, ca_idx, sb2_type)
-        pot = _match_pot(params.dihedral_pots, ri, ai, (1, 1, 2, 2))
-        type_idx = pot.index if pot is not None else -1
-        torsions.append(
-            ChainTorsion(
-                a=ChainAtomRef(sb1_global),
-                b=ChainAtomRef(ca_global_idx[r]),
-                c=ChainAtomRef(ca_global_idx[r + 1]),
-                d=ChainAtomRef(sb2_global),
-                phi0=0.0,
-                k_tor=2.0,
-                n=1,
-                type_idx=type_idx,
-            )
-        )
-
-    # Sidechain-extending dihedral SC2(r)-SC1(r)-CA(r)-CA(r+/-1). Here SC1 is
-    # the first sidechain bead (CB for most residues, SB for CYS) and SC2 is
-    # the second sidechain bead (CG, NG, or OG depending on the residue). The
-    # forward dihedral is SC2(r)-SC1(r)-CA(r)-CA(r+1) with orders=(1, 1, 1, 2)
-    # and residues=(R, R, R, R_{r+1}). The backward dihedral is
-    # SC2(r)-SC1(r)-CA(r)-CA(r-1) with orders=(2, 2, 2, 1) and
-    # residues=(R, R, R, R_{r-1}).
-    for r in range(n_res):
-        # Find the first and second sidechain beads in this residue. This
-        # dihedral needs at least 3 beads (CA plus 2 sidechain beads).
-        beads_here = residue_beads[r]
-        if len(beads_here) < 3:
-            continue  # only CA, or CA plus SB1 with no SB2, so skip
-        sc1_global = beads_here[1]  # first non-CA bead
-        sc2_global = beads_here[2]  # second non-CA bead
-        sc2_type = _ai(atom_beadname[sc2_global])
-        sc1_type = _ai(atom_beadname[sc1_global])
-        # Forward
-        if r + 1 < n_res:
-            ri = (
-                _ri(residues[r]),
-                _ri(residues[r]),
-                _ri(residues[r]),
-                _ri(residues[r + 1]),
-            )
-            ai = (sc2_type, sc1_type, ca_idx, ca_idx)
-            pot = _match_pot(params.dihedral_pots, ri, ai, (1, 1, 1, 2))
-            type_idx = pot.index if pot is not None else -1
-            torsions.append(
-                ChainTorsion(
-                    a=ChainAtomRef(sc2_global),
-                    b=ChainAtomRef(sc1_global),
-                    c=ChainAtomRef(ca_global_idx[r]),
-                    d=ChainAtomRef(ca_global_idx[r + 1]),
-                    phi0=0.0,
-                    k_tor=2.0,
-                    n=1,
-                    type_idx=type_idx,
-                )
-            )
-        # Backward
-        if r - 1 >= 0:
-            ri = (
-                _ri(residues[r]),
-                _ri(residues[r]),
-                _ri(residues[r]),
-                _ri(residues[r - 1]),
-            )
-            ai = (sc2_type, sc1_type, ca_idx, ca_idx)
-            pot = _match_pot(params.dihedral_pots, ri, ai, (2, 2, 2, 1))
-            type_idx = pot.index if pot is not None else -1
-            torsions.append(
-                ChainTorsion(
-                    a=ChainAtomRef(sc2_global),
-                    b=ChainAtomRef(sc1_global),
-                    c=ChainAtomRef(ca_global_idx[r]),
-                    d=ChainAtomRef(ca_global_idx[r - 1]),
-                    phi0=0.0,
-                    k_tor=2.0,
-                    n=1,
-                    type_idx=type_idx,
-                )
-            )
-
-    # Cap backbone dihedrals. For ACE the dihedral is CN-CA(0)-CA(1)-CA(2) with
-    # residues=(r0, r0, r1, 0) and orders=(1, 1, 2, 3). For NME it is
-    # CA(n-3)-CA(n-2)-CA(n-1)-CC with residues=(0, r_{n-2}, r_{n-1}, r_{n-1})
-    # and orders=(1, 2, 3, 3).
-    if cn_global_idx >= 0 and n_res >= 3:
-        ri = (_ri(residues[0]), _ri(residues[0]), _ri(residues[1]), 0)
-        ai = (cn_idx, ca_idx, ca_idx, ca_idx)
-        pot = _match_pot(params.dihedral_pots, ri, ai, (1, 1, 2, 3))
-        type_idx = pot.index if pot is not None else -1
-        torsions.append(
-            ChainTorsion(
-                a=ChainAtomRef(cn_global_idx),
-                b=ChainAtomRef(ca_global_idx[0]),
-                c=ChainAtomRef(ca_global_idx[1]),
-                d=ChainAtomRef(ca_global_idx[2]),
-                phi0=0.0,
-                k_tor=2.0,
-                n=1,
-                type_idx=type_idx,
-            )
-        )
-    if cc_global_idx >= 0 and n_res >= 3:
-        ri = (
-            0,
-            _ri(residues[n_res - 2]),
-            _ri(residues[n_res - 1]),
-            _ri(residues[n_res - 1]),
-        )
-        ai = (ca_idx, ca_idx, ca_idx, cc_idx)
-        pot = _match_pot(params.dihedral_pots, ri, ai, (1, 2, 3, 3))
-        type_idx = pot.index if pot is not None else -1
-        torsions.append(
-            ChainTorsion(
-                a=ChainAtomRef(ca_global_idx[n_res - 3]),
-                b=ChainAtomRef(ca_global_idx[n_res - 2]),
-                c=ChainAtomRef(ca_global_idx[n_res - 1]),
-                d=ChainAtomRef(cc_global_idx),
-                phi0=0.0,
-                k_tor=2.0,
-                n=1,
-                type_idx=type_idx,
-            )
-        )
-
-    # Cap-sidechain dihedrals. The ACE incoming-sidechain dihedral is
-    # CN(0)-CA(0)-CA(1)-SC1(1) with residues=(r0, r0, r1, r1) and
-    # orders=(1, 3, 2, 2). The NME outgoing-sidechain dihedral is
-    # SC1(n-2)-CA(n-2)-CA(n-1)-CC with residues=(r_{n-2}, r_{n-2}, r_{n-1},
-    # r_{n-1}) and orders=(1, 1, 2, 2). SC1 is the first sidechain bead. Some
-    # residues have no populated lookup and are silently skipped.
-    if cn_global_idx >= 0 and n_res >= 2:
-        # Find SC1 of residue 1, the residue right after the cap-flanked one.
-        sc1_global, sc1_type = None, None
-        for bead_global in residue_beads[1]:
-            bn = atom_beadname[bead_global]
-            if bn != "CA":
-                sc1_global = bead_global
-                sc1_type = _ai(bn)
-                break
-        if sc1_global is not None:
-            ri = (
-                _ri(residues[0]),
-                _ri(residues[0]),
-                _ri(residues[1]),
-                _ri(residues[1]),
-            )
-            ai = (cn_idx, ca_idx, ca_idx, sc1_type)
-            pot = _match_pot(params.dihedral_pots, ri, ai, (1, 3, 2, 2))
-            type_idx = pot.index if pot is not None else -1
-            torsions.append(
-                ChainTorsion(
-                    a=ChainAtomRef(cn_global_idx),
-                    b=ChainAtomRef(ca_global_idx[0]),
-                    c=ChainAtomRef(ca_global_idx[1]),
-                    d=ChainAtomRef(sc1_global),
-                    phi0=0.0,
-                    k_tor=2.0,
-                    n=1,
-                    type_idx=type_idx,
-                )
-            )
-    if cc_global_idx >= 0 and n_res >= 2:
-        # Find SC1 of residue n-2 (the residue 2 from the C-terminus)
-        sc1_global, sc1_type = None, None
-        for bead_global in residue_beads[n_res - 2]:
-            bn = atom_beadname[bead_global]
-            if bn != "CA":
-                sc1_global = bead_global
-                sc1_type = _ai(bn)
-                break
-        if sc1_global is not None:
-            ri = (
-                _ri(residues[n_res - 2]),
-                _ri(residues[n_res - 2]),
-                _ri(residues[n_res - 1]),
-                _ri(residues[n_res - 1]),
-            )
-            ai = (sc1_type, ca_idx, ca_idx, cc_idx)
-            pot = _match_pot(params.dihedral_pots, ri, ai, (1, 1, 2, 2))
-            type_idx = pot.index if pot is not None else -1
-            torsions.append(
-                ChainTorsion(
-                    a=ChainAtomRef(sc1_global),
-                    b=ChainAtomRef(ca_global_idx[n_res - 2]),
-                    c=ChainAtomRef(ca_global_idx[n_res - 1]),
-                    d=ChainAtomRef(cc_global_idx),
-                    phi0=0.0,
-                    k_tor=2.0,
-                    n=1,
-                    type_idx=type_idx,
-                )
-            )
-
-    # Build pair lookups for all non-bonded pairs, skipping pairs that are
-    # bonded (1-2) or that are 1-3 neighbors sharing a bond.
-    bonded_set = set()
-    for bond in bonds:
-        i, j = bond.a.atom_idx, bond.b.atom_idx
-        bonded_set.add((min(i, j), max(i, j)))
-    # 1-3 neighbors reached via two bonds.
-    neighbors = [set() for _ in range(n_atoms)]
-    for bond in bonds:
-        i, j = bond.a.atom_idx, bond.b.atom_idx
-        neighbors[i].add(j)
-        neighbors[j].add(i)
-    excluded_13 = set()
-    for i in range(n_atoms):
-        for j in neighbors[i]:
-            for k in neighbors[j]:
-                if k != i:
-                    excluded_13.add((min(i, k), max(i, k)))
-
-    # Helper that returns the residue label for an atom, handling caps. Caps
-    # have atom_residue = -1, and their lookup uses the flanking residue.
-    def _atom_residue_label(atom_idx):
-        r = atom_residue[atom_idx]
-        if r >= 0:
-            return residues[r]
-        # Cap atom, so find the flanking residue by looking at the bonded CA.
-        if atom_idx == cn_global_idx:
-            return residues[0]  # ACE flanks the first residue
-        if atom_idx == cc_global_idx:
-            return residues[n_res - 1]  # NME flanks the last residue
-        # Fallback that should not happen, but is kept for safety.
-        return residues[0]
-
-    pair_lookups = {}
-    for i in range(n_atoms):
-        for j in range(i + 1, n_atoms):
-            if (i, j) in bonded_set or (i, j) in excluded_13:
+    angle_diffs = params.angle_diffs()
+    for r0 in range(n_res):
+        s0 = seq_coord_res[r0]
+        rt0 = _ri(canon_residues[r0])
+        atoms0 = res_all_atoms[r0]
+        for d1, d2 in angle_diffs:
+            r1 = seq_to_res.get(s0 + d1)
+            r2 = seq_to_res.get(s0 + d2)
+            if r1 is None or r2 is None:
                 continue
-            res_i_name = _atom_residue_label(i)
-            res_j_name = _atom_residue_label(j)
-            bead_i_name = atom_beadname[i]
-            bead_j_name = atom_beadname[j]
-            ri = (_ri(res_i_name), _ri(res_j_name))
-            ai = (_ai(bead_i_name), _ai(bead_j_name))
-            orders = (0, 0)
-            pot = _match_pot(params.pair_pots, ri, ai, orders)
-            if pot is None:
-                # Try reversed (symmetric pair lookup)
-                pot = _match_pot(
-                    params.pair_pots, (ri[1], ri[0]), (ai[1], ai[0]), orders
-                )
-            if pot is not None:
-                pair_lookups[(i, j)] = pot.index
+            rt1 = _ri(canon_residues[r1])
+            rt2 = _ri(canon_residues[r2])
+            atoms1 = res_all_atoms[r1]
+            atoms2 = res_all_atoms[r2]
+            for ia0 in atoms0:
+                at0 = ai_arr[ia0]
+                for ia1 in atoms1:
+                    if ia1 == ia0:
+                        continue
+                    at1 = ai_arr[ia1]
+                    for ia2 in atoms2:
+                        if ia2 == ia0 or ia2 == ia1:
+                            continue
+                        pot = params.match_angle_diff(
+                            (rt0, rt1, rt2), (at0, at1, ai_arr[ia2]), (d1, d2)
+                        )
+                        if pot is not None:
+                            angles.append(
+                                ChainAngle(
+                                    a=ChainAtomRef(ia0),
+                                    b=ChainAtomRef(ia1),
+                                    c=ChainAtomRef(ia2),
+                                    theta0=2.0,
+                                    k_angle=10.0,
+                                    type_idx=pot.index,
+                                )
+                            )
 
-    return ChainCommon(
-        name=name or ("-".join(residues[:3]) + ("..." if n_res > 3 else "") + "_sc"),
+    # Proper and improper dihedrals: exact BD2 aux/coffdrop_chain.cc:521-759 graph walk.
+    atom_nebors: List[List[int]] = [[] for _ in range(n_atoms)]
+    for bond in bonds:
+        ia, ib = bond.a.atom_idx, bond.b.atom_idx
+        atom_nebors[ia].append(ib)
+        atom_nebors[ib].append(ia)
+
+    torsions = []
+    # Proper dihedrals along simple 4-atom bonded paths i0-i1-i2-i3.
+    for i0 in range(n_atoms):
+        s0, rt0, at0 = atom_seq[i0], ri_arr[i0], ai_arr[i0]
+        for i1 in atom_nebors[i0]:
+            s1, rt1, at1 = atom_seq[i1], ri_arr[i1], ai_arr[i1]
+            d1 = s1 - s0
+            for i2 in atom_nebors[i1]:
+                if i2 == i0:
+                    continue
+                s2, rt2, at2 = atom_seq[i2], ri_arr[i2], ai_arr[i2]
+                d2 = s2 - s0
+                for i3 in atom_nebors[i2]:
+                    if i3 == i0 or i3 == i1:
+                        continue
+                    pot = params.match_dihedral_diff(
+                        (rt0, rt1, rt2, ri_arr[i3]),
+                        (at0, at1, at2, ai_arr[i3]),
+                        (d1, d2, atom_seq[i3] - s0),
+                    )
+                    if pot is not None:
+                        torsions.append(
+                            ChainTorsion(
+                                a=ChainAtomRef(i0),
+                                b=ChainAtomRef(i1),
+                                c=ChainAtomRef(i2),
+                                d=ChainAtomRef(i3),
+                                phi0=0.0,
+                                k_tor=2.0,
+                                n=1,
+                                type_idx=pot.index,
+                            )
+                        )
+
+    # Improper dihedrals centered on i0 with ordered distinct neighbors (i1, i2, i3)
+    # written as (i1, i2, i0, i3), matching aux/coffdrop_chain.cc:655-756.
+    for i0 in range(n_atoms):
+        nbrs0 = atom_nebors[i0]
+        if len(nbrs0) < 3:
+            continue
+        s0, rt0, at0 = atom_seq[i0], ri_arr[i0], ai_arr[i0]
+        for i1 in nbrs0:
+            s1, rt1, at1 = atom_seq[i1], ri_arr[i1], ai_arr[i1]
+            for i2 in nbrs0:
+                if i2 == i1:
+                    continue
+                s2, rt2, at2 = atom_seq[i2], ri_arr[i2], ai_arr[i2]
+                for i3 in nbrs0:
+                    if i3 == i1 or i3 == i2:
+                        continue
+                    pot = params.match_dihedral_diff(
+                        (rt1, rt2, rt0, ri_arr[i3]),
+                        (at1, at2, at0, ai_arr[i3]),
+                        (s2 - s1, s0 - s1, atom_seq[i3] - s1),
+                    )
+                    if pot is not None:
+                        torsions.append(
+                            ChainTorsion(
+                                a=ChainAtomRef(i1),
+                                b=ChainAtomRef(i2),
+                                c=ChainAtomRef(i0),
+                                d=ChainAtomRef(i3),
+                                phi0=0.0,
+                                k_tor=2.0,
+                                n=1,
+                                type_idx=pot.index,
+                            )
+                        )
+
+    common = ChainCommon(
+        name=name
+        or ("-".join(canon_residues[:3]) + ("..." if n_res > 3 else "") + "_sc"),
         atoms=atoms,
         bonds=bonds,
         angles=angles,
         torsions=torsions,
         coffdrop_params=params,
-        pair_lookups=pair_lookups,
     )
+
+    # Improper-bond pair tables (diff=0 intra-residue TRP CN-CD/CD-CC and diff=1
+    # adjacent-residue (1,2) tables) plus general (0,0) pairs outside exclusions.
+    excluded = coffdrop_nonbonded_exclusions(common)
+    bonded_12 = {
+        (min(b.a.atom_idx, b.b.atom_idx), max(b.a.atom_idx, b.b.atom_idx))
+        for b in bonds
+    }
+    pair_lookups: Dict[Tuple[int, int], int] = {}
+
+    for r0 in range(n_res):
+        atoms0 = res_all_atoms[r0]
+        rt0 = _ri(canon_residues[r0])
+        for ia in atoms0:
+            at_a = ai_arr[ia]
+            for ib in atoms0:
+                if ib == ia:
+                    continue
+                key_ij = (ia, ib) if ia < ib else (ib, ia)
+                if key_ij in bonded_12:
+                    continue
+                pot = params.match_improper_pair((rt0, rt0), (at_a, ai_arr[ib]), 0)
+                if pot is not None:
+                    pair_lookups[key_ij] = pot.index
+        if r0 + 1 < n_res and r0 not in breaks:
+            atoms1 = res_all_atoms[r0 + 1]
+            rt1 = _ri(canon_residues[r0 + 1])
+            for ia in atoms0:
+                at_a = ai_arr[ia]
+                for ib in atoms1:
+                    key_ij = (ia, ib) if ia < ib else (ib, ia)
+                    if key_ij in bonded_12:
+                        continue
+                    pot = params.match_improper_pair((rt0, rt1), (at_a, ai_arr[ib]), 1)
+                    if pot is not None:
+                        pair_lookups[key_ij] = pot.index
+
+    for i in range(n_atoms):
+        ri_i = ri_arr[i]
+        ai_i = ai_arr[i]
+        for j in range(i + 1, n_atoms):
+            if (i, j) in excluded:
+                continue
+            ri_j = ri_arr[j]
+            ai_j = ai_arr[j]
+            pot = _lookup_coffdrop_pot(
+                params, "pair", (ri_i, ri_j), (ai_i, ai_j), (0, 0)
+            )
+            if pot is None:
+                pot = _lookup_coffdrop_pot(
+                    params, "pair", (ri_j, ri_i), (ai_j, ai_i), (0, 0)
+                )
+            if pot is not None:
+                pair_lookups[(i, j)] = pot.index
+
+    common.pair_lookups = pair_lookups
+    return common
 
 
 # Single-letter to 3-letter residue code map (standard 20 amino acids).
@@ -2757,58 +2734,10 @@ _ONE_LETTER_TO_THREE = {
 }
 
 
-def chain_from_sequence(
-    sequence: str,
-    coffdrop_dir: Optional[str] = None,
-    name: Optional[str] = None,
-    sidechains: bool = True,
-    k_spring: float = 100.0,
-    caps: Tuple[Optional[str], Optional[str]] = (None, None),
-) -> "ChainCommon":
-    """Build a COFFDROP chain from a single-letter or 3-letter sequence.
-
-    User-facing factory: handles parameter loading and sequence conversion.
-
-    Parameters
-    ----------
-    sequence : str
-        Either single-letter codes ("ARWGL") or 3-letter codes
-        ("ALA-ARG-TRP-GLY-LEU" or "ALA ARG TRP GLY LEU").
-    coffdrop_dir : str, optional
-        Path to directory containing coffdrop.xml, map.xml,
-        connectivity.xml, charges.xml. If None (default), uses the
-        data directory bundled with the pystarc package.
-    name : str, optional
-        Optional chain name, auto-generated from the sequence if not given.
-    sidechains : bool
-        If True, build with sidechain beads (default).
-        If False, CA-only backbone.
-    k_spring : float
-        Harmonic spring constant for bonds (kBT/A^2).
-
-    Returns
-    -------
-    ChainCommon
-        Ready for compute_chain_forces.
-
-    Examples
-    --------
-    >>> chain = chain_from_sequence("ARWGL")
-    >>> chain.n_atoms  # ALA(2) + ARG(3) + TRP(4) + GLY(1) + LEU(3)
-    13
-
-    >>> chain = chain_from_sequence("ALA-ARG-TRP")
-    >>> chain.n_atoms  # 2 + 3 + 4
-    9
-
-    >>> chain = chain_from_sequence("ARG", sidechains=False)
-    >>> chain.n_atoms  # CA-only
-    1
-    """
+def _load_coffdrop_params_from_dir(coffdrop_dir: Optional[str]):
     from pathlib import Path as _Path
     from pystarc.simulation.coffdrop_params import COFFDROPParams
 
-    # Resolve coffdrop_dir: default to data bundled with the pystarc package
     if coffdrop_dir is None:
         coffdrop_dir = str(_Path(__file__).parent.parent / "coffdrop_data")
     p = _Path(coffdrop_dir)
@@ -2817,145 +2746,208 @@ def chain_from_sequence(
             f"COFFDROP data directory not found: {coffdrop_dir}. "
             "Pass coffdrop_dir explicitly or check pystarc installation."
         )
-    params = COFFDROPParams.load(
+    return COFFDROPParams.load(
         ff_xml=str(p / "coffdrop.xml"),
         mapping_xml=str(p / "map.xml"),
         connectivity_xml=str(p / "connectivity.xml"),
         charges_xml=str(p / "charges.xml"),
     )
 
-    # Parse sequence: detect format and convert to list of 3-letter codes.
+
+def chain_from_sequence(
+    sequence: str,
+    coffdrop_dir: Optional[str] = None,
+    name: Optional[str] = None,
+    sidechains: bool = True,
+    k_spring: float = 100.0,
+    caps: Tuple[Optional[str], Optional[str]] = (None, None),
+    hydro_radius: float = 0.0,
+    use_bond_tables: bool = False,
+) -> "ChainCommon":
+    """Build a COFFDROP chain from a single-letter or 3-letter sequence."""
+    params = _load_coffdrop_params_from_dir(coffdrop_dir)
+
     s = sequence.strip().upper()
     if "-" in s or " " in s:
-        # 3-letter form: ALA-ARG or ALA ARG
         residues = [r.strip() for r in s.replace("-", " ").split() if r.strip()]
-        # Validate
         for r in residues:
-            if len(r) != 3:
-                raise ValueError(
-                    f"3-letter sequence has invalid token '{r}' "
-                    f"(expected 3-letter residue code)"
-                )
+            canon, _ = _normalize_residue_name(r)
+            if len(r) == 3:
+                continue
+            if len(r) == 4 and canon in _CANONICAL_RESIDUES:
+                continue
+            raise ValueError(
+                f"3-letter sequence has invalid token '{r}' "
+                "(expected 3-letter residue code)"
+            )
     else:
-        # Single-letter form: ARWGL
         residues = []
         for c in s:
             if c not in _ONE_LETTER_TO_THREE:
                 raise ValueError(
                     f"Unknown single-letter code '{c}' in sequence '{sequence}'. "
-                    f"Use standard 20 amino acid codes (ARNDCEQGHILKMFPSTWYV)."
+                    "Use standard 20 amino acid codes (ARNDCEQGHILKMFPSTWYV)."
                 )
             residues.append(_ONE_LETTER_TO_THREE[c])
 
     if not residues:
         raise ValueError("sequence cannot be empty")
 
-    # Build chain
+    n_cap, c_cap = caps
+    if residues and residues[0] == "ACE":
+        if n_cap is None:
+            n_cap = "ACE"
+        residues = residues[1:]
+    if residues and residues[-1] == "NME":
+        if c_cap is None:
+            c_cap = "NME"
+        residues = residues[:-1]
+    if not residues:
+        raise ValueError("sequence cannot be empty after stripping ACE/NME caps")
+    eff_caps = (n_cap, c_cap)
+
     if sidechains:
         return build_chain_common_with_sidechains_from_coffdrop(
             residues,
             params,
             name=name,
             k_spring=k_spring,
-            caps=caps,
+            caps=eff_caps,
+            hydro_radius=hydro_radius,
+            use_bond_tables=use_bond_tables,
         )
-    else:
-        if caps != (None, None):
-            raise ValueError(
-                "caps are only supported with sidechains=True; "
-                "the CA-only builder does not support caps."
-            )
-        return build_chain_common_from_coffdrop(
-            residues,
-            params,
-            name=name,
-            k_spring=k_spring,
-        )
+    if eff_caps != (None, None):
+        raise ValueError("caps require sidechains=True; backbone builder rejects caps.")
+    return build_chain_common_from_coffdrop(
+        residues,
+        params,
+        name=name,
+        k_spring=k_spring,
+        hydro_radius=hydro_radius,
+        use_bond_tables=use_bond_tables,
+    )
 
 
 def place_relaxed_geometry(chain: "ChainCommon") -> np.ndarray:
-    """Produce a sensible initial configuration for a chain.
+    """Build an initial clash-free 3D configuration for a chain.
 
-    Backbone CAs are placed along the x-axis at 3.8 A spacing.
-    Sidechain beads are placed at their bond eq length from their
-    anchor, with a slight rotation per atom to avoid colinear
-    projections that excite dihedral forces unfavorably.
-
-    The result is suitable as a starting configuration for BD
-    simulation or as chain_init_body_positions for ChainBDSimulator.
-
-    Parameters
-    ----------
-    chain : ChainCommon
-        A chain produced by chain_from_sequence or one of the
-        build_chain_common_* helpers.
-
-    Returns
-    -------
-    positions : np.ndarray, shape (n_atoms, 3)
-        Cartesian positions in Angstroms.
+    Backbone CAs form a non-collinear zig-zag (110 deg bond angle, alternating
+    180 deg trans dihedral) with exact equilibrium bond lengths. Caps extend
+    outward along the backbone ends, and sidechains branch outward in L-chirality
+    orientations with exact bond lengths. Coordinates are centered at the origin.
     """
-    import numpy as np
-
     n = chain.n_atoms
-    positions = np.zeros((n, 3))
-    # Place the CAs along x at 3.8 Å spacing.
+    positions = np.zeros((n, 3), dtype=float)
+    if n == 0:
+        return positions
+
+    bond_len_map: Dict[Tuple[int, int], float] = {}
+    bond_nbrs: Dict[int, List[Tuple[int, float]]] = {i: [] for i in range(n)}
+    for bond in chain.bonds:
+        ia = _chain_idx(bond.a)
+        ib = _chain_idx(bond.b)
+        bond_len_map[(ia, ib)] = float(bond.r0)
+        bond_len_map[(ib, ia)] = float(bond.r0)
+        bond_nbrs[ia].append((ib, float(bond.r0)))
+        bond_nbrs[ib].append((ia, float(bond.r0)))
+
     ca_indices = [
         i
         for i, a in enumerate(chain.atoms)
         if a.resname.endswith(":CA") or a.resname == "CA"
     ]
     if not ca_indices:
-        # Fall back to atom 0 as the anchor for unusual chains.
         ca_indices = [0]
-    for r, ca_i in enumerate(ca_indices):
-        positions[ca_i] = [3.8 * r, 0.0, 0.0]
-    # Place the sidechain beads with a varied tilt to avoid colinearity. For
-    # each non-CA atom, find its bond to a previously placed atom and project
-    # it at the bond equilibrium length, rotated by an angle that depends on
-    # the atom index.
-    placed = set(ca_indices)
-    rotation_offset = 0.0
-    for i in range(n):
+
+    # Zig-zag with 110 deg CA-CA-CA angle (step tilt +/-35 deg from +x in xy-plane).
+    tilt = math.radians(35.0)
+    cos_t = math.cos(tilt)
+    sin_t = math.sin(tilt)
+
+    ca_rank: Dict[int, int] = {ca_i: r for r, ca_i in enumerate(ca_indices)}
+    positions[ca_indices[0]] = np.array([0.0, 0.0, 0.0])
+    for r in range(len(ca_indices) - 1):
+        u_step = np.array([cos_t, ((-1) ** r) * sin_t, 0.0])
+        r0 = bond_len_map.get((ca_indices[r], ca_indices[r + 1]), 3.8)
+        positions[ca_indices[r + 1]] = positions[ca_indices[r]] + r0 * u_step
+
+    placed: Set[int] = set(ca_indices)
+    parent_of: Dict[int, int] = {}
+
+    # Extend ACE:CN backward from CA[0] and NME:CC forward from CA[-1].
+    for i, atom in enumerate(chain.atoms):
         if i in placed:
             continue
-        # Find a bond connecting i to a placed atom
-        prev_i = None
-        r0 = None
-        for bond in chain.bonds:
-            if bond.a.atom_idx == i and bond.b.atom_idx in placed:
-                prev_i = bond.b.atom_idx
-                r0 = bond.r0
-                break
-            if bond.b.atom_idx == i and bond.a.atom_idx in placed:
-                prev_i = bond.a.atom_idx
-                r0 = bond.r0
-                break
-        if prev_i is None:
-            # No connection to a placed atom, so place it at an offset from
-            # the origin.
-            positions[i] = positions[0] + np.array([0.0, 1.0, 0.0])
+        if atom.resname == "ACE:CN":
+            anchor = ca_indices[0]
+            r0 = bond_len_map.get((i, anchor), 3.81)
+            u_back = np.array([-cos_t, sin_t, 0.0])
+            positions[i] = positions[anchor] + r0 * u_back
             placed.add(i)
-            continue
-        # Tilted offset that varies with the index to break degeneracy.
-        angle = rotation_offset + 0.3 * (i % 4)
-        offset = np.array(
-            [
-                0.5 * np.sin(angle),
-                r0 * np.cos(angle),
-                0.5 * np.sin(angle * 1.1),
-            ]
-        )
-        # Renormalize to the bond length.
-        offset_norm = np.linalg.norm(offset)
-        if offset_norm > 1e-10:
-            offset = offset * (r0 / offset_norm)
-        positions[i] = positions[prev_i] + offset
-        placed.add(i)
-        rotation_offset += 0.4
-    # Center at the origin by subtracting the mean. ChainBDSimulator requires
-    # body-frame positions, which are centered at the origin, and this is also
-    # the natural starting frame for any rigid-body simulation.
+            parent_of[i] = anchor
+        elif atom.resname == "NME:CC":
+            anchor = ca_indices[-1]
+            r0 = bond_len_map.get((i, anchor), 3.82)
+            r_last = len(ca_indices) - 1
+            u_fwd = np.array([cos_t, ((-1) ** r_last) * sin_t, 0.0])
+            positions[i] = positions[anchor] + r0 * u_fwd
+            placed.add(i)
+            parent_of[i] = anchor
+
+    # Breadth-first placement of sidechain and remaining bonded atoms.
+    # First sidechain bead exits CA along L-chirality outward direction;
+    # distal beads continue outward with a non-collinear bend.
+    remaining = [i for i in range(n) if i not in placed]
+    progress = True
+    while remaining and progress:
+        progress = False
+        next_remaining = []
+        for i in remaining:
+            prev_i = None
+            r0 = None
+            for nbr, blen in bond_nbrs[i]:
+                if nbr in placed:
+                    prev_i = nbr
+                    r0 = blen
+                    break
+            if prev_i is None:
+                next_remaining.append(i)
+                continue
+            if prev_i in ca_rank:
+                r = ca_rank[prev_i]
+                sy = 1.0 if (r % 2 == 1) else -1.0
+                # Matches L-amino-acid improper minimum near 150 deg and alternates
+                # sides between adjacent residues to prevent clashes.
+                u = np.array([0.0, sy * 0.90, sy * 0.43588989435406733])
+                u /= np.linalg.norm(u)
+            else:
+                gp = parent_of.get(prev_i)
+                if gp is not None:
+                    base = positions[prev_i] - positions[gp]
+                    bnorm = float(np.linalg.norm(base))
+                    base = base / bnorm if bnorm > 1e-10 else np.array([0.0, 1.0, 0.0])
+                else:
+                    base = np.array([0.0, 1.0, 0.0])
+                # Slight bend away from collinearity while continuing outward.
+                bend_sign = 1.0 if (i % 2 == 0) else -1.0
+                perp = np.cross(base, np.array([0.0, 0.0, 1.0]))
+                pnorm = float(np.linalg.norm(perp))
+                if pnorm < 1e-8:
+                    perp = np.array([1.0, 0.0, 0.0])
+                else:
+                    perp = perp / pnorm
+                u = 0.85 * base + (0.5267826876426369 * bend_sign) * perp
+                u /= np.linalg.norm(u)
+            positions[i] = positions[prev_i] + r0 * u
+            placed.add(i)
+            parent_of[i] = prev_i
+            progress = True
+        remaining = next_remaining
+
+    # Deterministic clash-free fallback for any unbonded orphan atoms.
+    for k, i in enumerate(remaining):
+        positions[i] = positions[ca_indices[0]] + np.array([0.0, 4.0 + 3.0 * k, 4.0])
+
     positions = positions - positions.mean(axis=0)
     return positions
 
@@ -2967,41 +2959,19 @@ def chain_from_pdb(
     name: Optional[str] = None,
     sidechains: bool = True,
     k_spring: float = 100.0,
+    allow_breaks: bool = True,
+    hydro_radius: float = 0.0,
+    use_bond_tables: bool = False,
 ) -> "ChainCommon":
-    """Build a COFFDROP chain by extracting the sequence from a PDB file.
+    """Build a COFFDROP chain topology from ATOM records in a PDB file.
 
-    Reads ATOM records from the PDB to determine the residue sequence.
-    The PDB atomic coordinates are not used. The chain is built using
-    COFFDROP coarse-grained beads. Use place_relaxed_geometry to
-    generate starting positions afterward.
-
-    Parameters
-    ----------
-    pdb_path : str
-        Path to the PDB file.
-    chain_id : str, optional
-        Restrict to a specific chain ID (column 22). If None and the
-        PDB has multiple chains, raises ValueError to prevent silent
-        misinterpretation.
-    coffdrop_dir, name, sidechains, k_spring
-        Forwarded to the underlying chain builder.
-
-    Returns
-    -------
-    ChainCommon
-        Ready for compute_chain_forces.
-
-    Raises
-    ------
-    ValueError
-        If the PDB has multiple chains and chain_id is not specified, or
-        if a residue name in the PDB is not a standard amino acid.
-
-    Examples
-    --------
-    >>> chain = chain_from_pdb("peptide.pdb")
-    >>> chain.n_atoms
-    13
+    Preserves PDB file order, distinguishes residues by
+    (chain_id, seg_idx, resnum, icode) across TER records, strips terminal
+    ACE/NME caps into COFFDROP cap terms, adds disulfide covalent bonds between
+    paired CYS:SB beads from SSBOND records or CYX SG-SG contacts <= 2.5 A,
+    normalizes Amber/CHARMM variants, and omits backbone bonds/angles/torsions
+    across TER boundaries and (when allow_breaks is True) sequence or geometry
+    breaks.
     """
     from pathlib import Path as _Path
 
@@ -3009,42 +2979,97 @@ def chain_from_pdb(
     if not pdb_file.exists():
         raise FileNotFoundError(f"PDB file not found: {pdb_path}")
 
-    # Track unique (chain, resnum) to resname pairs in order of first appearance.
-    seen_residues: List[Tuple[str, int]] = []
-    residue_map: Dict[Tuple[str, int], str] = {}
+    seen_residues: List[Tuple[str, int, int, str]] = []
+    residue_map: Dict[Tuple[str, int, int, str], str] = {}
+    ca_coords: Dict[Tuple[str, int, int, str], np.ndarray] = {}
+    cb_coords: Dict[Tuple[str, int, int, str], np.ndarray] = {}
+    sg_coords: Dict[Tuple[str, int, int, str], np.ndarray] = {}
+    ssbond_records: List[Tuple[str, int, str, str, int, str]] = []
     chains_seen: set = set()
+    seg_idx = 0
 
     with open(pdb_file) as f:
         for line in f:
+            if line.startswith("TER") and (len(line) == 3 or line[3].isspace()):
+                seg_idx += 1
+                continue
+            if line.startswith("SSBOND"):
+                parsed_ss = None
+                if len(line) >= 35:
+                    try:
+                        c1 = line[15:16].strip() or "A"
+                        r1 = int(line[17:21].strip())
+                        i1 = line[21:22].strip() if len(line) > 21 else ""
+                        c2 = line[29:30].strip() or "A"
+                        r2 = int(line[31:35].strip())
+                        i2 = line[35:36].strip() if len(line) > 35 else ""
+                        parsed_ss = (c1, r1, i1, c2, r2, i2)
+                    except ValueError:
+                        parsed_ss = None
+                if parsed_ss is None:
+                    toks = line.split()
+                    if len(toks) >= 8:
+                        try:
+                            parsed_ss = (
+                                toks[3],
+                                int(toks[4]),
+                                "",
+                                toks[6],
+                                int(toks[7]),
+                                "",
+                            )
+                        except ValueError:
+                            parsed_ss = None
+                if parsed_ss is not None:
+                    ssbond_records.append(parsed_ss)
+                continue
             if not line.startswith("ATOM"):
                 continue
-            # Standard PDB columns:
-            #   resname:    cols 17-20 (1-indexed)
-            #   chain_id:   col 22
-            #   resnum:     cols 23-26
             if len(line) < 26:
                 continue
-            resname = line[17:20].strip()
+            atom_name = line[12:16].strip().upper()
+            resname_raw = line[17:21].strip().upper()
+            if atom_name in GHOST_NAMES or resname_raw in _PDB_SKIP_RESNAMES:
+                continue
             ch = line[21:22].strip() or "A"
             try:
                 resnum = int(line[22:26].strip())
             except ValueError:
-                continue  # skip malformed lines
+                continue
+            icode = line[26:27].strip() if len(line) > 26 else ""
             chains_seen.add(ch)
-            key = (ch, resnum)
+            key = (ch, seg_idx, resnum, icode)
             if key not in residue_map:
-                residue_map[key] = resname
+                residue_map[key] = resname_raw
                 seen_residues.append(key)
+            if len(line) >= 54 and atom_name in ("CA", "CB", "SG"):
+                try:
+                    coord = np.array(
+                        [
+                            float(line[30:38]),
+                            float(line[38:46]),
+                            float(line[46:54]),
+                        ],
+                        dtype=float,
+                    )
+                except ValueError:
+                    coord = None
+                if coord is not None:
+                    if atom_name == "CA" and key not in ca_coords:
+                        ca_coords[key] = coord
+                    elif atom_name == "CB" and key not in cb_coords:
+                        cb_coords[key] = coord
+                    elif atom_name == "SG" and key not in sg_coords:
+                        sg_coords[key] = coord
 
     if not seen_residues:
         raise ValueError(f"No ATOM records found in {pdb_path}")
 
-    # Multi-chain handling
     if chain_id is None:
         if len(chains_seen) > 1:
             raise ValueError(
                 f"PDB has multiple chains {sorted(chains_seen)}; "
-                f"specify chain_id=... to select one."
+                "specify chain_id=... to select one."
             )
         chain_id = next(iter(chains_seen))
 
@@ -3053,22 +3078,183 @@ def chain_from_pdb(
             f"chain_id='{chain_id}' not in PDB chains {sorted(chains_seen)}"
         )
 
-    # Extract sequence in residue-number order for the chosen chain.
-    # Sort by resnum to ensure correct N-to-C order.
-    chain_residues = sorted(
-        [(rn, residue_map[(ch, rn)]) for (ch, rn) in seen_residues if ch == chain_id]
-    )
-    residues = [resname for _rn, resname in chain_residues]
-
-    if not residues:
+    chain_keys = [
+        (seg, rn, ic) for (ch, seg, rn, ic) in seen_residues if ch == chain_id
+    ]
+    if not chain_keys:
         raise ValueError(f"chain_id='{chain_id}' has no residues")
 
-    # Build sequence string and delegate to chain_from_sequence
-    seq_str = "-".join(residues)
-    return chain_from_sequence(
-        seq_str,
-        coffdrop_dir=coffdrop_dir,
+    # Group contiguous entries by TER segment in PDB file order and strip
+    # terminal ACE/NME caps per segment so they never emit invalid ACE:CA/NME:CA.
+    segments: List[List[Tuple[int, int, str]]] = []
+    for k_item in chain_keys:
+        if not segments or segments[-1][0][0] != k_item[0]:
+            segments.append([k_item])
+        else:
+            segments[-1].append(k_item)
+
+    core_keys: List[Tuple[int, int, str]] = []
+    has_ace = False
+    has_nme = False
+    for s_idx, seg_items in enumerate(segments):
+        start_i = 0
+        end_i = len(seg_items)
+        if start_i < end_i and residue_map[(chain_id, *seg_items[start_i])] == "ACE":
+            if s_idx == 0:
+                has_ace = True
+            start_i += 1
+        if start_i < end_i and residue_map[(chain_id, *seg_items[end_i - 1])] == "NME":
+            if s_idx == len(segments) - 1:
+                has_nme = True
+            end_i -= 1
+        core_keys.extend(seg_items[start_i:end_i])
+
+    if not core_keys:
+        raise ValueError(
+            f"chain_id='{chain_id}' has no polymer residues after stripping caps"
+        )
+
+    core_full_keys = [(chain_id, seg, rn, ic) for seg, rn, ic in core_keys]
+    residues = [residue_map[fk] for fk in core_full_keys]
+
+    breaks: Set[int] = set()
+    for r in range(len(core_keys) - 1):
+        seg0, rn0, ic0 = core_keys[r]
+        seg1, rn1, ic1 = core_keys[r + 1]
+        if seg0 != seg1:
+            breaks.add(r)
+            continue
+        if not allow_breaks:
+            continue
+        if rn1 - rn0 > 1 or rn1 < rn0:
+            breaks.add(r)
+            continue
+        k0 = core_full_keys[r]
+        k1 = core_full_keys[r + 1]
+        if k0 in ca_coords and k1 in ca_coords:
+            if float(np.linalg.norm(ca_coords[k1] - ca_coords[k0])) > 4.3:
+                breaks.add(r)
+
+    params = _load_coffdrop_params_from_dir(coffdrop_dir)
+    if not sidechains:
+        return build_chain_common_from_coffdrop(
+            residues,
+            params,
+            name=name,
+            k_spring=k_spring,
+            chain_breaks=breaks,
+            hydro_radius=hydro_radius,
+            use_bond_tables=use_bond_tables,
+        )
+
+    caps_arg = ("ACE" if has_ace else None, "NME" if has_nme else None)
+    common = build_chain_common_with_sidechains_from_coffdrop(
+        residues,
+        params,
         name=name,
-        sidechains=sidechains,
         k_spring=k_spring,
+        caps=caps_arg,
+        chain_breaks=breaks,
+        hydro_radius=hydro_radius,
+        use_bond_tables=use_bond_tables,
     )
+
+    # Disulfide covalent bonds between paired CYS:SB beads (SSBOND and/or CYX SG-SG <= 2.5 A).
+    sb_bead_of_res: Dict[int, int] = {}
+    for b_idx, atom in enumerate(common.atoms):
+        if atom.resid >= 0 and atom.resname == "CYS:SB":
+            sb_bead_of_res[int(atom.resid)] = b_idx
+
+    if sb_bead_of_res:
+        disulfide_res_pairs: Set[Tuple[int, int]] = set()
+        rn_ic_to_indices: Dict[Tuple[int, str], List[int]] = {}
+        for idx_r, (_seg_r, rn_r, ic_r) in enumerate(core_keys):
+            rn_ic_to_indices.setdefault((rn_r, ic_r), []).append(idx_r)
+
+        for c1, r1, i1, c2, r2, i2 in ssbond_records:
+            if c1 != chain_id or c2 != chain_id:
+                continue
+            idxs1 = rn_ic_to_indices.get((r1, i1), [])
+            idxs2 = rn_ic_to_indices.get((r2, i2), [])
+            if not idxs1 or not idxs2:
+                continue
+            if (r1, i1) == (r2, i2):
+                if len(idxs1) < 2:
+                    continue
+                ra, rb = idxs1[0], idxs1[1]
+            else:
+                ra, rb = idxs1[0], idxs2[0]
+            if ra != rb and ra in sb_bead_of_res and rb in sb_bead_of_res:
+                disulfide_res_pairs.add((ra, rb) if ra < rb else (rb, ra))
+
+        cyx_indices = [
+            idx_r
+            for idx_r, fk in enumerate(core_full_keys)
+            if residue_map[fk] == "CYX" and fk in sg_coords and idx_r in sb_bead_of_res
+        ]
+        for p in range(len(cyx_indices)):
+            i1 = cyx_indices[p]
+            sg1 = sg_coords[core_full_keys[i1]]
+            for q in range(p + 1, len(cyx_indices)):
+                i2 = cyx_indices[q]
+                sg2 = sg_coords[core_full_keys[i2]]
+                if float(np.linalg.norm(sg2 - sg1)) <= 2.5:
+                    disulfide_res_pairs.add((i1, i2) if i1 < i2 else (i2, i1))
+
+        if disulfide_res_pairs:
+            existing_bonds = {
+                (
+                    min(_chain_idx(b.a), _chain_idx(b.b)),
+                    max(_chain_idx(b.a), _chain_idx(b.b)),
+                )
+                for b in common.bonds
+            }
+            added_ss = False
+            for r1, r2 in sorted(disulfide_res_pairs):
+                sb1 = sb_bead_of_res[r1]
+                sb2 = sb_bead_of_res[r2]
+                pair_b = (sb1, sb2) if sb1 < sb2 else (sb2, sb1)
+                if pair_b in existing_bonds:
+                    continue
+                fk1 = core_full_keys[r1]
+                fk2 = core_full_keys[r2]
+                pts1 = [
+                    c for c in (cb_coords.get(fk1), sg_coords.get(fk1)) if c is not None
+                ]
+                pts2 = [
+                    c for c in (cb_coords.get(fk2), sg_coords.get(fk2)) if c is not None
+                ]
+                if pts1 and pts2:
+                    d_sb = float(
+                        np.linalg.norm(np.mean(pts2, axis=0) - np.mean(pts1, axis=0))
+                    )
+                    r0_ss = d_sb if d_sb > 0.5 else 2.05
+                else:
+                    r0_ss = 2.05
+                common.bonds.append(
+                    ChainBond(
+                        a=ChainAtomRef(sb1),
+                        b=ChainAtomRef(sb2),
+                        r0=r0_ss,
+                        k_spring=k_spring,
+                        type_idx=-1,
+                    )
+                )
+                existing_bonds.add(pair_b)
+                added_ss = True
+
+            if added_ss and common.pair_lookups:
+                excl_ss = coffdrop_nonbonded_exclusions(common)
+                for pkey in list(common.pair_lookups.keys()):
+                    lo, hi = (
+                        (pkey[0], pkey[1]) if pkey[0] < pkey[1] else (pkey[1], pkey[0])
+                    )
+                    if (lo, hi) in excl_ss:
+                        pidx = common.pair_lookups[pkey]
+                        if (
+                            common.coffdrop_params is None
+                            or common.coffdrop_params.pair_pots[pidx].orders == (0, 0)
+                        ):
+                            del common.pair_lookups[pkey]
+
+    return common

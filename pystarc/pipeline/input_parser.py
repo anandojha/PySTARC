@@ -92,7 +92,10 @@ class ChainConfig:
     Rigid-body input.xml files that have no <chain> block keep working unchanged.
     """
 
-    # Input files.
+    # Input files and partner role.
+    flexible_partner: str = (
+        "ligand"  # Binding partner modeled as the flexible chain: 'ligand' or 'receptor'.
+    )
     chain_json: str = (
         ""  # Path to chain.json, which holds the topology and the initial positions.
     )
@@ -102,8 +105,17 @@ class ChainConfig:
     target_grid_dx: str = (
         ""  # Path to the electrostatic DX grid. An empty string means no field is applied.
     )
+    coarse_grid_dx: str = (
+        ""  # Optional coarse electrostatic DX grid used outside target_grid_dx on the GPU.
+    )
     born_grid_dx: str = (
         ""  # Path to the Born desolvation DX grid. An empty string means no Born term is applied.
+    )
+    coarse_born_grid_dx: str = (
+        ""  # Optional coarse Born desolvation DX grid outside born_grid_dx.
+    )
+    far_field: bool = (
+        False  # If True, evaluate Yukawa and multipole electrostatics beyond the DX grid box on the GPU.
     )
 
     # Geometry.
@@ -115,17 +127,15 @@ class ChainConfig:
     )
 
     # Inner integration, the internal-coordinate dynamics taken within each outer step.
-    dt_chain: float = 0.05  # Inner internal-coordinate timestep in picoseconds.
-    chain_steps_per_outer: int = (
-        4  # Number of inner steps taken per outer rigid-body step.
-    )
+    dt_chain: float = 0.01  # Inner internal-coordinate timestep in picoseconds.
+    chain_steps_per_outer: int = 20  # Number of inner steps per outer rigid-body step.
     n_equilibration_steps: int = (
         0  # Number of pre-equilibration steps for the chain internal coordinates. A value of 0 means none.
     )
 
     # Diffusion model.
     auto_diffusion: bool = (
-        False  # If True, build RPY tensors from the geometry. If False, use a scalar diffusion coefficient.
+        False  # If True, build RPY tensors from the geometry. If False, apply scalar diffusion coefficients.
     )
     D_trans: float = (
         0.0  # Translational diffusion coefficient in A^2/ps. Must be > 0 when auto_diffusion is off.
@@ -137,13 +147,19 @@ class ChainConfig:
         10  # Outer steps between rebuilds of the chain diffusion tensors. A value of 0 never rebuilds. Needs auto_diffusion.
     )
 
-    # Soft repulsion using the WCA potential.
+    # Soft repulsion and hard-sphere sterics.
     use_soft_repulsion: bool = (
         False  # If True, add WCA repulsion between chain and target and between chain pairs without a COFFDROP table.
     )
     soft_repulsion_eps: float = 1.0  # WCA epsilon in units of kBT.
+    wca_core_cap_fraction: float = (
+        0.7  # Core fraction below which WCA is smoothly linearized (0 disables cap).
+    )
     use_hard_sphere: bool = (
         True  # If True, reject steps that overlap a chain bead with a target atom.
+    )
+    overlap_scale: float = (
+        0.5  # Fraction of (r_bead + r_target) for hard-sphere overlap checks.
     )
     # Elastic network that holds the fold of the chain JSON positions.
     elastic_network_cutoff: float = (
@@ -153,15 +169,28 @@ class ChainConfig:
         0.0  # Spring constant in kBT/A^2. Must be > 0 with a network.
     )
 
-    # Generalized Born self-Born terms.
+    # Generalized Born self-Born and intra-chain electrostatics.
     use_self_born: bool = False  # If True, add chain-internal generalized Born forces.
     gb_eps_in: float = 1.0  # Interior dielectric constant (vacuum).
-    gb_eps_out: float = 78.5  # Exterior dielectric constant (water at 300 K).
+    gb_eps_out: float = 78.0  # Exterior dielectric constant (solvent).
     gb_obc_alpha: float = 1.0  # OBC2 set-II coefficient.
     gb_obc_beta: float = 0.8  # OBC2 set-II coefficient.
     gb_obc_gamma: float = 4.85  # OBC2 set-II coefficient.
-    coffdrop_active: bool = (
-        False  # True requires COFFDROP tables in the chain JSON. The tables switch the diagonal-only generalized Born on.
+    coffdrop_active: bool = False  # True requires COFFDROP tables in the chain JSON.
+    coffdrop_active_explicit: bool = (
+        False  # Set True when <coffdrop_active> appears in XML.
+    )
+    use_lmz: bool = (
+        True  # Apply the LMZ outer propagator between the b-surface and escape sphere.
+    )
+    intra_debye_huckel: bool = (
+        True  # Evaluate intra-chain Debye-Huckel electrostatics when COFFDROP tables are loaded.
+    )
+    nb_attractive_scale: float = (
+        1.0  # Scaling factor on attractive COFFDROP nonbonded pair wells (0.8 for IDPs).
+    )
+    grid_float32: bool = (
+        False  # Store static APBS/Born DX grids as float32 on GPU while accumulating FP64 forces.
     )
 
     # Parallelism.
@@ -319,20 +348,27 @@ class PySTARCConfig:
     def validate(self):
         """Check required inputs exist and values are sane."""
         if self.chain is not None:
-            # In chain BD mode the required inputs are chain_json (the topology)
-            # and receptor_pqr (the target). ligand_pqr is not used because the
-            # flexible chain plays the role of the ligand.
-            if not self.chain.chain_json:
-                raise ValueError("<chain><chain_json> is required in chain BD mode")
-            if not self.receptor_pqr:
-                raise ValueError(
-                    "<receptor_pqr> is required in chain BD mode (target structure)"
-                )
-            # Sanity-check the chain BD numbers, because bad values silently produce
-            # garbage results. For example, dt_chain=0 gives zero noise and a static
-            # chain, gb_eps_in=0 causes a divide-by-zero in the OBC2 self-Born term,
-            # and negative diffusion gives NaN positions. Catch all of these at parse time.
             cc = self.chain
+            role = (cc.flexible_partner or "").strip().lower()
+            if role not in ("ligand", "receptor"):
+                raise ValueError(
+                    "<chain><flexible_partner> must be 'ligand' or 'receptor', "
+                    f"got {cc.flexible_partner!r}"
+                )
+            cc.flexible_partner = role
+            if not cc.chain_json:
+                raise ValueError("<chain><chain_json> is required in chain BD mode")
+            if role == "ligand":
+                if not self.receptor_pqr:
+                    raise ValueError(
+                        "<receptor_pqr> is required in chain BD mode (target structure)"
+                    )
+            else:
+                if not self.ligand_pqr:
+                    raise ValueError(
+                        "<ligand_pqr> is required in chain BD mode when "
+                        "<flexible_partner> is 'receptor'"
+                    )
             if cc.dt_chain <= 0:
                 raise ValueError(f"chain.dt_chain must be > 0, got {cc.dt_chain}")
             if cc.chain_steps_per_outer < 1:
@@ -395,6 +431,20 @@ class PySTARCConfig:
                 )
             if cc.n_workers < 1:
                 raise ValueError(f"chain.n_workers must be >= 1, got {cc.n_workers}")
+            if not (0.0 < cc.overlap_scale <= 2.0):
+                raise ValueError(
+                    f"chain.overlap_scale must be in (0, 2], got {cc.overlap_scale}"
+                )
+            if not (0.0 <= cc.wca_core_cap_fraction < 1.0):
+                raise ValueError(
+                    f"chain.wca_core_cap_fraction must be in [0, 1), got "
+                    f"{cc.wca_core_cap_fraction}"
+                )
+            if cc.nb_attractive_scale < 0.0:
+                raise ValueError(
+                    f"chain.nb_attractive_scale must be >= 0, got "
+                    f"{cc.nb_attractive_scale}"
+                )
         else:
             has_pqrs = bool(self.receptor_pqr and self.ligand_pqr)
             if not has_pqrs and self.pdb is None:
@@ -540,7 +590,9 @@ def _check_tags(block, seen, retired={}, quiet=(), prepare=()):
     """Stop on a child of block that no reader took."""
     homes = {
         "<outputs>": {f.name for f in fields(OutputConfig)},
-        "<chain>": {f.name for f in fields(ChainConfig)},
+        "<chain>": {
+            f.name for f in fields(ChainConfig) if not f.name.endswith("_explicit")
+        },
         "the top level": {f.name for f in fields(PySTARCConfig)},
     }
     where = f"<{block.tag}>"
@@ -714,11 +766,16 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
     if chain_el is not None:
         cseen = set()
         cget = _reader(chain_el, cseen)
+        _coffdrop_raw = cget("coffdrop_active", default=None, cast=bool)
         chain = ChainConfig(
+            flexible_partner=cget("flexible_partner", default="ligand", cast=str),
             chain_json=cget("chain_json", default="", cast=str),
             reaction_pairs_json=cget("reaction_pairs_json", default="", cast=str),
             target_grid_dx=cget("target_grid_dx", default="", cast=str),
+            coarse_grid_dx=cget("coarse_grid_dx", default="", cast=str),
             born_grid_dx=cget("born_grid_dx", default="", cast=str),
+            coarse_born_grid_dx=cget("coarse_born_grid_dx", default="", cast=str),
+            far_field=cget("far_field", default=False, cast=bool),
             r_escape=cget("r_escape", default=0.0, cast=float),
             reaction_n_needed=cget("reaction_n_needed", default=3, cast=int),
             auto_diffusion=cget("auto_diffusion", default=False, cast=bool),
@@ -729,32 +786,52 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
             ),
             use_soft_repulsion=cget("use_soft_repulsion", default=False, cast=bool),
             soft_repulsion_eps=cget("soft_repulsion_eps", default=1.0, cast=float),
+            wca_core_cap_fraction=cget(
+                "wca_core_cap_fraction", default=0.7, cast=float
+            ),
             use_hard_sphere=cget("use_hard_sphere", default=True, cast=bool),
+            overlap_scale=cget("overlap_scale", default=0.5, cast=float),
             elastic_network_cutoff=cget(
                 "elastic_network_cutoff", default=0.0, cast=float
             ),
             elastic_network_k=cget("elastic_network_k", default=0.0, cast=float),
             use_self_born=cget("use_self_born", default=False, cast=bool),
             gb_eps_in=cget("gb_eps_in", default=1.0, cast=float),
-            gb_eps_out=cget("gb_eps_out", default=78.5, cast=float),
+            gb_eps_out=cget("gb_eps_out", default=78.0, cast=float),
             gb_obc_alpha=cget("gb_obc_alpha", default=1.0, cast=float),
             gb_obc_beta=cget("gb_obc_beta", default=0.8, cast=float),
             gb_obc_gamma=cget("gb_obc_gamma", default=4.85, cast=float),
-            coffdrop_active=cget("coffdrop_active", default=False, cast=bool),
+            coffdrop_active=(
+                bool(_coffdrop_raw) if _coffdrop_raw is not None else False
+            ),
+            coffdrop_active_explicit=(_coffdrop_raw is not None),
+            use_lmz=cget("use_lmz", default=True, cast=bool),
+            intra_debye_huckel=cget("intra_debye_huckel", default=True, cast=bool),
+            nb_attractive_scale=cget("nb_attractive_scale", default=1.0, cast=float),
+            grid_float32=cget("grid_float32", default=False, cast=bool),
             n_workers=cget("n_workers", default=1, cast=int),
-            dt_chain=cget("dt_chain", default=0.05, cast=float),
-            chain_steps_per_outer=cget("chain_steps_per_outer", default=4, cast=int),
+            dt_chain=(_dt_chain_val := cget("dt_chain", default=0.01, cast=float)),
+            chain_steps_per_outer=cget(
+                "chain_steps_per_outer",
+                default=(
+                    max(1, int(round(kw["dt"] / _dt_chain_val)))
+                    if (chain_el.find("dt_chain") is not None and _dt_chain_val > 0.0)
+                    else 20
+                ),
+                cast=int,
+            ),
             n_equilibration_steps=cget("n_equilibration_steps", default=0, cast=int),
         )
         _check_tags(chain_el, cseen)
     if get("relative_viscosity", 1.0, float) != 1.0:
         raise ValueError(
-            "<relative_viscosity> must be 1: PySTARC uses water at 25 °C "
+            "<relative_viscosity> must be 1: PySTARC applies water at 25 °C "
             "(0.890 mPa·s) at every temperature."
         )
     _check_tags(
         root, seen, _RETIRED, quiet=("receptor_resname",), prepare=_PREPARE_ONLY
     )
+    named = lambda t: bool((root.findtext(t) or "").strip())
     lam, conc, sdie, T = (
         kw["debye_length"],
         kw["ion_concentration"],
@@ -763,16 +840,17 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
     )
     if sdie > 0 and T > 0 and conc >= 0:
         lam_ions = debye_from_ions(conc, sdie, T)
-        if lam is None and chain is None:
+        if lam is None and (
+            chain is None or named("ion_concentration") or abs(T - TEMPERATURE) > 0.01
+        ):
             lam = lam_ions
         elif lam is not None and abs(lam / lam_ions - 1) > 0.01:
             raise ValueError(
                 f"<debye_length> {lam} Å differs by more than 1 % from the "
-                f"{lam_ions:.4g} Å that <ion_concentration> {conc} M, <sdie> and "
-                "<temperature> give. Omit <debye_length> to derive it."
+                f"{lam_ions:.4g} Å derived from <ion_concentration> {conc} M, <sdie> and "
+                "<temperature>. Omit <debye_length> to derive it."
             )
     kw["debye_length"] = DEBYE_LENGTH if lam is None else lam
-    named = lambda t: bool((root.findtext(t) or "").strip())
     if chain is None:
         if not (named("soft_repulsion") or named("overlap_check")):
             raise ValueError(
@@ -780,7 +858,9 @@ def parse(xml_path: str | Path) -> PySTARCConfig:
                 "<soft_repulsion>true</soft_repulsion> for the soft wall or "
                 "<overlap_check>true</overlap_check> for the hard check."
             )
-    return PySTARCConfig(**kw, outputs=outputs, chain=chain).validate()
+    cfg_obj = PySTARCConfig(**kw, outputs=outputs, chain=chain).validate()
+    cfg_obj._gpu_explicit = named("gpu")
+    return cfg_obj
 
 
 def write_template(path: str | Path = "config.xml"):

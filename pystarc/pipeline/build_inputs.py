@@ -110,7 +110,23 @@ KEYS = {
     "elastic_network_cutoff": "Backbone CA elastic network cutoff distance for model chain (in angstroms). Blank or 0 disables it.",
     "elastic_network_k": "Backbone CA elastic network spring constant for model chain (in kT/A^2).",
     "target_grid_dx": "Optional receptor electrostatic DX grid path for model chain. Blank builds in work_dir.",
+    "coarse_grid_dx": "Optional coarse electrostatic DX grid path outside target_grid_dx for model chain.",
     "born_grid_dx": "Optional receptor Born DX grid path for model chain. Blank builds in work_dir.",
+    "coarse_born_grid_dx": "Optional coarse Born DX grid path outside born_grid_dx for model chain.",
+    "far_field": "Evaluate Yukawa/multipole electrostatics outside the DX grid box in model chain.",
+    "flexible_partner": "Binding partner modeled as the flexible chain ('ligand' or 'receptor').",
+    "overlap_scale": "Fraction of (r_bead + r_target) for hard-sphere overlap checks in model chain.",
+    "intra_debye_huckel": "Evaluate intra-chain Debye-Huckel electrostatics alongside COFFDROP tables.",
+    "nb_attractive_scale": "Scaling factor on attractive COFFDROP pair wells (0.8 for IDPs).",
+    "grid_float32": "Store static APBS/Born DX grids in float32 on GPU while accumulating FP64 forces.",
+    "use_self_born": "Add chain-internal generalized Born (OBC2) electrostatics during inner chain steps.",
+    "gb_eps_in": "Interior dielectric constant for chain generalized Born electrostatics.",
+    "gb_eps_out": "Exterior solvent dielectric constant for chain generalized Born electrostatics.",
+    "gb_obc_alpha": "OBC2 alpha coefficient for chain generalized Born radii.",
+    "gb_obc_beta": "OBC2 beta coefficient for chain generalized Born radii.",
+    "gb_obc_gamma": "OBC2 gamma coefficient for chain generalized Born radii.",
+    "coffdrop_active": "Require COFFDROP tabulated potentials in chain.json and skip duplicate GB cross-Coulomb terms.",
+    "use_lmz": "Apply the Luty-McCammon-Zhou outer propagator between the b-surface and escape sphere in model chain.",
 }
 
 CRITERION_KEYS = {
@@ -174,6 +190,24 @@ CHAIN = (
     "target_grid_dx",
     "born_grid_dx",
 )
+CHAIN_EXTRA = (
+    "flexible_partner",
+    "coarse_grid_dx",
+    "coarse_born_grid_dx",
+    "far_field",
+    "overlap_scale",
+    "intra_debye_huckel",
+    "nb_attractive_scale",
+    "grid_float32",
+    "use_self_born",
+    "gb_eps_in",
+    "gb_eps_out",
+    "gb_obc_alpha",
+    "gb_obc_beta",
+    "gb_obc_gamma",
+    "coffdrop_active",
+    "use_lmz",
+)
 INPUT_COMPUTE = ("gpu", "gpu_force_batch", "n_threads")
 BD_PARAMS = GEOMETRY + ELECTROSTATICS + PHYSICS + SIMULATION + INPUT_COMPUTE + OUTPUTS
 
@@ -198,6 +232,12 @@ BOOL = (
     "full_paths",
     "energetics",
     "auto_diffusion",
+    "far_field",
+    "intra_debye_huckel",
+    "grid_float32",
+    "use_self_born",
+    "coffdrop_active",
+    "use_lmz",
 )
 
 RECORD = "build_record.json"
@@ -278,6 +318,7 @@ LEFTOVER = [
     "ligand.prmtop",
     "ligand.rst7",
     "_receptor_raw.pqr",
+    "_ligand_raw.pqr",
 ]
 
 
@@ -293,6 +334,11 @@ NUMBER = {
     "pair_cutoff": float,
     "n_needed": int,
     "n_gpus": int,
+    "gb_eps_in": float,
+    "gb_eps_out": float,
+    "gb_obc_alpha": float,
+    "gb_obc_beta": float,
+    "gb_obc_gamma": float,
 }
 
 
@@ -356,8 +402,9 @@ def read_config(path):
     if root.tag != "config":
         raise ValueError(f"Expected <config> root in {path}, got <{root.tag}>")
     sec_map = dict(SECTIONS)
+    sec_map["chain"] = CHAIN + CHAIN_EXTRA
     tag_homes = {}
-    for sname, order in SECTIONS:
+    for sname, order in sec_map.items():
         for t in order:
             tag_homes.setdefault(t, []).append(sname)
     all_tags = list(tag_homes)
@@ -748,10 +795,19 @@ def _seq_residues(atoms):
 
 def _center_pqr_copy(src, dst):
     with open(src) as fh:
-        lines = fh.read().splitlines()
-    hits = [i for i, l in enumerate(lines) if l.startswith("ATOM") and len(l) >= 54]
+        raw_lines = fh.read().splitlines()
+    lines = [
+        l
+        for l in raw_lines
+        if not (l.startswith(("ATOM", "HETATM")) and l[17:20].strip() == "GHO")
+    ]
+    hits = [
+        i
+        for i, l in enumerate(lines)
+        if l.startswith(("ATOM", "HETATM")) and len(l) >= 54
+    ]
     if not hits:
-        sys.exit(f"  ERROR: no fixed-column ATOM records in {src}")
+        sys.exit(f"  ERROR: no fixed-column ATOM/HETATM records in {src}")
     xyz = np.array(
         [
             [float(lines[i][30:38]), float(lines[i][38:46]), float(lines[i][46:54])]
@@ -779,41 +835,62 @@ def _build_chain(cfg, rec_src, rec_ext, lig_src, _lig_ext, W):
     from pystarc.simulation.coffdrop_chain import chain_from_pdb
     from pystarc.structures.chain_io import save_chain_to_json
 
-    netq = int(cfg["ligand_net_charge"])
+    cc = cfg.get("chain_cfg", {})
+    role = str(cc.get("flexible_partner", "ligand")).strip().lower()
+    if role not in ("ligand", "receptor"):
+        sys.exit(
+            f"  ERROR: flexible_partner must be 'ligand' or 'receptor', got {role!r}"
+        )
 
-    dst_pqr = os.path.join(W, "receptor.pqr")
-    rec_rmap = None
-    if rec_ext == ".pqr":
-        _center_pqr_copy(rec_src, dst_pqr)
+    netq = int(cfg["ligand_net_charge"])
+    if role == "receptor":
+        rigid_src, rigid_ext, rigid_cfg_key = lig_src, _lig_ext, "ligand"
+        flex_src, flex_cfg_key = rec_src, "receptor"
+        rigid_pqr_name = "ligand.pqr"
     else:
-        raw_pqr_path = os.path.join(W, "_receptor_raw.pqr")
+        rigid_src, rigid_ext, rigid_cfg_key = rec_src, rec_ext, "receptor"
+        flex_src, flex_cfg_key = lig_src, "ligand"
+        rigid_pqr_name = "receptor.pqr"
+
+    dst_pqr = os.path.join(W, rigid_pqr_name)
+    rec_rmap = None
+    if rigid_ext == ".pqr":
+        _center_pqr_copy(rigid_src, dst_pqr)
+    else:
+        raw_pqr_path = os.path.join(W, f"_{rigid_cfg_key}_raw.pqr")
         _parameterize_protein_pdb(
-            rec_src, cfg["receptor"], W, "protein", "_receptor_raw.pqr"
+            rigid_src, cfg[rigid_cfg_key], W, "protein", f"_{rigid_cfg_key}_raw.pqr"
         )
         _center_pqr_copy(raw_pqr_path, dst_pqr)
-        rec_rmap = resid_map(rec_src)
+        rec_rmap = resid_map(rigid_src)
 
-    lig_pdb, lig_chains = _parse_pdb_heavy(lig_src)
+    lig_pdb, lig_chains = _parse_pdb_heavy(flex_src)
     if not lig_pdb:
-        sys.exit(f"  ERROR: no heavy ATOM records in {cfg['ligand']}")
+        sys.exit(f"  ERROR: no heavy ATOM records in {cfg[flex_cfg_key]}")
     if len(lig_chains) > 1:
         sys.exit(
-            f"  ERROR: {cfg['ligand']} contains multiple chains {lig_chains}. Keep one chain."
+            f"  ERROR: {cfg[flex_cfg_key]} contains multiple chains {lig_chains}. Retain one chain."
         )
     lig_chain_id = lig_chains[0] if lig_chains and lig_chains[0].strip() else None
-    lig_name = os.path.splitext(os.path.basename(lig_src))[0]
+    lig_name = os.path.splitext(os.path.basename(flex_src))[0]
     lig_res_pdb = _seq_residues(lig_pdb)
 
     pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     coffdrop_dir = os.path.join(pkg_dir, "coffdrop_data")
     chain = chain_from_pdb(
-        lig_src,
+        flex_src,
         chain_id=lig_chain_id,
         name=lig_name,
         sidechains=True,
         coffdrop_dir=coffdrop_dir,
     )
-    _check_net_charge(sum(float(b.charge) for b in chain.atoms), netq, cfg["ligand"])
+    if role == "ligand":
+        _check_net_charge(
+            sum(float(b.charge) for b in chain.atoms), netq, cfg["ligand"]
+        )
+    else:
+        lig_q = sum(a["q"] for a in read_pqr(dst_pqr))
+        _check_net_charge(lig_q, netq, "ligand.pqr")
     unique_resids = []
     for bead in chain.atoms:
         if not unique_resids or unique_resids[-1] != bead.resid:
@@ -838,7 +915,18 @@ def _build_chain(cfg, rec_src, rec_ext, lig_src, _lig_ext, W):
                         return cand
         return None
 
+    # Build bond lookup so missing sidechain beads are positioned along an outward
+    # bond vector at their equilibrium distance r0 rather than colliding at d=0.
+    bond_parent = {}
+    for bnd in chain.bonds:
+        ia, ib = bnd.a.atom_idx, bnd.b.atom_idx
+        if ia < ib and ib not in bond_parent:
+            bond_parent[ib] = (ia, float(bnd.r0))
+        elif ib < ia and ia not in bond_parent:
+            bond_parent[ia] = (ib, float(bnd.r0))
+
     body_positions = np.zeros((chain.n_atoms, 3))
+    missing_indices = []
     for i, bead in enumerate(chain.atoms):
         b_rn, b_an = bead.resname.split(":")
         res = lig_res_pdb[resid_to_sp[bead.resid]]
@@ -851,15 +939,33 @@ def _build_chain(cfg, rec_src, rec_ext, lig_src, _lig_ext, W):
             for a in res["atoms"]
             if a["atom_name"] == an
         ]
-        if not coords:
-            coords = [a["xyz"] for a in res["atoms"] if a["atom_name"] == "CA"]
-        if not coords:
-            sys.exit(f"  ERROR: no coordinates found for bead {bead.resname}")
-        body_positions[i] = np.mean(coords, axis=0)
+        if coords:
+            body_positions[i] = np.mean(coords, axis=0)
+        else:
+            missing_indices.append(i)
+    for i in missing_indices:
+        parent_info = bond_parent.get(i)
+        if parent_info is not None:
+            p_idx, r0 = parent_info
+            gp_info = bond_parent.get(p_idx)
+            if gp_info is not None:
+                vec = body_positions[p_idx] - body_positions[gp_info[0]]
+            else:
+                vec = np.array([1.0, 0.3, 0.2], dtype=float)
+            vn = float(np.linalg.norm(vec))
+            u = (vec / vn) if vn > 1.0e-8 else np.array([1.0, 0.0, 0.0])
+            body_positions[i] = body_positions[p_idx] + r0 * u
+        else:
+            res = lig_res_pdb[resid_to_sp[chain.atoms[i].resid]]
+            ca_coords = [a["xyz"] for a in res["atoms"] if a["atom_name"] == "CA"]
+            if not ca_coords:
+                sys.exit(
+                    f"  ERROR: no coordinates found for bead {chain.atoms[i].resname}"
+                )
+            body_positions[i] = np.mean(ca_coords, axis=0) + np.array([1.5, 0.0, 0.0])
     save_chain_to_json(chain, body_positions, os.path.join(W, "chain.json"))
 
     c = cfg["criterion"]
-    cc = cfg.get("chain_cfg", {})
     rp_out = os.path.join(W, "reaction_pairs.json")
     if cc.get("reaction_pairs_json"):
         rp_src = _src_file(cfg, W, cc["reaction_pairs_json"])
@@ -875,20 +981,47 @@ def _build_chain(cfg, rec_src, rec_ext, lig_src, _lig_ext, W):
         beads_by_sp = {}
         for i, bead in enumerate(chain.atoms):
             beads_by_sp.setdefault(resid_to_sp[bead.resid], []).append((i, bead))
+        rigid_crit_key = "ligand" if role == "receptor" else "receptor"
+        flex_crit_key = "receptor" if role == "receptor" else "ligand"
         rp_list = []
-        for rt, lt in zip(_list(c["receptor"]), _list(c["ligand"])):
-            rec_i = _match_atom(rec_pqr, rt, rec_rmap, "receptor")
+        for rt, lt in zip(_list(c[rigid_crit_key]), _list(c[flex_crit_key])):
+            rec_i = _match_atom(rec_pqr, rt, rec_rmap, rigid_crit_key)
             if not (isinstance(lt, tuple) and len(lt) == 3):
                 sys.exit(
-                    '  ERROR: chain <ligand> needs <target resid="..." atom="..." resname="..."/> entries'
+                    f'  ERROR: chain <{flex_crit_key}> needs <target resid="..." atom="..." resname="..."/> entries'
                 )
             l_resid, l_aname, l_resn = lt
             sp_l = lig_sp.get(l_resid)
             cands = beads_by_sp.get(sp_l, []) if sp_l is not None else []
             if not cands:
-                sys.exit(f"  ERROR: no residue {l_resn}{l_resid} in {cfg['ligand']}")
+                sys.exit(
+                    f"  ERROR: no residue {l_resn}{l_resid} in {cfg[flex_cfg_key]}"
+                )
             tname = f"{l_resn}:{l_aname}"
-            bead_i = next((i for i, b in cands if b.resname == tname), cands[0][0])
+            bead_i = next((i for i, b in cands if b.resname == tname), None)
+            if bead_i is None:
+                # Map all-atom PDB name to its owning COFFDROP bead via map.xml.
+                mrn = _resolve_res(l_resn)
+                if mrn is not None:
+                    owner_bname = next(
+                        (
+                            bn
+                            for bn, anames in bead_map[mrn].items()
+                            if l_aname in anames
+                        ),
+                        None,
+                    )
+                    if owner_bname is not None:
+                        bead_i = next(
+                            (
+                                i
+                                for i, b in cands
+                                if b.resname.endswith(f":{owner_bname}")
+                            ),
+                            None,
+                        )
+            if bead_i is None:
+                bead_i = cands[0][0]
             rp_list.append([int(rec_i), int(bead_i), float(c["pair_cutoff"])])
         with open(rp_out, "w") as fh:
             json.dump(rp_list, fh, indent=2)
@@ -1131,7 +1264,16 @@ def _check(choice, table, given, what, ignore=frozenset()):
 def write_chain_input(path, cfg, W):
     cc = cfg.get("chain_cfg", {})
     use_abs = bool(cfg.get("resolve_paths_in_w"))
-    rec_pqr = os.path.join(W, "receptor.pqr") if use_abs else "receptor.pqr"
+    role = str(cc.get("flexible_partner", "ligand")).strip().lower()
+    if role == "receptor":
+        pqr_tag = "ligand_pqr"
+        pqr_name = "ligand.pqr"
+        mol_stem = "ligand"
+    else:
+        pqr_tag = "receptor_pqr"
+        pqr_name = "receptor.pqr"
+        mol_stem = "receptor"
+    rigid_pqr = os.path.join(W, pqr_name) if use_abs else pqr_name
     chain_json = os.path.join(W, "chain.json") if use_abs else "chain.json"
     rp_json = (
         os.path.join(W, "reaction_pairs.json") if use_abs else "reaction_pairs.json"
@@ -1145,8 +1287,61 @@ def write_chain_input(path, cfg, W):
             return raw
         return os.path.join(sdir, raw) if use_abs else raw
 
-    tg_dx = _grid_path(cc.get("target_grid_dx", ""), "receptor1.dx")
-    bn_dx = _grid_path(cc.get("born_grid_dx", ""), "receptor0_born.dx")
+    def _grid_exists(p):
+        if not p:
+            return False
+        if os.path.isabs(p) or use_abs:
+            return os.path.isfile(p)
+        return os.path.isfile(os.path.join(sdir, p))
+
+    tg_raw = str(cc.get("target_grid_dx", "")).strip()
+    cg_raw = str(cc.get("coarse_grid_dx", "")).strip()
+    bn_raw = str(cc.get("born_grid_dx", "")).strip()
+    cbn_raw = str(cc.get("coarse_born_grid_dx", "")).strip()
+    tg_dx = _grid_path(tg_raw, f"{mol_stem}1.dx")
+    if cg_raw:
+        cg_dx = _grid_path(cg_raw, f"{mol_stem}0.dx")
+    elif tg_raw:
+        cand_cg = f"{tg_dx[:-4]}0.dx" if tg_dx.endswith("1.dx") else ""
+        cg_dx = (
+            cand_cg
+            if (cand_cg and (_grid_exists(cand_cg) or not _grid_exists(tg_dx)))
+            else ""
+        )
+    else:
+        cg_dx = _grid_path("", f"{mol_stem}0.dx")
+    if bn_raw:
+        bn_dx = _grid_path(bn_raw, f"{mol_stem}1_born.dx")
+    elif tg_raw:
+        bn_dx = ""
+        if tg_dx.endswith(("1.dx", "0.dx")):
+            bn_prefix = tg_dx[:-4]
+            cand_bn1 = f"{bn_prefix}1_born.dx"
+            cand_bn0 = f"{bn_prefix}0_born.dx"
+            if _grid_exists(cand_bn1):
+                bn_dx = cand_bn1
+            elif _grid_exists(cand_bn0):
+                bn_dx = cand_bn0
+        elif tg_dx.lower().endswith(".dx"):
+            cand_bn = f"{tg_dx[:-3]}_born.dx"
+            if _grid_exists(cand_bn):
+                bn_dx = cand_bn
+    else:
+        bn_dx = _grid_path("", f"{mol_stem}1_born.dx")
+    if cbn_raw:
+        cbn_dx = _grid_path(cbn_raw, f"{mol_stem}0_born.dx")
+    elif bn_raw:
+        cand_cbn = f"{bn_dx[:-9]}0_born.dx" if bn_dx.endswith("1_born.dx") else ""
+        cbn_dx = (
+            cand_cbn
+            if (cand_cbn and (_grid_exists(cand_cbn) or not _grid_exists(bn_dx)))
+            else ""
+        )
+    elif tg_raw:
+        cand_cbn = f"{bn_dx[:-9]}0_born.dx" if bn_dx.endswith("1_born.dx") else ""
+        cbn_dx = cand_cbn if (cand_cbn and _grid_exists(cand_cbn)) else ""
+    else:
+        cbn_dx = _grid_path("", f"{mol_stem}0_born.dx")
     auto_diff = str(cc.get("auto_diffusion", "true"))
     diff_xml = (
         ""
@@ -1169,56 +1364,104 @@ def write_chain_input(path, cfg, W):
         if cfg.get("debye_length") not in (None, "")
         else ""
     )
+    use_hs = str(cfg.get("overlap_check", "false"))
+    far_field_val = str(cc.get("far_field", cfg.get("multipole_fallback", "true")))
+    opt_chain = ""
+    for tag in (
+        "overlap_scale",
+        "intra_debye_huckel",
+        "nb_attractive_scale",
+        "grid_float32",
+        "use_self_born",
+        "gb_eps_in",
+        "gb_eps_out",
+        "gb_obc_alpha",
+        "gb_obc_beta",
+        "gb_obc_gamma",
+        "coffdrop_active",
+        "use_lmz",
+    ):
+        if tag in cc and cc[tag] is not None:
+            raw_v = cc[tag]
+            val_s = (
+                ("true" if raw_v else "false")
+                if isinstance(raw_v, bool)
+                else str(raw_v).strip()
+            )
+            if val_s:
+                opt_chain += f"\n    <{tag}>{val_s}</{tag}>"
     bd_wdir = cfg.get("bd_work_dir", "bd_sims")
+    dt_val = cfg.get("dt", "0.2")
+    dt_chain_val = cc.get("dt_chain", "0.01")
+    steps_per_outer = cc.get("chain_steps_per_outer", "20")
+    if "dt_chain" in cc and "chain_steps_per_outer" not in cc:
+        try:
+            steps_per_outer = str(
+                max(1, int(round(float(dt_val) / float(dt_chain_val))))
+            )
+        except (ValueError, ZeroDivisionError):
+            steps_per_outer = "20"
+    n_needed = cfg.get("criterion", {}).get("n_needed", 3)
     txt = (
         '<?xml version="1.0"?>\n<pystarc>\n'
-        f"  <receptor_pqr>{rec_pqr}</receptor_pqr>\n"
+        f"  <{pqr_tag}>{rigid_pqr}</{pqr_tag}>\n"
         f"{debye_line}"
         f'  <ion_concentration>{cfg.get("ion_concentration", "0.15")}</ion_concentration>\n'
         f'  <ion_radius_pos>{cfg.get("ion_radius_pos", "0.95")}</ion_radius_pos>\n'
         f'  <ion_radius_neg>{cfg.get("ion_radius_neg", "1.81")}</ion_radius_neg>\n'
         f'  <pdie>{cfg.get("pdie", "4.0")}</pdie>\n'
         f'  <sdie>{cfg.get("sdie", "78.0")}</sdie>\n'
-        f'  <srad>{cfg.get("srad", "1.4")}</srad>\n'
+        f'  <srad>{cfg.get("srad", "1.5")}</srad>\n'
         f'  <apbs_cglen>{cfg.get("apbs_cglen", "0")}</apbs_cglen>\n'
-        f'  <apbs_fglen>{cfg["apbs_fglen"]}</apbs_fglen>\n'
-        f'  <apbs_dime>{cfg["apbs_dime"]}</apbs_dime>\n'
+        f'  <apbs_fglen>{cfg.get("apbs_fglen", "0")}</apbs_fglen>\n'
+        f'  <apbs_dime>{cfg.get("apbs_dime", "129")}</apbs_dime>\n'
         f'  <apbs_coarse_dime>{cfg.get("apbs_coarse_dime", "0")}</apbs_coarse_dime>\n'
         f'  <apbs_fine_dime>{cfg.get("apbs_fine_dime", "0")}</apbs_fine_dime>\n'
         f'  <r_hydro_rec>{cfg.get("r_hydro_rec", "0")}</r_hydro_rec>\n'
-        f'  <bd_milestone_radius>{cfg["bd_milestone_radius"]}</bd_milestone_radius>\n'
-        f'  <n_trajectories>{cfg["n_trajectories"]}</n_trajectories>\n'
-        f'  <max_steps>{cfg["max_steps"]}</max_steps>\n'
-        f'  <dt>{cfg["dt"]}</dt>\n'
-        f'  <temperature>{cfg["temperature"]}</temperature>\n'
-        f'  <seed>{cfg["seed"]}</seed>\n'
+        f'  <r_hydro_lig>{cfg.get("r_hydro_lig", "0")}</r_hydro_lig>\n'
+        f'  <bd_milestone_radius>{cfg.get("bd_milestone_radius", "30.0")}</bd_milestone_radius>\n'
+        f'  <n_trajectories>{cfg.get("n_trajectories", "1000")}</n_trajectories>\n'
+        f'  <max_steps>{cfg.get("max_steps", "1000000")}</max_steps>\n'
+        f"  <dt>{dt_val}</dt>\n"
+        f'  <minimum_core_reaction_dt>{cfg.get("minimum_core_reaction_dt", "0")}</minimum_core_reaction_dt>\n'
+        f'  <temperature>{cfg.get("temperature", "298.15")}</temperature>\n'
+        f'  <seed>{cfg.get("seed", "1523")}</seed>\n'
         f"  <work_dir>{bd_wdir}</work_dir>\n"
         f'  <gpu>{cfg.get("gpu", "false")}</gpu>\n'
+        f'  <n_gpus>{cfg.get("n_gpus", "1")}</n_gpus>\n'
+        f'  <gpu_force_batch>{cfg.get("gpu_force_batch", "0")}</gpu_force_batch>\n'
         f'  <hydrodynamic_interactions>{cfg.get("hydrodynamic_interactions", "true")}</hydrodynamic_interactions>\n'
-        f'  <desolvation_alpha>{cfg["desolvation_alpha"]}</desolvation_alpha>\n'
-        f'  <convergence_check>{cfg["convergence_check"]}</convergence_check>\n'
-        f'  <convergence_interval>{cfg["convergence_interval"]}</convergence_interval>\n'
-        f'  <convergence_tol>{cfg["convergence_tol"]}</convergence_tol>\n'
+        f'  <multipole_fallback>{cfg.get("multipole_fallback", "true")}</multipole_fallback>\n'
+        f'  <desolvation_alpha>{cfg.get("desolvation_alpha", "0.5")}</desolvation_alpha>\n'
+        f'  <enable_born2_torque>{cfg.get("enable_born2_torque", "false")}</enable_born2_torque>\n'
+        f'  <convergence_check>{cfg.get("convergence_check", "true")}</convergence_check>\n'
+        f'  <convergence_interval>{cfg.get("convergence_interval", "10")}</convergence_interval>\n'
+        f'  <convergence_tol>{cfg.get("convergence_tol", "0.05")}</convergence_tol>\n'
         f'  <checkpoint_interval>{cfg.get("checkpoint_interval", "0")}</checkpoint_interval>\n'
         "  <outputs>\n"
-        f'    <save_interval>{cfg["save_interval"]}</save_interval>\n'
+        f'    <save_interval>{cfg.get("save_interval", "0")}</save_interval>\n'
         f'    <full_paths>{cfg.get("full_paths", "true")}</full_paths>\n'
         f'    <energetics>{cfg.get("energetics", "true")}</energetics>\n'
         "  </outputs>\n"
         "  <chain>\n"
+        f"    <flexible_partner>{role}</flexible_partner>\n"
         f"    <chain_json>{chain_json}</chain_json>\n"
         f"    <reaction_pairs_json>{rp_json}</reaction_pairs_json>\n"
         f"    <target_grid_dx>{tg_dx}</target_grid_dx>\n"
+        f"    <coarse_grid_dx>{cg_dx}</coarse_grid_dx>\n"
         f"    <born_grid_dx>{bn_dx}</born_grid_dx>\n"
+        f"    <coarse_born_grid_dx>{cbn_dx}</coarse_born_grid_dx>\n"
+        f"    <far_field>{far_field_val}</far_field>\n"
         f'    <r_escape>{cfg.get("r_escape", "0")}</r_escape>\n'
-        f'    <reaction_n_needed>{cfg["criterion"]["n_needed"]}</reaction_n_needed>\n'
+        f"    <reaction_n_needed>{n_needed}</reaction_n_needed>\n"
         f"    <auto_diffusion>{auto_diff}</auto_diffusion>{diff_xml}\n"
+        f"    <use_hard_sphere>{use_hs}</use_hard_sphere>\n"
         f'    <use_soft_repulsion>{cfg.get("soft_repulsion", "true")}</use_soft_repulsion>\n'
         f'    <soft_repulsion_eps>{cc.get("soft_repulsion_eps", "1.0")}</soft_repulsion_eps>\n'
         f'    <n_workers>{cfg.get("n_threads", "1")}</n_workers>\n'
-        f'    <dt_chain>{cc.get("dt_chain", "0.05")}</dt_chain>\n'
-        f'    <chain_steps_per_outer>{cc.get("chain_steps_per_outer", "4")}</chain_steps_per_outer>\n'
-        f'    <n_equilibration_steps>{cc.get("n_equilibration_steps", "0")}</n_equilibration_steps>{en_xml}\n'
+        f"    <dt_chain>{dt_chain_val}</dt_chain>\n"
+        f"    <chain_steps_per_outer>{steps_per_outer}</chain_steps_per_outer>\n"
+        f'    <n_equilibration_steps>{cc.get("n_equilibration_steps", "0")}</n_equilibration_steps>{en_xml}{opt_chain}\n'
         "  </chain>\n"
         "</pystarc>\n"
     )
@@ -1252,6 +1495,8 @@ def build(**cfg):
     if model == "chain":
         extra = _build_chain(cfg, rec_src, rec_ext, lig_src, lig_ext, W)
         write_chain_input(os.path.join(W, "input.xml"), cfg, W)
+        role = str(cc.get("flexible_partner", "ligand")).strip().lower()
+        rigid_pqr_name = "ligand.pqr" if role == "receptor" else "receptor.pqr"
         record = dict(
             mode=mode,
             model=model,
@@ -1266,7 +1511,7 @@ def build(**cfg):
             md5={
                 f: _md5(os.path.join(W, f))
                 for f in (
-                    "receptor.pqr",
+                    rigid_pqr_name,
                     "chain.json",
                     "reaction_pairs.json",
                     "input.xml",

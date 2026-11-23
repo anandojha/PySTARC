@@ -66,7 +66,7 @@ def split_multi_gpu(xml_path: str, n_splits: int = 4) -> int:
         ]:
             if any(
                 os.path.exists(os.path.join(d, f))
-                for f in ("results.json", "checkpoint.npz")
+                for f in ("results.json", "checkpoint.npz", "chain_checkpoint.npz")
             ):
                 print(
                     f"  Error: {d} holds an earlier run. Remove it or set another work_dir."
@@ -92,44 +92,67 @@ def split_multi_gpu(xml_path: str, n_splits: int = 4) -> int:
     ]:
         if any(
             os.path.exists(os.path.join(d, f))
-            for f in ("results.json", "checkpoint.npz")
+            for f in ("results.json", "checkpoint.npz", "chain_checkpoint.npz")
         ):
             print(
                 f"  Error: {d} holds an earlier run. Remove it or set another work_dir."
             )
             return 1
-    # One trajectory in <work_dir> builds the grids, or reuses them by their key.
+    # Snapshot original XML bytes and pre-existing files before the 1-step grid pass
+    # to stop the grid run from altering max_steps or removing user files when work_dir=".".
+    with open(abs_xml, "rb") as _orig_fh:
+        orig_xml_bytes = _orig_fh.read()
+    pre_existing = set(os.listdir(bd_sims)) if os.path.isdir(bd_sims) else set()
+    existing_bd_input = os.path.join(bd_sims, "input.xml")
+    orig_bd_input_bytes = None
+    if os.path.isfile(existing_bd_input):
+        with open(existing_bd_input, "rb") as _bd_in_fh:
+            orig_bd_input_bytes = _bd_in_fh.read()
     print("  Building or reusing the APBS grids (1 trajectory) ...")
-    grid_xml = os.path.join(base_dir, "_grid_gen.xml")
+    grid_xml = os.path.join(base_dir, f"_grid_gen_{os.getpid()}.xml")
     _set_or_create(root, "n_trajectories", "1")
     _set_or_create(root, "max_steps", "1")
     _set_or_create(root, "n_gpus", "1")
-    tree.write(grid_xml, xml_declaration=True, encoding="UTF-8")
-    ret = subprocess.run([sys.executable, runner, grid_xml], cwd=base_dir)
-    if os.path.exists(grid_xml):
-        os.remove(grid_xml)
+    _set_or_create(root, "checkpoint_interval", "0")
+    chain_grid_el = root.find("chain")
+    if chain_grid_el is not None:
+        _set_or_create(chain_grid_el, "n_equilibration_steps", "0")
+    try:
+        tree.write(grid_xml, xml_declaration=True, encoding="UTF-8")
+        ret = subprocess.run([sys.executable, runner, grid_xml], cwd=base_dir)
+    finally:
+        if os.path.exists(grid_xml):
+            os.remove(grid_xml)
     if ret.returncode != 0:
         print("  Error: grid generation failed.")
         return 1
     if not os.path.isdir(bd_sims):
         print(f"  Error: grid generation did not create {bd_sims}.")
         return 1
-    # Keep the grid, key, cache, structure and setup files of the grid pass.
-    keep_input = os.path.abspath(abs_xml) == os.path.abspath(
-        os.path.join(bd_sims, "input.xml")
-    )
+    # Retain grid, hash, cache, structure, setup, and pre-existing files after the grid pass.
+    keep_input = os.path.abspath(abs_xml) == os.path.abspath(existing_bd_input)
+    if keep_input:
+        with open(abs_xml, "wb") as _restore_fh:
+            _restore_fh.write(orig_xml_bytes)
+    elif orig_bd_input_bytes is not None:
+        with open(existing_bd_input, "wb") as _restore_bd_fh:
+            _restore_bd_fh.write(orig_bd_input_bytes)
     for f in os.listdir(bd_sims):
         fpath = os.path.join(bd_sims, f)
         if not os.path.isfile(fpath):
             continue
-        if f.endswith((".dx", ".key", ".cache", ".pqr")) or f in KEEP_SETUP_FILES:
+        if (
+            f in pre_existing
+            or f.endswith((".dx", ".key", ".cache", ".pqr"))
+            or f in KEEP_SETUP_FILES
+        ):
             continue
         if keep_input and f == "input.xml":
             continue
         os.remove(fpath)
-    # Reload the original XML, since the grid pass overwrote its counts.
-    tree = ET.parse(abs_xml)
-    root = tree.getroot()
+    # Reload the original XML from memory, unaffected by the grid pass.
+    root = ET.fromstring(orig_xml_bytes)
+    tree = ET.ElementTree(root)
     print("  Grids ready.\n")
     link_files = [
         f
@@ -146,6 +169,8 @@ def split_multi_gpu(xml_path: str, n_splits: int = 4) -> int:
                 os.remove(os.path.join(run_dir, f))
         for f in link_files:
             dst = os.path.join(run_dir, f)
+            if os.path.lexists(dst) and not os.path.exists(dst):
+                os.unlink(dst)
             if not os.path.exists(dst):
                 os.symlink(os.path.join("..", f), dst)
         n_i = per_split + (1 if i <= extra else 0)
@@ -165,6 +190,24 @@ def split_multi_gpu(xml_path: str, n_splits: int = 4) -> int:
                 and not os.path.isabs(el.text.strip())
             ):
                 el.text = os.path.join(base_dir, el.text.strip())
+        chain_el = root.find("chain")
+        if chain_el is not None:
+            for ctag in [
+                "chain_json",
+                "reaction_pairs_json",
+                "target_grid_dx",
+                "coarse_grid_dx",
+                "born_grid_dx",
+                "coarse_born_grid_dx",
+            ]:
+                cel = chain_el.find(ctag)
+                if (
+                    cel is not None
+                    and cel.text
+                    and cel.text.strip()
+                    and not os.path.isabs(cel.text.strip())
+                ):
+                    cel.text = os.path.join(base_dir, cel.text.strip())
         tree.write(
             os.path.join(run_dir, "input.xml"), xml_declaration=True, encoding="UTF-8"
         )

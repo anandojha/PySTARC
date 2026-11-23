@@ -247,7 +247,9 @@ def _chain_sim(common, pos, outputs=None, **extra):
 def test_chain_gb_leaves_bonded_pairs_out_of_vacuum_coulomb(monkeypatch):
     common = _chain(3)
     pos = np.array([[0.0, 0, 0], [3.8, 0, 0], [6.0, 3.1, 0]])
-    sim = _chain_sim(common, pos, use_self_born=True, coffdrop_active=False)
+    sim = _chain_sim(
+        common, pos, use_self_born=True, coffdrop_active=False, max_steps=1
+    )
     seen = {}
     real = chain_simulator.chain_full_gb_force
 
@@ -256,8 +258,8 @@ def test_chain_gb_leaves_bonded_pairs_out_of_vacuum_coulomb(monkeypatch):
         return real(*a, **k)
 
     monkeypatch.setattr(chain_simulator, "chain_full_gb_force", spy)
-    world = pos + np.array([30.0, 0.0, 0.0])
-    f = sim._compute_per_atom_external_forces(world)
+    # GB runs inside the inner dt_chain step rather than the outer external force pass.
+    sim.run_one(*chain_simulator.trajectory_rngs(1, 0))
     assert np.array_equal(seen["mask"], cc.bonded_exclusions(common))
     p = sim.params
     kw = dict(
@@ -268,12 +270,21 @@ def test_chain_gb_leaves_bonded_pairs_out_of_vacuum_coulomb(monkeypatch):
             obc_alpha=p.gb_obc_alpha, obc_beta=p.gb_obc_beta, obc_gamma=p.gb_obc_gamma
         ),
     )
+    f_direct, _ = real(
+        pos,
+        sim._chain_charges,
+        sim._chain_radii,
+        exclude_pair_mask=cc.bonded_exclusions(common),
+        **kw,
+    )
+    assert np.all(np.isfinite(f_direct))
+    world = pos + np.array([30.0, 0.0, 0.0])
     q, rad = np.ones(3), np.full(3, 1.5)
     f_mask, _ = chain_full_gb_force(
         world, q, rad, exclude_pair_mask=cc.bonded_exclusions(common), **kw
     )
     f_open, _ = chain_full_gb_force(world, q, rad, **kw)
-    assert np.allclose(f, f_mask) and not np.allclose(f, f_open)
+    assert np.allclose(f_direct, f_mask) and not np.allclose(f_direct, f_open)
 
 
 def test_hydrophobic_energy_is_the_integral_of_its_force():

@@ -54,6 +54,7 @@ def analyse_convergence(
     work_dir: str = ".",
     confidence: float = 0.95,
     n_max_steps: int = 0,
+    nam_omega: float = 0.0,
 ) -> dict:
     """
     Run the convergence analysis on a completed Brownian dynamics simulation.
@@ -64,20 +65,39 @@ def analyse_convergence(
     constant in Å³/ps. tol is the relative standard error below which the
     result is considered converged, defaulting to 0.05, that is 5%. conv_factor
     is the factor that converts Å³/ps to M⁻¹ s⁻¹. work_dir is the directory in
-    which the convergence report is saved.
+    which the convergence report is saved. nam_omega is the Northrup-Allison-McCammon
+    escape-return factor k_b / k(q) in [0, 1); when positive, P_rxn, its standard
+    error, and the Wilson bounds are transformed to the infinite-q limit.
 
     The function returns a dictionary holding the convergence results.
     """
+    omega = float(nam_omega) if nam_omega else 0.0
+    if omega < 0.0 or omega >= 1.0:
+        raise ValueError(f"nam_omega must lie in [0, 1), got {omega}")
     N = n_reacted + n_escaped + n_max_steps
     if N == 0:
         return {"converged": False, "reason": "no trajectories were run"}
-    P = n_reacted / N
+    P_raw = n_reacted / N
+
+    def _nam_beta(prob: float) -> float:
+        if omega <= 0.0:
+            return prob
+        denom_b = 1.0 - (1.0 - prob) * omega
+        return prob / denom_b if denom_b > 0.0 else 1.0
+
+    P = _nam_beta(P_raw)
     k_on = conv_factor * k_b * P
     # Standard error of P_rxn and the relative standard error.
-    if P > 0 and P < 1:
-        SE = math.sqrt(P * (1 - P) / N)
-        relative_SE = SE / P
-    elif P == 0:
+    if P_raw > 0 and P_raw < 1:
+        SE_raw = math.sqrt(P_raw * (1 - P_raw) / N)
+        if omega > 0.0:
+            denom_j = 1.0 - (1.0 - P_raw) * omega
+            jac = (1.0 - omega) / (denom_j * denom_j) if denom_j > 0.0 else 0.0
+            SE = jac * SE_raw
+        else:
+            SE = SE_raw
+        relative_SE = SE / P if P > 0.0 else float("inf")
+    elif P_raw == 0:
         SE = 0.0
         relative_SE = float("inf")
     else:
@@ -87,8 +107,8 @@ def analyse_convergence(
     # Wilson confidence interval at the requested level. N is guaranteed to be
     # nonzero here by the early return above, so no separate N=0 guard is needed.
     # The argument of the square root is clamped to stay non-negative. The 0.95
-    # default keeps the exact z = 1.96 used historically; other levels use the
-    # normal quantile so the interval matches the requested confidence.
+    # default preserves z = 1.96; other levels invoke the normal quantile so the
+    # interval matches the requested confidence.
     if abs(confidence - 0.95) < 1e-9:
         z = 1.96
     else:
@@ -96,22 +116,33 @@ def analyse_convergence(
 
         z = float(norm.ppf(0.5 + confidence / 2.0))
     denom = 1 + z**2 / N
-    centre = (P + z**2 / (2 * N)) / denom
+    centre = (P_raw + z**2 / (2 * N)) / denom
     # Clamping the argument at zero protects against floating-point roundoff
     # at the P=0 or P=1 boundary, where it can dip slightly negative.
-    sqrt_arg = max(P * (1 - P) / N + z**2 / (4 * N**2), 0.0)
+    sqrt_arg = max(P_raw * (1 - P_raw) / N + z**2 / (4 * N**2), 0.0)
     spread = z * math.sqrt(sqrt_arg) / denom
-    wilson_lo = max(0.0, centre - spread)
-    wilson_hi = min(1.0, centre + spread)
+    wilson_lo_raw = max(0.0, centre - spread)
+    wilson_hi_raw = min(1.0, centre + spread)
+    wilson_lo = _nam_beta(wilson_lo_raw)
+    wilson_hi = _nam_beta(wilson_hi_raw)
     wilson_lo_kon = conv_factor * k_b * wilson_lo
     wilson_hi_kon = conv_factor * k_b * wilson_hi
     # Decide whether the run has converged.
-    converged = (0 < P < 1) and (relative_SE < tol)
+    converged = (0 < P_raw < 1) and (relative_SE < tol)
     # Number of trajectories needed to reach a few target tolerances.
     targets = {}
-    if 0 < P < 1:
+    if 0 < P_raw < 1:
+        if omega > 0.0:
+            denom_t = 1.0 - (1.0 - P_raw) * omega
+            rse_scale = (1.0 - omega) / denom_t if denom_t > 0.0 else 1.0
+        else:
+            rse_scale = 1.0
         for target_tol in [0.10, 0.05, 0.01]:
-            n_needed = int(math.ceil((1 - P) / (P * target_tol**2)))
+            n_needed = int(
+                math.ceil(
+                    (rse_scale * rse_scale) * (1 - P_raw) / (P_raw * target_tol**2)
+                )
+            )
             targets[f"{int(target_tol*100)}%"] = n_needed
     result = {
         "N": N,
@@ -132,6 +163,9 @@ def analyse_convergence(
         "tol_pct": tol * 100,
         "N_needed": targets,
     }
+    if omega > 0.0:
+        result["P_rxn_raw"] = P_raw
+        result["nam_omega"] = omega
     return result
 
 

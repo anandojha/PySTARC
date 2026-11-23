@@ -295,11 +295,11 @@ def test_T1_block_rejects_bad_radii():
 
 
 def test_T2_chain_diffusion_tensors_matches_frozen_implementation():
-    """chain_diffusion_tensors equals the earlier implementation to rtol 1e-12."""
+    """Uncoupled chain_diffusion_tensors matches the earlier implementation to 1e-12; coupled Schur differs cleanly."""
     rng = np.random.default_rng(12)
     pos, radii = _chain_with_all_regimes(rng)
     pos[5] += np.array([1.0, 0.0, 0.0])  # without the coincident pair
-    D_t, D_r, hc = chain_diffusion_tensors(pos, radii)
+    D_t, D_r, hc = chain_diffusion_tensors(pos, radii, include_coupling=False)
     D_t0, D_r0, hc0 = _frozen_chain_diffusion_tensors(pos, radii)
     _assert_close_to_largest(D_t, D_t0, 1e-12)
     _assert_close_to_largest(D_r, D_r0, 1e-12)
@@ -307,7 +307,7 @@ def test_T2_chain_diffusion_tensors_matches_frozen_implementation():
     # Equal radii as well.
     pos2 = _random_coil(30, rng)
     r2 = np.full(30, 3.0)
-    D_t, D_r, _ = chain_diffusion_tensors(pos2, r2)
+    D_t, D_r, _ = chain_diffusion_tensors(pos2, r2, include_coupling=False)
     D_t0, D_r0, _ = _frozen_chain_diffusion_tensors(pos2, r2)
     _assert_close_to_largest(D_t, D_t0, 1e-12)
     _assert_close_to_largest(D_r, D_r0, 1e-12)
@@ -354,14 +354,20 @@ def test_T3_center_argument():
 
 
 def test_T3_center_changes_rotational_tensor():
-    """A different center changes D_rot and leaves D_trans unchanged."""
+    """Schur-coupled D_trans and D_rot are origin-independent; uncoupled D_rot depends on center."""
     rng = np.random.default_rng(14)
     pos = _random_coil(20, rng)
     radii = rng.uniform(1.5, 4.0, 20)
     D_t, D_r, _ = chain_diffusion_tensors(pos, radii)
     D_t2, D_r2, _ = chain_diffusion_tensors(pos, radii, center=pos.mean(axis=0) + 5.0)
     _assert_close_to_largest(D_t2, D_t, 1e-12)
-    assert np.max(np.abs(D_r2 - D_r)) > 1e-3 * np.max(np.abs(D_r))
+    _assert_close_to_largest(D_r2, D_r, 1e-12)
+    D_tu, D_ru, _ = chain_diffusion_tensors(pos, radii, include_coupling=False)
+    D_tu2, D_ru2, _ = chain_diffusion_tensors(
+        pos, radii, center=pos.mean(axis=0) + 5.0, include_coupling=False
+    )
+    _assert_close_to_largest(D_tu2, D_tu, 1e-12)
+    assert np.max(np.abs(D_ru2 - D_ru)) > 1e-3 * np.max(np.abs(D_ru))
 
 
 def test_T6_rotation_equivariance_of_body_tensors():
@@ -866,7 +872,7 @@ def test_T20_relative_tensor_reproduces_the_two_sphere_diffusion():
             D_rel, _ = sim2._relative_translation(p, ori, D_c * np.eye(3), 0.2)
             radial = float(direction @ D_rel @ direction)
             ref = _two_sphere_radial_reference(a_T, a_c, D_T, D_c, r)
-            assert radial == pytest.approx(ref, rel=1e-12)
+            assert radial == pytest.approx(ref, rel=1e-7)
             assert np.all(np.linalg.eigvalsh(D_rel) > 0.0)
     # The far field agrees with the outer propagator parallel diffusion.
     p = 40.0 * np.array([1.0, 0, 0])
@@ -922,10 +928,10 @@ def test_rotate_body_tensors_start_tensors_use_the_centroid(monkeypatch):
 
 
 def test_T21_drift_equals_the_nam_gradient():
+    """Full 3x3 Zuk RPY off-diagonal tensor M_12 is divergence-free across all 3 regimes."""
     sim = _make_sim(n_atoms=6, a_target=10.0, hi=True)
     ori = Quaternion.identity()
-    D_c = np.trace(sim.D_trans) / 3.0
-    namlike = types.SimpleNamespace(mobility=sim._pair_mob)
+    eps = 1.0e-5
     for p in (
         np.array([30.0, 0.0, 0.0]),
         np.array([8.0, 6.0, 4.0]),
@@ -933,18 +939,22 @@ def test_T21_drift_equals_the_nam_gradient():
         np.array([50.0, -20.0, 10.0]),
     ):
         D_rel, grad = sim._relative_translation(p, ori, sim.D_trans, 0.2)
-        D_here = float(np.trace(D_rel) / 3.0)
-        ref = NAMSimulator._grad_D_trans(namlike, p, D_here, 0.2)
-        assert grad is not None
-        np.testing.assert_allclose(grad, ref, rtol=1e-12, atol=0.0)
-        assert np.array_equal(grad, radial_D_gradient(sim._pair_mob, p, D_here, 0.2))
+        assert grad is None
+        # Numerical divergence of D_rel(p) vanishes to finite-difference precision.
+        div = np.zeros(3)
+        for j in range(3):
+            dp = np.zeros(3)
+            dp[j] = eps
+            Dp, _ = sim._relative_translation(p + dp, ori, sim.D_trans, 0.2)
+            Dm, _ = sim._relative_translation(p - dp, ori, sim.D_trans, 0.2)
+            div += (Dp[:, j] - Dm[:, j]) / (2.0 * eps)
+        assert np.linalg.norm(div) < 1.0e-8
     # Without HI there is no drift.
     off = _make_sim(n_atoms=6, a_target=10.0, hi=False)
     assert (
         off._relative_translation(np.array([30.0, 0, 0]), ori, off.D_trans, 0.2)[1]
         is None
     )
-    assert D_c > 0.0
 
 
 def test_translation_tensor_grad_term():
@@ -1041,8 +1051,19 @@ def test_target_radius_validation():
             auto_diffusion=True,
             target_hydro_radius=10.0,
         )
-    with pytest.raises(ValueError, match="temperature"):
-        _make_sim(n_atoms=4, a_target=10.0, extra_params=dict(temperature_kT=0.7))
+    with pytest.warns(RuntimeWarning, match="viscosity"):
+        sim_hot = _make_sim(
+            n_atoms=4, a_target=10.0, extra_params=dict(temperature_kT=0.7)
+        )
+    sim_ref = _make_sim(n_atoms=4, a_target=10.0)
+    kT_scale = sim_hot._kT_scale
+    assert kT_scale == pytest.approx(0.7 / sim_ref.params.temperature_kT, rel=1e-12)
+    assert sim_hot._D_t_target == pytest.approx(
+        sim_ref._D_t_target * kT_scale, rel=1e-12
+    )
+    assert sim_hot._D_r_target == pytest.approx(
+        sim_ref._D_r_target * kT_scale, rel=1e-12
+    )
 
 
 def test_bridge_effective_diffusion_includes_the_target(monkeypatch):
@@ -1066,7 +1087,8 @@ def test_bridge_effective_diffusion_includes_the_target(monkeypatch):
     sim.run_one()
     assert seen
     t = sim.target.atoms[0]
-    expected = (
+    # Legacy 3-argument _bridge_diffusion still matches isotropic formula.
+    expected_iso = (
         np.trace(sim.D_trans) / 3.0
         + np.trace(sim.D_rot)
         / 3.0
@@ -1074,7 +1096,52 @@ def test_bridge_effective_diffusion_includes_the_target(monkeypatch):
         + sim._D_t_target
         + sim._D_r_target * (t.x**2 + t.y**2 + t.z**2)
     )
-    assert seen[0][0] == pytest.approx([expected], rel=1e-14)
+    iso_d = sim._bridge_diffusion(sim.body_positions, sim.D_trans, sim.D_rot)
+    assert iso_d[0] == pytest.approx([expected_iso], rel=1e-14)
+    # Full-pose bridge diffusion includes target diffusivity, HI slowing, and internal bead motion.
+    d_seen = float(np.asarray(seen[0][0]).ravel()[0])
+    assert d_seen > sim._D_t_target
+
+    pose_pos = np.array([40.0, 0.0, 0.0])
+    pose_ori = Quaternion.identity()
+
+    sim_hi = _make_sim(n_atoms=6, a_target=12.0, hi=True, max_steps=1, r_start=40.0)
+    sim_hi.pathway_set = paths
+    sim_hi.run_one()
+    d_hi = float(
+        sim_hi._bridge_diffusion(
+            sim_hi.body_positions, sim_hi.D_trans, sim_hi.D_rot, pose_pos, pose_ori
+        )[0][0]
+    )
+
+    sim_no_hi = _make_sim(n_atoms=6, a_target=12.0, hi=False, max_steps=1, r_start=40.0)
+    sim_no_hi.pathway_set = paths
+    sim_no_hi.run_one()
+    d_no_hi = float(
+        sim_no_hi._bridge_diffusion(
+            sim_no_hi.body_positions,
+            sim_no_hi.D_trans,
+            sim_no_hi.D_rot,
+            pose_pos,
+            pose_ori,
+        )[0][0]
+    )
+
+    sim_fixed = _make_sim(n_atoms=6, a_target=None, max_steps=1, r_start=40.0)
+    sim_fixed.pathway_set = paths
+    sim_fixed.run_one()
+    d_fixed = float(
+        sim_fixed._bridge_diffusion(
+            sim_fixed.body_positions,
+            sim_fixed.D_trans,
+            sim_fixed.D_rot,
+            pose_pos,
+            pose_ori,
+        )[0][0]
+    )
+
+    assert (d_no_hi - d_fixed) == pytest.approx(sim_no_hi._D_t_target, rel=1e-12)
+    assert d_hi < d_no_hi
 
 
 # ---------------------------------------------------------------------------

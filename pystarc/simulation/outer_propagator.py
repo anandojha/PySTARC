@@ -66,6 +66,15 @@ PI8 = 8.0 * PI
 LARGE = 1.0e30
 
 
+def _random_unit_vector(rng: np.random.Generator) -> np.ndarray:
+    """Draw an isotropic unit vector on the unit sphere."""
+    while True:
+        v = rng.standard_normal(3)
+        nrm = float(np.linalg.norm(v))
+        if nrm > 1e-12:
+            return v / nrm
+
+
 @dataclass
 class OPGroupInfo:
     """Per-molecule info needed by the outer propagator."""
@@ -76,17 +85,13 @@ class OPGroupInfo:
 
 
 class OuterPropagator:
-    """Analytical propagator for the outer diffusion region b ≤ r ≤ q.
+    """Analytical propagator for the outer diffusion region b <= r <= q.
 
-    The constructor takes the b-sphere radius b_radius in angstrom, the
-    maximum molecular radius max_radius (used to set the outer boundary
-    q = 20 × max_radius), and a flag has_hi that selects whether
-    Rotne-Prager-Yamakawa hydrodynamic interactions are included. The
-    solvent is described by the thermal energy kT (in kcal/mol or any
-    consistent units), the viscosity, the dielectric constant, and the
-    Debye screening length debye_len in angstrom. The two molecules are
-    described by OPGroupInfo records g0 for the receptor and g1 for the
-    ligand.
+    The constructor accepts b_radius in angstrom, max_radius in angstrom
+    (setting q = max(20 * max_radius, 2 * b_radius)), a has_hi flag for
+    Rotne-Prager-Yamakawa hydrodynamic interactions, solvent parameters
+    kT, viscosity, dielectric, vacuum_perm, debye_len, and OPGroupInfo
+    records g0 (receptor) and g1 (ligand).
     """
 
     def __init__(
@@ -102,65 +107,80 @@ class OuterPropagator:
         g0: OPGroupInfo,
         g1: OPGroupInfo,
     ):
+        if b_radius <= 0.0:
+            raise ValueError(f"b_radius must be strictly positive, got {b_radius}")
+        if g0.Dtrans < 0.0 or g1.Dtrans < 0.0 or (g0.Dtrans + g1.Dtrans) <= 0.0:
+            raise ValueError(
+                f"Dtrans values must be non-negative with positive sum, "
+                f"got g0.Dtrans={g0.Dtrans}, g1.Dtrans={g1.Dtrans}"
+            )
+        if has_hi and (g0.Dtrans <= 0.0 or g1.Dtrans <= 0.0):
+            raise ValueError(
+                "Hydrodynamic interactions require strictly positive Dtrans for both molecules."
+            )
 
         self.kT = kT
         self.viscosity = viscosity
         self.debye_len = debye_len
         self.bradius = b_radius
-        self.qradius = 20.0 * max_radius  # The standard outer boundary q.
+        self.qradius = max(20.0 * max_radius, 2.0 * b_radius)
         self.has_hi = has_hi
         eps_s = dielectric * vacuum_perm
         self.V_factor = g0.q * g1.q / (PI4 * eps_s * kT)
         self.D_factor = kT / viscosity
-        # Hydrodynamic radii from the Stokes-Einstein relation
-        # a = kT / (6πμ Dt), where Dt is the translational diffusion
-        # coefficient and μ is the solvent viscosity.
-        self.a0 = self.D_factor / (PI6 * g0.Dtrans)
-        self.a1 = self.D_factor / (PI6 * g1.Dtrans)
-        self.a2 = 0.5 * (self.a0**2 + self.a1**2)
+        self.D0_free = g0.Dtrans + g1.Dtrans
+        # Hydrodynamic radii from Stokes-Einstein a = kT / (6 pi eta Dt).
+        # A fixed molecule (Dtrans == 0 without HI) sets a = inf with 1/a = 0.
+        self.a0 = self.D_factor / (PI6 * g0.Dtrans) if g0.Dtrans > 0.0 else math.inf
+        self.a1 = self.D_factor / (PI6 * g1.Dtrans) if g1.Dtrans > 0.0 else math.inf
+        if math.isfinite(self.a0) and math.isfinite(self.a1):
+            self.a2 = 0.5 * (self.a0**2 + self.a1**2)
+        else:
+            self.a2 = 0.0
         self.Drot0 = g0.Drot
         self.Drot1 = g1.Drot
-        # The return probability is the encounter rate at the b-surface
-        # divided by the rate at the outer q-surface.
+        # Return probability from b-surface to outer q-surface.
         rate_b = self._relative_rate(b_radius)
         rate_q = self._relative_rate(self.qradius)
         self.return_prob = rate_b / rate_q if rate_q > 0 else 0.0
-        # The encounter rate at the b-surface is the k_b of k_on = N_A k_b P_rxn.
-        # It is computed here anyway, so keep it rather than discard it.
         self.k_b = rate_b
         self.b_radius = b_radius
-        # These covers are the radii at which we switch over to the
-        # step_near_absorbing_surface propagator near each boundary.
-        self.bradius_cover = self._cover(is_inner=True)
-        self.qradius_cover = self._cover(is_inner=False)
+        # Radii switching to step_near_absorbing_surface near each boundary.
+        gap = self.qradius - self.bradius
+        min_margin = 1e-6 * gap
+        max_inner = self.bradius + 0.45 * gap
+        min_outer = self.qradius - 0.45 * gap
+        raw_b_cover = self._cover(is_inner=True)
+        raw_q_cover = self._cover(is_inner=False)
+        self.bradius_cover = min(max(raw_b_cover, self.bradius + min_margin), max_inner)
+        self.qradius_cover = max(min(raw_q_cover, self.qradius - min_margin), min_outer)
+        assert self.bradius < self.bradius_cover < self.qradius_cover < self.qradius
 
     def _D_parallel(self, r: float) -> float:
-        """Translational diffusivity along the line connecting the two centres.
-
-        When has_hi is set, this includes the Rotne-Prager-Yamakawa
-        hydrodynamic correction, otherwise it returns the free-diffusion
-        value. Here r is the centre-to-centre separation in angstrom.
-        """
-        ainv = 1.0 / self.a0 + 1.0 / self.a1
-        dpre = self.D_factor / PI6
+        """Translational diffusivity along the centre-to-centre axis."""
         if self.has_hi:
+            ainv = 1.0 / self.a0 + 1.0 / self.a1
+            dpre = self.D_factor / PI6
             return dpre * (ainv - 3.0 / r + 2.0 * self.a2 / (r**3))
-        else:
-            return dpre * ainv
+        return self.D0_free
+
+    def _D_transverse(self, r: float) -> float:
+        """Translational diffusivity perpendicular to the centre-to-centre axis."""
+        if self.has_hi:
+            ainv = 1.0 / self.a0 + 1.0 / self.a1
+            rm1 = 1.0 / r
+            return self.D_factor * (
+                ainv / PI6 - 2.0 * (rm1 + (2.0 / 3.0) * self.a2 * rm1**3) / PI8
+            )
+        return self.D0_free
 
     def _relative_rate(self, b: float) -> float:
-        """Evaluate the encounter-rate integral at boundary radius b.
-
-        This returns 4π divided by the integral ∫₀^(1/b) exp(V(1/s)) /
-        D_∥(1/s) ds, using the substitution s = 1/r so that the integration
-        runs over the finite interval [0, 1/b].
-        """
+        """Evaluate the encounter-rate integral at boundary radius b."""
         L = self.debye_len
 
         def integrand(s: float) -> float:
             if s == 0.0:
-                ainv = 1.0 / self.a0 + 1.0 / self.a1
-                return PI6 / (self.D_factor * ainv)
+                return 1.0 / self.D0_free
             r = 1.0 / s
             v = self.V_factor * math.exp(-1.0 / (s * L)) * s
             D = self._D_parallel(r)
@@ -291,30 +311,55 @@ class OuterPropagator:
         t = 0.0
         reached_b = False
         reached_q = False
+        returned_from_q = False
 
-        def do_when_near_q(survives: bool, r: float, new_x: float):
-            nonlocal pos, t, reached_b, reached_q
+        def do_when_near_q(
+            survives: bool, r: float, new_x: float, p_ret: float | None = None
+        ):
+            nonlocal pos, t, reached_b, reached_q, returned_from_q
             if not survives:
-                if rng.random() < self.return_prob:
+                prob = self.return_prob if p_ret is None else p_ret
+                if rng.random() < prob:
                     pos = (self.bradius / r) * pos
                     reached_b = True
                     reached_q = False
+                    returned_from_q = True
                 else:
+                    pos = (self.qradius / r) * pos
                     reached_q = True
                 t = LARGE
             else:
                 new_r = self.qradius - new_x
-                pos = (new_r / r) * pos
+                if new_r <= self.bradius:
+                    pos = (self.bradius / r) * pos
+                    reached_b = True
+                else:
+                    pos = (new_r / r) * pos
                 reached_q = False
+
+        # Entry boundary checks before entering the interior propagation loop.
+        r_in = float(np.linalg.norm(pos))
+        if r_in == 0.0:
+            pos = self.bradius * _random_unit_vector(rng)
+            reached_b = True
+        elif r_in <= self.bradius:
+            pos = (self.bradius / r_in) * pos
+            reached_b = True
+        elif r_in >= self.qradius:
+            if r_in > self.qradius:
+                rate_r = self._relative_rate(r_in)
+                p_ret = self.k_b / rate_r if rate_r > 0.0 else 0.0
+                p_ret = max(0.0, min(1.0, p_ret))
+            else:
+                p_ret = self.return_prob
+            do_when_near_q(False, r_in, r_in, p_ret=p_ret)
 
         while not (reached_b or reached_q):
             r = float(np.linalg.norm(pos))
-            # Clamp the radius at the start of every iteration, because the
-            # branch taken in the previous iteration may have left pos in an
-            # unphysical state. The near-b Lamm-Schulten branch in particular
-            # can return a large new_x, which makes new_r = bradius + new_x
-            # enormous. Clipping here ensures the next branch dispatch sees a
-            # physical r and that final_separation stays interpretable.
+            if r == 0.0:
+                pos = self.bradius * _random_unit_vector(rng)
+                reached_b = True
+                break
             if r > self.qradius:
                 pos = pos * (self.qradius / r)
                 r = self.qradius
@@ -327,36 +372,36 @@ class OuterPropagator:
             elif r >= self.qradius:
                 do_when_near_q(False, r, r)
             elif r < self.bradius_cover:
-                # Near the b-sphere, take a Lamm-Schulten step.
+                # Near the b-sphere, propagate via Lamm-Schulten with curvature drift.
                 x = r - self.bradius
                 Fr0 = self._radial_force(r)
                 D0 = self._D_parallel(r)
-                survives, new_x, delta_t = step_near_absorbing_surface(rng, x, Fr0, D0)
+                Dt = self._D_transverse(r)
+                F_eff = Fr0 + 2.0 * Dt / (r * D0)
+                survives, new_x, delta_t = step_near_absorbing_surface(
+                    rng, x, F_eff, D0
+                )
                 reached_b = not survives
                 t += delta_t
                 new_r = self.bradius + new_x
                 pos = (new_r / r) * pos
             elif r > self.qradius_cover:
-                # Near the q-sphere, take a Lamm-Schulten step.
+                # Near the q-sphere, propagate via Lamm-Schulten with curvature drift.
                 x = self.qradius - r
                 Fr0 = self._radial_force(r)
                 D0 = self._D_parallel(r)
-                survives, new_x, delta_t = step_near_absorbing_surface(rng, x, -Fr0, D0)
-                # Accumulate the elapsed time from the Lamm-Schulten step
-                # (audit fix 2026-05-21). This matches the b-sphere branch
-                # above. Without it, trajectories near the q-sphere
-                # under-accumulate time and the outer-sphere rotation is
-                # under-applied. In the not-survives branch do_when_near_q
-                # overwrites t with LARGE, so accumulating here is safe.
+                Dt = self._D_transverse(r)
+                F_eff = -(Fr0 + 2.0 * Dt / (r * D0))
+                survives, new_x, delta_t = step_near_absorbing_surface(
+                    rng, x, F_eff, D0
+                )
                 t += delta_t
                 do_when_near_q(survives, r, new_x)
             else:
-                # In the middle region, take an analytical drift plus
-                # diffusion step.
+                # Middle region analytical drift plus stochastic diffusion step.
                 Fr0 = self._radial_force(r)
                 L = self.debye_len
                 D0 = self._D_parallel(r)
-                # Choose the time step from the gradient of the force.
                 V = self.V_factor * math.exp(-r / L) / r
                 Fr1 = -V / L**2 - 2.0 * Fr0 / r
                 alpha = 0.01
@@ -366,7 +411,7 @@ class OuterPropagator:
                     D1 = -3.0 * Di * rm1 - self.D_factor * rm1**2 / PI
                     D2 = -4.0 * D1 * rm1 + self.D_factor * rm1**3 / PI
                     D3 = -5.0 * D2 * rm1 - 2.0 * self.D_factor * rm1**4 / PI
-                    if abs(Fr0) > 0 and r < 3.0 * L:
+                    if abs(Fr0) > 0:
                         num = D1 + D0 * Fr0
                         den = (
                             D0 * D3
@@ -375,12 +420,16 @@ class OuterPropagator:
                             + (3 * Fr1 + Fr0**2) * D0 * D1
                             + (0.0 + Fr0 * Fr1) * D0**2
                         )
-                        dtf = alpha * abs(num / den) if abs(den) > 0 else LARGE
+                        dtf = (
+                            alpha * abs(num / den)
+                            if (abs(den) > 0 and abs(num) > 0)
+                            else LARGE
+                        )
                     else:
                         den = D0 * D3 + D1 * D2
                         dtf = alpha * abs(D1 / den) if abs(den) > 0 else LARGE
                 else:
-                    if abs(Fr0) > 0 and r < 3.0 * L:
+                    if abs(Fr0) > 0:
                         dtf = alpha / abs(D0 * Fr1) if abs(Fr1) > 0 else LARGE
                     else:
                         dtf = LARGE
@@ -388,20 +437,12 @@ class OuterPropagator:
                 dt = min(dt_edge, dtf)
                 t += dt
                 Dr = D0
-                # Apply the deterministic drift.
                 unit_r = pos / r
                 pos += Dr * Fr0 * unit_r * dt
-                # Apply the stochastic diffusion.
                 sDrdt = math.sqrt(2.0 * Dr * dt)
                 if self.has_hi:
-                    # With hydrodynamics the Rotne-Prager-Yamakawa diffusion
-                    # is anisotropic, so the parallel and perpendicular
-                    # components differ.
-                    rm1 = 1.0 / r
-                    ainv = 1.0 / self.a0 + 1.0 / self.a1
-                    Dt = self.D_factor * (
-                        ainv / PI6 - 2.0 * (rm1 - 2.0 * self.a2 * rm1**3) / PI8
-                    )
+                    # Anisotropic divergence-free RPY parallel and transverse components.
+                    Dt = self._D_transverse(r)
                     sDtdt = math.sqrt(2.0 * Dt * dt)
                     ur = unit_r
                     x_, y_, z_ = ur
@@ -417,47 +458,31 @@ class OuterPropagator:
                     pos += (sDtdt * rng.standard_normal()) * up
                 else:
                     pos += sDrdt * rng.standard_normal(3)
-                # Clamp defensively to prevent the middle-region step from
-                # overshooting past the q-sphere (or below the b-sphere) when
-                # Fr0 is large. Without this, the drift Dr × Fr0 × dt can be
-                # enormous, carrying pos from about 55 A to several hundred A
-                # in a single step. The next iteration would detect r ≥ qradius
-                # and terminate as an escape, but with pos still at the
-                # overshoot magnitude (final_separation near 666 A instead of
-                # the q-sphere value of 80 A). Clipping back to the boundary
-                # keeps the escape and return logic physical and leaves
-                # final_separation interpretable.
                 r_after = float(np.linalg.norm(pos))
-                if r_after > self.qradius:
-                    pos = pos * (self.qradius / r_after)
-                elif r_after < self.bradius:
+                if r_after == 0.0:
+                    pos = self.bradius * _random_unit_vector(rng)
+                    reached_b = True
+                elif r_after >= self.qradius:
+                    do_when_near_q(False, r_after, r_after)
+                elif r_after <= self.bradius:
                     pos = pos * (self.bradius / r_after)
-        # Update the orientation only if the trajectory returned to the
-        # b-sphere.
+                    reached_b = True
         if reached_b:
-            # Apply diffusional rotation over the elapsed time t.
             tau0 = t * self.Drot0
             tau1 = t * self.Drot1
             dq0 = diffusional_rotation(rng, tau0)  # Quaternion (w, x, y, z).
             dq1 = diffusional_rotation(rng, tau1)
 
-            # Compose the new orientation as dq0^{-1} × (dq1 × ori), using
-            # the local quat_multiply imported from the diffusional_rotation
-            # module.
             def _quat_conj(q):
                 return np.array([q[0], -q[1], -q[2], -q[3]])
 
             dq0_inv = _quat_conj(dq0)
             ori_new = quat_multiply(dq1, ori)
             ori_new = quat_multiply(dq0_inv, ori_new)
-            # Normalise the resulting quaternion.
             ori_new = ori_new / np.linalg.norm(ori_new)
-            # The frame is fixed to molecule 0, so its rotation dq0 over the
-            # outer excursion turns the whole relative configuration by
-            # dq0^{-1}: the re-entry point on the b-sphere moves with it, not
-            # only the orientation. Without this the ligand would re-enter on
-            # the ray it left along, as if the receptor had not tumbled.
             pos = quat_rotate_vector(dq0_inv, pos)
+            if returned_from_q and self.Drot0 == 0.0:
+                pos = self.bradius * _random_unit_vector(rng)
         else:
             ori_new = ori.copy()
         return reached_b, pos, ori_new

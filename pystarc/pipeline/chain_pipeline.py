@@ -20,22 +20,34 @@ import shutil
 import time
 
 from pystarc.global_defs.constants import KB_KCAL
-from pystarc.global_defs.defaults import GHOST_NAMES
-from pystarc.pipeline.geometry import analyse_molecule
-from pystarc.pipeline.input_parser import PySTARCConfig
-from pystarc.simulation.chain_simulator import ChainBDParameters, ChainBDSimulator
-from pystarc.simulation.coffdrop_chain import elastic_network
-from pystarc.pipeline.chain_output_writer import write_chain_results
-from pystarc.structures.chain_io import load_chain_from_json
-from pystarc.structures.pqr_io import parse_pqr
-from pystarc.structures.molecules import ContactPair, ReactionCriteria
-from pystarc.pathways.reaction_interface import ReactionInterface, PathwaySet
-from pystarc.forces.electrostatic.grid_force import DXGrid
 from pystarc.hydrodynamics.rotne_prager import (
     stokes_rotational_diffusion,
     stokes_translational_diffusion,
 )
+from pystarc.simulation.chain_simulator import ChainBDParameters, ChainBDSimulator
+from pystarc.structures.molecules import ContactPair, ReactionCriteria
+from pystarc.pathways.reaction_interface import PathwaySet, ReactionInterface
+from pystarc.forces.multipole_farfield import MultipoleExpansion
+from pystarc.pipeline.chain_output_writer import write_chain_results
+from pystarc.forces.electrostatic.grid_force import DXGrid
+from pystarc.structures.chain_io import load_chain_from_json
+from pystarc.xml_io.simulation_io import parse_reaction_xml
+from pystarc.simulation.coffdrop_chain import elastic_network
+from pystarc.pipeline.input_parser import PySTARCConfig
+from pystarc.pipeline.geometry import analyse_molecule
+from pystarc.global_defs.defaults import DT_RXN, GHOST_NAMES
+from pystarc.structures.pqr_io import parse_pqr
 import numpy as np
+
+_DEFAULT_CHAIN_SIM = ChainBDSimulator
+
+
+def _rigid_partner_pqr_and_r_hydro(config: PySTARCConfig) -> Tuple[str, float, str]:
+    """Return (rigid_pqr_path, r_hydro_override, tag_name) for the rigid partner."""
+    role = (config.chain.flexible_partner or "ligand").strip().lower()
+    if role == "receptor":
+        return config.ligand_pqr, float(config.r_hydro_lig), "ligand_pqr"
+    return config.receptor_pqr, float(config.r_hydro_rec), "receptor_pqr"
 
 
 def _load_reaction_pairs_json(path: str) -> List[Tuple[int, int, float]]:
@@ -93,25 +105,113 @@ def _build_pathway_set(
     return PathwaySet([rxn])
 
 
+def _dx_file_looks_complete(path: Path) -> bool:
+    """Return True when an OpenDX file is non-empty, has a valid header, and is not truncated."""
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return False
+    if size <= 0:
+        return False
+    try:
+        with open(path, "rb") as fh:
+            head_bytes = fh.read(16384)
+            tail_seek = max(0, size - 4096)
+            fh.seek(tail_seek)
+            tail_bytes = fh.read(4096)
+    except OSError:
+        return False
+    head = head_bytes.decode("utf-8", errors="replace")
+    expected = None
+    has_obj3 = False
+    for raw_line in head.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("object 1"):
+            parts = line.split()
+            if len(parts) < 3:
+                return False
+            try:
+                nx, ny, nz = int(parts[-3]), int(parts[-2]), int(parts[-1])
+            except ValueError:
+                return False
+            if nx <= 0 or ny <= 0 or nz <= 0:
+                return False
+            expected = nx * ny * nz
+        elif line.startswith("object 3"):
+            has_obj3 = True
+            break
+    if expected is None or not has_obj3:
+        return False
+    # Each ASCII value needs at least one character plus one separator byte.
+    if size < expected * 2:
+        return False
+
+    tail = tail_bytes.decode("utf-8", errors="replace")
+    tail_lines = [
+        line.strip()
+        for line in tail.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    if not tail_lines:
+        return False
+    has_trailer = any(
+        line.startswith(("attribute ", 'object "', "component ")) for line in tail_lines
+    )
+    if has_trailer:
+        for line in reversed(tail_lines):
+            parts = line.split()
+            if (
+                len(parts) == 4
+                and parts[0] == "component"
+                and parts[1] == '"data"'
+                and parts[2] == "value"
+                and parts[3].isdigit()
+            ):
+                return True
+        return False
+
+    # Minimal DX files without an OpenDX trailer must end with a newline
+    # and hold the full expected grid value count.
+    if not tail_bytes.endswith((b"\n", b"\r")):
+        return False
+    count = 0
+    last_data_line = ""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            in_data = False
+            for raw_line in fh:
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if not in_data:
+                    if line.startswith("object 3"):
+                        in_data = True
+                    continue
+                if line.startswith("object") or line.startswith("attribute"):
+                    break
+                toks = line.split()
+                count += len(toks)
+                last_data_line = line
+    except OSError:
+        return False
+    if count != expected or not last_data_line:
+        return False
+    try:
+        vals = [float(v) for v in last_data_line.split()]
+    except ValueError:
+        return False
+    return all(np.isfinite(v) for v in vals)
+
+
 def _ensure_chain_apbs_grids(config: PySTARCConfig) -> None:
-    """Generate the APBS electrostatic grids if they are needed but absent.
-
-    If target_grid_dx or born_grid_dx are named in the chain config but do not
-    exist on disk, run APBS to create them using parameters drawn from the
-    top-level PySTARCConfig. This plays the same role as the run_apbs_both step
-    in the rigid-body pipeline.run(). In chain BD there is only a single target
-    molecule, since the chain itself is built from sequence and has no PQR file,
-    so the single-molecule run_apbs is called here.
-
-    By convention target_grid_dx follows the "{work_dir}/{mol_name}1.dx" pattern
-    produced by run_apbs, where the trailing "1" marks the fine grid. The
-    mol_name is recovered by stripping trailing digits from the filename stem.
-    """
+    """Generate APBS electrostatic grids when missing or when cache hash mismatches."""
     if config.chain is None:
         return
     cc = config.chain
     if not cc.target_grid_dx:
-        if cc.born_grid_dx:
+        if cc.born_grid_dx or cc.coarse_born_grid_dx:
             raise ValueError(
                 "<chain><born_grid_dx> requires <chain><target_grid_dx> to be "
                 "set as well; the APBS run that produces the Born grid is keyed "
@@ -121,30 +221,64 @@ def _ensure_chain_apbs_grids(config: PySTARCConfig) -> None:
         return
 
     target_dx = Path(cc.target_grid_dx)
+    coarse_dx = Path(cc.coarse_grid_dx) if cc.coarse_grid_dx else None
     born_dx = Path(cc.born_grid_dx) if cc.born_grid_dx else None
-
-    if target_dx.exists() and (born_dx is None or born_dx.exists()):
-        return
+    coarse_born_dx = Path(cc.coarse_born_grid_dx) if cc.coarse_born_grid_dx else None
 
     apbs_work_dir = target_dx.parent
-    apbs_work_dir.mkdir(parents=True, exist_ok=True)
     stem = target_dx.stem
     mol_name = stem.rstrip("0123456789")
+
+    required_dx = [
+        p for p in (target_dx, coarse_dx, born_dx, coarse_born_dx) if p is not None
+    ]
+    all_exist = all(p.exists() for p in required_dx)
+    stale_key = False
+    corrupt_dx: List[Path] = []
+    key_path = apbs_work_dir / f"{mol_name}_grids.key" if mol_name else None
+    if all_exist:
+        corrupt_dx = [p for p in required_dx if not _dx_file_looks_complete(p)]
+        if key_path is None or not key_path.is_file():
+            if not corrupt_dx:
+                return
+        else:
+            rigid_pqr, _, pqr_tag = _rigid_partner_pqr_and_r_hydro(config)
+            src_pqr = Path(rigid_pqr)
+            if not src_pqr.exists():
+                raise FileNotFoundError(
+                    f"{pqr_tag} not found: {src_pqr} (needed for APBS)"
+                )
+            from pystarc.pipeline.run_apbs import _grid_key
+
+            expected_key = _grid_key(
+                src_pqr,
+                dict(
+                    ion_conc=config.ion_concentration,
+                    debye_length=config.debye_length,
+                    pdie=config.pdie,
+                    sdie=config.sdie,
+                    srad=config.srad,
+                    temp=config.temperature,
+                    dime=getattr(config, "apbs_dime", 129),
+                    coarse_dime=getattr(config, "apbs_coarse_dime", 0),
+                    fine_dime=getattr(config, "apbs_fine_dime", 0),
+                    cglen=getattr(config, "apbs_cglen", 0.0),
+                    fglen=getattr(config, "apbs_fglen", 0.0),
+                    ion_radius_pos=getattr(config, "ion_radius_pos", 0.95),
+                    ion_radius_neg=getattr(config, "ion_radius_neg", 1.81),
+                ),
+            )
+            if not corrupt_dx and key_path.read_text().strip() == expected_key:
+                return
+            if not corrupt_dx:
+                stale_key = True
+
     if not mol_name:
         raise ValueError(
             f"Cannot derive APBS mol_name from {target_dx.name}; "
-            f"expected '{{mol_name}}1.dx' pattern (e.g. 'thrombin1.dx')"
+            f"expected '{{mol_name}}1.dx' pattern (e.g. 'target1.dx')"
         )
 
-    # run_apbs writes the electrostatic grids as {mol_name}0.dx (coarse) and
-    # {mol_name}1.dx (fine, used for runtime force evaluation), where mol_name
-    # is the requested stem with its trailing level digit removed. A
-    # target_grid_dx whose filename lacks that trailing digit (for example
-    # "target.dx" rather than "target1.dx") therefore names a file APBS will
-    # never produce: the APBS run would succeed while leaving the requested path
-    # absent, and the later DXGrid.from_file(cc.target_grid_dx) would fail with
-    # a bare FileNotFoundError that does not explain the naming mismatch.
-    # Validate the expected pattern up front and raise a clear error instead.
     produced_elec_names = {f"{mol_name}0.dx", f"{mol_name}1.dx"}
     if target_dx.name not in produced_elec_names:
         raise ValueError(
@@ -158,14 +292,40 @@ def _ensure_chain_apbs_grids(config: PySTARCConfig) -> None:
             f"point it at an existing DX grid."
         )
 
-    src_pqr = Path(config.receptor_pqr)
+    target_dir_resolved = apbs_work_dir.resolve()
+    for tag, grid_path in (
+        ("coarse_grid_dx", coarse_dx),
+        ("born_grid_dx", born_dx),
+        ("coarse_born_grid_dx", coarse_born_dx),
+    ):
+        if grid_path is not None and grid_path.parent.resolve() != target_dir_resolved:
+            raise ValueError(
+                f"<chain><{tag}> parent directory ({grid_path.parent}) does not "
+                f"match <chain><target_grid_dx> parent directory ({apbs_work_dir}). "
+                f"APBS writes all grids into {apbs_work_dir}. Put all generated "
+                f"grid paths in the same directory or point them at existing DX files."
+            )
+
+    apbs_work_dir.mkdir(parents=True, exist_ok=True)
+    rigid_pqr, _, pqr_tag = _rigid_partner_pqr_and_r_hydro(config)
+    src_pqr = Path(rigid_pqr)
     if not src_pqr.exists():
-        raise FileNotFoundError(f"receptor_pqr not found: {src_pqr} (needed for APBS)")
+        raise FileNotFoundError(f"{pqr_tag} not found: {src_pqr} (needed for APBS)")
     dst_pqr = apbs_work_dir / src_pqr.name
     if src_pqr.resolve() != dst_pqr.resolve():
         shutil.copy(str(src_pqr), str(dst_pqr))
 
-    print(f"APBS DX grids missing; generating in {apbs_work_dir}/ ...")
+    if corrupt_dx:
+        if key_path is not None:
+            key_path.unlink(missing_ok=True)
+        names = ", ".join(p.name for p in corrupt_dx)
+        print(
+            f"APBS DX grid empty or truncated ({names}); regenerating in {apbs_work_dir}/ ..."
+        )
+    elif stale_key:
+        print(f"APBS DX grid key mismatch; regenerating in {apbs_work_dir}/ ...")
+    else:
+        print(f"APBS DX grids missing; generating in {apbs_work_dir}/ ...")
     from pystarc.pipeline.run_apbs import run_apbs
 
     run_apbs(
@@ -210,16 +370,85 @@ def run_chain(
     work_dir = Path(config.work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy input.xml into the work_dir for reproducibility.
-    if input_xml_path is not None:
+    # Copy input.xml into work_dir unless already on disk or a temporary grid-gen XML.
+    if input_xml_path is not None and not (
+        Path(input_xml_path).name.startswith("_grid_gen")
+        and Path(input_xml_path).suffix == ".xml"
+    ):
         dst_xml = work_dir / "input.xml"
         if Path(input_xml_path).resolve() != dst_xml.resolve():
             shutil.copy(str(input_xml_path), str(dst_xml))
 
-    # Load the chain topology and the initial atom positions, which are already
-    # centered at the origin.
+    # Load the chain topology and centered initial atom positions.
     print(f"Loading chain from {cc.chain_json} ...")
     chain_template, body_positions = load_chain_from_json(cc.chain_json)
+    if (
+        abs(float(config.temperature) - 298.15) > 1e-6 or cc.nb_attractive_scale != 1.0
+    ) and chain_template.coffdrop_params is not None:
+        cp_cur = chain_template.coffdrop_params
+        files = getattr(cp_cur, "files", None) or {}
+        req_keys = ("ff_xml", "mapping_xml", "connectivity_xml", "charges_xml")
+        if all(k in files and Path(files[k]).is_file() for k in req_keys):
+            from pystarc.simulation.coffdrop_params import COFFDROPParams
+
+            chain_template.coffdrop_params = COFFDROPParams.load(
+                ff_xml=files["ff_xml"],
+                mapping_xml=files["mapping_xml"],
+                connectivity_xml=files["connectivity_xml"],
+                charges_xml=files["charges_xml"],
+                nb_attractive_scale=cc.nb_attractive_scale,
+                temperature=config.temperature,
+            )
+        else:
+            from pystarc.simulation.coffdrop_params import TabulatedPotential
+
+            target_temp = float(config.temperature)
+            if target_temp <= 0.0:
+                raise ValueError(f"temperature must be positive, got {target_temp}")
+            cur_temp = float(getattr(cp_cur, "temperature", 298.15))
+            temp_ratio = cur_temp / target_temp
+            cur_scale = float(getattr(cp_cur, "nb_attractive_scale", 1.0))
+            attr_ratio = (
+                float(cc.nb_attractive_scale) / cur_scale
+                if cur_scale != 0.0
+                else float(cc.nb_attractive_scale)
+            )
+
+            def _rescale_pots(pots, apply_attr: bool):
+                out = []
+                for pot in pots:
+                    vals = pot.values.copy() * temp_ratio
+                    if apply_attr and attr_ratio != 1.0:
+                        vals[vals < 0.0] *= attr_ratio
+                    out.append(
+                        TabulatedPotential(
+                            x_min=pot.x_min,
+                            x_max=pot.x_max,
+                            values=vals,
+                            residues=pot.residues,
+                            atoms=pot.atoms,
+                            orders=pot.orders,
+                            index=pot.index,
+                            kind=pot.kind,
+                            eq_length=getattr(pot, "eq_length", None),
+                        )
+                    )
+                return out
+
+            cp_cur.pair_pots = _rescale_pots(cp_cur.pair_pots, apply_attr=True)
+            if abs(temp_ratio - 1.0) > 1e-12:
+                cp_cur.angle_pots = _rescale_pots(cp_cur.angle_pots, apply_attr=False)
+                cp_cur.dihedral_pots = _rescale_pots(
+                    cp_cur.dihedral_pots, apply_attr=False
+                )
+                if getattr(cp_cur, "bond_pots", None):
+                    cp_cur.bond_pots = _rescale_pots(cp_cur.bond_pots, apply_attr=False)
+            cp_cur.nb_attractive_scale = float(cc.nb_attractive_scale)
+            cp_cur.temperature = target_temp
+            cp_cur._pot_index_cache.clear()
+            if hasattr(cp_cur, "_diff_index_cache"):
+                cp_cur._diff_index_cache.clear()
+            cp_cur.__dict__.pop("_tables", None)
     print(
         f"  chain: {chain_template.name} "
         f"({len(chain_template.atoms)} atoms, "
@@ -259,35 +488,123 @@ def run_chain(
             f"{cc.elastic_network_cutoff} A, k {cc.elastic_network_k} kBT/A^2"
         )
 
+    role = (cc.flexible_partner or "ligand").strip().lower()
+    if role not in ("ligand", "receptor"):
+        raise ValueError(
+            f"<chain><flexible_partner> must be 'ligand' or 'receptor', got {cc.flexible_partner!r}"
+        )
+    rigid_pqr, r_hydro_override, pqr_tag = _rigid_partner_pqr_and_r_hydro(config)
+    if config.gpu:
+        print(
+            "Note: main executes flexible-chain BD on CPU "
+            "(GPU flexible-chain support lives on branch pystarc_flexible_gpu); "
+            "running CPU ChainBDSimulator."
+        )
+
     # Load the target structure as a Molecule.
-    print(f"Loading target from {config.receptor_pqr} ...")
-    target_mol = parse_pqr(config.receptor_pqr)
-    print(f"  target: {target_mol}")
+    print(f"Loading rigid target ({pqr_tag}) from {rigid_pqr} ...")
+    target_mol = parse_pqr(rigid_pqr)
+    print(f"  target: {target_mol}  (flexible_partner={role})")
 
-    # Load the reaction pairs from JSON and convert them to a PathwaySet.
-    if not cc.reaction_pairs_json:
+    # Load the reaction pairs from JSON or rxns_xml and convert to a PathwaySet.
+    if cc.reaction_pairs_json:
+        print(f"Loading reaction pairs from {cc.reaction_pairs_json} ...")
+        reaction_pairs = _load_reaction_pairs_json(cc.reaction_pairs_json)
+        pathway_set = _build_pathway_set(reaction_pairs, cc.reaction_n_needed)
+        print(
+            f"  reactions: {len(reaction_pairs)} contact pairs "
+            f"(n_needed={cc.reaction_n_needed})"
+        )
+    elif config.rxns_xml:
+        print(f"Loading reaction XML from {config.rxns_xml} ...")
+        pathway_set = parse_reaction_xml(config.rxns_xml)
+        if role == "receptor":
+            for rxn in pathway_set.reactions:
+                for pair in rxn.criteria.pairs:
+                    pair.mol1_atom_index, pair.mol2_atom_index = (
+                        pair.mol2_atom_index,
+                        pair.mol1_atom_index,
+                    )
+        print(f"  reactions: {pathway_set}")
+    else:
         raise ValueError("<chain><reaction_pairs_json> is required in chain BD mode")
-    print(f"Loading reaction pairs from {cc.reaction_pairs_json} ...")
-    reaction_pairs = _load_reaction_pairs_json(cc.reaction_pairs_json)
-    pathway_set = _build_pathway_set(reaction_pairs, cc.reaction_n_needed)
-    print(
-        f"  reactions: {len(reaction_pairs)} contact pairs "
-        f"(n_needed={cc.reaction_n_needed})"
-    )
 
-    # If the grids are named but missing on disk, generate them with APBS, just
-    # as the rigid-body pipeline.run() does.
+    # Generate missing or stale APBS grids before loading them.
     _ensure_chain_apbs_grids(config)
 
-    # Load the APBS grids if they were specified.
+    # Load the APBS grids when specified.
     target_grid = None
+    coarse_grid = None
     born_grid = None
+    elec_grids = []
+    born_grids = []
+    seen_elec_paths = set()
     if cc.target_grid_dx:
+        t_path = Path(cc.target_grid_dx)
         print(f"Loading target grid {cc.target_grid_dx} ...")
         target_grid = DXGrid.from_file(cc.target_grid_dx)
+        elec_grids.append(target_grid)
+        seen_elec_paths.add(t_path.resolve())
+    if cc.coarse_grid_dx:
+        c_path = Path(cc.coarse_grid_dx)
+        if c_path.exists() and c_path.resolve() not in seen_elec_paths:
+            print(f"Loading coarse grid {cc.coarse_grid_dx} ...")
+            coarse_grid = DXGrid.from_file(cc.coarse_grid_dx)
+            elec_grids.append(coarse_grid)
+            seen_elec_paths.add(c_path.resolve())
+    if coarse_grid is None and cc.target_grid_dx:
+        t_path = Path(cc.target_grid_dx)
+        if t_path.stem.endswith("1"):
+            auto_coarse_e = t_path.parent / f"{t_path.stem[:-1]}0.dx"
+            if (
+                auto_coarse_e.exists()
+                and auto_coarse_e.resolve() not in seen_elec_paths
+            ):
+                print(f"Loading coarse grid {auto_coarse_e} ...")
+                coarse_grid = DXGrid.from_file(str(auto_coarse_e))
+                elec_grids.append(coarse_grid)
+                seen_elec_paths.add(auto_coarse_e.resolve())
+    seen_born_paths = set()
     if cc.born_grid_dx:
+        b_path = Path(cc.born_grid_dx)
+        if b_path.stem.endswith("0_born"):
+            auto_fine_b = b_path.parent / f"{b_path.stem[:-6]}1_born.dx"
+            if auto_fine_b.exists() and auto_fine_b.resolve() not in seen_born_paths:
+                print(f"Loading fine Born grid {auto_fine_b} ...")
+                born_grids.append(DXGrid.from_file(str(auto_fine_b)))
+                seen_born_paths.add(auto_fine_b.resolve())
         print(f"Loading Born grid {cc.born_grid_dx} ...")
-        born_grid = DXGrid.from_file(cc.born_grid_dx)
+        born_grids.append(DXGrid.from_file(cc.born_grid_dx))
+        seen_born_paths.add(b_path.resolve())
+    if cc.coarse_born_grid_dx:
+        cb_path = Path(cc.coarse_born_grid_dx)
+        if cb_path.exists() and cb_path.resolve() not in seen_born_paths:
+            print(f"Loading coarse Born grid {cc.coarse_born_grid_dx} ...")
+            born_grids.append(DXGrid.from_file(cc.coarse_born_grid_dx))
+            seen_born_paths.add(cb_path.resolve())
+    elif cc.born_grid_dx:
+        b_path = Path(cc.born_grid_dx)
+        if b_path.stem.endswith("1_born"):
+            auto_coarse = b_path.parent / f"{b_path.stem[:-6]}0_born.dx"
+            if auto_coarse.exists() and auto_coarse.resolve() not in seen_born_paths:
+                print(f"Loading coarse Born grid {auto_coarse} ...")
+                born_grids.append(DXGrid.from_file(str(auto_coarse)))
+                seen_born_paths.add(auto_coarse.resolve())
+    born_grid = born_grids[0] if born_grids else None
+
+    multipole_exp = None
+    if cc.far_field and config.multipole_fallback and len(target_mol.atoms) > 0:
+        t_pos = np.array([[a.x, a.y, a.z] for a in target_mol.atoms], dtype=float)
+        t_chg = np.array(
+            [float(getattr(a, "charge", 0.0)) for a in target_mol.atoms], dtype=float
+        )
+        multipole_exp = MultipoleExpansion(
+            t_pos,
+            t_chg,
+            debye_length=config.debye_length,
+            sdie=config.sdie,
+            kT_scale=config.temperature / 298.15,
+        )
 
     # Resolve the r_escape sentinel. A value of 0 means 2.0 × r_start, the LMZ
     # convention, which matches the rigid-body pipeline.
@@ -323,18 +640,18 @@ def run_chain(
     if target_offset > 0.01:
         raise ValueError(
             f"the target atom centroid is {target_offset:.4f} A from the origin "
-            f"in {config.receptor_pqr}; center the target at the origin first "
+            f"in {rigid_pqr}; center the target at the origin first "
             "(the limit is 0.01 A)"
         )
 
     # The hydrodynamic radius of the target, from the input or from the Hansen
     # Monte Carlo radius with its cache, as in the rigid-body pipeline.
-    if config.r_hydro_rec > 0.0:
-        a_target = float(config.r_hydro_rec)
+    if r_hydro_override > 0.0:
+        a_target = r_hydro_override
     else:
         a_target = float(
             analyse_molecule(
-                Path(config.receptor_pqr), srad=getattr(config, "srad", 0.0)
+                Path(rigid_pqr), srad=getattr(config, "srad", 0.0)
             ).hydrodynamic_r
         )
     if not a_target > 0.0:
@@ -346,50 +663,64 @@ def run_chain(
     )
 
     # Build the ChainBDParameters.
+    dt_rxn = min(
+        config.dt,
+        (
+            config.minimum_core_reaction_dt
+            if config.minimum_core_reaction_dt > 0.0
+            else DT_RXN
+        ),
+    )
+    coffdrop_active = (
+        bool(cc.coffdrop_active)
+        if getattr(cc, "coffdrop_active_explicit", False)
+        else bool(cc.coffdrop_active or tables)
+    )
     params = ChainBDParameters(
         n_trajectories=config.n_trajectories,
         dt=config.dt,
+        dt_rxn=dt_rxn,
         dt_chain=cc.dt_chain,
         chain_steps_per_outer=cc.chain_steps_per_outer,
         n_equilibration_steps=cc.n_equilibration_steps,
         max_steps=config.max_steps,
         r_start=config.bd_milestone_radius,
         r_escape=r_escape,
+        use_lmz=bool(cc.use_lmz),
         seed=config.seed,
         n_threads=cc.n_workers,
         verbose=True,
         use_soft_repulsion=cc.use_soft_repulsion,
         soft_repulsion_eps=cc.soft_repulsion_eps,
+        wca_core_cap_fraction=cc.wca_core_cap_fraction,
         use_self_born=cc.use_self_born,
         gb_eps_in=cc.gb_eps_in,
         gb_eps_out=cc.gb_eps_out,
         gb_obc_alpha=cc.gb_obc_alpha,
         gb_obc_beta=cc.gb_obc_beta,
         gb_obc_gamma=cc.gb_obc_gamma,
-        coffdrop_active=tables,
+        coffdrop_active=coffdrop_active,
+        intra_debye_huckel=bool(cc.intra_debye_huckel and (tables or coffdrop_active)),
+        enable_born2=bool(config.enable_born2_torque),
+        grid_float32=bool(cc.grid_float32),
         debye_length=config.debye_length,
         temperature_kT=KB_KCAL * config.temperature,
         dielectric=config.sdie,
         hydrodynamic_interactions=config.hydrodynamic_interactions,
         use_brownian_bridge=config.brownian_bridge,
         use_hard_sphere=cc.use_hard_sphere,
+        overlap_scale=cc.overlap_scale,
         rotate_body_tensors=True,
         remove_internal_rotation=True,
         inner_field=True,
-        # Only tensors computed from the chain geometry can be rebuilt.
         diffusion_update_interval=(
             cc.diffusion_update_interval if cc.auto_diffusion else 0
         ),
     )
 
-    # The scalar diffusion coefficients, used when auto_diffusion is off. Both
-    # are > 0 by the check above.
     d_trans = cc.D_trans
     d_rot = cc.D_rot
 
-    # Construct the simulator. Automatic diffusion and explicit D are mutually
-    # exclusive.
-    print("Constructing ChainBDSimulator ...")
     sim_kwargs = dict(
         target=target_mol,
         chain_template=chain_template,
@@ -400,17 +731,34 @@ def run_chain(
         born_grid=born_grid,
         desolvation_alpha=config.desolvation_alpha,
         target_hydro_radius=a_target,
+        pdie=config.pdie,
     )
     if cc.auto_diffusion:
         sim_kwargs["auto_diffusion"] = True
     else:
         sim_kwargs["D_trans"] = d_trans
         sim_kwargs["D_rot"] = d_rot
-    # Pass the OutputConfig through so the simulator records diagnostics at the
-    # correct cadence, which is part of the Stage 2 instrumentation.
     sim_kwargs["outputs"] = config.outputs
 
-    sim = ChainBDSimulator(**sim_kwargs)
+    print("Constructing ChainBDSimulator ...")
+    cpu_extra = {}
+    if (
+        ChainBDSimulator is _DEFAULT_CHAIN_SIM
+        or len(elec_grids) > 1
+        or len(born_grids) > 1
+        or cc.far_field
+        or bool(config.enable_born2_torque)
+    ):
+        cpu_extra = dict(
+            elec_grids=elec_grids,
+            born_grids=born_grids,
+            use_far_field=cc.far_field,
+            multipole_expansion=multipole_exp,
+        )
+    sim = ChainBDSimulator(**sim_kwargs, **cpu_extra)
+    sim.flexible_partner = role
+    sim.confidence_interval = config.confidence_interval
+    sim.convergence_tol = config.convergence_tol
 
     # Run the trajectories.
     print(f"Running {config.n_trajectories} trajectories ...")

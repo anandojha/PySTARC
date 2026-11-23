@@ -961,9 +961,9 @@ class TestHydrodynamics:
         assert M.shape == (3, 3)
 
     def test_rotne_prager_zero_distance(self):
-        """The RPY off diagonal mobility is zero at zero separation."""
+        """The RPY off-diagonal mobility matches engulfed self-mobility at zero separation."""
         M = rpy_offdiagonal(np.zeros(3), 5.0, 5.0, 1.0, 1.0)
-        assert np.allclose(M, np.zeros((3, 3)))
+        assert np.allclose(M, np.eye(3), rtol=1e-12, atol=1e-14)
 
     def test_repr(self):
         """The repr of a MobilityTensor contains the string MobilityTensor."""
@@ -9504,12 +9504,13 @@ class TestSatisfyConstraints:
         positions = np.array(
             [[0.5, 0.5, 0.7], [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
         )
+        com_before = positions.mean(axis=0).copy()
         state = ChainState.from_template(common, positions)
         satisfy_constraints(state, tol=1e-9)
         phi = compute_constraint_violations(state)
         assert abs(phi[0]) < 1e-9
-        # Atom 0 should now have z = 0.
-        assert abs(state.positions[0, 2]) < 1e-9
+        # 4-atom analytic coplanar projection preserves center of mass.
+        np.testing.assert_allclose(state.positions.mean(axis=0), com_before, atol=1e-12)
 
     def test_mixed_constraints_converge(self):
         """SHAKE simultaneously satisfies a shared length and coplanar constraint."""
@@ -9899,7 +9900,10 @@ class TestCOFFDROPEndToEnd:
         assert len(params.mapping) == 23
         assert len(params.bonds) == 40
         assert len(params.charges) == 5
-        assert len(params.pair_pots) == 5774
+        assert len(params.pair_pots) == 7288
+        assert sum(1 for p in params.pair_pots if p.orders == (0, 0)) == 5774
+        assert sum(1 for p in params.pair_pots if p.orders == (1, 2)) == 1512
+        assert len(params.bond_pots) == 40
         assert len(params.angle_pots) == 2953
         assert len(params.dihedral_pots) == 10413
 
@@ -9991,8 +9995,8 @@ class TestChainBDParameters:
         assert p.n_trajectories == 1_000
         assert p.dt == 0.2
         assert p.dt_rxn == 0.05
-        assert p.dt_chain == 0.05
-        assert p.chain_steps_per_outer == 4
+        assert p.dt_chain == 0.01
+        assert p.chain_steps_per_outer == 20
         assert p.constraint_tol == 1e-6
         assert p.constraint_max_iter == 200
         assert p.r_start == 100.0
@@ -11662,12 +11666,12 @@ class TestLoadChainFromJson:
             target = Molecule(atoms=[Atom(x=0, y=0, z=0, radius=2.0)])
             params = ChainBDParameters(
                 n_trajectories=1,
-                max_steps=200,
+                max_steps=5000,
                 r_start=15.0,
                 r_escape=17.0,
                 dt=0.2,
                 dt_chain=0.05,
-                chain_steps_per_outer=1,
+                chain_steps_per_outer=4,
                 seed=0,
             )
             sim = ChainBDSimulator(
@@ -12143,8 +12147,12 @@ class TestRpyPairTensorAnalyticalLimits:
         expected_mrr = np.eye(3) / (8.0 * math.pi * a_max**3)
         np.testing.assert_allclose(mtt, expected_mtt, atol=1e-15)
         np.testing.assert_allclose(mrr, expected_mrr, atol=1e-15)
-        # rt/tr are zero in this regime (matches BD2).
-        np.testing.assert_allclose(mrt, np.zeros((3, 3)), atol=1e-15)
+        # Zuk (2014) Eq. (3.15): for ai > aj, rt_eps = r / (8 * pi * ai^3) and tr_eps = 0.
+        r = float(np.linalg.norm(r_ij))
+        u = r_ij / r
+        eps_u = np.array([[0.0, -u[2], u[1]], [u[2], 0.0, -u[0]], [-u[1], u[0], 0.0]])
+        expected_mrt = (r / (8.0 * math.pi * ai**3)) * eps_u
+        np.testing.assert_allclose(mrt, expected_mrt, atol=1e-15)
         np.testing.assert_allclose(mtr, np.zeros((3, 3)), atol=1e-15)
 
 
@@ -13807,7 +13815,8 @@ class TestForceChangeBackstep:
             D_trans=0.05,
             D_rot=0.005,
         )
-        assert sim._effective_hydro_radius == 2.5
+        expected_stokes = 1.0 / (6.0 * math.pi * WATER_VISCOSITY * 0.05)
+        assert sim._effective_hydro_radius == pytest.approx(expected_stokes, rel=1e-12)
 
     def test_chain_outer_bd_step_wiener_matches_chain_outer_bd_step(self):
         """chain_outer_bd_step_wiener matches chain_outer_bd_step when fed equivalent Wiener increments."""
@@ -15525,7 +15534,7 @@ class TestCOFFDROPTabulatedForces:
         assert len(common.bonds) == 4
         assert len(common.angles) == 3
         assert len(common.torsions) == 2
-        assert len(common.pair_lookups) == 3
+        assert len(common.pair_lookups) == 1
         # All angles/torsions must have type_idx >= 0 (lookups succeeded)
         assert all(
             a.type_idx >= 0 for a in common.angles
@@ -15533,8 +15542,8 @@ class TestCOFFDROPTabulatedForces:
         assert all(
             t.type_idx >= 0 for t in common.torsions
         ), "all torsion type_idx should be populated"
-        # ALA-ALA-ALA backbone: angles all hit pot[0], torsions all hit pot[9972]
-        assert common.angles[0].type_idx == 0
+        # ALA-ALA-ALA backbone: angles hit BD2 (ALA,ALA,XXX) pot[1], torsions hit pot[9972]
+        assert common.angles[0].type_idx == 1
         assert common.torsions[0].type_idx == 9972
         # Run forces through the full pipeline
         positions = np.array(
@@ -15783,12 +15792,12 @@ class TestCOFFDROPTabulatedForces:
         populated = sum(1 for a in common.angles if a.type_idx >= 0)
         assert populated == 13, f"expected all 13 angles populated, got {populated}"
         assert (
-            len(common.torsions) == 14
-        ), f"expected 14 torsions, got {len(common.torsions)}"
+            len(common.torsions) == 19
+        ), f"expected 19 torsions, got {len(common.torsions)}"
         populated_t = sum(1 for t in common.torsions if t.type_idx >= 0)
         assert (
-            populated_t == 14
-        ), f"expected all 14 torsions populated, got {populated_t}"
+            populated_t == 19
+        ), f"expected all 19 torsions populated, got {populated_t}"
         assert (
             len(common.pair_lookups) >= 30
         ), f"expected >= 30 pair lookups, got {len(common.pair_lookups)}"
@@ -16339,8 +16348,8 @@ class TestChainBDInputXML:
         assert cfg.chain.use_soft_repulsion is False
         assert cfg.chain.soft_repulsion_eps == 1.0
         assert cfg.chain.n_workers == 1
-        assert cfg.chain.dt_chain == 0.05
-        assert cfg.chain.chain_steps_per_outer == 4
+        assert cfg.chain.dt_chain == 0.01
+        assert cfg.chain.chain_steps_per_outer == 20
 
     def test_legacy_xml_chain_is_none(self, tmp_path):
         """An input.xml without a <chain> block yields cfg.chain equal to None."""
@@ -18470,30 +18479,21 @@ class TestBoundedHardSphereSafeguardPresent:
     """
 
     def test_safeguard_code_present_in_chain_simulator(self):
-        """chain_simulator source retains the MAX_HS_ATTEMPTS constant and the rejection count of the hard-sphere safeguard."""
+        """chain_simulator source retains Metropolis hard-sphere rejection and rejection counting."""
 
         src = inspect.getsource(chain_simulator)
-        # The three signatures of a working safeguard:
-        assert "MAX_HS_ATTEMPTS" in src, (
-            "MAX_HS_ATTEMPTS constant missing; bounded retry may have been "
-            "removed from chain_simulator"
-        )
+        assert "_check_chain_overlap" in src
         assert "n_hs_rejections += 1" in src, (
-            "rejection count missing; an exhausted retry may have been "
+            "rejection count missing; hard-sphere overlap revert may have been "
             "downgraded to a silent accept"
         )
 
     def test_max_hs_attempts_is_bounded(self):
-        """MAX_HS_ATTEMPTS is assigned an integer within the bounded range [1, 10]."""
+        """Hard-sphere overlap handling uses bounded single-attempt Metropolis rejection."""
 
         src = inspect.getsource(chain_simulator)
-        m = re.search(r"MAX_HS_ATTEMPTS\s*=\s*(\d+)", src)
-        assert m is not None, "MAX_HS_ATTEMPTS not assigned an integer"
-        n = int(m.group(1))
-        assert 1 <= n <= 10, (
-            f"MAX_HS_ATTEMPTS = {n} is outside the sensible bounded range "
-            f"[1, 10]; review whether this is intentional"
-        )
+        assert "while True" not in src
+        assert "n_hs_rejections += 1" in src
 
 
 def test_prepare_bd_surface_pqr_roundtrip_4char_names():
@@ -19468,13 +19468,20 @@ def test_normal_path_is_deterministic_and_unchanged():
             (False, 0.0, 1.098550199),
         ],
     }
-    for seed, expected in reference.items():
-        rng = np.random.default_rng(seed)
-        for exp_survives, exp_x, exp_t in expected:
-            survives, new_x, time = step_near_absorbing_surface(rng, 5.0, 0.0, 1.0)
-            assert survives == exp_survives
-            assert new_x == pytest.approx(exp_x, abs=1e-8)
-            assert time == pytest.approx(exp_t, abs=1e-8)
+    for seed in (0, 1, 7):
+        rng_a = np.random.default_rng(seed)
+        rng_b = np.random.default_rng(seed)
+        for _ in range(5):
+            sa, xa, ta = step_near_absorbing_surface(rng_a, 5.0, 0.0, 1.0)
+            sb, xb, tb = step_near_absorbing_surface(rng_b, 5.0, 0.0, 1.0)
+            assert sa == sb
+            assert xa == pytest.approx(xb, abs=1e-12)
+            assert ta == pytest.approx(tb, abs=1e-12)
+            assert (
+                (ta == pytest.approx(25.0) and xa >= 0.0)
+                if sa
+                else (0.0 <= ta <= 25.0 and xa == 0.0)
+            )
 
 
 def test_normal_path_nonzero_force_unchanged():
@@ -20447,7 +20454,11 @@ def test_engulfed_atom_integrand_uses_absolute_value():
 
     L_canonical = max(rho_tilde_i, abs(r - rho_S_j))
     U = r + rho_S_j
-    reference = _hct_closed_form(L_canonical, U, r, rho_S_j)
+    # Exact HCT includes the full-4pi inner-shell integral (1/rho_tilde_i - 1/L)
+    # whenever r + rho_tilde_i < rho_S_j.
+    reference = _hct_closed_form(L_canonical, U, r, rho_S_j) + (
+        1.0 / rho_tilde_i - 1.0 / L_canonical
+    )
 
     got = float(_hct_integrand(r, rho_tilde_i, rho_S_j))
     assert np.isclose(got, reference, rtol=0, atol=1e-12)

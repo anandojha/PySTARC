@@ -354,29 +354,48 @@ class DXGrid:
         """
         Central-difference gradient of the potential at N points at once.
         Returns an (N, 3) array of gradient vectors in units of kBT/(e·Å).
+        Points outside the interpolable grid domain receive zero gradient.
         """
         pts = np.asarray(points, dtype=float)
-        h = np.diag(self.delta) * 0.5  # Half the grid spacing along each axis.
         grad = np.zeros_like(pts)
+        if pts.size == 0:
+            return grad
         nshape = self.data.shape
+        idx = (pts - self.origin) * self._inv_dx
+        finite_mask = np.isfinite(idx).all(axis=1)
+        idx_safe = np.where(finite_mask[:, None], idx, 0.0)
+        with np.errstate(invalid="ignore"):
+            i0 = np.floor(idx_safe[:, 0]).astype(int)
+            j0 = np.floor(idx_safe[:, 1]).astype(int)
+            k0 = np.floor(idx_safe[:, 2]).astype(int)
+        nx, ny, nz = nshape
+        inside = (
+            finite_mask
+            & (i0 >= 0)
+            & (i0 < nx - 1)
+            & (j0 >= 0)
+            & (j0 < ny - 1)
+            & (k0 >= 0)
+            & (k0 < nz - 1)
+        )
+        if not np.any(inside):
+            return grad
+        pts_in = pts[inside]
+        h = np.diag(self.delta) * 0.5  # Half the grid spacing along each axis.
+        grad_in = np.zeros_like(pts_in)
         for i in range(3):
             dx = 2.0 * h[i]  # Full grid spacing along axis i.
-            # batch_interpolate returns 0.0 for a point whose floor index leaves
-            # [0, n-2], so a probe stepping just past the last cell would inject
-            # a large spurious gradient of the wrong sign at grid-edge atoms.
-            # Clamp the two probes into the interpolable range and divide by
-            # their actual (possibly one-sided) separation. Interior atoms, whose
-            # probes stay in range, keep the exact central difference.
             lo = self.origin[i]
             hi = self.origin[i] + (nshape[i] - 1 - 1e-6) * dx
-            dp = pts.copy()
-            dp[:, i] = np.clip(pts[:, i] + h[i], lo, hi)
-            dm = pts.copy()
-            dm[:, i] = np.clip(pts[:, i] - h[i], lo, hi)
+            dp = pts_in.copy()
+            dp[:, i] = np.clip(pts_in[:, i] + h[i], lo, hi)
+            dm = pts_in.copy()
+            dm[:, i] = np.clip(pts_in[:, i] - h[i], lo, hi)
             span = dp[:, i] - dm[:, i]
             with np.errstate(divide="ignore", invalid="ignore"):
                 g = (self.batch_interpolate(dp) - self.batch_interpolate(dm)) / span
-            grad[:, i] = np.where(np.abs(span) > 1e-12, g, 0.0)
+            grad_in[:, i] = np.where(np.abs(span) > 1e-12, g, 0.0)
+        grad[inside] = grad_in
         return grad
 
     def batch_force_on_charges(
